@@ -1,0 +1,20 @@
+{
+  "name": "swifty-cli",
+  "version": "0.0.1",
+  "description": "",
+  "private": true,
+  "scripts": {
+    "git:commit": "git add -A && git commit -m \"feat: Introduce new features\"",
+    "git:commit:n": "git add -A && git commit -m \"feat: Introduce new features\" --no-verify",
+    "git:push": "pnpm git:commit && git push origin main",
+    "git:push:n": "pnpm git:commit:n && git push origin main",
+    "prepare": "husky"
+  },
+  "keywords": [],
+  "devDependencies": {
+    "husky": "^9.1.7"
+  },
+  "author": "https://github.com/hangtiancheng",
+  "license": "ISC",
+  "packageManager": "pnpm@10.33.1"
+}

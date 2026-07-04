@@ -1,0 +1,60 @@
+{
+  "name": "@swifty.js/swifty-code",
+  "version": "0.0.1",
+  "description": "SwiftyCode - dual-process local AI agent",
+  "bin": {
+    "swifty-code": "./dist/cli/main.js"
+  },
+  "type": "module",
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint --fix ./scripts ./src ./tests",
+    "format": "oxfmt --write ./",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "doc": "tsx ./scripts/gen-protocol-doc.ts",
+    "dev": "tsx ./src/dev.ts",
+    "dev:core": "tsx ./src/core/app.ts",
+    "dev:tui": "tsx ./src/tui/bootstrap.ts",
+    "qa": "concurrently --names type,lint,test --prefix-colors blue,red,green \"pnpm typecheck\" \"pnpm lint\" \"pnpm test\" && pnpm format && echo \"Congratulations!\""
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.104.2",
+    "dotenv": "^17.4.2",
+    "ink": "^7.1.0",
+    "ink-spinner": "^5.0.0",
+    "ink-text-input": "^6.0.0",
+    "marked": "^18.0.5",
+    "marked-terminal": "^7.3.0",
+    "picomatch": "^4.0.4",
+    "pino": "^10.3.1",
+    "pino-roll": "^4.0.0",
+    "react": "^19.2.7",
+    "toml": "^4.1.1",
+    "zod": "^4.4.3",
+    "zod-to-json-schema": "^3.25.2"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.4",
+    "@types/marked-terminal": "^6.1.1",
+    "@types/node": "^24.13.2",
+    "@types/picomatch": "^4.0.3",
+    "@types/react": "^19.2.17",
+    "@vitest/coverage-v8": "^4.1.9",
+    "concurrently": "^9.2.3",
+    "eslint": "^9.39.4",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "eslint-plugin-react-refresh": "^0.5.3",
+    "eslint-plugin-unicorn": "^65.0.1",
+    "globals": "^17.6.0",
+    "oxfmt": "^0.53.0",
+    "tsup": "^8.5.1",
+    "tsx": "^4.22.4",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.61.1",
+    "vitest": "^4.1.9"
+  },
+  "packageManager": "pnpm@10.33.1"
+}

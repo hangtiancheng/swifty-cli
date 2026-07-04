@@ -1,0 +1,12 @@
+packages:
+  - apps/*
+  - glob-addon
+  - glob-wasm
+
+allowBuilds:
+  '@swc/core': true
+  better-sqlite3: true
+  esbuild: true
+  protobufjs: true
+  sharp: true
+  unrs-resolver: true
