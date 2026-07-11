@@ -20,21 +20,21 @@ function makeTmpDir(): string {
 
 // Environment variable names to save and restore
 const ENV_KEYS = [
-  "LARK_CONFIG",
-  "LARK_HOST",
-  "LARK_PORT",
-  "LARK_LOG_LEVEL",
-  "LARK_LOG_FILE",
-  "LARK_LOG_FORMAT",
-  "LARK_MAX_STEPS",
-  "LARK_LLM_DEFAULT_MODEL",
-  "LARK_TRACE_ENABLED",
-  "LARK_TRACE_FILE",
-  "LARK_TRACE_INCLUDE_LLM_PAYLOAD",
-  "LARK_PERMISSION_TIMEOUT_S",
-  "LARK_COMPACT_THRESHOLD",
-  "LARK_COMPACT_TOOL_LIMIT",
-  "LARK_COMPACT_TOOL_KEEP",
+  "SWIFTY_CONFIG",
+  "SWIFTY_HOST",
+  "SWIFTY_PORT",
+  "SWIFTY_LOG_LEVEL",
+  "SWIFTY_LOG_FILE",
+  "SWIFTY_LOG_FORMAT",
+  "SWIFTY_MAX_STEPS",
+  "SWIFTY_LLM_DEFAULT_MODEL",
+  "SWIFTY_TRACE_ENABLED",
+  "SWIFTY_TRACE_FILE",
+  "SWIFTY_TRACE_INCLUDE_LLM_PAYLOAD",
+  "SWIFTY_PERMISSION_TIMEOUT_S",
+  "SWIFTY_COMPACT_THRESHOLD",
+  "SWIFTY_COMPACT_TOOL_LIMIT",
+  "SWIFTY_COMPACT_TOOL_KEEP",
 ];
 
 describe("config priority chain", () => {
@@ -77,7 +77,7 @@ describe("config priority chain", () => {
   // Design: Write .env to temp directory and chdir into it, confirm .env load path works
   test("dotenv values loaded and override defaults", () => {
     const dir = makeTmpDir();
-    writeFileSync(path.join(dir, ".env"), "LARK_PORT=9999\n");
+    writeFileSync(path.join(dir, ".env"), "SWIFTY_PORT=9999\n");
     process.chdir(dir);
 
     const cfg = getConfig();
@@ -88,22 +88,22 @@ describe("config priority chain", () => {
   // Design: Write 9999 to .env, write 8888 to system env var, confirm final value is 8888
   test("system env overrides dotenv", () => {
     const dir = makeTmpDir();
-    writeFileSync(path.join(dir, ".env"), "LARK_PORT=9999\n");
+    writeFileSync(path.join(dir, ".env"), "SWIFTY_PORT=9999\n");
     process.chdir(dir);
-    process.env["LARK_PORT"] = "8888";
+    process.env["SWIFTY_PORT"] = "8888";
 
     const cfg = getConfig();
     expect(cfg.port).toBe(8888);
   });
 
-  // Feature: Verify LARK_CONFIG environment variable correctly affects TOML config file load path
+  // Feature: Verify SWIFTY_CONFIG environment variable correctly affects TOML config file load path
   // Design: Point env var to custom TOML file, write different port to TOML
-  test("LARK_CONFIG env var overrides TOML path", () => {
+  test("SWIFTY_CONFIG env var overrides TOML path", () => {
     const dir = makeTmpDir();
     const tomlPath = path.join(dir, "custom.toml");
     writeFileSync(tomlPath, "[core]\nport = 5555\n");
     process.chdir(dir);
-    process.env["LARK_CONFIG"] = tomlPath;
+    process.env["SWIFTY_CONFIG"] = tomlPath;
 
     const cfg = getConfig();
     expect(cfg.port).toBe(5555);
@@ -115,10 +115,10 @@ describe("config priority chain", () => {
     const dir = makeTmpDir();
     const tomlPath = path.join(dir, "swifty.toml");
     writeFileSync(tomlPath, "[core]\nport = 6000\n");
-    writeFileSync(path.join(dir, ".env"), "LARK_PORT=7000\n");
+    writeFileSync(path.join(dir, ".env"), "SWIFTY_PORT=7000\n");
     process.chdir(dir);
-    process.env["LARK_CONFIG"] = tomlPath;
-    process.env["LARK_PORT"] = "8000";
+    process.env["SWIFTY_CONFIG"] = tomlPath;
+    process.env["SWIFTY_PORT"] = "8000";
 
     const cfg = getConfig();
     expect(cfg.port).toBe(8000);
@@ -131,7 +131,7 @@ describe("config priority chain", () => {
     const tomlPath = path.join(dir, "bad.toml");
     writeFileSync(tomlPath, '[unknown_section]\nfoo = "bar"\n');
     process.chdir(dir);
-    process.env["LARK_CONFIG"] = tomlPath;
+    process.env["SWIFTY_CONFIG"] = tomlPath;
 
     expect(() => getConfig()).toThrow("Unknown top-level config keys");
   });

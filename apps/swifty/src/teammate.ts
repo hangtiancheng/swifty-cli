@@ -14,6 +14,7 @@ import { Agent } from "./agent/agent.js";
 import { FileStateCache } from "./tools/file-state-cache.js";
 import type { FileMailMessage } from "./teams/file-mailbox.js";
 import { FileMailbox } from "./teams/file-mailbox.js";
+import { initLogger, closeLogger, createChildLogger, sanitizeNameSegment } from "./logger/index.js";
 
 interface TeammateArgs {
   teamDir: string;
@@ -59,6 +60,9 @@ const ShutdownPrefix = "[shutdown]";
 // LeadName is the conventional mailbox recipient for the coordinator.
 const LeadName = "lead";
 
+// Module-level child logger for teammate process.
+const log = createChildLogger({ module: "teammate" });
+
 function isShutdownRequest(msg: FileMailMessage): boolean {
   return msg.text.trimStart().startsWith(ShutdownPrefix);
 }
@@ -72,6 +76,18 @@ function createIdleNotification(memberName: string): FileMailMessage {
 }
 
 export async function runTeammate(args: TeammateArgs): Promise<void> {
+  // Initialize logger for this teammate subprocess. Subprocess skips cleanup
+  // to avoid multi-process races on unlinkSync.
+  const safeMemberName = sanitizeNameSegment(args.memberName);
+  initLogger({
+    sessionId: `teammate-${safeMemberName}-${Date.now().toString(36)}`,
+    mode: "teammate",
+    workDir: args.teamDir,
+    skipCleanup: true,
+  });
+  process.on("exit", closeLogger);
+  log.info({ memberName: args.memberName, teamDir: args.teamDir }, "teammate started");
+
   const cfg = loadConfig();
   const provider = args.providerName
     ? (cfg.providers.find((p) => p.name === args.providerName) ?? cfg.providers[0])
@@ -113,17 +129,18 @@ export async function runTeammate(args: TeammateArgs): Promise<void> {
         process.stdout.write(event.text);
         break;
       case "tool_result":
-        console.log(
-          `[${event.toolName}] ${event.isError ? "ERROR" : "OK"} (${event.elapsed.toFixed(1)}s)`,
+        log.info(
+          { toolName: event.toolName, isError: event.isError, elapsed: event.elapsed },
+          "tool result",
         );
-        console.log("Output: ", output);
+        log.debug({ output }, "tool output");
         break;
       case "loop_complete":
-        console.log("\n--- Task complete ---");
-        console.log("Output: ", output);
+        log.info("task complete");
+        log.debug({ output }, "final output");
         break;
       case "error":
-        console.error(`Error: ${event.error.message}`);
+        log.error({ err: event.error }, "agent error");
         break;
     }
   }
@@ -137,11 +154,11 @@ export async function runTeammate(args: TeammateArgs): Promise<void> {
   for await (const msg of mailbox.poll(2000)) {
     // Graceful shutdown: stop polling and exit when the lead requests it.
     if (isShutdownRequest(msg)) {
-      console.log(`\n[Shutdown requested] ${args.memberName} exiting.`);
+      log.info({ memberName: args.memberName }, "shutdown requested, exiting");
       break;
     }
 
-    console.log(`\n[Message from ${msg.from}]: ${msg.text}`);
+    log.info({ from: msg.from, text: msg.text }, "message received");
     conversation.addUserMessage(msg.text);
     for await (const event of agent.run()) {
       if (event.type === "stream_text") {

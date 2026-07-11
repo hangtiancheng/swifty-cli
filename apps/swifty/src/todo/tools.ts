@@ -2,7 +2,7 @@ import { asErrorString, strArg } from "@/utils/index.js";
 import type { Tool, ToolResult, ToolContext, ToolSchema } from "../tools/types.js";
 import type { TaskList } from "./todo.js";
 import z from "zod";
-import { safeParseAsync } from "@modelcontextprotocol/sdk/server/zod-compat";
+import { safeParseAsync } from "@modelcontextprotocol/sdk/server/zod-compat.js";
 import type { TaskStatus } from "./store.js";
 
 export class TaskCreateTool implements Tool {

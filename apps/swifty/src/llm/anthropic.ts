@@ -2,6 +2,10 @@
  * Status: Done
  */
 
+import { createChildLogger } from "../logger/index.js";
+
+const log = createChildLogger({ module: "llm" });
+
 import Anthropic from "@anthropic-ai/sdk";
 import { safeParseAsync, z } from "zod";
 import {
@@ -10,17 +14,8 @@ import {
   type ProviderConfig,
   resolveAPIKey,
 } from "../config/config.js";
-import type {
-  ConversationManager,
-  Message,
-} from "../conversation/conversation.js";
-import {
-  asErrorString,
-  asRecord,
-  asString,
-  DANGEROUSLY_JSON,
-  isRecord,
-} from "../utils/index.js";
+import type { ConversationManager, Message } from "../conversation/conversation.js";
+import { asErrorString, asRecord, asString, DANGEROUSLY_JSON, isRecord } from "../utils/index.js";
 import type { LLMClient } from "./client.js";
 import {
   AuthenticationError,
@@ -56,20 +51,21 @@ const ModelContextWindowResSchema = z.object({
 
 // type ModelContextWindowRes = z.infer<typeof ModelContextWindowResSchema>;
 
-export async function fetchModelContextWindow(
-  config: ProviderConfig,
-): Promise<number> {
+export async function fetchModelContextWindow(config: ProviderConfig): Promise<number> {
+  // Non-anthropic: return 0 to signal "not applicable" — the caller falls
+  // through to lookupModelContextWindow which knows the right per-model value.
   if (config.protocol !== "anthropic") {
     return 0;
   }
   const apiKey = resolveAPIKey(config);
   const base = config.base_url.replace(/\/+$/, "");
-  const url = `${base}/api/models/${encodeURIComponent(config.model)}`;
+  const url = `${base}/v1/models/${encodeURIComponent(config.model)}`;
 
   const controller = new AbortController();
   const timer = setTimeout(() => {
     controller.abort();
   }, MODEL_FETCH_TIMEOUT_MS);
+
   try {
     const res = await fetch(url, {
       method: "GET",
@@ -80,14 +76,11 @@ export async function fetchModelContextWindow(
       signal: controller.signal,
     });
 
-    if (res.ok) {
+    if (!res.ok) {
       return 0;
     }
     const body: unknown = await res.json();
-    const { success, error, data } = await safeParseAsync(
-      ModelContextWindowResSchema,
-      body,
-    );
+    const { success, error, data } = await safeParseAsync(ModelContextWindowResSchema, body);
     if (!success) {
       console.error(error.message);
       return 0;
@@ -109,9 +102,7 @@ function supportsAdaptiveThinking(): boolean {
   return true;
 }
 
-export function buildAnthropicMessages(
-  messages: Message[],
-): Anthropic.MessageParam[] {
+export function buildAnthropicMessages(messages: Message[]): Anthropic.MessageParam[] {
   const result: Anthropic.MessageParam[] = [];
 
   for (const m of messages) {
@@ -256,7 +247,9 @@ export class AnthropicClient implements LLMClient {
     this.maxOutputTokens = getMaxOutputTokens(config);
     this.contextWindow = getContextWindow(config);
   }
-
+  setSystemPrompt(prompt: string): void {
+    this.systemPrompt = prompt;
+  }
   setMaxOutputTokens(maxTokens: number): void {
     this.maxOutputTokens = maxTokens;
   }
@@ -381,7 +374,7 @@ export class AnthropicClient implements LLMClient {
             }
             // end if (delta.type === "thinking_delta")
             else if (delta.type === "signature_delta") {
-              console.log("delta.signature", delta.signature);
+              log.debug({ signature: delta.signature }, "thinking signature received");
               thinkingSignature = delta.signature;
             }
             // end if (delta.type === "signature_delta")
@@ -421,7 +414,7 @@ export class AnthropicClient implements LLMClient {
                     ? asRecord(parsed)
                     : { [DANGEROUSLY_JSON]: jsonAccumulate };
                 } catch (err) {
-                  console.error(err);
+                  log.error({ err }, "llm operation failed");
                   args = {
                     [DANGEROUSLY_JSON]: jsonAccumulate,
                   };
@@ -449,6 +442,16 @@ export class AnthropicClient implements LLMClient {
             }
             if (event.usage.output_tokens) {
               outputTokens = event.usage.output_tokens;
+
+              if (event.usage.input_tokens) {
+                inputTokens = event.usage.input_tokens;
+              }
+              if (event.usage.cache_read_input_tokens) {
+                cacheReadInputTokens = event.usage.cache_read_input_tokens;
+              }
+              if (event.usage.cache_creation_input_tokens) {
+                cacheCreationInputTokens = event.usage.cache_creation_input_tokens;
+              }
             }
             break;
           } // end case "message_delta"
@@ -457,17 +460,15 @@ export class AnthropicClient implements LLMClient {
             startTime = performance.now();
             inputTokens = event.message.usage.input_tokens;
             outputTokens = event.message.usage.output_tokens;
-            cacheReadInputTokens =
-              event.message.usage.cache_read_input_tokens ?? 0;
-            cacheCreationInputTokens =
-              event.message.usage.cache_creation_input_tokens ?? 0;
+            cacheReadInputTokens = event.message.usage.cache_read_input_tokens ?? 0;
+            cacheCreationInputTokens = event.message.usage.cache_creation_input_tokens ?? 0;
             break;
           } // end "message_start"
 
           case "message_stop": {
             const stopTime = performance.now();
             const elapsed = stopTime - startTime;
-            console.log(`Message elapsed: ${String(elapsed)}ms`);
+            log.debug({ elapsedMs: elapsed }, "message stream complete");
             break;
           }
         }
@@ -484,6 +485,7 @@ export class AnthropicClient implements LLMClient {
         },
       };
     } catch (err) {
+      log.error({ err }, "llm operation failed");
       throw classifyAnthropicError(err);
     }
   }
@@ -513,8 +515,7 @@ function markLastUserTailForCache(messages: Anthropic.Messages.MessageParam[]) {
         },
       ];
     }
-    const last: Anthropic.Messages.ContentBlockParam =
-      content[content.length - 1];
+    const last: Anthropic.Messages.ContentBlockParam = content[content.length - 1];
 
     // Sets the property of target, equivalent to target[propertyKey] = value when receiver === target.
     Reflect.set(last, "cache_control", {
@@ -549,15 +550,10 @@ function classifyAnthropicError(err: unknown) {
         message += ", please wait.";
       }
 
-      return new RateLimitError(
-        message,
-        retryAfter ? asString(retryAfter) : undefined,
-      );
+      return new RateLimitError(message, retryAfter ? asString(retryAfter) : undefined);
     } // end if (err.status === 429)
 
-    return new LLMError(
-      `Anthropic API error (${asString(err.status)}): ${err.message}`,
-    );
+    return new LLMError(`Anthropic API error (${asString(err.status)}): ${err.message}`);
   } // end if (err instanceof Anthropic.APIError)
 
   return new NetworkError(`Network error: ${asErrorString(err)}`);

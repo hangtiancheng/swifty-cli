@@ -1,3 +1,7 @@
+import { createChildLogger } from "../logger/index.js";
+
+const log = createChildLogger({ module: "agent" });
+
 import type { ToolRegistry } from "../tools/registry.js";
 import type { ToolResult, ToolContext } from "../tools/types.js";
 import { asErrorString } from "../utils/index.js";
@@ -58,6 +62,7 @@ export class StreamingExecutor {
           elapsed: (Date.now() - start) / 1000,
         };
       } catch (err) {
+        log.error({ err }, "agent operation failed");
         return {
           toolId: call.toolId,
           toolName: call.toolName,

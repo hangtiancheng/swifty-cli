@@ -1,6 +1,8 @@
 import { Box, Text } from "ink";
 import { COLORS, ICONS } from "./styles.js";
 import { strArg } from "@/utils/index.js";
+import { DiffLines } from "./diff-render.js";
+import { isDiffTool } from "./is-diff-tool.js";
 
 export interface ToolBlockInfo {
   toolName: string;
@@ -45,9 +47,13 @@ function ToolBlock(props: ToolBlockProps) {
       </Text>
       {tool.output && (
         <Box paddingLeft={2} marginBottom={0}>
-          <Text dimColor>
-            {tool.output.length > 500 ? tool.output.slice(0, 500) + "…" : tool.output}
-          </Text>
+          {isDiffTool(tool.toolName) ? (
+            <DiffLines text={tool.output} />
+          ) : (
+            <Text dimColor>
+              {tool.output.length > 500 ? tool.output.slice(0, 500) + "…" : tool.output}
+            </Text>
+          )}
         </Box>
       )}
     </Box>

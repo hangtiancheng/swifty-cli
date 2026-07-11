@@ -1,3 +1,7 @@
+import { createChildLogger } from "../logger/index.js";
+
+const log = createChildLogger({ module: "tools" });
+
 import { existsSync, readFileSync, statSync } from "fs";
 import { asErrorString } from "../utils/index.js";
 import { READ_FILE_DESCRIPTION } from "./descriptions.js";
@@ -90,6 +94,7 @@ export class ReadFileTool implements Tool {
         isError: false,
       });
     } catch (err) {
+      log.error({ err }, "tool operation failed");
       return Promise.resolve({
         output: `Error reading file: ${asErrorString(err)}`,
         isError: true,

@@ -194,7 +194,7 @@ describe("doCompact via forceCompact (keep recent verbatim)", () => {
     // The summary is present with the Chinese framing...
     expect(joined).toContain("THE SUMMARY BODY");
     expect(joined).toContain("This session continues from a previous conversation");
-    expect(joined).toContain("Recent messages have been preserved as-is");
+    expect(joined).toContain("Recent messages have been preserved verbatim");
     // ...but the summary prompt only covered the prefix, NOT the kept tail.
     expect(lastPrompt()).toContain("OLD-PREFIX-0");
     expect(lastPrompt()).not.toContain("marker-recent-q");

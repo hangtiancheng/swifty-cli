@@ -1,3 +1,7 @@
+import { createChildLogger } from "../logger/index.js";
+
+const log = createChildLogger({ module: "commands" });
+
 import { isRecord } from "@/utils/index.js";
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "fs";
 import { join, dirname } from "path";
@@ -63,7 +67,9 @@ export class CommandUsageTracker {
           this.usage.set(name, data);
         }
       }
-    } catch {
+    } catch (err) {
+      log.error({ err }, "commands operation failed");
+
       // file doesn't exist yet
     }
   }
@@ -71,11 +77,9 @@ export class CommandUsageTracker {
   private save(): void {
     try {
       mkdirSync(dirname(this.filePath), { recursive: true });
-      writeFileSync(
-        this.filePath,
-        JSON.stringify(Object.fromEntries(this.usage), null, 2),
-      );
-    } catch {
+      writeFileSync(this.filePath, JSON.stringify(Object.fromEntries(this.usage), null, 2));
+    } catch (err) {
+      log.error({ err }, "commands operation failed");
       // ignore write errors
     }
   }

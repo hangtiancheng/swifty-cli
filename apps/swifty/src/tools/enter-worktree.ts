@@ -1,3 +1,7 @@
+import { createChildLogger } from "../logger/index.js";
+
+const log = createChildLogger({ module: "tools" });
+
 import { asErrorString } from "../utils/index.js";
 import { createAgentWorktree } from "../worktree/worktree.js";
 import {
@@ -27,7 +31,7 @@ export class EnterWorktreeTool implements Tool {
       properties: {
         slug: {
           type: "string" as const,
-          description: "Short identifier of the worktree",
+          description: "Short identifier for the worktree (branch name suffix).",
         },
       },
       required: ["slug"],
@@ -63,7 +67,7 @@ export class EnterWorktreeTool implements Tool {
         isError: false,
       };
     } catch (err) {
-      console.error(err);
+      log.error({ err }, "tool operation failed");
       return {
         output: `Error creating worktree: ${asErrorString(err)}`,
         isError: true,

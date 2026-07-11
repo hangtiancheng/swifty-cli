@@ -23,9 +23,7 @@ describe("user command loader", () => {
     expect(deploy?.description).toBe("Deploy it");
     expect(deploy?.aliases).toEqual(["d", "ship"]);
     expect(deploy?.type).toBe("prompt");
-    expect(deploy?.handler({ workDir, args: "staging" })).toBe(
-      "Deploy staging to production.",
-    );
+    expect(deploy?.handler({ workDir, args: "staging" })).toBe("Deploy staging to production.");
   });
 
   it("namespaces subdirectory commands with ':'", () => {

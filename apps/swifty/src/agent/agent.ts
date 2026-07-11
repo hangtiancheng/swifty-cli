@@ -1,9 +1,7 @@
+/* eslint-disable @typescript-eslint/consistent-type-assertions */
 import type { LLMClient } from "../llm/client.js";
-import type {
-  ConversationManager,
-  ToolUseBlock,
-  ToolResultBlock,
-} from "../conversation/conversation.js";
+import type { ConversationManager } from "../conversation/conversation.js";
+import type { ToolUseBlock, ToolResultBlock } from "../conversation/conversation.js";
 import type { ToolRegistry } from "../tools/registry.js";
 import type { PermissionChecker, Decision } from "../permissions/checker.js";
 import type { HookEngine, EventName } from "../hooks/hooks.js";
@@ -19,26 +17,21 @@ import { ContextTooLongError, RateLimitError } from "../llm/errors.js";
 import { getOrCreatePlanPath, planExists } from "../plan-file/plan-file.js";
 import { buildPlanModeReminder } from "../prompt/plan-mode.js";
 import { applyBudget } from "../tool-result/budget.js";
-import { buildManager } from "../tool-result/reconstruct.js";
-import { ContentReplacementState } from "../tool-result/state.js";
 import { readFile } from "node:fs/promises";
-import { type ToolSchema } from "@/tools/types.js";
-import { strArg, asError } from "@/utils/index.js";
-import type Anthropic from "@anthropic-ai/sdk";
+import { asErrorString, asRecord, strArg } from "@/utils/index.js";
+import type { ToolSchema } from "@/tools/types.js";
 
 // When the model stops on max_tokens, escalate its output ceiling once to this
-// value, then attempt a bounded number of multi-turn recoveries.
+// value, then attempt a bounded number of multi-turn recoveries. Mirrors Go.
 const MAX_TOKENS_CEILING = 64000;
 const MAX_OUTPUT_TOKENS_RECOVERIES = 3;
-// Hard per-result cap on tool output stored back into the conversation. The tool result budget handles spilling separately; this is a final safety cap.
+// Hard per-result cap on tool output stored back into the conversation. The
+// tool result budget handles spilling separately; this is a final safety cap.
 const MAX_OUTPUT_CHARS = 10000;
 
 export interface AgentConfig {
-  /** LLM client */
   client: LLMClient;
-  /** Tool registry */
   registry: ToolRegistry;
-  /**  */
   checker: PermissionChecker;
   conversation: ConversationManager;
   workDir: string;
@@ -50,12 +43,16 @@ export interface AgentConfig {
   contextWindow?: number;
   maxOutput?: number;
   recoveryState?: RecoveryState;
-  replacementState?: ContentReplacementState;
   maxIterations?: number;
   notificationFn?: () => string[];
   onLoopComplete?: (conversation: ConversationManager) => void;
   activeSkills?: Map<string, string>;
   toolFilter?: (name: string) => boolean;
+  // 项目指令和记忆内容，压缩后需要重新注入
+  instructions?: string;
+  memoryContent?: string;
+  // 非阻塞 memory recall：prefetch promise 与主 LLM 调用并行，工具执行后注入
+  memoryRecallPromise?: Promise<string>;
   onPermissionRequest?: (
     toolName: string,
     args: Record<string, unknown>,
@@ -69,28 +66,31 @@ export class Agent {
   private checker: PermissionChecker;
   private conversation: ConversationManager;
   private workDir: string;
+  private sessionId: string;
   private sessionFilePath: string;
-  private hookEngine?: HookEngine | undefined;
-  private fileHistory?: FileHistory | undefined;
-  private fileStateCache?: FileStateCache | undefined;
-  private abortSignal?: AbortSignal | undefined;
+  private hookEngine?: HookEngine;
+  private fileHistory?: FileHistory;
+  private fileStateCache?: FileStateCache;
+  private abortSignal?: AbortSignal;
   private contextWindow: number;
   private maxOutput: number;
   private recoveryState: RecoveryState;
-  private replacementState: ContentReplacementState;
   private maxIterations: number;
-  private notificationFn?: (() => string[]) | undefined;
-  private onLoopComplete?: ((conversation: ConversationManager) => void) | undefined;
+  private notificationFn?: () => string[];
+  private onLoopComplete?: (conversation: ConversationManager) => void;
   private compactTracking = new AutoCompactTrackingState();
-
   // Real-token anchor from the last stream's API usage. null until the first
   // turn completes, so the very first manageContext() call falls back to
   // whole-transcript char estimation (cold start). Mirrors python
   // conversation.last_input_tokens, extended with cache tokens + an increment.
   private usageAnchor: UsageAnchor | null = null;
   private onPermissionRequest?: AgentConfig["onPermissionRequest"];
-  private toolFilter?: ((name: string) => boolean) | undefined;
+  private toolFilter?: (name: string) => boolean;
   activeSkills: Map<string, string>;
+  private instructions: string;
+  private memoryContent: string;
+  private memoryRecallPromise?: Promise<string>;
+  private memoryRecallConsumed = false;
 
   constructor(config: AgentConfig) {
     this.client = config.client;
@@ -98,6 +98,7 @@ export class Agent {
     this.checker = config.checker;
     this.conversation = config.conversation;
     this.workDir = config.workDir;
+    this.sessionId = config.sessionId ?? "";
     this.sessionFilePath = config.sessionId
       ? getSessionFilePath(config.workDir, config.sessionId)
       : "";
@@ -108,19 +109,21 @@ export class Agent {
     this.contextWindow = config.contextWindow ?? 200000;
     this.maxOutput = config.maxOutput ?? 8192;
     this.recoveryState = config.recoveryState ?? new RecoveryState();
-    this.replacementState = config.replacementState ?? new ContentReplacementState();
     this.maxIterations = config.maxIterations ?? 0;
     this.notificationFn = config.notificationFn;
     this.onLoopComplete = config.onLoopComplete;
     this.onPermissionRequest = config.onPermissionRequest;
     this.activeSkills = config.activeSkills ?? new Map<string, string>();
     this.toolFilter = config.toolFilter;
+    this.instructions = config.instructions ?? "";
+    this.memoryContent = config.memoryContent ?? "";
+    this.memoryRecallPromise = config.memoryRecallPromise;
   }
 
   async *run(): AsyncGenerator<AgentEvent> {
     // Apply an active skill's allowed-tools filter to the schemas sent to the
-    // LLM. System tools always remain available.
-    let toolSchemas: Anthropic.Tool[] = this.registry.getAllSchemas();
+    // LLM. System tools always remain available. Mirrors Go currentToolSchemas.
+    let toolSchemas = this.registry.getAllSchemas();
     if (this.toolFilter) {
       toolSchemas = toolSchemas.filter((s) => {
         const n = s.name;
@@ -152,35 +155,6 @@ export class Agent {
         const toolUses: ToolUseBlock[] = [];
         let stopReason = "end_turn";
 
-        // Two-layer context management: auto-compact when the window fills up.
-        const mc = await manageContext(
-          this.conversation,
-          this.client,
-          this.contextWindow,
-          this.maxOutput,
-          this.compactTracking,
-          this.recoveryState,
-          toolSchemaNames,
-          this.usageAnchor,
-          this.sessionFilePath,
-        );
-        if (mc.message) {
-          yield {
-            type: "compact",
-            message: mc.message,
-            boundary: mc.boundary,
-          };
-        }
-        // Compaction rewrote the transcript (summary + verbatim tail), so the
-        // usage anchor's (baselineTokens, anchorCount) no longer line up with the
-        // new message list — its message count is stale and the baseline counted
-        // tokens that were just summarized away. Drop the anchor so the next
-        // currentContextTokens() cold-starts on the compacted transcript instead
-        // of adding a stale baseline to a misaligned tail.
-        if (mc.compacted) {
-          this.usageAnchor = null;
-        }
-
         // Plan mode: sync the plan path onto the checker (so the Layer-0 plan-file
         // write exception works however plan mode was entered) and inject a
         // per-turn reminder keeping the model read-only.
@@ -190,13 +164,6 @@ export class Agent {
           this.conversation.addSystemReminder(
             buildPlanModeReminder(planPath, planExists(this.workDir), iteration),
           );
-        }
-
-        // Re-inject pinned active-skill SOPs each turn so the model sees them at
-        // the most prominent position regardless of conversation length.
-        const skillReminder = buildActiveSkillsReminder(this.activeSkills);
-        if (skillReminder) {
-          this.conversation.addSystemReminder(skillReminder);
         }
 
         // Drain queued hook notifications and any external notifications (e.g. a
@@ -215,12 +182,32 @@ export class Agent {
         await this.fireLifecycle("turn_start");
         await this.fireLifecycle("pre_send");
 
-        // Layer 1: apply the tool-result budget against the ReplacementState so
-        // large/old tool outputs are spilled or snipped before resend. Builds a
-        // fresh apiConversation with replacements baked in; this.conversation is never mutated.
-        const apiConversation = buildManager(
-          applyBudget(this.conversation.getMessages(), this.workDir, this.replacementState),
+        // Layer 1: 就地裁剪超限的工具结果
+        applyBudget(this.conversation.getMessages(), this.workDir, this.sessionId);
+
+        // Layer 2: auto-compact when the window fills up
+        const mc = await manageContext(
+          this.conversation,
+          this.client,
+          this.contextWindow,
+          this.maxOutput,
+          this.compactTracking,
+          this.recoveryState,
+          toolSchemaNames,
+          // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+          toolSchemas as ToolSchema[],
+          this.usageAnchor,
+          this.sessionFilePath,
         );
+        if (mc.message) {
+          yield { type: "compact", message: mc.message, boundary: mc.boundary };
+        }
+        if (mc.compacted) {
+          this.usageAnchor = null;
+          // 压缩后消息已变，重新应用 budget
+          applyBudget(this.conversation.getMessages(), this.workDir, this.sessionId);
+          this.conversation.injectLongTermMemory(this.instructions, this.memoryContent);
+        }
 
         // Message count of the live conversation at the moment we send. The API
         // usage we receive back covers exactly these messages, so this becomes
@@ -228,9 +215,9 @@ export class Agent {
         const sentMessageCount = this.conversation.len();
 
         try {
+          // 直接用 conversation 发起 API 调用，无需重建
           const stream = this.client.stream(
-            apiConversation,
-            // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+            this.conversation,
             toolSchemas as ToolSchema[],
             this.abortSignal,
           );
@@ -241,18 +228,16 @@ export class Agent {
               break;
             }
             switch (event.type) {
-              case "text_delta": {
+              case "text_delta":
                 fullText += event.text;
                 yield { type: "stream_text", text: event.text };
                 break;
-              }
 
-              case "thinking_delta": {
+              case "thinking_delta":
                 yield { type: "thinking_text", text: event.text };
                 break;
-              }
 
-              case "thinking_complete": {
+              case "thinking_complete":
                 thinkingBlocks.push({
                   thinking: event.thinking,
                   signature: event.signature,
@@ -263,13 +248,11 @@ export class Agent {
                   signature: event.signature,
                 };
                 break;
-              }
 
-              case "tool_call_start": {
+              case "tool_call_start":
                 break;
-              }
 
-              case "tool_call_complete": {
+              case "tool_call_complete":
                 toolUses.push({
                   toolUseId: event.toolId,
                   toolName: event.toolName,
@@ -282,7 +265,6 @@ export class Agent {
                   args: event.arguments,
                 };
                 break;
-              }
 
               case "stream_end":
                 stopReason = event.stopReason;
@@ -311,17 +293,22 @@ export class Agent {
           // Self-heal: context too long → force-compact, then retry the turn.
           if (err instanceof ContextTooLongError) {
             try {
+              // 先应用 tool-result budget，再做 auto-compact
+              applyBudget(this.conversation.getMessages(), this.workDir, this.sessionId);
               const result = await forceCompact(
                 this.conversation,
                 this.client,
                 this.recoveryState,
                 toolSchemaNames,
+                // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+                toolSchemas as ToolSchema[],
                 this.sessionFilePath,
               );
               // Transcript was rewritten — the usage anchor is now stale (see the
               // reset after manageContext above). Drop it so the retry re-estimates
               // against the compacted transcript.
               this.usageAnchor = null;
+              this.conversation.injectLongTermMemory(this.instructions, this.memoryContent);
               yield {
                 type: "compact",
                 message: "Auto-compacted due to context length: " + result.message,
@@ -336,16 +323,19 @@ export class Agent {
 
           // Self-heal: rate limited → wait (Retry-After header or 5s), then retry.
           if (err instanceof RateLimitError) {
-            const waitMs = parseRetryAfter(err.retryAfter);
+            const waitMs = parseRetryAfter(strArg(asRecord(err), "retryAfter"));
             yield { type: "retry", reason: "rate limited", delay: waitMs };
-            if (await this.interruptSleep(waitMs)) {
+            if (await this.interruptibleSleep(waitMs)) {
               yield { type: "loop_complete", stopReason: "interrupted" };
               return;
             }
             continue;
           }
 
-          yield { type: "error", error: asError(err) };
+          yield {
+            type: "error",
+            error: new Error(asErrorString(err)),
+          };
           return;
         }
 
@@ -361,10 +351,11 @@ export class Agent {
 
         // Handle the max_tokens stop reason: escalate the output ceiling once,
         // then do up to N multi-turn recoveries before giving up. Each recovery
-        // re-prompts the model to resume from where it stopped.
+        // re-prompts the model to resume from where it stopped. Mirrors Go.
         if (stopReason === "max_tokens") {
           if (!maxTokensEscalated) {
-            this.client.setMaxOutputTokens?.(MAX_TOKENS_CEILING);
+            const setter = this.client;
+            setter.setMaxOutputTokens?.(MAX_TOKENS_CEILING);
             maxTokensEscalated = true;
             if (fullText) {
               this.conversation.addAssistantFull(fullText, thinkingBlocks, []);
@@ -433,6 +424,28 @@ export class Agent {
           const exitPlanCalled = toolUses.some((tu) => tu.toolName === "ExitPlanMode");
           this.conversation.addToolResultsMessage(toolResults);
 
+          // 非阻塞 memory recall：工具执行完后检查 prefetch 是否就绪
+          if (this.memoryRecallPromise && !this.memoryRecallConsumed) {
+            try {
+              // Promise.race with an immediately-resolved marker to avoid blocking
+              const settled = await Promise.race([
+                this.memoryRecallPromise.then((r) => ({
+                  done: true,
+                  value: r,
+                })),
+                Promise.resolve({ done: false, value: "" }),
+              ]);
+              if (settled.done) {
+                if (settled.value) {
+                  this.conversation.addSystemReminder(settled.value);
+                }
+                this.memoryRecallConsumed = true;
+              }
+            } catch {
+              this.memoryRecallConsumed = true;
+            }
+          }
+
           if (exitPlanCalled) {
             yield { type: "turn_complete" };
             yield { type: "loop_complete", stopReason: "end_turn" };
@@ -478,8 +491,9 @@ export class Agent {
     }
   }
 
-  // Sleep for ms, resolving early with `true` if the abort signal fires during the wait. Resolves `false` on timeout.
-  private interruptSleep(ms: number): Promise<boolean> {
+  // Sleep for ms, resolving early with `true` if the abort signal fires during
+  // the wait (mirrors Go's select on ctx.Done()). Resolves `false` on timeout.
+  private interruptibleSleep(ms: number): Promise<boolean> {
     return new Promise((resolve) => {
       if (this.abortSignal?.aborted) {
         resolve(true);
@@ -500,34 +514,35 @@ export class Agent {
   private async executeTools(toolUses: ToolUseBlock[]): Promise<AgentEvent[]> {
     const events: AgentEvent[] = [];
 
-    // Partition tool calls into read-safe (parallel) and write/dangerous
-    // (sequential) groups. Read-safe tools (Glob, Grep, ReadFile, etc.)
-    // can safely overlap; write tools and commands execute one at a time.
-    const readSafe: ToolUseBlock[] = [];
-    const writeDangerous: ToolUseBlock[] = [];
-    for (const tu of toolUses) {
-      const tool = this.registry.get(tu.toolName);
-      const category = tool?.category ?? "command";
-      if (category === "read") {
-        readSafe.push(tu);
-      } else {
-        writeDangerous.push(tu);
-      }
-    }
+    // 按相邻性分批：连续的只读工具合成一个并行批次，写/命令工具各自独占一批
+    const batches = this.partitionToolCalls(toolUses);
 
-    // Execute read-safe batch in parallel first.
-    if (readSafe.length > 0) {
-      const batchEvents = await this.executeBatch(readSafe, true);
-      events.push(...batchEvents);
-    }
-
-    // Execute write/dangerous tools sequentially.
-    for (const tu of writeDangerous) {
-      const batchEvents = await this.executeBatch([tu], false);
+    for (const batch of batches) {
+      const batchEvents = await this.executeBatch(
+        batch.blocks,
+        batch.concurrent && batch.blocks.length > 1,
+      );
       events.push(...batchEvents);
     }
 
     return events;
+  }
+
+  private partitionToolCalls(
+    toolUses: ToolUseBlock[],
+  ): { concurrent: boolean; blocks: ToolUseBlock[] }[] {
+    const batches: { concurrent: boolean; blocks: ToolUseBlock[] }[] = [];
+    for (const tu of toolUses) {
+      const tool = this.registry.get(tu.toolName);
+      const safe = (tool?.category ?? "command") === "read";
+
+      if (safe && batches.length > 0 && batches[batches.length - 1].concurrent) {
+        batches[batches.length - 1].blocks.push(tu);
+      } else {
+        batches.push({ concurrent: safe, blocks: [tu] });
+      }
+    }
+    return batches;
   }
 
   // executeBatch runs a set of tool calls through permission checks, hooks,
@@ -568,7 +583,7 @@ export class Agent {
           type: "tool_result",
           toolName: tu.toolName,
           toolId: tu.toolUseId,
-          output: `Permission denied: ${decision.reason}. This action has been intercepted and blocked by the security policy. Please inform the user that the command was denied, without describing what the command would do.`,
+          output: `Permission denied: ${decision.reason}. 此操作已被安全策略拦截和阻止，请告知用户该命令被拒绝，不要描述该命令会做什么。`,
           isError: true,
           elapsed: 0,
         });
@@ -628,7 +643,8 @@ export class Agent {
     events: AgentEvent[],
   ): Promise<void> {
     // Snapshot ReadFile content into recovery state so a later auto-compact
-    // can replay it after the transcript collapses into a summary.
+    // can replay it after the transcript collapses into a summary. Mirrors
+    // Go agent.go executeSingleTool's RecordFileRead.
     if (!r.result.isError && r.toolName === "ReadFile") {
       const tu = toolUses.find((t) => t.toolUseId === r.toolId);
       const p = strArg(tu?.arguments ?? {}, "file_path");
@@ -666,22 +682,8 @@ export class Agent {
   }
 }
 
-// buildActiveSkillsReminder renders all pinned skill SOPs into a single
-// system-reminder string ("" when none are active). Mirrors Go.
-function buildActiveSkillsReminder(active: Map<string, string>): string {
-  if (active.size === 0) {
-    return "";
-  }
-  let out =
-    "# Active Skills\n\nThe following Skill SOPs are pinned to the environment context. Follow each SOP when its triggering condition applies.\n\n";
-  for (const [name, body] of active) {
-    out += `## Active Skill: ${name}\n\n${body}\n\n`;
-  }
-  return out;
-}
-
 // parseRetryAfter converts a Retry-After header (seconds) into milliseconds,
-// defaulting to 5s when absent or unparsable.
+// defaulting to 5s when absent or unparseable. Mirrors Go parseRetryAfter.
 function parseRetryAfter(header?: string): number {
   if (!header) {
     return 5000;

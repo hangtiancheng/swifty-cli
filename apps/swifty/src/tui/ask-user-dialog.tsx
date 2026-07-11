@@ -1,372 +1,485 @@
-import type { Question } from "@/tools/ask-user.js";
-import { useCallback, useRef, useState } from "react";
+import { useReducer } from "react";
 import { Box, Text, useInput } from "ink";
-import { COLORS, ICONS } from "./styles.js";
-
-const OTHER = "Other (type your own)";
+import type { Question } from "../tools/ask-user.js";
 
 interface Props {
   questions: Question[];
-  onComplete: (answer: Record<string, string>) => void;
+  onComplete: (answers: Record<string, string>) => void;
 }
 
-// Per-question UI state preserved across tab switches.
 interface QuestionState {
   cursor: number;
-  selected: Set<number>;
-  otherText: string;
+  selectedValue?: string | string[];
+  textInputValue: string;
+  answer?: string;
   otherMode: boolean;
-  /** The committed answer string, undefined until user picks one. */
-  answer: string | undefined;
 }
 
-const INITIAL_QUESTION_STATE: QuestionState = {
-  cursor: 0,
-  selected: new Set<number>(),
-  otherText: "",
-  otherMode: false,
-  answer: undefined,
-};
+interface State {
+  currentIndex: number;
+  questionStates: QuestionState[];
+  submitCursor: number; // 0=Submit, 1=Cancel
+}
 
-function AskUserDialog(props: Props) {
-  const { questions, onComplete } = props;
-  // Tab index
-  // 0..questions.length-1 = Question tabs
-  // questions.length = Submit tab
-  const [curTabIdx, setCurTabIdx] = useState(0);
+type Action =
+  | { type: "next" }
+  | { type: "prev" }
+  | { type: "goto"; index: number }
+  | { type: "update"; index: number; updates: Partial<QuestionState> }
+  | { type: "set-submit-cursor"; cursor: number };
 
-  const [questionStates, setQuestionStates] = useState<QuestionState[]>(() =>
-    Array.from({ length: questions.length }, () => ({
-      ...INITIAL_QUESTION_STATE,
-    })),
+function reducer(state: State, action: Action): State {
+  switch (action.type) {
+    case "next":
+      return {
+        ...state,
+        currentIndex: Math.min(state.currentIndex + 1, state.questionStates.length),
+      };
+    case "prev":
+      return { ...state, currentIndex: Math.max(state.currentIndex - 1, 0) };
+    case "goto":
+      return { ...state, currentIndex: action.index };
+    case "update": {
+      const qs = [...state.questionStates];
+      qs[action.index] = { ...qs[action.index], ...action.updates };
+      return { ...state, questionStates: qs };
+    }
+    case "set-submit-cursor":
+      return { ...state, submitCursor: action.cursor };
+    default:
+      return state;
+  }
+}
+
+// ── Navigation bar (modeled after Claude Code's QuestionNavigationBar) ──
+
+function NavigationBar({
+  questions,
+  currentIndex,
+  states,
+  hideSubmit,
+}: {
+  questions: Question[];
+  currentIndex: number;
+  states: QuestionState[];
+  hideSubmit: boolean;
+}) {
+  const total = questions.length + (hideSubmit ? 0 : 1);
+  const isFirst = currentIndex === 0;
+  const isLast = currentIndex >= total - 1;
+
+  return (
+    <Box flexDirection="row" marginBottom={1}>
+      <Text dimColor={isFirst} color={isFirst ? undefined : "white"}>
+        {" ← "}
+      </Text>
+      {questions.map((q, i) => {
+        const active = currentIndex === i;
+        const answered = states[i].answer !== undefined;
+        const check = answered ? "☑" : "☐";
+        if (active) {
+          return (
+            <Text key={i} backgroundColor="magenta" color="white" bold>
+              {` ${check} ${q.header} `}
+            </Text>
+          );
+        }
+        return (
+          <Text key={i} dimColor={!answered} color={answered ? "green" : undefined}>
+            {` ${check} ${q.header} `}
+          </Text>
+        );
+      })}
+      {!hideSubmit &&
+        (currentIndex === questions.length ? (
+          <Text backgroundColor="magenta" color="white" bold>
+            {" ✓ Submit "}
+          </Text>
+        ) : (
+          <Text dimColor>{" ✓ Submit "}</Text>
+        ))}
+      <Text dimColor={isLast} color={isLast ? undefined : "white"}>
+        {" → "}
+      </Text>
+    </Box>
   );
+}
 
-  // Ref keeps currentTab fresh for callbacks that outlive a render cycle.
-  const curTabIdxRef = useRef(curTabIdx);
-  // currentTabRef.current = currentTab;
+// ── Question view (modeled after Claude Code's QuestionView + compact-vertical Select) ──
 
-  // const isSubmitTab = useMemo(
-  //   () => curTabIdx === questions.length,
-  //   [curTabIdx, questions.length],
-  // );
-  const isSubmitTab = curTabIdx === questions.length;
+function QuestionContent({
+  question,
+  state,
+}: {
+  question: Question;
+  state: QuestionState;
+  questionIndex: number;
+  totalQuestions: number;
+}) {
+  const options = question.options;
+  const otherIndex = options.length;
+  const maxIdxWidth = String(otherIndex + 1).length;
 
-  // const curQuestion = useMemo(
-  //   () => (isSubmitTab ? undefined : questions[curTabIdx]),
-  //   [isSubmitTab, questions, curTabIdx],
-  // );
-  const curQuestion = isSubmitTab ? undefined : questions[curTabIdx];
+  return (
+    <Box flexDirection="column" paddingLeft={1}>
+      <Text bold>{question.question}</Text>
+      {question.multiSelect && <Text dimColor>{"  (space to toggle, enter to confirm)"}</Text>}
+      <Text> </Text>
+      {options.map((opt, i) => {
+        const isFocused = state.cursor === i;
+        const isSelected = state.answer === opt.label;
+        const idx = String(i + 1).padStart(maxIdxWidth, " ");
+        const pointer = isFocused ? ">" : " ";
+        const checked =
+          question.multiSelect &&
+          (Array.isArray(state.selectedValue) ? state.selectedValue.includes(opt.label) : false);
+        const checkMark = question.multiSelect ? (checked ? "☑ " : "☐ ") : "";
+        const color = isFocused ? "cyan" : isSelected ? "green" : undefined;
+        return (
+          <Box key={opt.label} flexDirection="column">
+            <Text>
+              <Text color={isFocused ? "cyan" : undefined}>{pointer}</Text>
+              <Text dimColor> {idx}. </Text>
+              <Text color={color} dimColor={!isFocused && !isSelected}>
+                {checkMark}
+                {opt.label}
+              </Text>
+            </Text>
+            {opt.description && (
+              <Box paddingLeft={maxIdxWidth + 5}>
+                <Text dimColor>{opt.description}</Text>
+              </Box>
+            )}
+          </Box>
+        );
+      })}
+      {/* "Other" option */}
+      <Box flexDirection="column">
+        <Text>
+          <Text color={state.cursor === otherIndex ? "cyan" : undefined}>
+            {state.cursor === otherIndex ? ">" : " "}
+          </Text>
+          <Text dimColor> {String(otherIndex + 1).padStart(maxIdxWidth, " ")}. </Text>
+          <Text
+            color={state.cursor === otherIndex ? "cyan" : undefined}
+            dimColor={state.cursor !== otherIndex}
+          >
+            Other (type your own)
+          </Text>
+        </Text>
+      </Box>
+      {state.otherMode && (
+        <Box paddingLeft={maxIdxWidth + 5}>
+          <Text>
+            <Text dimColor>{"> "}</Text>
+            <Text color="cyan">{state.textInputValue}</Text>
+            <Text inverse> </Text>
+          </Text>
+        </Box>
+      )}
+    </Box>
+  );
+}
 
-  // const curQuestionState = useMemo(
-  //   () => (isSubmitTab ? undefined : questionStates[curTabIdx]),
-  //   [isSubmitTab, questionStates, curTabIdx],
-  // );
-  const curQuestionState = isSubmitTab ? undefined : questionStates[curTabIdx];
+// ── Submit view (modeled after Claude Code's SubmitQuestionsView) ──
 
-  // Whether all questions have an answer (enables Submit).
+function SubmitContent({
+  questions,
+  states,
+  allAnswered,
+  submitCursor,
+}: {
+  questions: Question[];
+  states: QuestionState[];
+  allAnswered: boolean;
+  submitCursor: number;
+}) {
+  return (
+    <Box flexDirection="column" paddingLeft={1}>
+      <Text bold>Review your answers</Text>
+      <Text> </Text>
+      {!allAnswered && <Text color="yellow">{"  ⚠ You have not answered all questions"}</Text>}
+      {questions.map((q, i) => (
+        <Box key={q.question} flexDirection="column" marginBottom={0}>
+          <Text>
+            <Text dimColor>{"  • "}</Text>
+            <Text>{q.question}</Text>
+          </Text>
+          {states[i].answer !== undefined ? (
+            <Text>
+              <Text color="green">{"    → "}</Text>
+              <Text color="green">{states[i].answer}</Text>
+            </Text>
+          ) : (
+            <Text dimColor>{"    → (not answered)"}</Text>
+          )}
+        </Box>
+      ))}
+      <Text> </Text>
+      {allAnswered && (
+        <Box flexDirection="column">
+          <Text dimColor>Ready to submit your answers?</Text>
+          <Text> </Text>
+          <Text>
+            <Text color={submitCursor === 0 ? "cyan" : undefined}>
+              {submitCursor === 0 ? ">" : " "}
+            </Text>
+            <Text
+              color={submitCursor === 0 ? "cyan" : undefined}
+              dimColor={submitCursor !== 0}
+              bold={submitCursor === 0}
+            >
+              {" Submit answers"}
+            </Text>
+          </Text>
+          <Text>
+            <Text color={submitCursor === 1 ? "cyan" : undefined}>
+              {submitCursor === 1 ? ">" : " "}
+            </Text>
+            <Text color={submitCursor === 1 ? "cyan" : undefined} dimColor={submitCursor !== 1}>
+              {" Cancel"}
+            </Text>
+          </Text>
+        </Box>
+      )}
+    </Box>
+  );
+}
+
+// ── Main component ──
+
+export function AskUserDialog({ questions, onComplete }: Props) {
+  const hideSubmit = questions.length === 1 && !questions[0].multiSelect;
+  // const totalTabs = questions.length + (hideSubmit ? 0 : 1);
+
+  const [state, dispatch] = useReducer(reducer, {
+    currentIndex: 0,
+    questionStates: questions.map(
+      () =>
+        ({
+          cursor: 0,
+          textInputValue: "",
+          otherMode: false,
+        }) satisfies QuestionState,
+    ),
+    submitCursor: 0,
+  });
+
+  const { currentIndex, questionStates, submitCursor } = state;
+  const isSubmitTab = !hideSubmit && currentIndex === questions.length;
+  const q = isSubmitTab ? undefined : questions[currentIndex];
+  const qs = isSubmitTab ? undefined : questionStates[currentIndex];
   const allAnswered = questionStates.every((s) => s.answer !== undefined);
 
-  type Updater = (qs: QuestionState) => QuestionState;
-
-  // Helpers to update per-question state immutably.
-  const updateCurrent = useCallback((updater: Updater) => {
-    setQuestionStates((prev) => {
-      const idx = curTabIdxRef.current;
-      const newStates = [...prev];
-      newStates[idx] = updater(newStates[idx]);
-      return newStates;
+  const commitAnswer = (answer: string, advance = true) => {
+    dispatch({
+      type: "update",
+      index: currentIndex,
+      updates: { answer, otherMode: false },
     });
-  }, []);
-
-  const commitAnswer = useCallback(
-    (answer: string) => {
-      updateCurrent((qs) => ({
-        ...qs,
-        answer,
-        otherMode: false,
-      }));
-    },
-    [updateCurrent],
-  );
-
-  const switchTab = useCallback(
-    (delta: number) => {
-      const totalTabCount = questions.length + 1; // +1 for Submit
-      setCurTabIdx((tabIdx) => {
-        let newTabIdx = tabIdx + delta;
-        if (newTabIdx < 0) {
-          newTabIdx = totalTabCount - 1;
-        }
-        if (newTabIdx >= totalTabCount) {
-          newTabIdx = 0;
-        }
-        return newTabIdx;
-      });
-    },
-    [questions.length],
-  );
+    if (advance) {
+      if (hideSubmit) {
+        // Single-question mode: submit directly
+        const answers: Record<string, string> = {};
+        answers[questions[0].question] = answer;
+        onComplete(answers);
+        return;
+      }
+      dispatch({ type: "next" });
+    }
+  };
 
   useInput((input, key) => {
-    // ------ other-text typing mode (scoped to the current question) ------
-    if (!isSubmitTab && curQuestionState?.otherMode) {
+    // Filter out SGR mouse events
+    if (input.includes("[<") && /\[<\d+;\d+;\d+[Mm]/.test(input)) {
+      return;
+    }
+
+    // "Other" free-text input mode
+    if (!isSubmitTab && qs?.otherMode) {
       if (key.return) {
-        commitAnswer(curQuestionState.otherText.trim() || "(no answer)");
+        commitAnswer(qs.textInputValue.trim() || "(no answer)");
       } else if (key.backspace || key.delete) {
-        updateCurrent((qs) => ({
-          ...qs,
-          otherText: qs.otherText.slice(0, -1),
-        }));
+        dispatch({
+          type: "update",
+          index: currentIndex,
+          updates: {
+            textInputValue: qs.textInputValue.slice(0, -1),
+          },
+        });
       } else if (key.escape) {
-        updateCurrent((qs) => ({ ...qs, otherMode: false }));
+        dispatch({
+          type: "update",
+          index: currentIndex,
+          updates: { otherMode: false },
+        });
       } else if (input && !key.ctrl && !key.meta) {
-        updateCurrent((qs) => ({ ...qs, otherText: qs.otherText + input }));
+        dispatch({
+          type: "update",
+          index: currentIndex,
+          updates: {
+            textInputValue: qs.textInputValue + input,
+          },
+        });
       }
       return;
     }
 
-    // ------ global: escape cancels entire dialog ------
     if (key.escape) {
       onComplete({});
       return;
     }
 
-    // ------ tab navigation: left/right arrows, Tab / Shift+Tab ------
-    if (key.leftArrow) {
-      switchTab(-1);
+    // Tab navigation
+    if (key.leftArrow && !isSubmitTab) {
+      dispatch({ type: "prev" });
       return;
     }
-    if (key.rightArrow) {
-      switchTab(1);
+    if (key.rightArrow && !isSubmitTab) {
+      dispatch({ type: "next" });
       return;
     }
     if (key.tab) {
-      switchTab(key.shift ? -1 : 1);
+      dispatch({ type: key.shift ? "prev" : "next" });
       return;
     }
 
-    // ------ Submit tab ------
+    // Submit view
     if (isSubmitTab) {
-      if (key.return && allAnswered) {
-        const answers: Record<string, string> = {};
-        for (let i = 0; i < questions.length; i++) {
-          const q = questions[i].question;
-          answers[q] = questionStates[i].answer ?? "";
-        }
-        onComplete(answers);
-      }
-      return;
-    }
-
-    // ------ Question tab: up/down, space, enter ------
-    if (!curQuestion || !curQuestionState) {
-      return;
-    }
-    const rows = [...curQuestion.options.map((o) => o.label), OTHER];
-
-    if (key.upArrow) {
-      updateCurrent((s) => ({
-        ...s,
-        cursor: s.cursor > 0 ? s.cursor - 1 : rows.length - 1,
-      }));
-    } else if (key.downArrow) {
-      updateCurrent((s) => ({
-        ...s,
-        cursor: s.cursor < rows.length - 1 ? s.cursor + 1 : 0,
-      }));
-    } else if (
-      input === " " &&
-      curQuestion.multiSelect &&
-      curQuestionState.cursor < curQuestion.options.length
-    ) {
-      updateCurrent((s) => {
-        const newSelected = new Set(s.selected);
-        if (newSelected.has(s.cursor)) {
-          newSelected.delete(s.cursor);
-        } else {
-          newSelected.add(s.cursor);
-        }
-        return { ...s, selected: newSelected };
-      });
-    } else if (key.return) {
-      if (curQuestionState.cursor === rows.length - 1) {
-        updateCurrent((s) => ({ ...s, otherMode: true }));
+      if (key.upArrow) {
+        dispatch({ type: "set-submit-cursor", cursor: 0 });
         return;
       }
-      if (curQuestion.multiSelect && curQuestionState.selected.size > 0) {
-        const answer = [...curQuestionState.selected]
-          .sort((a, b) => a - b)
-          .map((i) => curQuestion.options[i].label)
-          .join(", ");
-        commitAnswer(answer);
+      if (key.downArrow) {
+        dispatch({ type: "set-submit-cursor", cursor: 1 });
+        return;
+      }
+      if (key.leftArrow) {
+        dispatch({ type: "prev" });
+        return;
+      }
+      if (key.return) {
+        if (submitCursor === 0 && allAnswered) {
+          const answers: Record<string, string> = {};
+          for (let i = 0; i < questions.length; i++) {
+            answers[questions[i].question] = questionStates[i].answer ?? "";
+          }
+          onComplete(answers);
+        } else if (submitCursor === 1) {
+          onComplete({});
+        }
+      }
+      return;
+    }
+
+    if (!q || !qs) {
+      return;
+    }
+    const optCount = q.options.length + 1; // +1 for Other
+
+    // Numeric key shortcuts
+    const num = parseInt(input, 10);
+    if (num >= 1 && num <= optCount) {
+      dispatch({
+        type: "update",
+        index: currentIndex,
+        updates: { cursor: num - 1 },
+      });
+      return;
+    }
+
+    if (key.upArrow) {
+      dispatch({
+        type: "update",
+        index: currentIndex,
+        updates: {
+          cursor: qs.cursor > 0 ? qs.cursor - 1 : optCount - 1,
+        },
+      });
+    } else if (key.downArrow) {
+      dispatch({
+        type: "update",
+        index: currentIndex,
+        updates: {
+          cursor: qs.cursor < optCount - 1 ? qs.cursor + 1 : 0,
+        },
+      });
+    } else if (input === " " && q.multiSelect && qs.cursor < q.options.length) {
+      const current = Array.isArray(qs.selectedValue) ? [...qs.selectedValue] : [];
+      const label = q.options[qs.cursor].label;
+      const idx = current.indexOf(label);
+      if (idx >= 0) {
+        current.splice(idx, 1);
       } else {
-        commitAnswer(curQuestion.options[curQuestionState.cursor]?.label ?? "(unknown)");
+        current.push(label);
+      }
+      dispatch({
+        type: "update",
+        index: currentIndex,
+        updates: { selectedValue: current },
+      });
+    } else if (key.return) {
+      if (qs.cursor === q.options.length) {
+        // Other
+        dispatch({
+          type: "update",
+          index: currentIndex,
+          updates: { otherMode: true },
+        });
+      } else if (q.multiSelect) {
+        const selected = Array.isArray(qs.selectedValue) ? qs.selectedValue : [];
+        if (selected.length > 0) {
+          commitAnswer(selected.join(", "));
+        } else {
+          commitAnswer(q.options[qs.cursor]?.label ?? "(unknown)");
+        }
+      } else {
+        commitAnswer(q.options[qs.cursor]?.label ?? "(unknown)");
       }
     }
   });
 
-  // ===================== Render =====================
-
-  const renderTabBar = () => {
-    const tabs: React.ReactNode[] = [];
-
-    tabs.push(
-      <Text key="left-arrow" dimColor>
-        {"  ← "}
-      </Text>,
-    );
-
-    for (let i = 0; i < questions.length; i++) {
-      const isActive = curTabIdx === i;
-      const hasAnswer = questionStates[i].answer !== undefined;
-      const label = questions[i].header;
-      tabs.push(
-        <Text key={`tab-${String(i)}`}>
-          {isActive ? (
-            <Text bold color="cyan">
-              {"["}
-              {label}
-              {"]"}
-            </Text>
-          ) : hasAnswer ? (
-            <Text color="green">
-              {"["}
-              {ICONS.success} {label}
-              {"]"}
-            </Text>
-          ) : (
-            <Text dimColor>
-              {"["}
-              {label}
-              {"]"}
-            </Text>
-          )}{" "}
-        </Text>,
-      );
+  // Dynamic help text
+  const helpParts: string[] = [];
+  if (!isSubmitTab) {
+    helpParts.push("Enter to select");
+    helpParts.push("↑/↓ to navigate");
+    if (questions.length > 1) {
+      helpParts.push("Tab/Arrow keys to switch questions");
     }
-
-    // Submit tab
-    const submitActive = isSubmitTab;
-    tabs.push(
-      <Text key="submit-tab">
-        {submitActive ? (
-          <Text bold color={allAnswered ? "cyan" : ""} dimColor={!allAnswered}>
-            {"[Submit]"}
-          </Text>
-        ) : (
-          <Text dimColor>{"[Submit]"}</Text>
-        )}
-      </Text>,
-    );
-
-    tabs.push(
-      <Text key="right-arrow" dimColor>
-        {" "}
-        {ICONS.arrow}
-      </Text>,
-    );
-
-    return <Box>{tabs}</Box>;
-  };
-
-  const renderQuestion = () => {
-    if (!curQuestion || !curQuestionState) {
-      return null;
-    }
-    const rows = [...curQuestion.options.map((opt) => opt.label), OTHER];
-
-    return (
-      <>
-        <Text>
-          {COLORS.tool(`  [${curQuestion.header}]`)}
-          <Text dimColor>{`  (Q${String(curTabIdx + 1)}/${String(questions.length)})`}</Text>
-        </Text>{" "}
-        <Text bold>{`  ${curQuestion.question}`}</Text>
-        {curQuestion.multiSelect && <Text dimColor> (space to toggle, enter to confirm)</Text>}
-        {curQuestionState.answer !== undefined && (
-          <Text>
-            {"  "}
-            <Text color="green">
-              {ICONS.success} answered: {curQuestionState.answer}
-            </Text>
-            <Text dimColor> (press Enter to change)</Text>
-          </Text>
-        )}{" "}
-        {rows.map((label, i) => {
-          const isOther = i === rows.length - 1;
-          const checked = curQuestion.multiSelect && !isOther && curQuestionState.selected.has(i);
-          const mark = curQuestion.multiSelect && !isOther ? (checked ? "[x] " : "[ ] ") : "";
-          const desc = !isOther ? curQuestion.options[i]?.description : undefined;
-          return (
-            <Text key={label}>
-              {i === curQuestionState.cursor ? COLORS.tool(` ${ICONS.prompt} `) : "   "}
-              <Text
-                color={i === curQuestionState.cursor ? "cyan" : ""}
-                dimColor={i !== curQuestionState.cursor}
-              >
-                {`${mark}${label}`}
-                {desc ? ` — ${desc}` : ""}
-              </Text>
-            </Text>
-          );
-        })}
-        {curQuestionState.otherMode && (
-          <>
-            {" "}
-            <Text>
-              {"  > "}
-              <Text color="cyan">{curQuestionState.otherText}</Text>
-              <Text dimColor>|</Text>
-            </Text>
-          </>
-        )}
-      </>
-    );
-  };
-
-  const renderSubmitPanel = () => {
-    return (
-      <>
-        <Text bold>{allAnswered ? "  Review your answers:" : "  Answer all questions first"}</Text>{" "}
-        {questions.map((qn, i) => {
-          const questionState = questionStates[i];
-          return (
-            <Text key={qn.question}>
-              {"  "}
-              {questionState.answer !== undefined ? (
-                <Text color="green">{ICONS.success}</Text>
-              ) : (
-                <Text dimColor>{"○"}</Text>
-              )}
-              <Text>
-                {" "}
-                <Text bold>{qn.header}</Text>
-                {": "}
-                {questionState.answer !== undefined ? (
-                  <Text>{questionState.answer}</Text>
-                ) : (
-                  <Text dimColor>(not answered)</Text>
-                )}
-              </Text>
-            </Text>
-          );
-        })}{" "}
-        {allAnswered ? (
-          <Text color="cyan" bold>
-            {"  Press Enter to submit, or ←/→ to review questions"}
-          </Text>
-        ) : (
-          <Text dimColor>{"  Use ←/→ or Tab to navigate to unanswered questions"}</Text>
-        )}
-      </>
-    );
-  };
+  }
+  helpParts.push("Esc to cancel");
+  const helpText = helpParts.join(" · ");
 
   return (
-    <Box flexDirection="column" paddingLeft={1} paddingTop={1}>
-      {isSubmitTab ? renderSubmitPanel() : renderQuestion()} {renderTabBar()}
-      <Text dimColor> ←/→ or Tab: switch questions Esc: cancel</Text>{" "}
+    <Box flexDirection="column" paddingLeft={1}>
+      <Text dimColor>{"─".repeat(60)}</Text>
+      <NavigationBar
+        questions={questions}
+        currentIndex={currentIndex}
+        states={questionStates}
+        hideSubmit={hideSubmit}
+      />
+      {isSubmitTab ? (
+        <SubmitContent
+          questions={questions}
+          states={questionStates}
+          allAnswered={allAnswered}
+          submitCursor={submitCursor}
+        />
+      ) : q && qs ? (
+        <QuestionContent
+          question={q}
+          state={qs}
+          questionIndex={currentIndex}
+          totalQuestions={questions.length}
+        />
+      ) : null}
+      <Text> </Text>
+      <Text dimColor>
+        {"  "}
+        {helpText}
+      </Text>
     </Box>
   );
 }
-
-export default AskUserDialog;

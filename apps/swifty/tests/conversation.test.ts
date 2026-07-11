@@ -109,7 +109,7 @@ describe("ConversationManager", () => {
       mgr.addToolUseMessage("text", "tu-1", "Bash", { command: "ls" });
       const result = buildOpenAIInput(mgr.getMessages());
       expect(result).toHaveLength(2); // text msg + function_call
-      expect(strArg(asRecord(result[0]), "type")).toBe("assistant");
+      expect(strArg(asRecord(result[0]), "role")).toBe("assistant");
       expect(strArg(asRecord(result[1]), "type")).toBe("function_call");
       expect(strArg(asRecord(result[1]), "name")).toBe("Bash");
       expect(strArg(asRecord(result[1]), "arguments")).toBe('{"command":"ls"}');
@@ -120,7 +120,7 @@ describe("ConversationManager", () => {
       mgr.addToolResultMessage("tu-1", "output", false);
       const result = buildOpenAIInput(mgr.getMessages());
       expect(strArg(asRecord(result[0]), "type")).toBe("function_call_output");
-      expect(strArg(asRecord(result[1]), "output")).toBe("output");
+      expect(strArg(asRecord(result[0]), "output")).toBe("output");
     });
   });
 });

@@ -51,9 +51,7 @@ export class CommandRegistry {
     // Check if each alias conflicts with existing command names or aliases
     for (const alias of cmd.aliases) {
       if (this.commands.has(alias)) {
-        throw new Error(
-          `Alias '${alias}' for '${cmd.name}' collides with existing command name`,
-        );
+        throw new Error(`Alias '${alias}' for '${cmd.name}' collides with existing command name`);
       }
       if (this.aliasMap.has(alias)) {
         throw new Error(
@@ -86,10 +84,7 @@ export class CommandRegistry {
   }
 
   find(name: string): Command | undefined {
-    return (
-      this.commands.get(name) ??
-      this.commands.get(this.aliasMap.get(name) ?? "")
-    );
+    return this.commands.get(name) ?? this.commands.get(this.aliasMap.get(name) ?? "");
   }
 
   complete(prefix: string): Command[] {
@@ -102,9 +97,7 @@ export class CommandRegistry {
   }
 
   listCommands(): Command[] {
-    return [...this.commands.values()].sort((a, b) =>
-      a.name.localeCompare(b.name),
-    );
+    return [...this.commands.values()].sort((a, b) => a.name.localeCompare(b.name));
   }
 }
 
@@ -154,8 +147,7 @@ export function createDefaultRegistry(): CommandRegistry {
       let output = "Available commands:\n\n";
       output += cmds
         .map((c) => {
-          const aliases =
-            c.aliases.length > 0 ? `, /${c.aliases.join(", /")}` : "";
+          const aliases = c.aliases.length > 0 ? `, /${c.aliases.join(", /")}` : "";
           return `  /${c.name}${aliases}\n    ${c.description}`;
         })
         .join("\n");
@@ -188,7 +180,7 @@ export function createDefaultRegistry(): CommandRegistry {
     handler: (ctx) => {
       // Display actual runtime status instead of placeholder text
       const lines: string[] = [];
-      lines.push("Swiftyy Status");
+      lines.push("Swifty Status");
       lines.push("──────────────");
 
       // Permission mode
@@ -252,7 +244,7 @@ export function createDefaultRegistry(): CommandRegistry {
     name: "quit",
     aliases: ["exit", "q"],
     type: "local_ui",
-    description: "Exit Swiftyy",
+    description: "Exit Swifty",
     handler: () => "quit",
   });
 
@@ -306,8 +298,7 @@ export function createDefaultRegistry(): CommandRegistry {
     name: "review",
     aliases: [],
     type: "prompt",
-    description:
-      "Review the uncommitted code changes for bugs and improvements",
+    description: "Review the uncommitted code changes for bugs and improvements",
     handler: (ctx) =>
       "Review the current uncommitted changes. Run `git status` and `git diff` to see them, " +
       "then report concrete findings (file:line) for correctness bugs, security issues, and obvious " +
@@ -329,6 +320,14 @@ export function createDefaultRegistry(): CommandRegistry {
     type: "local",
     description: "Show MCP server connection status",
     handler: () => "mcp",
+  });
+
+  registry.register({
+    name: "sandbox",
+    aliases: ["sb"],
+    type: "local_ui",
+    description: "Toggle OS sandbox mode for command execution",
+    handler: () => "sandbox",
   });
 
   return registry;

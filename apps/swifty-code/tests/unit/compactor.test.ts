@@ -218,4 +218,56 @@ describe("Compactor", () => {
     const allContent = JSON.stringify(capturedMessages);
     expect(allContent).toContain("Focus on file operations");
   });
+
+  // Feature: _messagesToText outputs closing </tool_call> tags for tool_use blocks
+  // Design: Provide messages with a tool_use block, verify the prompt sent to LLM contains </tool_call>
+  test("messagesToText outputs closing tool_call tag", async () => {
+    const bus = new EventBus();
+    const compactor = new Compactor(bus, "/tmp/session", "session-1");
+
+    let capturedContent = "";
+    const capturingProvider: LLMProvider = {
+      chat(messages: unknown[]) {
+        const first = messages[0];
+        if (typeof first === "object" && first !== null && "content" in first) {
+          const c = first.content;
+          if (typeof c === "string") capturedContent = c;
+        }
+        return Promise.resolve({
+          stopReason: "end_turn",
+          text: "summary",
+          usage: {
+            inputTokens: 100,
+            outputTokens: 50,
+            cacheReadInputTokens: 0,
+            cacheCreationInputTokens: 0,
+            contextPercent: 5,
+          },
+          toolUses: [],
+          thinkingBlocks: [],
+        });
+      },
+    };
+
+    const messages = [
+      { role: "user" as const, content: "list files" },
+      {
+        role: "assistant" as const,
+        content: [
+          {
+            type: "tool_use" as const,
+            id: "tu-1",
+            name: "bash",
+            input: { command: "ls" },
+          },
+        ],
+      },
+    ];
+
+    await compactor.compactMessages(messages, capturingProvider);
+
+    // The serialized history should contain both opening and closing tool_call tags
+    expect(capturedContent).toContain("<tool_call");
+    expect(capturedContent).toContain("</tool_call>");
+  });
 });

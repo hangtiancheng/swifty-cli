@@ -143,7 +143,10 @@ export class SessionStore {
   // Overwrite thread.jsonl with compacted messages; back up the original file
   writeCompacted(sid: string, messages: Anthropic.MessageParam[]): void {
     const filePath = path.join(this.sessionDir(sid), "thread.jsonl");
-    const ts = new Date().toISOString().replace(/[-:T]/g, "").slice(0, 15);
+    // Format: YYYYMMDD_HHMMSS (matches Python strftime("%Y%m%d_%H%M%S"))
+    const ts = new Date()
+      .toISOString()
+      .replace(/(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2}).*/, "$1$2$3_$4$5$6");
     const bak = path.join(this.sessionDir(sid), `thread_${ts}.jsonl.bak`);
     if (existsSync(filePath)) renameSync(filePath, bak);
 

@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { Box, Text } from "ink";
 import { Marked } from "marked";
-import { markedTerminal } from "marked-terminal";
+import { markedTerminal } from "@swifty.js/marked-terminal";
 
 const marked = new Marked(markedTerminal() as Parameters<typeof Marked.prototype.use>[0]);
 

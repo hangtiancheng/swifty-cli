@@ -1,3 +1,7 @@
+import { createChildLogger } from "../logger/index.js";
+
+const log = createChildLogger({ module: "prompt" });
+
 import { execSync } from "node:child_process";
 import { platform, arch } from "node:os";
 import type { Section, EnvironmentContext } from "./sections.js";
@@ -55,7 +59,8 @@ export function detectEnvironment(workDir: string): EnvironmentContext {
         encoding: "utf-8",
       }).trim();
     }
-  } catch {
+  } catch (err) {
+    log.error({ err }, "prompt operation failed");
     // not a git repo
   }
 

@@ -86,9 +86,9 @@ export class ToolSearchTool implements Tool {
       });
     }
 
-    const lines = tools.map((t) => `- ${t.name}: ${t.description.slice(0, 100)}`);
+    const schemas = tools.map((t) => JSON.stringify(t.schema(), null, 2));
     return Promise.resolve({
-      output: lines.join("\n"),
+      output: schemas.join("\n\n"),
       isError: false,
     });
   }

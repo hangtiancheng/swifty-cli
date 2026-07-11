@@ -2,10 +2,14 @@
  * Status: Done
  */
 
+import { createChildLogger } from "../logger/index.js";
+
+const log = createChildLogger({ module: "config" });
+
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { safeParse } from "@modelcontextprotocol/sdk/server/zod-compat";
+import { safeParse } from "@modelcontextprotocol/sdk/server/zod-compat.js";
 import yaml from "js-yaml";
 import { z } from "zod";
 
@@ -62,9 +66,16 @@ export type ProviderConfig = z.infer<typeof ProviderConfigSchema>;
 // Built-in model-name → context-window map
 // Values are reasonable starting points and MAY become stale as vendors update models — if a value is wrong,
 // set `context_window` in the provider config to override it.
-const MODEL_CONTEXT_WINDOWS: readonly [string, number][] = [
+const MODEL_CONTEXT_WINDOWS: readonly (readonly [string, number])[] = [
   // 1M-token variants (e.g. "...-1m") come first so they win over the base family.
   ["1m", 1_000_000],
+  ["gpt-4.1", 1_000_000],
+  ["gpt-4o", 128_000],
+  ["gpt-4-turbo", 128_000],
+  ["o1", 200_000],
+  ["o3", 200_000],
+  ["o4", 200_000],
+  ["gpt-3.5", 16_385],
   ["claude", 200_000],
 ];
 
@@ -83,7 +94,7 @@ export function lookupModelContextWindow(model: string): number {
 // Synchronous context-window resolver
 // 1. config-supplied context_window > 0 → use it (highest priority)
 // 2. built-in model-name → window table (substring match)
-// 3. conservative (保守) default (claude → 200k / else → 128k)
+// 3. conservative default (claude → 200k / else → 128k)
 export function getContextWindow(p: ProviderConfig): number {
   if (p.context_window && p.context_window > 0) {
     return p.context_window;
@@ -122,13 +133,11 @@ export async function getContextWindowAsync(
         // Lazy import of the anthropic fetcher
         // avoids a static config.ts ↔ anthropic.ts import cycle;
         // tests pass `fetcher` directly and never hit this path.
-        const fn =
-          fetcher ??
-          (await import("../llm/anthropic.js")).fetchModelContextWindow;
+        const fn = fetcher ?? (await import("../llm/anthropic.js")).fetchModelContextWindow;
 
         fetched = await fn(p);
-      } catch (e) {
-        console.error(e);
+      } catch (err) {
+        log.error({ err }, "config operation failed");
         fetched = 0;
       }
       fetchedWindowCache.set(key, fetched);
@@ -151,7 +160,7 @@ export function getMaxOutputTokens(p: ProviderConfig): number {
     return p.max_output_tokens;
   }
   if (p.thinking) {
-    return 640_000;
+    return 64_000;
   }
   return 8192;
 }
@@ -161,9 +170,7 @@ export function resolveAPIKey(p: ProviderConfig): string {
     return p.api_key;
   }
 
-  const envVar = isKeyofTypeofEnvKeyMap(p.protocol)
-    ? ENV_KEY_MAP[p.protocol]
-    : "";
+  const envVar = isKeyofTypeofEnvKeyMap(p.protocol) ? ENV_KEY_MAP[p.protocol] : "";
   if (!envVar) {
     return "";
   }
@@ -235,11 +242,21 @@ export type HookConfig = z.infer<typeof HookConfigSchema>;
 //   hooks: HookConfig[];
 // }
 
+const SandboxYamlConfigSchema = z.object({
+  enabled: z.boolean().optional(),
+  auto_allow: z.boolean().optional(),
+  network_enabled: z.boolean().optional(),
+});
+
+export type SandboxYamlConfig = z.infer<typeof SandboxYamlConfigSchema>;
+
 const AppConfigSchema = z.object({
   providers: z.array(ProviderConfigSchema),
   permission_mode: z.string().optional(),
   mcp_servers: z.array(MCPServerConfigSchema).default([]),
   hooks: z.array(HookConfigSchema).default([]),
+  sandbox: SandboxYamlConfigSchema.optional(),
+  enable_coordinator_mode: z.boolean().optional(),
 });
 
 export type AppConfig = z.infer<typeof AppConfigSchema>;
@@ -252,7 +269,7 @@ function loadSingleFile(path: string): AppConfig {
   const data = readFileSync(path, "utf-8");
   const raw: unknown = yaml.load(data);
   if (!isRecord(raw)) {
-    console.error(`Invalid yaml: ${path}`);
+    log.error({ path }, "invalid yaml");
     return { providers: [], mcp_servers: [], hooks: [] };
   }
   const parsed = safeParse(AppConfigSchema, raw);
@@ -265,11 +282,13 @@ function loadSingleFile(path: string): AppConfig {
       hooks: data.hooks,
     };
   }
-  console.error("Config error:", parsed.error);
+  log.error({ error: parsed.error }, "config error");
   let providers: ProviderConfig[] = [];
   let permissionMode: string | undefined;
   let mcpServers: MCPServerConfig[] = [];
   let hooks: HookConfig[] = [];
+  let sandbox: SandboxYamlConfig | undefined = undefined;
+  let enableCoordinatorMode = false;
 
   if ("providers" in raw) {
     const parsed = safeParse(z.array(ProviderConfigSchema), raw.providers);
@@ -292,11 +311,22 @@ function loadSingleFile(path: string): AppConfig {
       hooks = parsed.data;
     }
   }
+  if ("sandbox" in raw) {
+    const parsed = safeParse(SandboxYamlConfigSchema, raw.sandbox);
+    if (parsed.success) {
+      sandbox = parsed.data;
+    }
+  }
+  if ("enable_coordinator_mode" in raw) {
+    enableCoordinatorMode = Boolean(raw.enable_coordinator_mode);
+  }
   return {
     providers,
     permission_mode: permissionMode,
     mcp_servers: mcpServers,
     hooks,
+    sandbox,
+    enable_coordinator_mode: enableCoordinatorMode,
   };
 }
 
@@ -329,6 +359,12 @@ export function mergeConfig(base: AppConfig, override: AppConfig): AppConfig {
   }
 
   base.hooks = [...base.hooks, ...override.hooks];
+  if (override.sandbox) {
+    base.sandbox = { ...base.sandbox, ...override.sandbox };
+  }
+  if (override.enable_coordinator_mode) {
+    base.enable_coordinator_mode = true;
+  }
   return base;
 }
 
@@ -348,9 +384,7 @@ function validateProviders(config: AppConfig): void {
     } as const;
     const missing = requiredFields.filter((field) => !(field in values));
     if (missing.length > 0) {
-      throw new ConfigError(
-        `Provider #${String(i + 1)}: missing fields: ${missing.join(", ")}`,
-      );
+      throw new ConfigError(`Provider #${String(i + 1)}: missing fields: ${missing.join(", ")}`);
     }
 
     if (!VALID_PROTOCOLS.has(p.protocol)) {

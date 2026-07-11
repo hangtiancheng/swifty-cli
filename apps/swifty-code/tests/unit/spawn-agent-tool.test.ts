@@ -138,4 +138,45 @@ describe("AgentResultTool", () => {
     expect(result.isError).toBe(false);
     expect(result.content).toBe("Task completed successfully");
   });
+
+  // Feature: AgentResultTool returns error for rejected task
+  // Design: Register a rejecting promise, wait for status update, verify error message
+  test("returns error for rejected task", async () => {
+    const registry = new BackgroundTaskRegistry();
+    const tool = new AgentResultTool(registry);
+    const ctx = new ExecutionContext({
+      runId: "bg-3",
+      goal: "test",
+      maxSteps: 5,
+    });
+    registry.register("bg-3", Promise.reject(new Error("task failed")), ctx);
+    // Wait for microtask queue to process the rejection and update status
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    const result = await tool.invoke({ run_id: "bg-3" });
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain("task failed");
+  });
+
+  // Feature: AgentResultTool returns cancelled message for cancelled task
+  // Design: Register a pending promise, cancel it, verify cancelled message
+  test("returns cancelled message for cancelled task", async () => {
+    const registry = new BackgroundTaskRegistry();
+    const tool = new AgentResultTool(registry);
+    const ctx = new ExecutionContext({
+      runId: "bg-4",
+      goal: "test",
+      maxSteps: 5,
+    });
+    registry.register(
+      "bg-4",
+      new Promise<void>(() => {
+        // Never resolves
+      }),
+      ctx,
+    );
+    registry.cancel("bg-4");
+    const result = await tool.invoke({ run_id: "bg-4" });
+    expect(result.isError).toBe(true);
+    expect(result.content).toBe("Subagent was cancelled.");
+  });
 });

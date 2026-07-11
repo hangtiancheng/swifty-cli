@@ -25,9 +25,9 @@ export function App({ _config, client }: AppProps): React.JSX.Element {
   const [connected, setConnected] = useState(false);
   const [events, setEvents] = useState<AgentEvent[]>([]);
   const [inputValue, setInputValue] = useState("");
-  const [runStatus, setRunStatus] = useState<
-    "idle" | "running" | "waiting" | "success" | "failed"
-  >("idle");
+  const [runStatus, setRunStatus] = useState<"idle" | "running" | "waiting" | "success" | "failed">(
+    "idle",
+  );
   const [step, setStep] = useState(0);
   const [totalTokens, setTotalTokens] = useState(0);
   const [elapsedMs, setElapsedMs] = useState(0);
@@ -45,13 +45,11 @@ export function App({ _config, client }: AppProps): React.JSX.Element {
   const [connectionError, setConnectionError] = useState<string | null>(null);
 
   // Track active subagent run IDs for tree visualization (Task 3)
-  const [subagentRunIds, setSubagentRunIds] = useState<ReadonlySet<string>>(
-    new Set(),
-  );
+  const [subagentRunIds, setSubagentRunIds] = useState<ReadonlySet<string>>(new Set());
   // Track permission tool names for inline resolution display (Task 6)
-  const [permissionToolNames, setPermissionToolNames] = useState<
-    ReadonlyMap<string, string>
-  >(new Map());
+  const [permissionToolNames, setPermissionToolNames] = useState<ReadonlyMap<string, string>>(
+    new Map(),
+  );
 
   // Load available slash commands (builtin + skills)
   const [availableCommands] = useState(() => {
@@ -71,9 +69,7 @@ export function App({ _config, client }: AppProps): React.JSX.Element {
         type: typeof event["type"] === "string" ? event["type"] : "unknown",
         data: event,
         timestamp:
-          typeof event["timestamp"] === "string"
-            ? event["timestamp"]
-            : new Date().toISOString(),
+          typeof event["timestamp"] === "string" ? event["timestamp"] : new Date().toISOString(),
       };
 
       setEvents((prev) => [...prev, agentEvent]);
@@ -85,8 +81,7 @@ export function App({ _config, client }: AppProps): React.JSX.Element {
         setTotalTokens(0);
         setElapsedMs(0);
         setContextPercent(0);
-        const runId =
-          typeof event["run_id"] === "string" ? event["run_id"] : null;
+        const runId = typeof event["run_id"] === "string" ? event["run_id"] : null;
         if (runId) {
           lastRunIdRef.current = runId;
         }
@@ -97,36 +92,22 @@ export function App({ _config, client }: AppProps): React.JSX.Element {
       } else if (event["type"] === "step.started") {
         setStep((s) => s + 1);
       } else if (event["type"] === "llm.usage") {
-        const inputTokens =
-          typeof event["input_tokens"] === "number" ? event["input_tokens"] : 0;
+        const inputTokens = typeof event["input_tokens"] === "number" ? event["input_tokens"] : 0;
         const outputTokens =
-          typeof event["output_tokens"] === "number"
-            ? event["output_tokens"]
-            : 0;
+          typeof event["output_tokens"] === "number" ? event["output_tokens"] : 0;
         setTotalTokens((t) => t + inputTokens + outputTokens);
-        const ctxPct =
-          typeof event["context_percent"] === "number"
-            ? event["context_percent"]
-            : 0;
+        const ctxPct = typeof event["context_percent"] === "number" ? event["context_percent"] : 0;
         setContextPercent(ctxPct);
       } else if (event["type"] === "permission.requested") {
-        const toolName =
-          typeof event["tool_name"] === "string"
-            ? event["tool_name"]
-            : "unknown";
+        const toolName = typeof event["tool_name"] === "string" ? event["tool_name"] : "unknown";
         const paramsPreview =
-          typeof event["params_preview"] === "string"
-            ? event["params_preview"]
-            : "";
-        const toolUseId =
-          typeof event["tool_use_id"] === "string" ? event["tool_use_id"] : "";
+          typeof event["param_preview"] === "string" ? event["param_preview"] : "";
+        const toolUseId = typeof event["tool_use_id"] === "string" ? event["tool_use_id"] : "";
         setPermissionRequest({ toolName, paramsPreview, toolUseId });
         setRunStatus("waiting");
         // Store tool name for later permission resolution display (Task 6)
         if (toolUseId && toolName !== "unknown") {
-          setPermissionToolNames(
-            (prev) => new Map([...prev, [toolUseId, toolName]]),
-          );
+          setPermissionToolNames((prev) => new Map([...prev, [toolUseId, toolName]]));
         }
       } else if (event["type"] === "session.waiting_for_input") {
         setRunStatus("idle");
@@ -136,23 +117,19 @@ export function App({ _config, client }: AppProps): React.JSX.Element {
       } else if (event["type"] === "context.compacted") {
         setContextPercent(0);
       } else if (event["type"] === "tool.call_finished") {
-        const toolElapsed =
-          typeof event["elapsed_ms"] === "number" ? event["elapsed_ms"] : 0;
+        const toolElapsed = typeof event["elapsed_ms"] === "number" ? event["elapsed_ms"] : 0;
         setElapsedMs((ms) => ms + toolElapsed);
       } else if (event["type"] === "tool.call_failed") {
-        const toolElapsed =
-          typeof event["elapsed_ms"] === "number" ? event["elapsed_ms"] : 0;
+        const toolElapsed = typeof event["elapsed_ms"] === "number" ? event["elapsed_ms"] : 0;
         setElapsedMs((ms) => ms + toolElapsed);
       } else if (event["type"] === "subagent.started") {
-        const runId =
-          typeof event["run_id"] === "string" ? event["run_id"] : "";
+        const runId = typeof event["run_id"] === "string" ? event["run_id"] : "";
         if (runId) {
           subagentStartTimes.current.set(runId, Date.now());
           setSubagentRunIds((prev) => new Set([...prev, runId]));
         }
       } else if (event["type"] === "subagent.finished") {
-        const runId =
-          typeof event["run_id"] === "string" ? event["run_id"] : "";
+        const runId = typeof event["run_id"] === "string" ? event["run_id"] : "";
         const startTime = subagentStartTimes.current.get(runId);
         if (startTime !== undefined) {
           const elapsed = Date.now() - startTime;
@@ -224,8 +201,7 @@ export function App({ _config, client }: AppProps): React.JSX.Element {
           setConnectionError("disconnected, retrying…");
           client.close();
         } catch (error) {
-          const errorMsg =
-            error instanceof Error ? error.message : String(error);
+          const errorMsg = error instanceof Error ? error.message : String(error);
           setConnected(false);
           setConnectionError(errorMsg);
           client.close();
@@ -268,9 +244,7 @@ export function App({ _config, client }: AppProps): React.JSX.Element {
         setRunStatus("running");
 
         try {
-          const focus = trimmed.startsWith("/compact ")
-            ? trimmed.slice(8).trim()
-            : "";
+          const focus = trimmed.startsWith("/compact ") ? trimmed.slice(8).trim() : "";
           const result = await client.sendCommand("session.compact", {
             session_id: sessionIdRef.current,
             focus,
@@ -278,13 +252,9 @@ export function App({ _config, client }: AppProps): React.JSX.Element {
 
           // Add a compact event to the event log
           const summaryTokens =
-            typeof result["summary_tokens"] === "number"
-              ? result["summary_tokens"]
-              : 0;
+            typeof result["summary_tokens"] === "number" ? result["summary_tokens"] : 0;
           const savedTokens =
-            typeof result["saved_tokens"] === "number"
-              ? result["saved_tokens"]
-              : 0;
+            typeof result["saved_tokens"] === "number" ? result["saved_tokens"] : 0;
           const originalTokens = summaryTokens + savedTokens;
           setEvents((prev) => [
             ...prev,
@@ -434,9 +404,7 @@ export function App({ _config, client }: AppProps): React.JSX.Element {
         onSubmit={(value) => {
           void handleSubmit(value);
         }}
-        disabled={
-          runStatus === "running" || runStatus === "waiting" || !connected
-        }
+        disabled={runStatus === "running" || runStatus === "waiting" || !connected}
         label={
           !connected
             ? "connecting..."

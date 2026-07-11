@@ -117,7 +117,7 @@ export async function invokeTool(
         tool_use_id: typeof raw["tool_use_id"] === "string" ? raw["tool_use_id"] : toolUse.id,
         tool_name: toolUse.name,
         params,
-        params_preview: typeof raw["param_preview"] === "string" ? raw["param_preview"] : "",
+        param_preview: typeof raw["param_preview"] === "string" ? raw["param_preview"] : "",
         session_id: sessionId,
         timestamp: now(),
       });

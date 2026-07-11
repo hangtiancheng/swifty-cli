@@ -10,11 +10,11 @@
     "lint": "eslint"
   },
   "dependencies": {
-    "@ai-sdk/openai": "^4.0.4",
-    "@ai-sdk/openai-compatible": "^3.0.2",
+    "@ai-sdk/openai": "^4.0.8",
+    "@ai-sdk/openai-compatible": "^3.0.5",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@zilliz/milvus2-sdk-node": "^3.0.3",
-    "ai": "^7.0.9",
+    "ai": "^7.0.15",
     "dotenv": "^17.4.2",
     "highlight.js": "^11.11.1",
     "knex": "^3.3.0",
@@ -28,15 +28,15 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "^4",
-    "@types/node": "^20",
-    "@types/react": "^19",
-    "@types/react-dom": "^19",
-    "eslint": "^9",
+    "@tailwindcss/postcss": "^4.3.2",
+    "@types/node": "^20.19.43",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "eslint": "^9.39.4",
     "eslint-config-next": "16.2.9",
     "oxfmt": "^0.57.0",
-    "shadcn": "^4.12.0",
-    "tailwindcss": "^4",
-    "typescript": "^5"
+    "shadcn": "^4.13.0",
+    "tailwindcss": "^4.3.2",
+    "typescript": "^5.9.3"
   }
 }

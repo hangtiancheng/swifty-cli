@@ -1,3 +1,7 @@
+import { createChildLogger } from "../logger/index.js";
+
+const log = createChildLogger({ module: "commands" });
+
 import { readdirSync, readFileSync, statSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
@@ -10,10 +14,7 @@ import { z, parse } from "zod";
 // command name: sub/dir/foo.md → "sub:dir:foo". Mirrors Go LoadUserCommands.
 export function loadUserCommands(workDir: string): Command[] {
   const byName = new Map<string, Command>();
-  const bases = [
-    join(homedir(), ".swifty", "commands"),
-    join(workDir, ".swifty", "commands"),
-  ];
+  const bases = [join(homedir(), ".swifty", "commands"), join(workDir, ".swifty", "commands")];
   for (const base of bases) {
     if (!existsSync(base)) {
       continue;
@@ -29,7 +30,9 @@ function walkDir(base: string, dir: string): Command[] {
   let entries: string[];
   try {
     entries = readdirSync(dir);
-  } catch {
+  } catch (err) {
+    log.error({ err }, "commands operation failed");
+
     return [];
   }
   const out: Command[] = [];
@@ -38,7 +41,9 @@ function walkDir(base: string, dir: string): Command[] {
     let st;
     try {
       st = statSync(full);
-    } catch {
+    } catch (err) {
+      log.error({ err }, "commands operation failed");
+
       continue;
     }
     if (st.isDirectory()) {
@@ -71,7 +76,9 @@ function parseCommandFile(base: string, full: string): Command | null {
   let raw: string;
   try {
     raw = readFileSync(full, "utf-8");
-  } catch {
+  } catch (err) {
+    log.error({ err }, "commands operation failed");
+
     return null;
   }
 
@@ -92,7 +99,7 @@ function parseCommandFile(base: string, full: string): Command | null {
         argumentHint = data["argument-hint"] ?? "";
         aliases = data.aliases ?? [];
       } catch (err) {
-        console.error(err);
+        log.error({ err }, "commands operation failed");
         // ignore frontmatter parse errors; treat whole file as body
       }
     }
@@ -108,10 +115,7 @@ function parseCommandFile(base: string, full: string): Command | null {
     aliases: Array.isArray(aliases) ? aliases : [],
     type: "prompt",
     description:
-      description ||
-      (argumentHint
-        ? `custom command (args: ${argumentHint})`
-        : "custom command"),
+      description || (argumentHint ? `custom command (args: ${argumentHint})` : "custom command"),
     handler: (ctx) => renderBody(body, ctx.args),
   };
 }

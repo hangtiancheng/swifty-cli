@@ -1,0 +1,43 @@
+# Swifty project-level configuration
+# See src/config/config.ts for schema details.
+
+# Permission mode: "default" | "acceptEdits" | "plan" | "bypassPermissions"
+permission_mode: default
+
+# LLM providers — at least one is required.
+# api_key is intentionally left empty; it falls back to the ANTHROPIC_API_KEY
+# (or OPENAI_API_KEY) environment variable at runtime.
+providers:
+  - name: claude
+    protocol: anthropic
+    base_url: https://api.anthropic.com
+    model: claude-sonnet-4-20250514
+    api_key: ""
+    thinking: false
+    # context_window: 200000   # override the built-in lookup if needed
+    # max_output_tokens: 128000  # override the default (128000, or 200000 with thinking)
+
+  # Example OpenAI-compatible provider (uncomment and fill in to use):
+  # - name: deepseek
+  #   protocol: openai-compat
+  #   base_url: https://api.deepseek.com/v1
+  #   model: deepseek-chat
+  #   api_key: ""
+
+# MCP servers — optional, empty by default.
+mcp_servers: []
+  # Example: filesystem MCP server
+  # - name: filesystem
+  #   command: npx
+  #   args: ["-y", "@modelcontextprotocol/server-filesystem", "."]
+
+# Hooks — optional, empty by default.
+hooks: []
+  # Example: lint after EditFile
+  # - id: lint-on-edit
+  #   event: post_tool_use
+  #   condition: 'tool == "EditFile"'
+  #   action:
+  #     type: command
+  #     command: npx eslint --fix "$SWIFTY_FILE_PATH"
+  #   on_error: ignore

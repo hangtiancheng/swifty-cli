@@ -1,15 +1,18 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+// 来源：公众号@小林coding
+// 后端八股网站：xiaolincoding.com
+// Agent网站：xiaolinnote.com
+// 简历模版：jianli.xiaolinnote.com
+
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { Box, Static, Text, useApp, useInput } from "ink";
 import type {
   ProviderConfig,
   MCPServerConfig,
   HookConfig,
+  SandboxYamlConfig,
 } from "../config/config.js";
-import {
-  getContextWindow,
-  getContextWindowAsync,
-  getMaxOutputTokens,
-} from "../config/config.js";
+import { getContextWindow, getContextWindowAsync, getMaxOutputTokens } from "../config/config.js";
+import { createSandbox, type Sandbox } from "../sandbox/index.js";
 import type { LLMClient } from "../llm/client.js";
 import { createClient } from "../llm/client.js";
 import { ConversationManager } from "../conversation/conversation.js";
@@ -27,10 +30,7 @@ import { ToolSearchTool } from "../tools/tool-search.js";
 import { EnterWorktreeTool } from "../tools/enter-worktree.js";
 import { ExitWorktreeTool } from "../tools/exit-worktree.js";
 import { Agent } from "../agent/agent.js";
-import {
-  PermissionChecker,
-  type PermissionMode,
-} from "../permissions/checker.js";
+import { PermissionChecker, type PermissionMode } from "../permissions/checker.js";
 import {
   parse as parseCommand,
   createDefaultRegistry as createCommandRegistry,
@@ -46,16 +46,11 @@ import { MemoryManager } from "../memory/manager.js";
 import { MemoryExtractor } from "../memory/extractor.js";
 import { SkillCatalog } from "../skills/catalog.js";
 import { TaskList } from "../todo/todo.js";
-import {
-  TaskCreateTool,
-  TaskGetTool,
-  TaskListTool,
-  TaskUpdateTool,
-} from "../todo/tools.js";
+import { TaskCreateTool, TaskGetTool, TaskListTool, TaskUpdateTool } from "../todo/tools.js";
 import { TaskStore } from "../todo/store.js";
-import { AgentTool } from "../sub-agent/agent-tool.js";
-import { spawnSubAgent } from "../sub-agent/spawn.js";
-import { BUILTIN_AGENTS } from "../sub-agent/definition.js";
+import { AgentTool } from "../subagent/agent-tool.js";
+import { spawnSubagent } from "../subagent/spawn.js";
+import { BUILTIN_AGENTS } from "../subagent/definition.js";
 import type { RunAgent } from "../teams/team.js";
 import {
   TeamCreateTool,
@@ -67,21 +62,14 @@ import {
 import { HookEngine, validate as validateHooks } from "../hooks/hooks.js";
 import { forceCompact } from "../compact/compact.js";
 import { RecoveryState } from "../compact/recovery.js";
-import { ContentReplacementState } from "../tool-result/state.js";
 import {
   getOrCreatePlanPath,
   loadPlan,
   planExists,
   resetPlanPath,
 } from "../plan-file/plan-file.js";
-import {
-  buildPlanModeExitReminder,
-  buildPlanModeReentryReminder,
-} from "../prompt/plan-mode.js";
-import {
-  runInline as runSkillInline,
-  runFork as runSkillFork,
-} from "../skills/executor.js";
+import { buildPlanModeExitReminder, buildPlanModeReentryReminder } from "../prompt/plan-mode.js";
+import { runInline as runSkillInline, runFork as runSkillFork } from "../skills/executor.js";
 import { LoadSkillTool } from "../skills/load-skill-tool.js";
 import { InstallSkillTool } from "../skills/install-tool.js";
 import type { SkillHost, SkillForkHost } from "../skills/skill.js";
@@ -91,28 +79,20 @@ import { FileHistory } from "../file-history/file-history.js";
 import { FileStateCache } from "../tools/file-state-cache.js";
 import type { Snapshot } from "../file-history/file-history.js";
 import RewindDialog, { type RewindAction } from "./rewind-dialog.js";
-import {
-  PermissionDialog,
-  type PermissionAction,
-} from "./permission-dialog.js";
-import AskUserDialog from "./ask-user-dialog.js";
+import { PermissionDialog, type PermissionAction } from "./permission-dialog.js";
+import { AskUserDialog } from "./ask-user-dialog.js";
 import { TeammateSpinnerTree } from "./teammate-spinner-tree.js";
 import { TeamStatus } from "./team-status.js";
 import { TeamsDialog } from "./teams-dialog.js";
 import type { TeammateUIState } from "../teams/progress.js";
 import { AskUserQuestionTool, type Question } from "../tools/ask-user.js";
 import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import * as sessionMod from "../session/session.js";
 import * as historyMod from "../history/history.js";
 import { ProviderSelect } from "./provider-select.js";
 import { InputBox } from "./input.js";
-import { StatusBar } from "./status-bar.js";
-import {
-  ChatView,
-  CommittedMessage,
-  type ChatMessage,
-  type ToolSummaryItem,
-} from "./chat.js";
+import { ChatView, CommittedMessage, type ChatMessage, type ToolSummaryItem } from "./chat.js";
 import { ToolDisplay, type ToolBlockInfo } from "./tool-display.js";
 import Spinner from "./spinner.js";
 import { COLORS, ICONS } from "./styles.js";
@@ -126,9 +106,11 @@ interface Props {
   providers: ProviderConfig[];
   mcpServers: MCPServerConfig[];
   hooks: HookConfig[];
+  sandboxConfig?: SandboxYamlConfig;
+  enableCoordinatorMode?: boolean;
 }
 
-function createToolRegistry(taskList: TaskList): ToolRegistry {
+function createToolRegistry(workDir: string, taskList: TaskList): ToolRegistry {
   const registry = new ToolRegistry();
   registry.register(new ReadFileTool());
   registry.register(new BashTool());
@@ -191,39 +173,61 @@ function wireSkillsToRegistry(
   }
 }
 
-export function App(props: Props) {
-  const { providers, mcpServers, hooks } = props;
+/**
+ * 根据当前 catalog 生成系统提示中的 skill 列表文本。
+ */
+function buildSkillSection(catalog: SkillCatalog, workDir: string): string {
+  const metas = catalog.list();
+  if (metas.length === 0) {
+    return "";
+  }
+  const skillsDir = join(workDir, ".swifty", "skills");
+  const lines = [
+    "## Available Skills\n",
+    `Skills are installed at: ${skillsDir}`,
+    "When creating new skills, always place them under this directory as <skill-name>/SKILL.md.\n",
+    'Only Skill names and one-line descriptions are listed below. To activate a Skill on demand call the LoadSkill tool with {name: "<skill-name>"}. After activation the Skill\'s full SOP gets pinned to the environment context, and any tools the Skill declares get registered. Users can also invoke a Skill directly with /<name>.\n',
+    'If the user pastes a Skill URL (skills.sh, github.com tree URL, or raw SKILL.md URL) and asks to install / add / get it, call the InstallSkill tool with {url: "<url>"} — the new Skill becomes available immediately afterwards.\n',
+  ];
+  for (const meta of metas) {
+    const desc =
+      meta.description.length > 200 ? meta.description.slice(0, 200) + "…" : meta.description;
+    lines.push(`- /${meta.name}: ${desc}`);
+  }
+  return lines.join("\n");
+}
 
+export function App({
+  providers,
+  mcpServers,
+  hooks,
+  sandboxConfig: sandboxYaml,
+  enableCoordinatorMode,
+}: Props) {
   const { exit } = useApp();
   const [appState, setAppState] = useState<AppState>(
     providers.length === 1 ? "chat" : "providerSelect",
   );
-  const [selectedProvider, setSelectedProvider] = useState<ProviderConfig>(
-    providers[0],
-  );
+  const [selectedProvider, setSelectedProvider] = useState<ProviderConfig>(providers[0]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [streamingText, setStreamingText] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const [completionMark, setCompletionMark] = useState<string | null>(null);
   const streamStartRef = useRef(0);
   const streamingTextRef = useRef("");
-  // Tracks how many messages from the start of `messages` are "committed" —
-  // i.e. belong to completed turns. Committed messages are rendered via Ink's
-  // <Static> component (rendered once, never re-rendered), eliminating flicker.
+  const streamThrottleRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const committedIndexRef = useRef(0);
+  const headerPrintedRef = useRef(false);
   const [activeTools, setActiveTools] = useState<ToolBlockInfo[]>([]);
   const [inputTokens, setInputTokens] = useState(0);
   const [outputTokens, setOutputTokens] = useState(0);
   const [permMode, setPermMode] = useState<PermissionMode>(
-    process.env.LARKY_BYPASS_PERMISSIONS === "1"
-      ? "bypassPermissions"
-      : "default",
+    process.env.SWIFTY_BYPASS_PERMISSIONS === "1" ? "bypassPermissions" : "default",
   );
-
   const [error, setError] = useState<string | null>(null);
   const [planApprovalActive, setPlanApprovalActive] = useState(false);
   const [prePlanMode, setPrePlanMode] = useState<PermissionMode>("default");
-  // Tracks whether Plan Mode has ever been exited in the current session, used to inject prompts on re-entry
+  // 记录本次会话是否曾退出过 Plan Mode，用于重入时注入提示
   const hasExitedPlanModeRef = useRef(false);
   const permModeRef = useRef(permMode);
   useEffect(() => {
@@ -242,14 +246,12 @@ export function App(props: Props) {
   // Resolved context window for the active provider. Seeded synchronously
   // (layers 1/3/4) and upgraded in initClient via the async auto-fetch (layer 2).
   const contextWindowRef = useRef(getContextWindow(providers[0]));
-  const conversationRef = useRef(new ConversationManager());
+  const convRef = useRef(new ConversationManager());
   const sessionIdRef = useRef(sessionMod.newSessionId());
-  const taskListRef = useRef(
-    new TaskList(new TaskStore(workDir, sessionIdRef.current)),
-  );
+  const taskListRef = useRef(new TaskList(new TaskStore(workDir, sessionIdRef.current)));
   const registryRef = useRef(
     (() => {
-      const reg = createToolRegistry(taskListRef.current);
+      const reg = createToolRegistry(workDir, taskListRef.current);
       // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
       const exitPlan = reg.get("ExitPlanMode") as ExitPlanModeTool | undefined;
       if (exitPlan) {
@@ -268,25 +270,33 @@ export function App(props: Props) {
   const hookEngineRef = useRef<HookEngine | null>(null);
   const skillCatalogRef = useRef<SkillCatalog | null>(null);
   const recoveryStateRef = useRef(new RecoveryState());
-  const replacementStateRef = useRef(new ContentReplacementState());
   const memCursorRef = useRef(0);
   const memExtractingRef = useRef(false);
+  const memExtractorRef = useRef<InstanceType<typeof MemoryExtractor> | null>(null);
+  const memManagerRef = useRef<InstanceType<typeof MemoryManager> | null>(null);
   const activeSkillsRef = useRef(new Map<string, string>());
   const toolFilterRef = useRef<((name: string) => boolean) | null>(null);
   const skillHostRef = useRef<SkillHost>({
     activateSkill: (name, body) => activeSkillsRef.current.set(name, body),
-    setToolFilter: (filter) => {
-      toolFilterRef.current = filter;
-    },
-    toolRegistry: () => registryRef.current,
   });
   const teamManagerRef = useRef(new TeamManager(workDir));
   const fileHistoryRef = useRef<FileHistory | null>(null);
   const fileStateCacheRef = useRef(new FileStateCache());
+  // 沙箱相关状态
+  const sandboxRef = useRef<Promise<Sandbox | null>>(createSandbox());
+  const [sandboxEnabled, setSandboxEnabled] = useState(sandboxYaml?.enabled ?? false);
+  const [sandboxAutoAllow, setSandboxAutoAllow] = useState(sandboxYaml?.auto_allow ?? false);
+  const sandboxEnabledRef = useRef(sandboxYaml?.enabled ?? false);
+  const sandboxAutoAllowRef = useRef(sandboxYaml?.auto_allow ?? false);
+  const sandboxNetworkEnabled = sandboxYaml?.network_enabled ?? true;
+  useEffect(() => {
+    sandboxEnabledRef.current = sandboxEnabled;
+  }, [sandboxEnabled]);
+  useEffect(() => {
+    sandboxAutoAllowRef.current = sandboxAutoAllow;
+  }, [sandboxAutoAllow]);
   const abortControllerRef = useRef<AbortController | null>(null);
-  const permissionResolveRef = useRef<
-    ((v: "allow" | "deny" | "allowAlways") => void) | null
-  >(null);
+  const permissionResolveRef = useRef<((v: "allow" | "deny" | "allowAlways") => void) | null>(null);
   const [rewindDialogActive, setRewindDialogActive] = useState(false);
   const [rewindSnapshots, setRewindSnapshots] = useState<Snapshot[]>([]);
   const [permissionRequest, setPermissionRequest] = useState<{
@@ -295,9 +305,7 @@ export function App(props: Props) {
     reason: string;
   } | null>(null);
   const [askRequest, setAskRequest] = useState<Question[] | null>(null);
-  const askResolveRef = useRef<((a: Record<string, string>) => void) | null>(
-    null,
-  );
+  const askResolveRef = useRef<((a: Record<string, string>) => void) | null>(null);
   const [teammateStates, setTeammateStates] = useState<TeammateUIState[]>([]);
   const [teamsDialogOpen, setTeamsDialogOpen] = useState(false);
   const [toolsExpanded, setToolsExpanded] = useState(false);
@@ -305,6 +313,7 @@ export function App(props: Props) {
     { id: number; label: string; turn: number; lastTool?: string }[]
   >([]);
   const subagentIdRef = useRef(0);
+
   // Poll teammate states from TeamManager every 500ms for live progress.
   useEffect(() => {
     const timer = setInterval(() => {
@@ -316,30 +325,13 @@ export function App(props: Props) {
     };
   }, []);
 
-  // shift+tab: cycle permission mode (bypass Ink's focus management)
-  useEffect(() => {
-    const handler = (data: Buffer) => {
-      if (data.toString() === "\x1b[Z") {
-        setPermMode((prev) => {
-          const cycle: PermissionMode[] = [
-            "default",
-            "acceptEdits",
-            "plan",
-            "bypassPermissions",
-          ];
-          const idx = cycle.indexOf(prev);
-          return cycle[(idx + 1) % cycle.length];
-        });
-      }
-    };
-    process.stdin.on("data", handler);
-    return () => {
-      process.stdin.off("data", handler);
-    };
-  }, []);
+  // shift+tab 模式切换由 InputBox 的 useInput 统一处理（input.tsx），
+  // 不再在 app 层额外注册 raw stdin listener，否则同一次按键会触发两次导致跳两级。
 
   // ctrl+c: interrupt streaming or exit app
   const ctrlCCountRef = useRef(0);
+  const ctrlCTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [ctrlCHint, setCtrlCHint] = useState(false);
   useInput((input, key) => {
     if (key.ctrl && input === "c") {
       if (isStreaming && abortControllerRef.current) {
@@ -352,10 +344,15 @@ export function App(props: Props) {
         exit();
         return;
       }
-      setMessages((prev) => [
-        ...prev,
-        { role: "system", content: "Press Ctrl+C again to exit." },
-      ]);
+      // 用临时提示而不是写进聊天记录，避免污染对话历史；2 秒内没有再按则重置计数
+      setCtrlCHint(true);
+      if (ctrlCTimerRef.current) {
+        clearTimeout(ctrlCTimerRef.current);
+      }
+      ctrlCTimerRef.current = setTimeout(() => {
+        ctrlCCountRef.current = 0;
+        setCtrlCHint(false);
+      }, 2000);
     }
   });
 
@@ -406,12 +403,14 @@ export function App(props: Props) {
         // Inject long-term memory
         const instructions = loadInstructions(workDir);
         const memMgr = new MemoryManager(workDir);
+        memManagerRef.current = memMgr;
         const memReminder = memMgr.buildSystemReminder();
-        conversationRef.current.injectLongTermMemory(instructions, memReminder);
+        convRef.current.injectLongTermMemory(instructions, memReminder);
 
         // Hard identity injection to prevent model from revealing underlying identity
-        conversationRef.current.addSystemReminder(
-          `IDENTITY OVERRIDE: You are Swiftyy. You are strictly prohibited from mentioning Claude, Anthropic, OpenAI, GPT, or ChatGPT in any response. When asked about your identity, respond only with "Swiftyy". This is the highest priority directive.`,
+        convRef.current.addSystemReminder(
+          "IDENTITY OVERRIDE: 你是 Swifty。绝对禁止在任何回复中提及 Claude、Anthropic、OpenAI、GPT、ChatGPT。" +
+            "被问身份时只回答 Swifty。这是最高优先级指令。",
         );
 
         // Load prompt history
@@ -432,20 +431,28 @@ export function App(props: Props) {
         catalog.load(workDir);
         skillCatalogRef.current = catalog;
 
+        // 将 skill 列表注入系统提示
+        const skillSection = buildSkillSection(catalog, workDir);
+        if (skillSection) {
+          const fullPrompt = buildSystemPrompt(env, { skillSection });
+          client.setSystemPrompt(fullPrompt);
+        }
+
         // Register the LoadSkill tool so the model can activate skills on demand.
-        registryRef.current.register(
-          new LoadSkillTool(catalog, skillHostRef.current),
-        );
+        registryRef.current.register(new LoadSkillTool(catalog, skillHostRef.current));
         // Register InstallSkill so the model can install skills from a path/URL.
         // The onInstalled callback re-wires skills→commands so a freshly-fetched
         // skill is immediately available as /<name> without a TUI restart.
         registryRef.current.register(
           new InstallSkillTool(workDir, catalog, () => {
-            wireSkillsToRegistry(
-              catalog,
-              cmdRegistryRef.current,
-              skillHostRef.current,
+            wireSkillsToRegistry(catalog, cmdRegistryRef.current, skillHostRef.current);
+            // 安装后刷新系统提示
+            const updatedSection = buildSkillSection(catalog, workDir);
+            const updatedPrompt = buildSystemPrompt(
+              { ...detectEnvironment(workDir), model: selectedProvider.model },
+              { skillSection: updatedSection },
             );
+            clientRef.current?.setSystemPrompt(updatedPrompt);
           }),
         );
 
@@ -463,7 +470,7 @@ export function App(props: Props) {
         // Register team coordination tools. Teammates run as background
         // general-purpose subagents whose results return via the team channel.
         const teamRunAgent: RunAgent = (task, onEvent) =>
-          spawnSubAgent(
+          spawnSubagent(
             BUILTIN_AGENTS[0],
             task,
             client,
@@ -473,19 +480,11 @@ export function App(props: Props) {
             undefined,
             onEvent,
           );
-        registryRef.current.register(
-          new TeamCreateTool(teamManagerRef.current),
-        );
-        registryRef.current.register(
-          new SpawnTeammateTool(teamManagerRef.current, teamRunAgent),
-        );
-        registryRef.current.register(
-          new SendMessageTool(teamManagerRef.current),
-        );
+        registryRef.current.register(new TeamCreateTool(teamManagerRef.current));
+        registryRef.current.register(new SpawnTeammateTool(teamManagerRef.current, teamRunAgent));
+        registryRef.current.register(new SendMessageTool(teamManagerRef.current));
         registryRef.current.register(new ListTeamsTool(teamManagerRef.current));
-        registryRef.current.register(
-          new TeamDeleteTool(teamManagerRef.current),
-        );
+        registryRef.current.register(new TeamDeleteTool(teamManagerRef.current));
 
         // Load user-defined slash commands from .swifty/commands/*.md.
         for (const cmd of loadUserCommands(workDir)) {
@@ -499,58 +498,43 @@ export function App(props: Props) {
         // Wire every loaded skill as a slash command (inline → "prompt",
         // fork → "skill_fork"). Runs after user commands so user *.md files
         // take precedence. Idempotent: skips names already taken.
-        wireSkillsToRegistry(
-          catalog,
-          cmdRegistryRef.current,
-          skillHostRef.current,
-        );
+        wireSkillsToRegistry(catalog, cmdRegistryRef.current, skillHostRef.current);
 
         // Register AgentTool with real spawn + live progress reporting.
         registryRef.current.register(
-          new AgentTool(
-            workDir,
-            registryRef.current,
-            async (def, prompt, _bg, modelOverride?) => {
-              const id = ++subagentIdRef.current;
-              setSubagents((prev) => [
-                ...prev,
-                { id, label: def.name, turn: 0 },
-              ]);
-              const onProgress = (p: { turn?: number; lastTool?: string }) => {
-                setSubagents((prev) =>
-                  prev.map((s) => (s.id === id ? { ...s, ...p } : s)),
-                );
-              };
-              try {
-                return await spawnSubAgent(
-                  def,
-                  prompt,
-                  client,
-                  registryRef.current,
-                  provider,
-                  workDir,
-                  onProgress,
-                  undefined,
-                  modelOverride,
-                );
-              } finally {
-                setSubagents((prev) => prev.filter((s) => s.id !== id));
-              }
-            },
-          ),
+          new AgentTool(workDir, registryRef.current, async (def, prompt, _bg, modelOverride?) => {
+            const id = ++subagentIdRef.current;
+            setSubagents((prev) => [...prev, { id, label: def.name, turn: 0 }]);
+            const onProgress = (p: { turn?: number; lastTool?: string }) => {
+              setSubagents((prev) => prev.map((s) => (s.id === id ? { ...s, ...p } : s)));
+            };
+            try {
+              return await spawnSubagent(
+                def,
+                prompt,
+                client,
+                registryRef.current,
+                provider,
+                workDir,
+                onProgress,
+                undefined,
+                modelOverride,
+              );
+            } finally {
+              setSubagents((prev) => prev.filter((s) => s.id !== id));
+            }
+          }),
         );
 
         // Connect MCP servers in background
         if (mcpServers.length > 0) {
           const mgr = new MCPManager();
           mcpManagerRef.current = mgr;
-          await mgr.connectAll(mcpServers).then((result) => {
+          void mgr.connectAll(mcpServers).then((result) => {
             for (const { serverName, tool } of result.tools) {
               const client = mgr.getClient(serverName);
               if (client) {
-                registryRef.current.register(
-                  new MCPToolWrapper(client, serverName, tool),
-                );
+                registryRef.current.register(new MCPToolWrapper(client, serverName, tool));
               }
             }
             if (result.errors.length > 0) {
@@ -571,9 +555,7 @@ export function App(props: Props) {
             // Inject each server's instructions into the conversation so the
             // model knows how to use that server's tools. Mirrors Go.
             for (const { serverName, text } of result.instructions) {
-              conversationRef.current.addSystemReminder(
-                `# MCP Server: ${serverName}\n${text}`,
-              );
+              convRef.current.addSystemReminder(`# MCP Server: ${serverName}\n${text}`);
             }
           });
         }
@@ -587,6 +569,14 @@ export function App(props: Props) {
   useEffect(() => {
     if (appState === "chat" && !clientRef.current) {
       void initClient(selectedProvider);
+    }
+    if (appState === "chat" && !headerPrintedRef.current) {
+      headerPrintedRef.current = true;
+      const p = COLORS.primary;
+      const d = COLORS.dim;
+      console.log(`\n${p(" /\\_/\\    ")}${d("Swifty v0.1.0")}`);
+      console.log(`${p("( o.o )   ")}${d(selectedProvider.model || selectedProvider.name)}`);
+      console.log(`${p(" > ^ <    ")}${d(workDir)}\n`);
     }
   }, [appState, selectedProvider, initClient]);
 
@@ -604,20 +594,14 @@ export function App(props: Props) {
     // /mcp — show MCP server status
     if (parsed.name === "mcp") {
       if (!mcpInfo || mcpInfo.servers.length === 0) {
-        setMessages((prev) => [
-          ...prev,
-          { role: "system", content: "No MCP servers connected." },
-        ]);
+        setMessages((prev) => [...prev, { role: "system", content: "No MCP servers connected." }]);
       } else {
         const lines = [
           `MCP servers (${String(mcpInfo.servers.length)}):`,
           ...mcpInfo.servers.map((s) => `  · ${s}`),
           `Tools: ${String(mcpInfo.toolCount)} total`,
         ];
-        setMessages((prev) => [
-          ...prev,
-          { role: "system", content: lines.join("\n") },
-        ]);
+        setMessages((prev) => [...prev, { role: "system", content: lines.join("\n") }]);
       }
       usageTrackerRef.current.record("mcp");
       return true;
@@ -625,9 +609,14 @@ export function App(props: Props) {
 
     // `/skill <name> [args]` shorthand: rewrite to `/<name> [args]` so it
     // goes through the normal command registry path (skills are wired there).
+    // Exception: `/skill reload` routes to the /skills handler instead.
     if (parsed.name === "skill" && parsed.args.trim()) {
       const parts = parsed.args.trim().split(/\s+/);
-      parsed = { name: parts[0], args: parts.slice(1).join(" ") };
+      if (parts[0] === "reload") {
+        parsed = { name: "skills", args: "reload" };
+      } else {
+        parsed = { name: parts[0], args: parts.slice(1).join(" ") };
+      }
     }
 
     const cmd = cmdRegistryRef.current.find(parsed.name);
@@ -644,34 +633,33 @@ export function App(props: Props) {
 
     // Rich status/memory commands need live app state, so handle them here.
     if (cmd.name === "status") {
+      const sbStatus = sandboxEnabled
+        ? sandboxAutoAllow
+          ? "ON (auto-allow)"
+          : "ON (manual)"
+        : "OFF";
       const lines = [
         `Mode:      ${permMode}`,
         `Model:     ${selectedProvider.model}`,
         `Provider:  ${selectedProvider.name} (${selectedProvider.protocol})`,
         `Tokens:    ${String(inputTokens)} in / ${String(outputTokens)} out`,
         `Tools:     ${String(registryRef.current.listTools().length)}`,
+        `Sandbox:   ${sbStatus}`,
         `Memories:  ${String(new MemoryManager(workDir).getMemories().length)}`,
         `Skills:    ${String(skillCatalogRef.current?.list().length ?? 0)}`,
         `MCP:       ${String(mcpInfo?.servers.length ?? 0)} server(s), ${String(mcpInfo?.toolCount ?? 0)} tool(s)`,
         `Session:   ${sessionIdRef.current}`,
         `Directory: ${workDir}`,
       ];
-      setMessages((prev) => [
-        ...prev,
-        { role: "system", content: lines.join("\n") },
-      ]);
+      setMessages((prev) => [...prev, { role: "system", content: lines.join("\n") }]);
       return true;
     }
     if (cmd.name === "permission") {
       const parts = parsed.args.trim().split(/\s+/);
-      const modes: string[] = [
-        "default",
-        "acceptEdits",
-        "plan",
-        "bypassPermissions",
-      ];
+      const modes: PermissionMode[] = ["default", "acceptEdits", "plan", "bypassPermissions"];
       if (parts[0] === "mode" && parts[1]) {
-        if (modes.includes(parts[1])) {
+        // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+        if (modes.includes(parts[1] as PermissionMode)) {
           // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
           setPermMode(parts[1] as PermissionMode);
           setMessages((prev) => [
@@ -705,19 +693,14 @@ export function App(props: Props) {
       const mgr = new MemoryManager(workDir);
       if (sub === "clear") {
         mgr.clear();
-        setMessages((prev) => [
-          ...prev,
-          { role: "system", content: "All memories cleared." },
-        ]);
+        setMessages((prev) => [...prev, { role: "system", content: "All memories cleared." }]);
       } else {
         const mems = mgr.getMemories();
         const body =
           mems.length === 0
             ? "No memories saved yet. They are auto-extracted; /memory clear wipes them."
             : `Memories (${String(mems.length)}):\n` +
-              mems
-                .map((m) => `  [${m.type}] ${m.name} — ${m.description}`)
-                .join("\n");
+              mems.map((m) => `  [${m.type}] ${m.name} — ${m.description}`).join("\n");
         setMessages((prev) => [...prev, { role: "system", content: body }]);
       }
       return true;
@@ -726,11 +709,32 @@ export function App(props: Props) {
     if (cmd.type === "local_ui") {
       const action = cmd.handler({ workDir, args: parsed.args });
       switch (action) {
-        case "clear":
+        case "clear": {
+          // 开启全新会话：重置所有会话级状态
           setMessages([]);
           committedIndexRef.current = 0;
-          conversationRef.current = new ConversationManager();
+          convRef.current = new ConversationManager();
+          // 新 session ID + 关联的持久化存储
+          sessionIdRef.current = sessionMod.newSessionId();
+          taskListRef.current.useStore(new TaskStore(workDir, sessionIdRef.current));
+          fileHistoryRef.current = new FileHistory(workDir, sessionIdRef.current);
+          // 重置 token 计数
+          setInputTokens(0);
+          setOutputTokens(0);
+          // 重置记忆提取游标
+          memCursorRef.current = 0;
+          memExtractingRef.current = false;
+          // 清掉终端缓冲区中 <Static> 写入的历史内容，然后重新打印 Header
+          const p = COLORS.primary;
+          const d = COLORS.dim;
+          process.stdout.write(
+            "\x1b[2J\x1b[3J\x1b[H" +
+              `\n${p(" /\\_/\\    ")}${d("Swifty v0.1.0")}\n` +
+              `${p("( o.o )   ")}${d(selectedProvider.model || selectedProvider.name)}\n` +
+              `${p(" > ^ <    ")}${d(workDir)}\n\n`,
+          );
           break;
+        }
         case "quit":
           exit();
           break;
@@ -747,15 +751,12 @@ export function App(props: Props) {
                 "Investigate and design your approach. The agent will call ExitPlanMode when the plan is ready.",
             },
           ]);
-          // Re-entry detection: If Plan Mode has been exited in this session and the plan file exists, inject re-entry prompts
+          // 重入检测：如果本次会话曾退出过 Plan Mode 且 plan 文件已存在，注入重入提示
           if (hasExitedPlanModeRef.current && planExists(workDir)) {
             const reentryMsg = buildPlanModeReentryReminder(planPath, true);
             if (reentryMsg) {
-              conversationRef.current.addSystemReminder(reentryMsg);
-              setMessages((prev) => [
-                ...prev,
-                { role: "system", content: reentryMsg },
-              ]);
+              convRef.current.addSystemReminder(reentryMsg);
+              setMessages((prev) => [...prev, { role: "system", content: reentryMsg }]);
             }
             hasExitedPlanModeRef.current = false;
           }
@@ -763,16 +764,14 @@ export function App(props: Props) {
         }
         case "do": {
           setPermMode("default");
-          // Mark that Plan Mode has been exited in this session, so prompts can be injected upon re-entry.
+          // 标记本次会话已退出过 Plan Mode，后续重入时可注入提示
           hasExitedPlanModeRef.current = true;
-          const planContent = loadPlan();
+          const planContent = loadPlan(/** workDir */);
           const exitPlanPath = getOrCreatePlanPath(workDir);
-          conversationRef.current.addSystemReminder(
-            buildPlanModeExitReminder(exitPlanPath, !!planContent),
-          );
+          convRef.current.addSystemReminder(buildPlanModeExitReminder(exitPlanPath, !!planContent));
           if (planContent?.trim()) {
             // Feed the approved plan back to the agent and execute it.
-            conversationRef.current.addUserMessage(
+            convRef.current.addUserMessage(
               "The plan below has been approved. Exit plan mode and carry it out now.\n\n" +
                 "# Approved Plan\n" +
                 planContent,
@@ -782,12 +781,9 @@ export function App(props: Props) {
               ...prev,
               { role: "system", content: "✓ Plan approved — executing." },
             ]);
-            await runAgentLoop("default");
+            void runAgentLoop("default");
           } else {
-            setMessages((prev) => [
-              ...prev,
-              { role: "system", content: "Exited plan mode." },
-            ]);
+            setMessages((prev) => [...prev, { role: "system", content: "Exited plan mode." }]);
           }
           break;
         }
@@ -798,19 +794,16 @@ export function App(props: Props) {
               { role: "system", content: "Compacting conversation..." },
             ]);
             forceCompact(
-              conversationRef.current,
+              convRef.current,
               clientRef.current,
               recoveryStateRef.current,
               registryRef.current.listTools().map((t) => t.name),
+              [],
             )
               .then((result) => {
                 // Persist the boundary so the compacted state survives /resume.
                 if (result.boundary) {
-                  sessionMod.saveCompactBoundary(
-                    workDir,
-                    sessionIdRef.current,
-                    result.boundary,
-                  );
+                  sessionMod.saveCompactBoundary(workDir, sessionIdRef.current, result.boundary);
                 }
                 setMessages((prev) => [
                   ...prev,
@@ -833,17 +826,11 @@ export function App(props: Props) {
           if (!arg) {
             const sessions = sessionMod.listSessions(workDir);
             if (sessions.length === 0) {
-              setMessages((prev) => [
-                ...prev,
-                { role: "system", content: "No sessions found." },
-              ]);
+              setMessages((prev) => [...prev, { role: "system", content: "No sessions found." }]);
             } else {
               const list = sessions
                 .slice(0, 10)
-                .map(
-                  (s) =>
-                    `  ${s.id} (${String(s.messageCount)} msgs) — ${s.firstMessage}`,
-                )
+                .map((s) => `  ${s.id} (${String(s.messageCount)} msgs) — ${s.firstMessage}`)
                 .join("\n");
               setMessages((prev) => [
                 ...prev,
@@ -874,20 +861,20 @@ export function App(props: Props) {
           // session contains a compact_boundary it replays the compacted state
           // (summary + inlined keep + post-boundary appends) instead of the full
           // pre-boundary history; with no boundary it replays everything.
-          const conversation = new ConversationManager();
-          conversation.injectLongTermMemory(
+          const conv = new ConversationManager();
+          conv.injectLongTermMemory(
             loadInstructions(workDir),
             new MemoryManager(workDir).buildSystemReminder(),
           );
           const restored = sessionMod.rebuildFromSession(saved);
           for (const m of restored) {
             if (m.role === "user") {
-              conversation.addUserMessage(m.content);
+              conv.addUserMessage(m.content);
             } else {
-              conversation.addAssistantMessage(m.content);
+              conv.addAssistantMessage(m.content);
             }
           }
-          conversationRef.current = conversation;
+          convRef.current = conv;
           sessionIdRef.current = arg;
           // Reload the task list for the resumed session.
           taskListRef.current.useStore(new TaskStore(workDir, arg));
@@ -909,6 +896,24 @@ export function App(props: Props) {
               ...prev,
               { role: "system", content: "Skills: no catalog loaded." },
             ]);
+          } else if (parsed.args.trim() === "reload") {
+            // /skills reload — 手动热加载
+            catalog.reload();
+            wireSkillsToRegistry(catalog, cmdRegistryRef.current, skillHostRef.current);
+            if (clientRef.current) {
+              const env = detectEnvironment(workDir);
+              env.model = selectedProvider.model;
+              const section = buildSkillSection(catalog, workDir);
+              clientRef.current.setSystemPrompt(buildSystemPrompt(env, { skillSection: section }));
+            }
+            const count = catalog.list().length;
+            setMessages((prev) => [
+              ...prev,
+              {
+                role: "system",
+                content: `Skills reloaded. ${String(count)} skill(s) available.`,
+              },
+            ]);
           } else {
             const skills = catalog.list();
             if (skills.length === 0) {
@@ -920,12 +925,13 @@ export function App(props: Props) {
                 },
               ]);
             } else {
-              const list = skills
-                .map((s) => `  /${s.name} — ${s.description}`)
-                .join("\n");
+              const list = skills.map((s) => `  /${s.name} — ${s.description}`).join("\n");
               setMessages((prev) => [
                 ...prev,
-                { role: "system", content: `Available skills:\n${list}` },
+                {
+                  role: "system",
+                  content: `Available skills:\n${list}\n\nType /skills reload to hot-reload skills from disk.`,
+                },
               ]);
             }
           }
@@ -966,6 +972,68 @@ export function App(props: Props) {
           }
           break;
         }
+        case "sandbox": {
+          const arg = parsed.args.trim();
+          const sbAvailable = (await sandboxRef.current)?.available() ?? false;
+          if (arg === "1" || arg === "on") {
+            // 模式 1：沙箱 + 自动放行
+            setSandboxEnabled(true);
+            setSandboxAutoAllow(true);
+            sandboxEnabledRef.current = true;
+            sandboxAutoAllowRef.current = true;
+            setMessages((prev) => [
+              ...prev,
+              {
+                role: "system",
+                content: `Sandbox: ON + auto-allow${sbAvailable ? "" : " (sandbox tool not found, wrapping disabled)"}`,
+              },
+            ]);
+          } else if (arg === "2" || arg === "manual") {
+            // 模式 2：沙箱 + 常规权限
+            setSandboxEnabled(true);
+            setSandboxAutoAllow(false);
+            sandboxEnabledRef.current = true;
+            sandboxAutoAllowRef.current = false;
+            setMessages((prev) => [
+              ...prev,
+              {
+                role: "system",
+                content: `Sandbox: ON + manual permissions${sbAvailable ? "" : " (sandbox tool not found, wrapping disabled)"}`,
+              },
+            ]);
+          } else if (arg === "3" || arg === "off") {
+            // 模式 3：关闭沙箱
+            setSandboxEnabled(false);
+            setSandboxAutoAllow(false);
+            sandboxEnabledRef.current = false;
+            sandboxAutoAllowRef.current = false;
+            setMessages((prev) => [
+              ...prev,
+              {
+                role: "system",
+                content: "Sandbox: OFF",
+              },
+            ]);
+          } else {
+            // 显示当前状态和三种模式
+            const status = sandboxEnabled
+              ? sandboxAutoAllow
+                ? "ON + auto-allow"
+                : "ON + manual"
+              : "OFF";
+            const lines = [
+              `Sandbox status: ${status}`,
+              `Platform tool: ${sbAvailable ? "available" : "not found"}`,
+              "",
+              "Usage: /sandbox <mode>",
+              "  1 (on)     — 开启沙箱 + 自动放行（推荐）",
+              "  2 (manual) — 开启沙箱 + 常规权限确认",
+              "  3 (off)    — 关闭沙箱",
+            ];
+            setMessages((prev) => [...prev, { role: "system", content: lines.join("\n") }]);
+          }
+          break;
+        }
       }
       return true;
     }
@@ -981,7 +1049,7 @@ export function App(props: Props) {
       const promptText = cmd.handler({ workDir, args: parsed.args });
       if (clientRef.current && promptText.trim()) {
         setMessages((prev) => [...prev, { role: "user", content: promptText }]);
-        conversationRef.current.addUserMessage(promptText);
+        convRef.current.addUserMessage(promptText);
         sessionMod.saveMessage(workDir, sessionIdRef.current, {
           role: "user",
           content: promptText,
@@ -1002,7 +1070,6 @@ export function App(props: Props) {
       return true;
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
     if (cmd.type === "skill_fork") {
       const skill = skillCatalogRef.current?.get(parsed.name);
       if (!skill) {
@@ -1014,10 +1081,7 @@ export function App(props: Props) {
       }
       const client = clientRef.current;
       if (!client) {
-        setMessages((prev) => [
-          ...prev,
-          { role: "system", content: "Client not ready." },
-        ]);
+        setMessages((prev) => [...prev, { role: "system", content: "Client not ready." }]);
         return true;
       }
       setMessages((prev) => [
@@ -1030,12 +1094,11 @@ export function App(props: Props) {
       // Build a SkillForkHost backed by the live refs.
       const forkHost: SkillForkHost = {
         ...skillHostRef.current,
-        runSubAgent: (prompt, toolFilter) =>
-          spawnSubAgent(
+        runSubagent: (prompt: string) =>
+          spawnSubagent(
             {
               name: skill.meta.name,
               description: skill.meta.description,
-              tools: toolFilter,
               model: skill.meta.model,
             },
             prompt,
@@ -1045,7 +1108,7 @@ export function App(props: Props) {
             workDir,
           ),
         snapshotParentMessages: (count) => {
-          const msgs = conversationRef.current.getMessages();
+          const msgs = convRef.current.getMessages();
           return msgs
             .slice(-count)
             .map((m) => `[${m.role}] ${m.content}`)
@@ -1054,10 +1117,7 @@ export function App(props: Props) {
       };
       runSkillFork(skill, parsed.args, forkHost)
         .then((result) => {
-          setMessages((prev) => [
-            ...prev,
-            { role: "assistant", content: result },
-          ]);
+          setMessages((prev) => [...prev, { role: "assistant", content: result }]);
         })
         .catch((err: unknown) => {
           setMessages((prev) => [
@@ -1087,8 +1147,7 @@ export function App(props: Props) {
     return "";
   };
 
-  const truncate = (s: string, max: number): string =>
-    s.length > max ? s.slice(0, max) + "…" : s;
+  const truncate = (s: string, max: number): string => (s.length > max ? s.slice(0, max) + "…" : s);
 
   const runAgentLoop = async (modeOverride?: PermissionMode) => {
     const controller = new AbortController();
@@ -1097,12 +1156,69 @@ export function App(props: Props) {
     // modeOverride avoids a stale-closure read of permMode right after a
     // setPermMode call (e.g. plan approval switching out of plan mode in the same tick).
     const checker = new PermissionChecker(workDir, modeOverride ?? permMode);
+    // 将沙箱状态注入权限检查器
+    checker.sandboxEnabled = sandboxEnabledRef.current;
+    checker.sandboxAutoAllow = sandboxAutoAllowRef.current;
+
+    // 将沙箱注入 BashTool
+    // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+    const bashTool = registryRef.current.get("Bash") as BashTool | undefined;
+    if (bashTool && sandboxEnabledRef.current) {
+      bashTool.sandbox = await sandboxRef.current;
+      bashTool.sandboxConfig = {
+        allowWrite: [workDir, "/tmp"],
+        denyWrite: [
+          join(workDir, ".swifty", "config.yaml"),
+          join(workDir, ".swifty", "permissions.local.yaml"),
+          join(workDir, ".swifty", "skills"),
+        ],
+        networkEnabled: sandboxNetworkEnabled,
+      };
+    } else if (bashTool) {
+      bashTool.sandbox = null;
+    }
+    // 非阻塞 memory recall：与主 LLM 调用并行，工具执行后注入
+    const recallPromise =
+      memManagerRef.current && clientRef.current
+        ? memManagerRef.current
+            .findRelevantMemories(
+              convRef.current
+                .getMessages()
+                .filter((m) => m.role === "user")
+                .pop()?.content ?? "",
+              clientRef.current,
+            )
+            .then((memories) => {
+              if (memories.length === 0) {
+                return "";
+              }
+              const lines = memories
+                .map((m) => {
+                  try {
+                    return readFileSync(m.path, "utf-8");
+                  } catch {
+                    return "";
+                  }
+                })
+                .filter(Boolean);
+              return lines.length > 0
+                ? "<system-reminder>\n# Recalled Memories\n\n" +
+                    lines.join("\n\n") +
+                    "\n</system-reminder>"
+                : "";
+            })
+            .catch(() => "")
+        : undefined;
+
+    if (!clientRef.current) {
+      return;
+    }
+
     const agent = new Agent({
-      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-      client: clientRef.current!,
+      client: clientRef.current,
       registry: registryRef.current,
       checker,
-      conversation: conversationRef.current,
+      conversation: convRef.current,
       workDir,
       hookEngine: hookEngineRef.current ?? undefined,
       fileHistory: fileHistoryRef.current ?? undefined,
@@ -1111,33 +1227,33 @@ export function App(props: Props) {
       contextWindow: contextWindowRef.current,
       maxOutput: getMaxOutputTokens(selectedProvider),
       recoveryState: recoveryStateRef.current,
-      replacementState: replacementStateRef.current,
       activeSkills: activeSkillsRef.current,
+      memoryRecallPromise: recallPromise,
       toolFilter: buildComposedToolFilter(
-        coordinatorToolFilter(teamManagerRef.current),
+        coordinatorToolFilter(teamManagerRef.current, enableCoordinatorMode ?? false),
         toolFilterRef.current,
       ),
       // Surface teammate results (from team lead mailboxes) as reminders.
       notificationFn: () => teamManagerRef.current.drainLeads(),
-      onLoopComplete: (conversation) => {
-        // Background auto-memory extraction: skip if nothing new since the last
-        // run, and never run two extractions at once (coalesce). Best-effort.
+      onLoopComplete: (conv) => {
         const client = clientRef.current;
         if (!client || memExtractingRef.current) {
           return;
         }
-        if (conversation.len() - memCursorRef.current < 2) {
+        if (conv.len() - memCursorRef.current < 2) {
           return;
         }
         memExtractingRef.current = true;
-        const cursor = conversation.len();
-        const summary = conversation
+        const cursor = conv.len();
+        const summary = conv
           .getMessages()
           .slice(-40)
           .map((m) => `[${m.role}]: ${m.content}`)
           .filter((s) => s.length > 12)
           .join("\n");
-        new MemoryExtractor(client, workDir)
+        // 复用同一个 Extractor 实例（节流状态跨轮次保持）
+        memExtractorRef.current ??= new MemoryExtractor(client, workDir);
+        memExtractorRef.current
           .extract(summary)
           .then((saved) => {
             memCursorRef.current = cursor;
@@ -1151,8 +1267,9 @@ export function App(props: Props) {
               ]);
             }
           })
-          .catch(() => {
-            /** noop */
+          .catch((err: unknown) => {
+            // 不吞错误，至少 debug 输出
+            console.error("[memory-extractor]", asErrorString(err));
           })
           .finally(() => {
             memExtractingRef.current = false;
@@ -1177,6 +1294,11 @@ export function App(props: Props) {
     let turnThinkingStart = 0;
     let turnThinkingDuration = 0;
     let turnToolCalls: ToolSummaryItem[] = [];
+    // Indices of in-flight tool_use messages added during the current turn.
+    // These are removed when the turn completes and replaced by a single
+    // turn_summary message.
+
+    // let turnToolUseIndices: number[] = [];
     // Map toolName+toolId -> argsSummary so tool_result can look it up
     // (the agent's tool_result event doesn't carry args).
     const pendingToolArgs = new Map<string, string>();
@@ -1186,6 +1308,7 @@ export function App(props: Props) {
       turnThinkingStart = 0;
       turnThinkingDuration = 0;
       turnToolCalls = [];
+      // turnToolUseIndices = [];
       pendingToolArgs.clear();
     };
 
@@ -1193,8 +1316,12 @@ export function App(props: Props) {
       switch (event.type) {
         case "stream_text":
           fullText += event.text;
-          setStreamingText(fullText);
           streamingTextRef.current = fullText;
+          // 节流：50ms 内的 delta 合并为一次 React 状态更新，减少重渲染
+          streamThrottleRef.current ??= setTimeout(() => {
+            setStreamingText(streamingTextRef.current);
+            streamThrottleRef.current = null;
+          }, 50);
           break;
 
         case "thinking_text":
@@ -1225,8 +1352,7 @@ export function App(props: Props) {
 
         case "tool_result": {
           // Look up the argsSummary we saved during tool_use.
-          const argsSummary =
-            pendingToolArgs.get(`${event.toolName}:${event.toolId}`) ?? "";
+          const argsSummary = pendingToolArgs.get(`${event.toolName}:${event.toolId}`) ?? "";
           // Update active tools spinner.
           setActiveTools((prev) =>
             prev.map((t) =>
@@ -1258,16 +1384,9 @@ export function App(props: Props) {
           break;
 
         case "compact":
-          setMessages((prev) => [
-            ...prev,
-            { role: "system", content: `⊙ ${event.message}` },
-          ]);
+          setMessages((prev) => [...prev, { role: "system", content: `⊙ ${event.message}` }]);
           if (event.boundary) {
-            sessionMod.saveCompactBoundary(
-              workDir,
-              sessionIdRef.current,
-              event.boundary,
-            );
+            sessionMod.saveCompactBoundary(workDir, sessionIdRef.current, event.boundary);
           }
           break;
 
@@ -1282,6 +1401,10 @@ export function App(props: Props) {
           break;
 
         case "turn_complete": {
+          if (streamThrottleRef.current) {
+            clearTimeout(streamThrottleRef.current);
+            streamThrottleRef.current = null;
+          }
           setStreamingText("");
           fullText = "";
           setActiveTools([]);
@@ -1293,10 +1416,8 @@ export function App(props: Props) {
               const summary: ChatMessage = {
                 role: "turn_summary",
                 content: turnThinkingText,
-                thinkingDuration:
-                  turnThinkingDuration > 0 ? turnThinkingDuration : undefined,
-                toolSummary:
-                  turnToolCalls.length > 0 ? turnToolCalls : undefined,
+                thinkingDuration: turnThinkingDuration > 0 ? turnThinkingDuration : undefined,
+                toolSummary: turnToolCalls.length > 0 ? turnToolCalls : undefined,
               };
               const next = [...prev, summary];
               committedIndexRef.current = next.length;
@@ -1308,13 +1429,14 @@ export function App(props: Props) {
         }
 
         case "loop_complete":
+          if (streamThrottleRef.current) {
+            clearTimeout(streamThrottleRef.current);
+            streamThrottleRef.current = null;
+          }
           setStreamingText("");
           if (fullText) {
             setMessages((prev) => {
-              const next = [
-                ...prev,
-                { role: "assistant" as const, content: fullText },
-              ];
+              const next = [...prev, { role: "assistant" as const, content: fullText }];
               committedIndexRef.current = next.length;
               return next;
             });
@@ -1357,12 +1479,10 @@ export function App(props: Props) {
       }
 
       if (choice === "yolo") {
-        // Mark that Plan Mode has been exited in this session, so prompts can be injected upon re-entry.
+        // 标记本次会话已退出过 Plan Mode，后续重入时可注入提示
         hasExitedPlanModeRef.current = true;
         setPermMode("bypassPermissions");
-        conversationRef.current.addSystemReminder(
-          buildPlanModeExitReminder(planPath, !!planContent),
-        );
+        convRef.current.addSystemReminder(buildPlanModeExitReminder(planPath, !!planContent));
         setMessages((prev) => [
           ...prev,
           { role: "system", content: "Plan approved. Entered YOLO mode." },
@@ -1371,12 +1491,10 @@ export function App(props: Props) {
           void handleSubmit(`Execute this plan:\n\n${planContent}`);
         }
       } else if (choice === "manual") {
-        // Marks that Plan Mode has been exited in this session, allowing prompts to be injected upon re-entry
+        // 标记本次会话已退出过 Plan Mode，后续重入时可注入提示
         hasExitedPlanModeRef.current = true;
         setPermMode(prePlanMode);
-        conversationRef.current.addSystemReminder(
-          buildPlanModeExitReminder(planPath, !!planContent),
-        );
+        convRef.current.addSystemReminder(buildPlanModeExitReminder(planPath, !!planContent));
         setMessages((prev) => [
           ...prev,
           {
@@ -1406,11 +1524,8 @@ export function App(props: Props) {
         case "code_and_conversation": {
           const changed = fh.rewind(action.snapshotIndex);
           const snap = rewindSnapshots[action.snapshotIndex];
-          conversationRef.current.truncateTo(snap.messageIndex);
-          const fileList =
-            changed.length > 0
-              ? "\n" + changed.map((f) => "  " + f).join("\n")
-              : "";
+          convRef.current.truncateTo(snap.messageIndex);
+          const fileList = changed.length > 0 ? "\n" + changed.map((f) => "  " + f).join("\n") : "";
           setMessages((prev) => [
             ...prev,
             {
@@ -1422,7 +1537,7 @@ export function App(props: Props) {
         }
         case "conversation_only": {
           const snap = rewindSnapshots[action.snapshotIndex];
-          conversationRef.current.truncateTo(snap.messageIndex);
+          convRef.current.truncateTo(snap.messageIndex);
           setMessages((prev) => [
             ...prev,
             {
@@ -1434,10 +1549,7 @@ export function App(props: Props) {
         }
         case "code_only": {
           const changed = fh.rewind(action.snapshotIndex);
-          const fileList =
-            changed.length > 0
-              ? "\n" + changed.map((f) => "  " + f).join("\n")
-              : "";
+          const fileList = changed.length > 0 ? "\n" + changed.map((f) => "  " + f).join("\n") : "";
           setMessages((prev) => [
             ...prev,
             {
@@ -1454,7 +1566,34 @@ export function App(props: Props) {
     [rewindSnapshots],
   );
 
+  /** 每轮对话前检查 skill 目录变化，自动 reload catalog + 系统提示。 */
+  const refreshSkillsIfNeeded = () => {
+    const catalog = skillCatalogRef.current;
+    const client = clientRef.current;
+    if (!catalog || !client) {
+      return;
+    }
+    if (!catalog.needsReload()) {
+      return;
+    }
+    catalog.reload();
+    wireSkillsToRegistry(catalog, cmdRegistryRef.current, skillHostRef.current);
+    const env = detectEnvironment(workDir);
+    env.model = selectedProvider.model;
+    const skillSection = buildSkillSection(catalog, workDir);
+    client.setSystemPrompt(buildSystemPrompt(env, { skillSection }));
+  };
+
+  const submittingRef = useRef(false);
+
   const handleSubmit = async (text: string) => {
+    if (submittingRef.current) {
+      return;
+    }
+    submittingRef.current = true;
+
+    refreshSkillsIfNeeded();
+
     // Save to prompt history
     historyMod.append(historyDir, text);
     setPromptHistory((prev) => [...prev, text]);
@@ -1463,19 +1602,21 @@ export function App(props: Props) {
     if (text.startsWith("/")) {
       const handled = await handleSlashCommand(text);
       if (handled) {
+        submittingRef.current = false;
         return;
       }
     }
 
     if (!clientRef.current) {
       setError("LLM client not ready yet");
+      submittingRef.current = false;
       return;
     }
 
     setMessages((prev) => [...prev, { role: "user", content: text }]);
     // Inline any @file references for the model; the UI/session keep the
     // original text the user typed.
-    conversationRef.current.addUserMessage(expandAtRefs(text, workDir));
+    convRef.current.addUserMessage(expandAtRefs(text, workDir));
 
     // Save to session
     sessionMod.saveMessage(workDir, sessionIdRef.current, {
@@ -1486,7 +1627,7 @@ export function App(props: Props) {
 
     // If currently streaming, interrupt first
     if (isStreaming && abortControllerRef.current) {
-      const partialText = streamingTextRef.current;
+      const partialText = streamingTextRef.current ?? "";
       abortControllerRef.current.abort();
       if (partialText) {
         setMessages((prev) => [
@@ -1494,10 +1635,7 @@ export function App(props: Props) {
           { role: "assistant", content: partialText + "\n\n*[cancelled]*" },
         ]);
       }
-      setMessages((prev) => [
-        ...prev,
-        { role: "system", content: "(response interrupted)" },
-      ]);
+      setMessages((prev) => [...prev, { role: "system", content: "(response interrupted)" }]);
     }
 
     streamStartRef.current = Date.now();
@@ -1511,8 +1649,7 @@ export function App(props: Props) {
       await runAgentLoop();
     } catch (err) {
       const msg = asErrorString(err);
-      const isAbort =
-        strArg(asRecord(err), "name") === "AbortError" || msg.includes("abort");
+      const isAbort = strArg(asRecord(err), "name") === "AbortError" || msg.includes("abort");
       if (isAbort) {
         const partialText = streamingTextRef.current;
         if (partialText) {
@@ -1521,16 +1658,15 @@ export function App(props: Props) {
             { role: "assistant", content: partialText + "\n\n*[cancelled]*" },
           ]);
         }
-        setMessages((prev) => [
-          ...prev,
-          { role: "system", content: "(response interrupted)" },
-        ]);
+        setMessages((prev) => [...prev, { role: "system", content: "(response interrupted)" }]);
       } else {
+        // 保留 API 错误前已输出的流式文本
+        const partialText = streamingTextRef.current;
+        if (partialText) {
+          setMessages((prev) => [...prev, { role: "assistant", content: partialText }]);
+        }
         setError(msg);
-        setMessages((prev) => [
-          ...prev,
-          { role: "system", content: `Error: ${msg}` },
-        ]);
+        setMessages((prev) => [...prev, { role: "system", content: `Error: ${msg}` }]);
       }
     } finally {
       const elapsed = Math.floor((Date.now() - streamStartRef.current) / 1000);
@@ -1538,61 +1674,36 @@ export function App(props: Props) {
       setIsStreaming(false);
       setActiveTools([]);
       abortControllerRef.current = null;
+      submittingRef.current = false;
     }
   };
 
-  const handleSubmitSync = (text: string) => {
-    void handleSubmit(text);
-  };
-
   if (appState === "providerSelect") {
-    return (
-      <ProviderSelect providers={providers} onSelect={handleProviderSelect} />
-    );
+    return <ProviderSelect providers={providers} onSelect={handleProviderSelect} />;
   }
 
   return (
     <Box flexDirection="column" width="100%">
-      <Box flexDirection="column" paddingTop={1} flexGrow={1}>
-        <Box paddingLeft={1} flexDirection="column">
-          <Text>
-            {COLORS.primary(" /\\_/\\")} {"   "}
-            {COLORS.primary("Swiftyy")} <Text dimColor>v0.1.0</Text>
-          </Text>
-          <Text>
-            {COLORS.primary("( o.o )")} {"  "}
-            <Text dimColor>
-              {selectedProvider.model || selectedProvider.name}
-            </Text>
-          </Text>
-          <Text>
-            {COLORS.primary(" > ^ <")} {"   "}
-            <Text dimColor>{workDir}</Text>
-          </Text>
-        </Box>{" "}
-        {/* Committed messages: rendered once by Ink's Static, never re-rendered.
-            This eliminates flickering for the scrollback history. */}
+      <Box flexDirection="column" paddingTop={0} flexGrow={1}>
+        {/* 已完成的消息：写入终端滚动缓冲区，eraseLines 不会碰它们 */}
         <Static
           items={messages
             .slice(0, committedIndexRef.current)
             .map((msg, i) => ({ ...msg, _key: i }))}
         >
-          {(item) => (
-            <CommittedMessage
-              key={item._key}
-              message={item}
-              expanded={toolsExpanded}
-            />
-          )}
+          {(item) => <CommittedMessage key={item._key} message={item} expanded={toolsExpanded} />}
         </Static>
-        {/* Active (non-committed) messages + streaming text: re-renders normally */}
+
+        {/* 活跃内容：streaming text + 新消息，在动态区域刷新 */}
         <ChatView
           messages={messages.slice(committedIndexRef.current)}
           streamingText={isStreaming ? streamingText : undefined}
           expanded={toolsExpanded}
         />
-        {activeTools.length > 0 && <ToolDisplay tools={activeTools} />}
-        {subagents.length > 0 && (
+
+        {activeTools.length > 0 && !askRequest && <ToolDisplay tools={activeTools} />}
+
+        {subagents.length > 0 && !askRequest && (
           <Box flexDirection="column" paddingLeft={1}>
             {subagents.map((s) => (
               <Text key={s.id} color="magenta">
@@ -1602,7 +1713,8 @@ export function App(props: Props) {
             ))}
           </Box>
         )}
-        {isStreaming && (
+
+        {isStreaming && !askRequest && (
           <Box paddingLeft={1} flexDirection="column">
             <Spinner inputTokens={inputTokens} outputTokens={outputTokens} />
             {teammateStates.length > 0 && (
@@ -1618,16 +1730,23 @@ export function App(props: Props) {
             <TeammateSpinnerTree teammates={teammateStates} />
           </Box>
         )}
+
         {error && (
           <Box paddingLeft={1}>
             <Text color="red">{error}</Text>
           </Box>
-        )}{" "}
+        )}
+
+        {!isStreaming && completionMark && !askRequest && !permissionRequest && (
+          <Box paddingLeft={1}>
+            <Text dimColor>{completionMark}</Text>
+          </Box>
+        )}
+
+        <Text> </Text>
       </Box>
 
-      {planApprovalActive && (
-        <PlanApprovalDialog onSelect={handlePlanApproval} />
-      )}
+      {planApprovalActive && <PlanApprovalDialog onSelect={handlePlanApproval} />}
 
       {rewindDialogActive && (
         <RewindDialog
@@ -1678,41 +1797,25 @@ export function App(props: Props) {
           onShutdown={(name, teamName) => {
             const team = teamManagerRef.current.get(teamName);
             if (team) {
-              void team.sendMessage(
-                "lead",
-                name,
-                "[shutdown] Please finish and exit",
-              );
+              void team.sendMessage("lead", name, "[shutdown] Please finish and exit");
             }
           }}
         />
       )}
 
-      {!isStreaming && completionMark && (
+      {ctrlCHint && (
         <Box paddingLeft={1}>
-          <Text dimColor>{completionMark}</Text>
+          <Text dimColor>Press Ctrl+C again to exit.</Text>
         </Box>
       )}
       <TeamStatus
-        count={
-          teammateStates.filter(
-            (t) => t.status === "running" || t.status === "idle",
-          ).length
-        }
-      />
-      <StatusBar
-        model={selectedProvider.model}
-        mode={permMode}
-        inputTokens={inputTokens}
-        outputTokens={outputTokens}
+        count={teammateStates.filter((t) => t.status === "running" || t.status === "idle").length}
       />
       <InputBox
-        onSubmit={handleSubmitSync}
-        disabled={
-          rewindDialogActive ||
-          permissionRequest !== null ||
-          askRequest !== null
-        }
+        onSubmit={(text: string) => {
+          void handleSubmit(text);
+        }}
+        disabled={rewindDialogActive || permissionRequest !== null || askRequest !== null}
         history={promptHistory}
         commands={cmdRegistryRef.current.listCommands()}
         usageTracker={usageTrackerRef.current}

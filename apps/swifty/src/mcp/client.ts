@@ -1,5 +1,9 @@
 // Note that because some servers are still using SSE, clients may need to support both transports during the migration period.
 
+import { createChildLogger } from "../logger/index.js";
+
+const log = createChildLogger({ module: "mcp" });
+
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import {
@@ -40,9 +44,7 @@ function expandEnv(value: string): string {
   );
 }
 
-function asDict(
-  obj: Record<string, string | undefined>,
-): Record<string, string> {
+function asDict(obj: Record<string, string | undefined>): Record<string, string> {
   const dict: Record<string, string> = {};
   for (const [k, v] of Object.entries(obj)) {
     dict[k] = v ?? "";
@@ -88,9 +90,7 @@ export class MCPClient {
         }
       }
 
-      const opts:
-        | StreamableHTTPClientTransportOptions
-        | SSEClientTransportOptions = {
+      const opts: StreamableHTTPClientTransportOptions | SSEClientTransportOptions = {
         requestInit: { headers },
       };
 
@@ -120,11 +120,7 @@ export class MCPClient {
     }
     const result = await this.client.listTools();
     return result.tools.map(
-      ({
-        name,
-        description,
-        inputSchema: { properties, ...inputSchemaRest },
-      }) => ({
+      ({ name, description, inputSchema: { properties, ...inputSchemaRest } }) => ({
         name,
         description: description ?? "",
         inputSchema: { ...inputSchemaRest, properties: properties ?? {} },
@@ -132,25 +128,35 @@ export class MCPClient {
     );
   }
 
-  async callTool(name: string, args: Record<string, unknown>): Promise<string> {
+  /** Calls a tool and returns { output, isError }. isError mirrors the MCP
+   *  protocol's isError flag so the model knows when a tool failed. Mirrors Go's CallTool. */
+  async callTool(
+    name: string,
+    args: Record<string, unknown>,
+  ): Promise<{ output: string; isError: boolean }> {
     if (!this.client) {
       throw new Error("Not connected");
     }
     const result = await this.client.callTool({ name, arguments: args });
+    let output: string;
     if (result.content && Array.isArray(result.content)) {
-      return result.content
+      output = result.content
         .map((c: { type: string; text?: string }) =>
           c.type === "text" ? (c.text ?? "") : JSON.stringify(c),
         )
         .join("\n");
+    } else {
+      output = JSON.stringify(result);
     }
-    return JSON.stringify(result);
+    // result.isError is set by the MCP server when the tool execution failed.
+    return { output, isError: result.isError === true };
   }
 
   async disconnect(): Promise<void> {
     try {
       await this.client?.close();
-    } catch {
+    } catch (err) {
+      log.error({ err }, "mcp operation failed");
       // ignore
     }
     this.client = null;

@@ -23,9 +23,7 @@ describe("@file mention expansion", () => {
 
   it("returns the text unchanged when there are no @refs", () => {
     const workDir = mkdtempSync(join(tmpdir(), "swifty-at-"));
-    expect(expandAtRefs("just a plain message", workDir)).toBe(
-      "just a plain message",
-    );
+    expect(expandAtRefs("just a plain message", workDir)).toBe("just a plain message");
   });
 
   it("de-duplicates repeated references", () => {

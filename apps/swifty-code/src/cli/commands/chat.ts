@@ -29,15 +29,10 @@ class ChatPrinter {
         break;
       case "permission.requested": {
         this._ensureNewline();
-        console.log(
-          `[permission] ${String(event["tool_name"])} ${String(event["params_preview"])}`,
-        );
-        console.log(
-          "  [y] allow once  [a] always allow  [n] deny once  [d] always deny",
-        );
+        console.log(`[permission] ${String(event["tool_name"])} ${String(event["param_preview"])}`);
+        console.log("  [y] allow once  [a] always allow  [n] deny once  [d] always deny");
         const toolUseId = event["tool_use_id"];
-        this.pendingPermissionId =
-          typeof toolUseId === "string" ? toolUseId : null;
+        this.pendingPermissionId = typeof toolUseId === "string" ? toolUseId : null;
         break;
       }
       case "session.waiting_for_input":

@@ -13,13 +13,11 @@ export async function cmdPing(config: SwiftyConfig): Promise<void> {
 
   const socket = net.createConnection(config.port, config.host);
 
-  await new Promise<void>((resolve, reject) => {
+  await new Promise<void>((resolve) => {
     socket.on("connect", resolve);
-    socket.on("error", (err: Error) => {
-      console.error(
-        `error: core not running (${config.host}:${String(config.port)})`,
-      );
-      reject(err);
+    socket.on("error", () => {
+      console.error(`error: core not running (${config.host}:${String(config.port)})`);
+      process.exit(1);
     });
   });
 
@@ -45,10 +43,7 @@ export async function cmdPing(config: SwiftyConfig): Promise<void> {
   }
   if ("error" in raw) {
     const err = raw.error;
-    const { success, data } = await safeParseAsync(
-      JsonRpcErrorObjectSchema,
-      err,
-    );
+    const { success, data } = await safeParseAsync(JsonRpcErrorObjectSchema, err);
     if (success) {
       console.error(`error: ${String(data.code)} ${data.message}`);
     }
@@ -56,10 +51,7 @@ export async function cmdPing(config: SwiftyConfig): Promise<void> {
   }
 
   const result: unknown = "result" in raw ? raw.result : undefined;
-  const { data: resData, success } = await safeParseAsync(
-    PongResultSchema,
-    result,
-  );
+  const { data: resData, success } = await safeParseAsync(PongResultSchema, result);
   if (success) {
     console.log(
       `pong server=${resData.server_version} uptime=${String(resData.uptime_ms)}ms latency=${String(latencyMs)}ms`,

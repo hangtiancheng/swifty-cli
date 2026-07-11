@@ -23,7 +23,7 @@ A dual-process local AI agent system written in TypeScript. SwiftyCode runs an L
 - [Terminal UI](#terminal-ui)
 - [CLI Reference](#cli-reference)
 - [Configuration](#configuration)
-  - [4-Tier Priority Chain](#4-tier-priority-chain)
+  - [5-Tier Priority Chain](#5-tier-priority-chain)
   - [TOML Configuration](#toml-configuration)
   - [Environment Variables](#environment-variables)
 - [JSON-RPC Protocol](#json-rpc-protocol)
@@ -131,7 +131,6 @@ The tool system provides a uniform interface for all agent capabilities:
 ```
 params ──> Zod validation ──> permission check ──> timeout-wrapped invoke ──> retry logic ──> ToolResult
               │                    │                      │                      │
-              ▼                    ▼                      ▼                      ▼
          schema_error      permission_denied          timeout           runtime_error / rate_limited
 ```
 
@@ -472,7 +471,7 @@ swifty version                     # Print version
 
 ## Configuration
 
-### 4-Tier Priority Chain
+### 5-Tier Priority Chain
 
 Configuration values are resolved in the following order (later tiers override earlier ones):
 
@@ -480,7 +479,7 @@ Configuration values are resolved in the following order (later tiers override e
 2. **Global TOML** (`~/.swifty/config.toml`)
 3. **Project-local TOML** (`.swifty/config.toml`)
 4. **dotenv** (`.env` file)
-5. **Environment variables** (`LARK_*` prefix)
+5. **Environment variables** (`SWIFTY_*` prefix)
 
 TOML configuration uses strict validation: unknown keys throw errors, and every field is type-checked with descriptive error messages.
 
@@ -525,25 +524,25 @@ args = ["-y", "my-mcp-server"]
 
 ### Environment Variables
 
-| Variable                         | Default                         | Description                          |
-| -------------------------------- | ------------------------------- | ------------------------------------ |
-| `ANTHROPIC_API_KEY`              | (required)                      | Anthropic API key                    |
-| `ANTHROPIC_BASE_URL`             | (SDK default)                   | Override API base URL                |
-| `LARK_CONFIG`                    | `~/.swifty/config.toml`         | Path to TOML config file             |
-| `LARK_HOST`                      | `127.0.0.1`                     | Daemon bind host                     |
-| `LARK_PORT`                      | `7437`                          | Daemon bind port                     |
-| `LARK_LOG_LEVEL`                 | `INFO`                          | Log level                            |
-| `LARK_LOG_FILE`                  | `~/.swifty/logs/core.log`       | Log file path                        |
-| `LARK_LOG_FORMAT`                | `text`                          | Log format (text / json)             |
-| `LARK_MAX_STEPS`                 | `20`                            | Maximum agent loop steps             |
-| `LARK_LLM_DEFAULT_MODEL`         | `claude-sonnet-4-6`             | Default LLM model                    |
-| `LARK_TRACE_ENABLED`             | `true`                          | Enable/disable tracing               |
-| `LARK_TRACE_FILE`                | `~/.swifty/traces/daemon.jsonl` | Trace file path                      |
-| `LARK_TRACE_INCLUDE_LLM_PAYLOAD` | `true`                          | Include full LLM payloads in traces  |
-| `LARK_PERMISSION_TIMEOUT_S`      | `60`                            | Permission prompt timeout (seconds)  |
-| `LARK_COMPACT_THRESHOLD`         | `0.0`                           | Auto-compaction threshold (0.0-1.0)  |
-| `LARK_COMPACT_TOOL_LIMIT`        | `8000`                          | Tool result truncation limit (chars) |
-| `LARK_COMPACT_TOOL_KEEP`         | `4000`                          | Tool result keep size (chars)        |
+| Variable                           | Default                         | Description                          |
+| ---------------------------------- | ------------------------------- | ------------------------------------ |
+| `ANTHROPIC_API_KEY`                | (required)                      | Anthropic API key                    |
+| `ANTHROPIC_BASE_URL`               | (SDK default)                   | Override API base URL                |
+| `SWIFTY_CONFIG`                    | `~/.swifty/config.toml`         | Path to TOML config file             |
+| `SWIFTY_HOST`                      | `127.0.0.1`                     | Daemon bind host                     |
+| `SWIFTY_PORT`                      | `7437`                          | Daemon bind port                     |
+| `SWIFTY_LOG_LEVEL`                 | `INFO`                          | Log level                            |
+| `SWIFTY_LOG_FILE`                  | `~/.swifty/logs/core.log`       | Log file path                        |
+| `SWIFTY_LOG_FORMAT`                | `text`                          | Log format (text / json)             |
+| `SWIFTY_MAX_STEPS`                 | `20`                            | Maximum agent loop steps             |
+| `SWIFTY_LLM_DEFAULT_MODEL`         | `claude-sonnet-4-6`             | Default LLM model                    |
+| `SWIFTY_TRACE_ENABLED`             | `true`                          | Enable/disable tracing               |
+| `SWIFTY_TRACE_FILE`                | `~/.swifty/traces/daemon.jsonl` | Trace file path                      |
+| `SWIFTY_TRACE_INCLUDE_LLM_PAYLOAD` | `true`                          | Include full LLM payloads in traces  |
+| `SWIFTY_PERMISSION_TIMEOUT_S`      | `60`                            | Permission prompt timeout (seconds)  |
+| `SWIFTY_COMPACT_THRESHOLD`         | `0.0`                           | Auto-compaction threshold (0.0-1.0)  |
+| `SWIFTY_COMPACT_TOOL_LIMIT`        | `8000`                          | Tool result truncation limit (chars) |
+| `SWIFTY_COMPACT_TOOL_KEEP`         | `4000`                          | Tool result keep size (chars)        |
 
 ---
 
@@ -567,34 +566,34 @@ All client-daemon communication uses JSON-RPC 2.0 over TCP with newline-delimite
 
 ### Events
 
-All events use snake_case field names and a `type` discriminator. Clients subscribe via `event.subscribe` with glob patterns (e.g., `["*"]` for all, `["llm.*"]` for LLM events only).
+All events use snake_case field names and a `type` discriminator. All events include a `timestamp` field (ISO 8601). Clients subscribe via `event.subscribe` with glob patterns (e.g., `["*"]` for all, `["llm.*"]` for LLM events only).
 
-| Event Type                  | Key Fields                                                                      | Emitted When                   |
-| --------------------------- | ------------------------------------------------------------------------------- | ------------------------------ |
-| `core.started`              | `server_version`, `port`                                                        | Daemon starts listening        |
-| `run.started`               | `run_id`, `goal`, `max_steps`                                                   | Agent run begins               |
-| `run.finished`              | `run_id`, `status`, `result`, `reason`                                          | Agent run ends                 |
-| `step.started`              | `run_id`, `step`                                                                | LLM call begins for a step     |
-| `step.finished`             | `run_id`, `step`                                                                | Step completes (LLM + tools)   |
-| `tool.call_started`         | `run_id`, `tool_name`, `tool_use_id`, `params`                                  | Tool invocation begins         |
-| `tool.call_finished`        | `run_id`, `tool_name`, `tool_use_id`, `result`                                  | Tool invocation succeeds       |
-| `tool.call_failed`          | `run_id`, `tool_name`, `tool_use_id`, `error_class`, `error_message`            | Tool invocation fails          |
-| `llm.token`                 | `run_id`, `step`, `text`                                                        | Streaming text delta           |
-| `llm.usage`                 | `run_id`, `step`, `input_tokens`, `output_tokens`, `cache_*`, `context_percent` | Token usage report             |
-| `llm.model_selected`        | `run_id`, `model`                                                               | Model chosen for request       |
-| `session.created`           | `session_id`, `mode`                                                            | New session created            |
-| `session.message_received`  | `session_id`, `run_id`                                                          | User message accepted          |
-| `session.waiting_for_input` | `session_id`                                                                    | Agent finished, awaiting input |
-| `session.resumed`           | `session_id`, `run_id`                                                          | Chat session resumed           |
-| `session.closed`            | `session_id`                                                                    | Session closed                 |
-| `context.compacted`         | `session_id`, `run_id`, `original_tokens`, `summary_tokens`                     | Context compaction completed   |
-| `permission.requested`      | `tool_use_id`, `tool_name`, `param_preview`, `session_id`                       | Permission prompt needed       |
-| `permission.granted`        | `tool_use_id`, `decision`                                                       | Permission allowed             |
-| `permission.denied`         | `tool_use_id`, `decision`                                                       | Permission denied              |
-| `subagent.started`          | `run_id`, `parent_run_id`, `description`                                        | Sub-agent spawned              |
-| `subagent.finished`         | `run_id`, `parent_run_id`, `status`, `result`                                   | Sub-agent completed            |
-| `skill.invoked`             | `session_id`, `skill_name`                                                      | Skill activated                |
-| `log.line`                  | `level`, `message`                                                              | Log output                     |
+| Event Type                  | Key Fields                                                                                                             | Emitted When                   |
+| --------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ------------------------------ |
+| `core.started`              | `listen_addr`, `version`                                                                                               | Daemon starts listening        |
+| `run.started`               | `run_id`, `goal`                                                                                                       | Agent run begins               |
+| `run.finished`              | `run_id`, `status`, `reason`, `steps`                                                                                  | Agent run ends                 |
+| `step.started`              | `run_id`, `step`                                                                                                       | LLM call begins for a step     |
+| `step.finished`             | `run_id`, `step`                                                                                                       | Step completes (LLM + tools)   |
+| `tool.call_started`         | `run_id`, `tool_use_id`, `tool_name`, `params`                                                                         | Tool invocation begins         |
+| `tool.call_finished`        | `run_id`, `tool_use_id`, `tool_name`, `elapsed_ms`, `output`                                                           | Tool invocation succeeds       |
+| `tool.call_failed`          | `run_id`, `tool_use_id`, `tool_name`, `error_class`, `error_message`, `elapsed_ms`, `attempt`                          | Tool invocation fails          |
+| `llm.token`                 | `run_id`, `token`                                                                                                      | Streaming text delta           |
+| `llm.usage`                 | `run_id`, `input_tokens`, `output_tokens`, `cache_read_input_tokens`, `cache_creation_input_tokens`, `context_percent` | Token usage report             |
+| `llm.model_selected`        | `run_id`, `model`, `strategy`                                                                                          | Model chosen for request       |
+| `session.created`           | `session_id`, `mode`                                                                                                   | New session created            |
+| `session.message_received`  | `session_id`, `content`                                                                                                | User message accepted          |
+| `session.waiting_for_input` | `session_id`, `last_run_id`                                                                                            | Agent finished, awaiting input |
+| `session.resumed`           | `session_id`                                                                                                           | Chat session resumed           |
+| `session.closed`            | `session_id`                                                                                                           | Session closed                 |
+| `context.compacted`         | `session_id`, `run_id`, `original_tokens`, `summary_tokens`                                                            | Context compaction completed   |
+| `permission.requested`      | `run_id`, `tool_use_id`, `tool_name`, `params`, `param_preview`, `session_id`                                          | Permission prompt needed       |
+| `permission.granted`        | `run_id`, `tool_use_id`, `decision`                                                                                    | Permission allowed             |
+| `permission.denied`         | `run_id`, `tool_use_id`, `decision`                                                                                    | Permission denied              |
+| `subagent.started`          | `run_id`, `parent_run_id`, `description`                                                                               | Sub-agent spawned              |
+| `subagent.finished`         | `run_id`, `parent_run_id`, `status`                                                                                    | Sub-agent completed            |
+| `skill.invoked`             | `skill_name`, `arguments`, `run_id`                                                                                    | Skill activated                |
+| `log.line`                  | `run_id`, `level`, `source`, `message`                                                                                 | Log output                     |
 
 ---
 

@@ -1,8 +1,5 @@
 import { describe, test, expect } from "vitest";
-import {
-  CodeReviewManager,
-  createDefaultCodeReviewTeam,
-} from "../src/code-review/manager.js";
+import { CodeReviewManager, createDefaultCodeReviewTeam } from "../src/code-review/manager.js";
 import { ReviewSession } from "../src/code-review/session.js";
 import { TeamManager } from "../src/teams/team.js";
 
@@ -237,9 +234,7 @@ describe("ReviewSession", () => {
     );
 
     const updatedRequest = session.getRequest(request.id);
-    const updatedComment = updatedRequest?.comments.find(
-      (c) => c.id === comment.id,
-    );
+    const updatedComment = updatedRequest?.comments.find((c) => c.id === comment.id);
 
     expect(updatedComment?.resolution).toBe("accepted");
     expect(updatedComment?.authorResponse).toBe(
@@ -284,11 +279,7 @@ describe("ReviewSession", () => {
     );
 
     // Accept some, reject some
-    session.acceptComment(
-      request.id,
-      comment1.id,
-      "Will implement max length validation",
-    );
+    session.acceptComment(request.id, comment1.id, "Will implement max length validation");
     session.acceptComment(
       request.id,
       comment2.id,
@@ -341,11 +332,7 @@ describe("ReviewSession", () => {
       comment1.id,
       "Will add composite index on user_id and timestamp",
     );
-    session.acceptComment(
-      request.id,
-      comment2.id,
-      "Good point, will implement Redis caching",
-    );
+    session.acceptComment(request.id, comment2.id, "Good point, will implement Redis caching");
 
     const summary = session.generateFinalReport(request.id);
     const report = session.formatFinalReport(summary);
@@ -354,9 +341,7 @@ describe("ReviewSession", () => {
     expect(report).toContain("Performance optimization");
     expect(report).toContain("* Accepted Suggestions:  2");
     expect(report).toContain("src/api/endpoints.ts");
-    expect(report).toContain(
-      "Will add composite index on user_id and timestamp",
-    );
+    expect(report).toContain("Will add composite index on user_id and timestamp");
     expect(report).toContain("Good point, will implement Redis caching");
   });
 
@@ -371,11 +356,7 @@ describe("ReviewSession", () => {
       ["src/utils/helpers.ts"],
     );
 
-    let comment = session.addComment(
-      request.id,
-      "reviewer2",
-      "Minor style improvement",
-    );
+    let comment = session.addComment(request.id, "reviewer2", "Minor style improvement");
     session.acceptComment(request.id, comment.id);
 
     let summary = session.generateFinalReport(request.id);
@@ -392,16 +373,8 @@ describe("ReviewSession", () => {
     );
 
     for (let i = 0; i < 5; i++) {
-      comment = session.addComment(
-        request.id,
-        "reviewer2",
-        `Critical issue ${String(i + 1)}`,
-      );
-      session.rejectComment(
-        request.id,
-        comment.id,
-        "Cannot fix due to time constraints",
-      );
+      comment = session.addComment(request.id, "reviewer2", `Critical issue ${String(i + 1)}`);
+      session.rejectComment(request.id, comment.id, "Cannot fix due to time constraints");
     }
 
     summary = session.generateFinalReport(request.id);
@@ -417,18 +390,10 @@ describe("ReviewSession", () => {
       ["src/components/button.tsx"],
     );
 
-    comment = session.addComment(
-      request.id,
-      "reviewer2",
-      "Good implementation",
-    );
+    comment = session.addComment(request.id, "reviewer2", "Good implementation");
     session.acceptComment(request.id, comment.id);
 
-    comment = session.addComment(
-      request.id,
-      "reviewer3",
-      "Missing error handling",
-    );
+    comment = session.addComment(request.id, "reviewer3", "Missing error handling");
     session.rejectComment(request.id, comment.id, "Will add in next iteration");
 
     summary = session.generateFinalReport(request.id);

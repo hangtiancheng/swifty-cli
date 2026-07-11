@@ -76,6 +76,7 @@ export class SpawnAgentTool implements BaseTool {
   private _runsDir: string;
   private _sessionId: string;
   private _depth: number;
+  private _signal: AbortSignal | undefined;
 
   constructor(
     provider: LLMProvider,
@@ -87,6 +88,7 @@ export class SpawnAgentTool implements BaseTool {
     runsDir: string,
     sessionId: string,
     depth = 0,
+    signal?: AbortSignal,
   ) {
     this._provider = provider;
     this._parentBus = parentBus;
@@ -97,6 +99,7 @@ export class SpawnAgentTool implements BaseTool {
     this._runsDir = runsDir;
     this._sessionId = sessionId;
     this._depth = depth;
+    this._signal = signal;
   }
 
   async invoke(params: Record<string, unknown>): Promise<ToolResult> {
@@ -131,6 +134,7 @@ export class SpawnAgentTool implements BaseTool {
     const childLoop = new AgentLoop(this._provider, childRegistry, childBus, {
       ...(this._permissionManager ? { permissionManager: this._permissionManager } : {}),
       sessionId: this._sessionId,
+      ...(this._signal ? { signal: this._signal } : {}),
     });
 
     await this._parentBus.publish({
@@ -258,6 +262,7 @@ export class SpawnAgentTool implements BaseTool {
         this._runsDir,
         this._sessionId,
         this._depth + 1,
+        this._signal,
       );
       if (isAllowed("spawn_agent")) {
         registry.register(nested);
@@ -309,34 +314,31 @@ export class AgentResultTool implements BaseTool {
       };
     }
 
-    const { promise, context } = entry;
+    // Yield to microtask queue so pending promise settlements can update entry.status
+    // before we read it. This replaces the fragile Promise.race hack and allows
+    // synchronous status-based dispatch.
+    await Promise.resolve();
 
-    // Check if promise is still pending
-    let hasError = false;
-    let errorMsg = "";
+    const { context } = entry;
 
-    try {
-      // Race with immediate resolution to check status
-      await Promise.race([
-        promise,
-        Promise.resolve().then(() => {
-          throw new Error("still_pending");
-        }),
-      ]);
-    } catch (error) {
-      if (error instanceof Error && error.message === "still_pending") {
-        // Still running
-        return {
-          content: "still running",
-          isError: false,
-          errorType: null,
-        };
-      }
-      hasError = true;
-      errorMsg = error instanceof Error ? error.message : String(error);
+    if (entry.status === "pending") {
+      return {
+        content: "still running",
+        isError: false,
+        errorType: null,
+      };
     }
 
-    if (hasError) {
+    if (entry.status === "cancelled") {
+      return {
+        content: "Subagent was cancelled.",
+        isError: true,
+        errorType: "runtime_error",
+      };
+    }
+
+    if (entry.status === "rejected") {
+      const errorMsg = entry.error ?? "unknown error";
       return {
         content: `Subagent raised an exception: ${errorMsg}`,
         isError: true,
@@ -344,6 +346,7 @@ export class AgentResultTool implements BaseTool {
       };
     }
 
+    // fulfilled
     return {
       content: context.result || "Subagent completed with no text result.",
       isError: false,

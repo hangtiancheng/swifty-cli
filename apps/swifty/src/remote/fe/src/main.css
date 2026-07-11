@@ -1,0 +1,41 @@
+@import "tailwindcss";
+
+/*
+ * Tokyo Night inspired palette, exposed as Tailwind v4 theme tokens so we can
+ * use them as atomic utilities (bg-bg, text-bright, border-border, ...).
+ * No custom CSS classes are defined — only theme tokens + keyframes.
+ */
+@theme {
+  --color-bg: #1a1b26;
+  --color-surface: #24283b;
+  --color-input: #1f2335;
+  --color-tool: #1f2335;
+  --color-code: #16161e;
+  --color-base: #c0caf5;
+  --color-dim: #565f89;
+  --color-bright: #e0e6ff;
+  --color-accent: #bb9af7;
+  --color-accent-dim: #7c6da4;
+  --color-green: #9ece6a;
+  --color-red: #f7768e;
+  --color-yellow: #e0af68;
+  --color-blue: #7aa2f7;
+  --color-border: #3b4261;
+
+  --font-mono: "SF Mono", "Fira Code", "Cascadia Code", Consolas, monospace;
+
+  --animate-blink: blink 1s step-end infinite;
+  --animate-spin-slow: spin 1s linear infinite;
+}
+
+@keyframes blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+/* Thin scrollbar for the message stream. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border) transparent;
+}

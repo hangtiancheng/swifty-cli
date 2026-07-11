@@ -169,7 +169,7 @@ export const PermissionRequestedEventSchema = z.object({
   tool_use_id: z.string(),
   tool_name: z.string(),
   params: z.record(z.string(), z.unknown()),
-  params_preview: z.string(),
+  param_preview: z.string(),
   session_id: z.string(),
   timestamp: z.string(),
 });

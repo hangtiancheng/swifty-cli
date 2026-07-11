@@ -1,16 +1,34 @@
+import { createChildLogger } from "../logger/index.js";
+
+const log = createChildLogger({ module: "tui" });
+
 import chalk from "chalk";
 import { marked } from "marked";
 import { markedTerminal } from "@swifty.js/marked-terminal";
 import { COLORS, ICONS } from "./styles.js";
-import { Box, Text } from "ink";
+import { Box, Text, useStdout } from "ink";
+import { useRef } from "react";
+import { DiffLines } from "./diff-render.js";
+import { isDiffTool } from "./is-diff-tool.js";
 
 chalk.level = 3;
 marked.use(markedTerminal({ showSectionPrefix: false }));
 
-async function renderMarkdown(text: string): Promise<string> {
+const isPromise = (val: unknown): val is Promise<unknown> => {
+  return typeof val === "object" && val !== null && "then" in val && typeof val.then === "function";
+};
+
+function renderMarkdown(text: string): string {
   try {
-    return await marked.parse(text);
-  } catch {
+    let result = marked.parse(text);
+    if (isPromise(result)) {
+      return text;
+    }
+    result = result.replace(/\*\*([^*]+)\*\*/g, (_, t) => chalk.bold(t));
+    result = result.replace(/^( {4})\* /gm, "  - ");
+    return result;
+  } catch (err) {
+    log.error({ err }, "tui operation failed");
     return text;
   }
 }
@@ -24,14 +42,7 @@ export interface ToolSummaryItem {
 }
 
 export interface ChatMessage {
-  role:
-    | "user"
-    | "assistant"
-    | "system"
-    | "thinking"
-    | "tool_use"
-    | "tool_result"
-    | "turn_summary";
+  role: "user" | "assistant" | "system" | "thinking" | "tool_use" | "tool_result" | "turn_summary";
   content: string;
   toolName?: string;
   argsSummary?: string;
@@ -48,6 +59,81 @@ interface ChatViewProps {
   expanded?: boolean;
 }
 
+/**
+ * Incremental streaming Markdown rendering: Only re-parses the trailing incomplete chunk,
+ * reusing the stable prefix cache.
+ * Inspired by Claude Code's StreamingMarkdown design, reducing complexity from O(n²) to O(n).
+ */
+// ANSI escape sequence regex: Used to calculate the width of visible characters
+// eslint-disable-next-line no-control-regex
+const ANSI_RE = /\x1b\[[0-9;]*[a-zA-Z]|\x1b\].*?(?:\x07|\x1b\\)/g;
+
+/**
+ * Calculates the number of physical lines (considering terminal width wrapping) to prevent
+ * dynamic areas from exceeding the height and triggering Ink's clearTerminal.
+ * ANSI escape sequences in logical lines do not occupy width; visible characters exceeding
+ * the terminal width automatically wrap.
+ */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+function countPhysicalLines(lines: string[], cols: number): number {
+  let total = 0;
+  for (const line of lines) {
+    const visible = line.replace(ANSI_RE, "").length;
+    total += Math.max(1, Math.ceil(visible / cols));
+  }
+  return total;
+}
+
+function StreamingText({ text }: { text: string }) {
+  const stableRef = useRef({ text: "", rendered: "" });
+  const { stdout } = useStdout();
+  const cols = stdout.columns || 80;
+  // Reserve 12 physical lines for dynamic area components like Spinner, ToolDisplay, InputBox, user messages, etc.
+  const maxPhysical = Math.max(5, (stdout.rows || 24) - 12);
+
+  const boundary = text.lastIndexOf("\n\n");
+  const stableEnd =
+    boundary >= 0 && boundary + 2 > stableRef.current.text.length
+      ? boundary + 2
+      : stableRef.current.text.length;
+  const stableText = text.slice(0, stableEnd);
+  const unstableText = text.slice(stableEnd);
+
+  if (stableText.length > stableRef.current.text.length) {
+    stableRef.current = {
+      text: stableText,
+      rendered: renderMarkdown(stableText),
+    };
+  }
+
+  const unstableRendered = unstableText ? renderMarkdown(unstableText) : "";
+  const fullRendered = stableRef.current.rendered + unstableRendered;
+
+  // Truncate based on physical lines: Take from the end backwards until physical line limit is reached
+  const lines = fullRendered.split("\n");
+  let physicalCount = 0;
+  let cutIndex = lines.length;
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const visible = lines[i].replace(ANSI_RE, "").length;
+    const wrapped = Math.max(1, Math.ceil(visible / cols));
+    if (physicalCount + wrapped > maxPhysical) {
+      break;
+    }
+    physicalCount += wrapped;
+    cutIndex = i;
+  }
+
+  const truncated = cutIndex > 0;
+  const visibleText = truncated ? "…\n" + lines.slice(cutIndex).join("\n") : fullRendered;
+
+  return (
+    <Text>
+      {COLORS.assistant(`${ICONS.dot} `)}
+      {visibleText}
+    </Text>
+  );
+}
+
 export function ChatView(props: ChatViewProps) {
   const { messages, streamingText, expanded = false } = props;
   return (
@@ -57,10 +143,12 @@ export function ChatView(props: ChatViewProps) {
       ))}
       {streamingText !== undefined && streamingText !== "" && (
         <Box>
-          <Text>
+          {/* <Text>
             {COLORS.assistant(`${ICONS.dot} `)}
             {renderMarkdown(streamingText)}
-          </Text>
+          </Text> */}
+
+          <StreamingText text={streamingText} />
         </Box>
       )}
     </Box>
@@ -90,6 +178,7 @@ export function CommittedMessage(props: CommitMessageProps) {
  * Build a compact human-readable summary line for a turn, e.g.:
  *   "Thought for 4s, read 2 files, ran 1 command"
  */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function buildTurnSummaryText(
   thinkingDuration: number | undefined,
   tools: ToolSummaryItem[],
@@ -101,14 +190,7 @@ function buildTurnSummaryText(
   }
 
   if (tools.length > 0) {
-    type Key =
-      | "read"
-      | "wrote"
-      | "edited"
-      | "ran"
-      | "globbed"
-      | "searched"
-      | "used";
+    type Key = "read" | "wrote" | "edited" | "ran" | "globbed" | "searched" | "used";
     type Count = Record<Key, number>;
     type Label = Record<keyof Count, (n: number) => string>;
 
@@ -171,41 +253,24 @@ interface TurnSummaryBlockProps {
 
 function TurnSummaryBlock(props: TurnSummaryBlockProps) {
   const { message, expanded } = props;
-  const { content: thinkingText, thinkingDuration, toolSummary = [] } = message;
-  const summaryText = buildTurnSummaryText(thinkingDuration, toolSummary);
-
-  if (!summaryText) {
+  const { /* content: thinkingText, */ thinkingDuration, toolSummary = [] } = message;
+  if (!thinkingDuration && toolSummary.length === 0) {
     return null;
   }
 
-  if (!expanded) {
-    return (
-      <Box marginBottom={0}>
-        <Text dimColor>
-          {"  "}
-          {summaryText}
-        </Text>
-      </Box>
-    );
-  }
-
-  // Expanded: full thinking + individual tool results
   return (
     <Box flexDirection="column" marginBottom={0}>
-      <Text dimColor>{summaryText}</Text>
-      {thinkingText ? (
-        <Box marginBottom={0}>
-          <Text dimColor>
-            {COLORS.thinking(`${ICONS.thinking} `)}
-            {thinkingText}
-          </Text>
-        </Box>
-      ) : null}
+      {thinkingDuration !== undefined && thinkingDuration >= 1 && (
+        <Text dimColor>
+          {COLORS.thinking(`${ICONS.thinking} `)}Thought for {Math.round(thinkingDuration)}s
+        </Text>
+      )}
       {toolSummary.map((t, i) => {
-        const icon = t.isError
-          ? COLORS.error(ICONS.error)
-          : COLORS.success(ICONS.success);
+        const icon = t.isError ? COLORS.error(ICONS.error) : COLORS.success(ICONS.success);
         const timeStr = t.elapsed ? ` (${t.elapsed.toFixed(1)}s)` : "";
+
+        const isDiff = isDiffTool(t.toolName);
+        const showOutput = isDiff || expanded;
         return (
           <Box key={i} flexDirection="column" marginBottom={0}>
             <Text>
@@ -213,13 +278,15 @@ function TurnSummaryBlock(props: TurnSummaryBlockProps) {
               {t.argsSummary ? <Text dimColor> {t.argsSummary}</Text> : null}
               <Text dimColor>{timeStr}</Text>
             </Text>
-            {t.output ? (
-              <Box paddingLeft={2}>
-                <Text dimColor>
-                  {t.output.length > 500
-                    ? t.output.slice(0, 500) + "..."
-                    : t.output}
-                </Text>
+            {showOutput && t.output ? (
+              <Box paddingLeft={4}>
+                {isDiff ? (
+                  <DiffLines text={t.output} />
+                ) : (
+                  <Text dimColor>
+                    {t.output.length > 500 ? t.output.slice(0, 500) + "..." : t.output}
+                  </Text>
+                )}
               </Box>
             ) : null}
           </Box>
@@ -262,9 +329,7 @@ function MessageBlock(props: MessageBlockProps) {
         <Box marginBottom={0}>
           <Text dimColor>
             {COLORS.thinking(`${ICONS.thinking} `)}
-            {message.content.length > 200
-              ? message.content.slice(0, 200) + "..."
-              : message.content}
+            {message.content.length > 200 ? message.content.slice(0, 200) + "..." : message.content}
           </Text>
         </Box>
       );
@@ -274,39 +339,36 @@ function MessageBlock(props: MessageBlockProps) {
       return (
         <Box marginBottom={0}>
           <Text>
-            <Text color="magenta">●</Text>{" "}
-            {COLORS.tool(message.toolName ?? "tool")}
-            {message.argsSummary ? (
-              <Text dimColor> {message.argsSummary}</Text>
-            ) : null}
+            <Text color="magenta">●</Text> {COLORS.tool(message.toolName ?? "tool")}
+            {message.argsSummary ? <Text dimColor> {message.argsSummary}</Text> : null}
           </Text>
         </Box>
       );
     }
     case "tool_result": {
-      const icon = message.isError
-        ? COLORS.error(ICONS.error)
-        : COLORS.success(ICONS.success);
-      const timeStr =
-        message.elapsed !== undefined
-          ? ` (${message.elapsed.toFixed(1)}s)`
-          : "";
+      const icon = message.isError ? COLORS.error(ICONS.error) : COLORS.success(ICONS.success);
+      const timeStr = message.elapsed !== undefined ? ` (${message.elapsed.toFixed(1)}s)` : "";
+
+      const isDiff = isDiffTool(message.toolName ?? "");
+
       return (
         <Box flexDirection="column" marginBottom={0}>
           <Text>
             {icon} {COLORS.tool(message.toolName ?? "tool")}
-            {message.argsSummary ? (
-              <Text dimColor> {message.argsSummary}</Text>
-            ) : null}
+            {message.argsSummary ? <Text dimColor> {message.argsSummary}</Text> : null}
             <Text dimColor>{timeStr}</Text>
           </Text>
           {message.content && (
             <Box paddingLeft={2}>
-              <Text dimColor>
-                {!expanded && message.content.length > 500
-                  ? message.content.slice(0, 500) + "…  (ctrl+o to expand)"
-                  : message.content}
-              </Text>
+              {isDiff ? (
+                <DiffLines text={message.content} />
+              ) : (
+                <Text dimColor>
+                  {!expanded && message.content.length > 500
+                    ? message.content.slice(0, 500) + "…  (ctrl+o to expand)"
+                    : message.content}
+                </Text>
+              )}
             </Box>
           )}
         </Box>

@@ -1,6 +1,7 @@
 // Feature: Verify SocketServer basic start/stop and connection cleanup
 // Design: Use real TCP connections to verify server lifecycle behavior
 import net from "node:net";
+import { z } from "zod";
 
 import { afterEach, describe, expect, test } from "vitest";
 
@@ -164,5 +165,44 @@ describe("SocketServer", () => {
     expect(resp["error"]).toBeDefined();
     const error = getError(resp);
     expect(error["code"]).toBe(-32700);
+  });
+
+  // Feature: Verify INVALID_PARAMS (-32602) when handler throws ZodError
+  // Design: Register handler that uses zod parse, send invalid params, check error code
+  test("handler ZodError returns INVALID_PARAMS", async () => {
+    const port = await freePort();
+    server = new SocketServer("127.0.0.1", port);
+    const schema = z.object({ required_field: z.string() });
+    server.register("test.validate", (params) => {
+      schema.parse(params);
+      return Promise.resolve({ ok: true });
+    });
+    await server.start();
+
+    const response = await new Promise<string>((resolve, reject) => {
+      const socket = net.createConnection(port, "127.0.0.1", () => {
+        const req = JSON.stringify({
+          jsonrpc: "2.0",
+          id: "test-4",
+          method: "test.validate",
+          params: {},
+        });
+        socket.write(req + "\n");
+      });
+      let data = "";
+      socket.on("data", (chunk: Buffer) => {
+        data += chunk.toString();
+        if (data.includes("\n")) {
+          resolve(data.trim());
+          socket.destroy();
+        }
+      });
+      socket.on("error", reject);
+    });
+
+    const resp = parseResponse(response);
+    expect(resp["error"]).toBeDefined();
+    const error = getError(resp);
+    expect(error["code"]).toBe(-32602);
   });
 });

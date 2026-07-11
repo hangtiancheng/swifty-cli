@@ -42,13 +42,17 @@ export function isCoordinatorTool(name: string): boolean {
  * itself; when teams are all torn down, the full tool set is restored
  * on the next iteration. MCP tools (prefixed "mcp__") are always allowed.
  */
-export function coordinatorToolFilter(teamMgr: TeamManager): (name: string) => boolean {
+export function coordinatorToolFilter(
+  teamMgr: TeamManager,
+  enabled = false,
+): (name: string) => boolean {
   return (name: string): boolean => {
-    // No teams active → full tool set available
+    if (!enabled) {
+      return true;
+    }
     if (teamMgr.list().length === 0) {
       return true;
     }
-    // MCP tools are always allowed through the coordinator filter
     if (name.startsWith("mcp__")) {
       return true;
     }

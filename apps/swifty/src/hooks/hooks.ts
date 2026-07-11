@@ -1,7 +1,35 @@
-import { execSync } from "node:child_process";
+import { createChildLogger } from "../logger/index.js";
+
+const log = createChildLogger({ module: "hooks" });
+
+import { exec } from "node:child_process";
 import type { HookConfig } from "../config/config.js";
 import { asErrorString } from "../utils/index.js";
 import { strArg } from "../utils/index.js";
+
+/** Async command execution for hooks — non-blocking, 30s timeout.
+ *  Replaces execSync so the event loop isn't frozen during hook commands. */
+function execHookAsync(command: string, opts: { env: NodeJS.ProcessEnv }): Promise<string> {
+  return new Promise((resolve, reject) => {
+    exec(
+      command,
+      {
+        shell: "bash",
+        encoding: "utf-8",
+        timeout: 30000,
+        env: opts.env,
+        maxBuffer: 10 * 1024 * 1024,
+      },
+      (err, stdout) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(stdout);
+        }
+      },
+    );
+  });
+}
 
 export type EventName =
   | "session_start"
@@ -94,19 +122,14 @@ export class HookEngine {
           break;
         }
       } catch (err) {
+        log.error({ err }, "hooks operation failed");
         const onError = hook.on_error ?? "ignore";
         if (onError === "fail") {
-          results.push({
-            output: `Hook error: ${asErrorString(err)}`,
-            success: false,
-            reject: false,
-          });
+          const msg = `Hook error: ${asErrorString(err)}`;
+          results.push({ output: msg, success: false, reject: false });
         } else if (onError === "reject") {
-          results.push({
-            output: `Hook error (rejecting): ${asErrorString(err)}`,
-            success: false,
-            reject: true,
-          });
+          const msg = `Hook error (rejecting): ${asErrorString(err)}`;
+          results.push({ output: msg, success: false, reject: true });
         }
       }
     }
@@ -139,15 +162,12 @@ export class HookEngine {
       case "command": {
         const command = hook.action.command ?? "";
         try {
-          const output = execSync(command, {
-            encoding: "utf-8",
-            timeout: 30000,
+          const output = await execHookAsync(command, {
             env: {
               ...process.env,
-              LARKY_EVENT: context.event,
-              LARKY_TOOL: context.toolName ?? "",
-              // Inject file path environment variable
-              LARKY_FILE_PATH: context.filePath ?? "",
+              SWIFTY_EVENT: context.event,
+              SWIFTY_TOOL: context.toolName ?? "",
+              SWIFTY_FILE_PATH: context.filePath ?? "",
             },
           });
           return {
@@ -156,7 +176,7 @@ export class HookEngine {
             reject: hook.reject ?? false,
           };
         } catch (err) {
-          console.error(err);
+          log.error({ err }, "hooks operation failed");
           throw err;
         }
       }
@@ -165,7 +185,8 @@ export class HookEngine {
         return {
           output: hook.action.prompt ?? "",
           success: true,
-          reject: false,
+          // Propagate hook.reject so prompt-type hooks can block tool execution.
+          reject: hook.reject ?? false,
         };
       }
 
@@ -185,13 +206,13 @@ export class HookEngine {
             reject: hook.reject ?? false,
           };
         } catch (err) {
-          console.error(err);
+          log.error({ err }, "hooks operation failed");
           throw err;
         }
       }
 
       case "agent": {
-        // Agent-type hook: execute a sub-agent via the injected agentRunner
+        // Agent-type hook: execute a subagent via the injected agentRunner
         if (!this.agentRunner) {
           return {
             output: "agent-type hook configured but no AgentRunner registered",
@@ -204,6 +225,7 @@ export class HookEngine {
           const output = await this.agentRunner(prompt, context);
           return { output, success: true, reject: hook.reject ?? false };
         } catch (err) {
+          log.error({ err }, "hooks operation failed");
           return {
             output: asErrorString(err),
             success: false,
@@ -258,7 +280,8 @@ function evaluateSingleCondition(expr: string, ctx: HookContext): boolean {
     const value = getContextValue(regexMatch[1], ctx);
     try {
       return new RegExp(regexMatch[2]).test(value);
-    } catch {
+    } catch (err) {
+      log.error({ err }, "hooks operation failed");
       return false;
     }
   }
@@ -269,7 +292,8 @@ function evaluateSingleCondition(expr: string, ctx: HookContext): boolean {
     const pattern = globMatch[2].replace(/\*\*/g, ".*").replace(/\*/g, "[^/]*").replace(/\?/g, ".");
     try {
       return new RegExp(`^${pattern}$`).test(value);
-    } catch {
+    } catch (err) {
+      log.error({ err }, "hooks operation failed");
       return false;
     }
   }

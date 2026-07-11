@@ -38,8 +38,8 @@ export class WriteFileTool implements BaseTool {
     const filePath = parsed.path;
     const content = parsed.content;
 
-    // Path traversal check: reject raw path components before normalize
-    if (filePath.split(path.sep).includes("..")) {
+    // Path traversal check: reject raw ".." components on both POSIX and Windows
+    if (filePath.split(/[/\\]/).includes("..")) {
       throw new Error(`path traversal not allowed: ${filePath}`);
     }
 

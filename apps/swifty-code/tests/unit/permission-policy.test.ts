@@ -165,30 +165,30 @@ describe("evaluate", () => {
 // --- paramPreview ---
 
 describe("paramPreview", () => {
-  test("bash shows command=value", () => {
-    expect(paramPreview("bash", { command: "echo hello" })).toBe("command=echo hello");
+  test("bash shows command='value'", () => {
+    expect(paramPreview("bash", { command: "echo hello" })).toBe("command='echo hello'");
   });
 
-  test("read_file shows path=value", () => {
-    expect(paramPreview("read_file", { path: "test.txt" })).toBe("path=test.txt");
+  test("read_file shows path='value'", () => {
+    expect(paramPreview("read_file", { path: "test.txt" })).toBe("path='test.txt'");
   });
 
-  test("write_file shows path=value", () => {
-    expect(paramPreview("write_file", { path: "test.txt" })).toBe("path=test.txt");
+  test("write_file shows path='value'", () => {
+    expect(paramPreview("write_file", { path: "test.txt" })).toBe("path='test.txt'");
   });
 
-  test("list_dir shows path=value", () => {
-    expect(paramPreview("list_dir", { path: "." })).toBe("path=.");
+  test("list_dir shows path='value'", () => {
+    expect(paramPreview("list_dir", { path: "." })).toBe("path='.'");
   });
 
-  test("note_save shows content=value", () => {
-    expect(paramPreview("note_save", { content: "my note" })).toBe("content=my note");
+  test("note_save shows content='value'", () => {
+    expect(paramPreview("note_save", { content: "my note" })).toBe("content='my note'");
   });
 
   test("long values are truncated to 60 chars", () => {
     const longCommand = "echo " + "x".repeat(100);
     const result = paramPreview("bash", { command: longCommand });
-    expect(result.length).toBeLessThanOrEqual(70);
+    expect(result.length).toBeLessThanOrEqual(75);
     expect(result).toContain("…"); // Unicode ellipsis
   });
 

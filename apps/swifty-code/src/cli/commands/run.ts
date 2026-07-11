@@ -38,9 +38,7 @@ export class StdoutPrinter {
         break;
       case "tool.call_finished":
         this._ensureNewline();
-        console.log(
-          `[tool] ${String(event["tool_name"])} ok ${String(event["elapsed_ms"])}ms`,
-        );
+        console.log(`[tool] ${String(event["tool_name"])} ok ${String(event["elapsed_ms"])}ms`);
         break;
       case "tool.call_failed":
         this._ensureNewline();
@@ -55,9 +53,7 @@ export class StdoutPrinter {
       case "run.finished": {
         this._ensureNewline();
         const elapsed = ((Date.now() - this._runStart) / 1000).toFixed(1);
-        console.log(
-          `[run] ${String(event["status"])} ${String(event["steps"])} steps ${elapsed}s`,
-        );
+        console.log(`[run] ${String(event["status"])} ${String(event["steps"])} steps ${elapsed}s`);
         break;
       }
     }
@@ -71,10 +67,7 @@ export class StdoutPrinter {
   }
 }
 
-export async function cmdRun(
-  goal: string,
-  config: SwiftyConfig,
-): Promise<void> {
+export async function cmdRun(goal: string, config: SwiftyConfig): Promise<void> {
   const client = new SocketClient(config.host, config.port);
   await client.connect();
 

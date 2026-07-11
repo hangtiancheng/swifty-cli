@@ -54,8 +54,8 @@ export class ListDirTool implements BaseTool {
     const rootPath = parsed.path;
     const maxDepth = parsed.max_depth;
 
-    // Path traversal check: reject raw path components before normalize
-    if (rootPath.split(path.sep).includes("..")) {
+    // Path traversal check: reject raw ".." components on both POSIX and Windows
+    if (rootPath.split(/[/\\]/).includes("..")) {
       throw new Error(`path traversal not allowed: ${rootPath}`);
     }
 

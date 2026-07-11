@@ -6,6 +6,7 @@ import picomatch from "picomatch";
 
 import type { Event } from "../bus/events.js";
 import type { TraceWriter } from "../trace/writer.js";
+import { makePushTrace } from "../trace/record.js";
 
 interface Subscription {
   subId: string;
@@ -18,6 +19,14 @@ interface Subscription {
 // Write a JSON line to a socket
 function writeLine(socket: net.Socket, data: unknown): boolean {
   return socket.write(JSON.stringify(data) + "\n", "utf-8");
+}
+
+// Return peer address string for trace client_id (matches Python peername)
+function peerAddress(socket: net.Socket): string {
+  const addr = socket.remoteAddress;
+  const port = socket.remotePort;
+  if (addr && port) return `${addr}:${String(port)}`;
+  return "<unknown>";
 }
 
 export class IpcEventBroadcaster {
@@ -62,16 +71,14 @@ export class IpcEventBroadcaster {
         }
         // Trace: CORE->CLIENT push
         if (this._trace) {
-          this._trace.emit({
-            ts: new Date().toISOString(),
-            direction: "CORE→CLIENT",
-            layer: "ipc",
-            kind: "push",
-            run_id: typeof runId === "string" ? runId : null,
-            step: null,
-            client_id: sub.subId,
-            data: { event_type: eventType },
-          });
+          this._trace.emit(
+            makePushTrace(
+              peerAddress(sub.socket),
+              typeof runId === "string" ? runId : null,
+              sub.subId,
+              eventType,
+            ),
+          );
         }
       } catch {
         dead.push(sub.socket);

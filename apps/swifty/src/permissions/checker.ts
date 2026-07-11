@@ -1,23 +1,23 @@
+import { createChildLogger } from "../logger/index.js";
+
+const log = createChildLogger({ module: "permissions" });
+
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join, resolve, dirname } from "node:path";
-import { homedir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import yaml from "js-yaml";
 import z, { parse } from "zod";
 import { strArg } from "../utils/index.js";
 
 export type DecisionEffect = "allow" | "deny" | "ask";
-export type PermissionMode =
-  | "default"
-  | "acceptEdits"
-  | "plan"
-  | "bypassPermissions";
+export type PermissionMode = "default" | "acceptEdits" | "plan" | "bypassPermissions";
 
 export interface Decision {
   effect: DecisionEffect;
   reason: string;
 }
 
-type RuleEffect = "allow" | "deny";
+type RuleEffect = DecisionEffect;
 
 interface Rule {
   tool: string;
@@ -94,10 +94,13 @@ const CONTENT_FIELDS: Record<string, string> = {
   Grep: "pattern",
 };
 
-export function extractContent(
-  toolName: string,
-  args: Record<string, unknown>,
-): string {
+const DEFAULT_DENY_WRITE = [
+  ".swifty/config.yaml",
+  ".swifty/permissions.local.yaml",
+  ".swifty/skills/",
+];
+
+export function extractContent(toolName: string, args: Record<string, unknown>): string {
   const field = CONTENT_FIELDS[toolName];
   if (!field) {
     return "";
@@ -108,13 +111,41 @@ export function extractContent(
 
 export class PathSandbox {
   private allowedRoots: string[];
+  private denyWritePaths: string[];
+  private projectDir: string;
 
   constructor(projectDir: string) {
-    this.allowedRoots = [resolve(projectDir), "/tmp"];
+    // Use os.tmpdir() instead of hardcoded "/tmp" — on macOS the temp dir
+    // is /var/folders/..., not /tmp.
+    this.projectDir = resolve(projectDir);
+    this.allowedRoots = [this.projectDir, tmpdir()];
+    // 将相对路径转为绝对路径
+    this.denyWritePaths = DEFAULT_DENY_WRITE.map((p) => join(this.projectDir, p));
   }
 
   addRoot(root: string): void {
     this.allowedRoots.push(resolve(root));
+  }
+  // 添加自定义拒绝写入路径
+  addDenyWrite(path: string): void {
+    this.denyWritePaths.push(resolve(path));
+  }
+
+  /**
+   * 检查路径是否在拒绝写入列表中。
+   * denyWrite 优先级最高——即使路径在允许根目录内，也会被拒绝写入。
+   */
+  checkDenyWrite(filePath: string): Decision | null {
+    const absolute = resolve(filePath);
+    for (const denied of this.denyWritePaths) {
+      if (absolute.startsWith(denied)) {
+        return {
+          effect: "deny",
+          reason: `Path ${filePath} is in deny-write list`,
+        };
+      }
+    }
+    return null;
   }
 
   check(filePath: string): Decision | null {
@@ -138,12 +169,14 @@ function globMatch(pattern: string, content: string): boolean {
     "^" +
     pattern
       .replace(/[.+^${}()|[\]\\]/g, "\\$&")
-      .replace(/\*/g, "[^/]*")
-      .replace(/\?/g, "[^/]") +
+      // Bash 命令中 * 应匹配包括 / 在内的任意字符（命令不是路径）
+      .replace(/\*/g, ".*")
+      .replace(/\?/g, ".") +
     "$";
   try {
     return new RegExp(re).test(content);
-  } catch {
+  } catch (err) {
+    log.error({ err }, "permissions operation failed");
     return false;
   }
 }
@@ -156,7 +189,8 @@ function loadRulesFile(path: string): Rule[] {
   let data: string;
   try {
     data = readFileSync(path, "utf-8");
-  } catch {
+  } catch (err) {
+    log.error({ err }, "permissions operation failed");
     return [];
   }
   const YamlEntrySchema = z.object({
@@ -168,12 +202,13 @@ function loadRulesFile(path: string): Rule[] {
   try {
     const parsed: unknown = yaml.load(data);
     yamlData = parse(z.array(YamlEntrySchema), parsed);
-  } catch {
+  } catch (err) {
+    log.error({ err }, "permissions operation failed");
     return [];
   }
   const rules: Rule[] = [];
   for (const entry of yamlData) {
-    if (entry.effect !== "allow" && entry.effect !== "deny") {
+    if (entry.effect !== "allow" && entry.effect !== "deny" && entry.effect !== "ask") {
       continue;
     }
     const m = RULE_RE.exec((entry.rule ?? "").trim());
@@ -220,6 +255,17 @@ export class RuleEngine {
   appendLocalRule(rule: Rule): void {
     mkdirSync(dirname(this.localPath), { recursive: true });
     const rules = loadRulesFile(this.localPath);
+    // Deduplicate: skip if an identical {tool, pattern, effect} rule already
+    // exists. Without this, every "allow always" click on the same command
+    // appends a duplicate entry (the rule engine matches but allowAlways is
+    // still called in some flows, e.g. cross-session content variants).
+    const exists = rules.some(
+      (r) => r.tool === rule.tool && r.pattern === rule.pattern && r.effect === rule.effect,
+    );
+    if (exists) {
+      return;
+    }
+
     rules.push(rule);
     const entries = rules.map((r) => ({
       rule: `${r.tool}(${r.pattern})`,
@@ -255,16 +301,11 @@ function isSafeCommand(command: string): boolean {
   }
   return SAFE_PREFIXES.some(
     (prefix) =>
-      trimmed === prefix ||
-      trimmed.startsWith(prefix + " ") ||
-      trimmed.startsWith(prefix + "\t"),
+      trimmed === prefix || trimmed.startsWith(prefix + " ") || trimmed.startsWith(prefix + "\t"),
   );
 }
 
-function modeDecide(
-  mode: PermissionMode,
-  category: "read" | "write" | "command",
-): DecisionEffect {
+function modeDecide(mode: PermissionMode, category: "read" | "write" | "command"): DecisionEffect {
   switch (mode) {
     case "bypassPermissions":
       return "allow";
@@ -281,6 +322,9 @@ function modeDecide(
 export class PermissionChecker {
   mode: PermissionMode;
   planFilePath = "";
+  // 沙箱模式：开启后 command 类工具走 OS 沙箱隔离，可选自动放行
+  sandboxEnabled = false;
+  sandboxAutoAllow = false;
   private sandbox: PathSandbox;
   private ruleEngine: RuleEngine;
   // Layer 4b: Session-level temporary allowlist (in-memory, invalidated on process exit)
@@ -304,10 +348,7 @@ export class PermissionChecker {
     // Both WriteFile and EditFile targeting the plan file are allowed so the
     // model can create and update its plan. Mirrors Go's category-level check
     // against CategoryWrite (which covers both tools).
-    if (
-      this.mode === "plan" &&
-      (toolName === "WriteFile" || toolName === "EditFile")
-    ) {
+    if (this.mode === "plan" && (toolName === "WriteFile" || toolName === "EditFile")) {
       const path = strArg(args, "file_path", "");
       if (path.includes(".swifty/plans/")) {
         return {
@@ -331,12 +372,42 @@ export class PermissionChecker {
       };
     }
 
+    // Layer 3.5: 沙箱自动放行——OS 沙箱已隔离写入，非危险命令可跳过人工确认。
+    // 拆分复合命令逐条检查 deny/ask 规则，防止通过命令拼接绕过权限检查。
+    if (this.sandboxEnabled && this.sandboxAutoAllow && category === "command") {
+      const subcommands = strArg(args, "command")
+        .split(/\s*(?:&&|\|\||[;|])\s*/)
+        .map((s) => s.trim())
+        .filter(Boolean);
+      let hasAsk = false;
+      for (const sub of subcommands) {
+        const ruleResult = this.ruleEngine.evaluate(toolName, sub);
+        if (ruleResult === "deny") {
+          return { effect: "deny", reason: "Permission rule: deny" };
+        }
+        if (ruleResult === "ask") {
+          hasAsk = true;
+        }
+      }
+      if (hasAsk) {
+        return { effect: "ask", reason: "Permission rule: ask (sandbox does not override)" };
+      }
+      return { effect: "allow", reason: "Sandbox auto-allow: OS sandbox active" };
+    }
+
     // Layer 4: path sandbox (file tools only).
     const filePath = strArg(args, "file_path", strArg(args, "path", ""));
     if ((category === "read" || category === "write") && filePath) {
+      // denyWrite 检查优先：敏感路径始终拒绝写入
+      if (category === "write") {
+        const denyDecision = this.sandbox.checkDenyWrite(filePath);
+        if (denyDecision) {
+          return denyDecision;
+        }
+      }
       const sandboxDecision = this.sandbox.check(filePath);
-      if (sandboxDecision) {
-        return sandboxDecision;
+      if (sandboxDecision && this.mode !== "bypassPermissions") {
+        return { effect: "ask", reason: sandboxDecision.reason };
       }
     }
 
@@ -370,8 +441,7 @@ export class PermissionChecker {
   // command/path family rather than the whole tool. Mirrors Go.
   allowAlways(toolName: string, args: Record<string, unknown>): void {
     const content = extractContent(toolName, args);
-    const pattern =
-      content.length > 60 ? content.slice(0, 60) + "*" : content + "*";
+    const pattern = content.length > 60 ? content.slice(0, 60) + "*" : content + "*";
     this.ruleEngine.appendLocalRule({
       tool: toolName,
       pattern,

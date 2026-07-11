@@ -53,7 +53,7 @@ export class BashTool implements BaseTool {
 
       const timer = setTimeout(() => {
         killed = true;
-        proc.kill("SIGTERM");
+        proc.kill("SIGKILL");
       }, timeout * 1000);
 
       const collectOutput = (chunk: Buffer): void => {

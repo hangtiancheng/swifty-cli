@@ -1,10 +1,14 @@
+import { createChildLogger } from "../logger/index.js";
+
+const log = createChildLogger({ module: "teams" });
+
 import { execSync, spawn } from "node:child_process";
 import type { TeamMode } from "./team.js";
 
 /**
  * Auto-detect the best backend for running teammates.
  *
- * Claude Code's 'auto' logic (which we mirror):
+ * Auto-detection logic:
  *   - Default to **in-process** so progress tracking works (agent events
  *     flow in the same process and can update the Spinner Tree in real time).
  *   - Only use tmux/iTerm panes when the user explicitly requests it via
@@ -28,7 +32,8 @@ export function detectPaneBackend(): TeamMode {
   try {
     execSync("which tmux", { stdio: ["pipe", "pipe", "pipe"] });
     return "tmux";
-  } catch {
+  } catch (err) {
+    log.error({ err }, "teams operation failed");
     // tmux not found
   }
   return "in-process";
@@ -67,16 +72,15 @@ export function spawnTeammate(config: SpawnConfig): {
           encoding: "utf-8",
           stdio: ["pipe", "pipe", "pipe"],
         });
-      } catch {
+      } catch (err) {
+        log.error({ err }, "teams operation failed");
+
         // Create new session if window fails
-        execSync(
-          `tmux new-session -d -s "${sessionName}" -n teammate "${cmd}"`,
-          {
-            cwd: config.cwd,
-            encoding: "utf-8",
-            stdio: ["pipe", "pipe", "pipe"],
-          },
-        );
+        execSync(`tmux new-session -d -s "${sessionName}" -n teammate "${cmd}"`, {
+          cwd: config.cwd,
+          encoding: "utf-8",
+          stdio: ["pipe", "pipe", "pipe"],
+        });
       }
       return {
         cancel: () => {
@@ -84,7 +88,9 @@ export function spawnTeammate(config: SpawnConfig): {
             execSync(`tmux kill-session -t "${sessionName}"`, {
               stdio: ["pipe", "pipe", "pipe"],
             });
-          } catch {
+          } catch (err) {
+            log.error({ err }, "teams operation failed");
+
             // session may already be dead
           }
         },

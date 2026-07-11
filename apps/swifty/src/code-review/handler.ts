@@ -1,3 +1,7 @@
+import { createChildLogger } from "../logger/index.js";
+
+const log = createChildLogger({ module: "code-review" });
+
 import type { CommandContext } from "../commands/commands.js";
 import type { CodeReviewManager } from "./manager.js";
 import { asCriticEvaluation, type ReviewSession } from "./session.js";
@@ -52,8 +56,9 @@ export function handleCodeReviewCommand(
       default:
         return showCodeReviewHelp();
     }
-  } catch (error) {
-    return `Error: ${error instanceof Error ? error.message : String(error)}`;
+  } catch (err) {
+    log.error({ err }, "code-review operation failed");
+    return `Error: ${err instanceof Error ? err.message : String(err)}`;
   }
 }
 

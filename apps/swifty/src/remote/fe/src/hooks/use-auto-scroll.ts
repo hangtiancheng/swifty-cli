@@ -1,0 +1,38 @@
+import { useEffect, useRef, useState } from 'react';
+
+/**
+ * Keeps a scroll container pinned to the bottom while new content streams in,
+ * unless the user has scrolled up to read history.
+ *
+ * Returns a ref to attach to the scrollable element and the current auto-scroll
+ * flag (useful for rendering a "jump to bottom" affordance).
+ */
+export function useAutoScroll<T extends HTMLElement>(dep: unknown) {
+  const ref = useRef<T | null>(null);
+  const [autoScroll, setAutoScroll] = useState(true);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `dep` (the items array) intentionally triggers a re-scroll even though the effect body only reads DOM properties.
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || !autoScroll) return;
+    // requestAnimationFrame ensures layout has settled before scrolling.
+    const raf = requestAnimationFrame(() => {
+      el.scrollTop = el.scrollHeight;
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [dep, autoScroll]);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const onScroll = () => {
+      const distanceFromBottom =
+        el.scrollHeight - el.scrollTop - el.clientHeight;
+      setAutoScroll(distanceFromBottom < 60);
+    };
+    el.addEventListener('scroll', onScroll, { passive: true });
+    return () => el.removeEventListener('scroll', onScroll);
+  }, []);
+
+  return { ref, autoScroll, setAutoScroll };
+}

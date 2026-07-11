@@ -1,3 +1,7 @@
+import { createChildLogger } from "../logger/index.js";
+
+const log = createChildLogger({ module: "memory" });
+
 import { readFileSync, existsSync } from "node:fs";
 import { join, dirname, resolve, isAbsolute, relative } from "node:path";
 import { homedir } from "node:os";
@@ -15,10 +19,10 @@ export interface InstructionSource {
  * Discovers and concatenates all project-level and user-level instruction files.
  *
  * Discovery order (later entries have higher priority, drawing more model attention):
- *  1. User-global: ~/.swifty/LARKY.md, ~/.swifty/AGENTS.md
- *  2. Project: LARKY.md and AGENTS.md in every directory from the git root to workDir
+ *  1. User-global: ~/.swifty/SWIFTY.md, ~/.swifty/AGENTS.md
+ *  2. Project: SWIFTY.md and AGENTS.md in every directory from the git root to workDir
  *  3. workDir/.swifty/INSTRUCTIONS.md (legacy format compatibility)
- *  4. workDir/LARKY.local.md (local private override)
+ *  4. workDir/SWIFTY.local.md (local private override)
  *
  * Supports @include directive:
  *  - @./relative/path, @~/home/path, @/absolute/path
@@ -41,7 +45,8 @@ export function loadInstructions(workDir: string): string {
       if (!rel.startsWith("..")) {
         label = rel;
       }
-    } catch {
+    } catch (err) {
+      log.error({ err }, "memory operation failed");
       // Fallback to absolute path
     }
     parts.push(`Contents of ${label}:\n\n${s.content.replace(/\n+$/, "")}`);
@@ -60,16 +65,18 @@ export function discoverInstructions(workDir: string): InstructionSource[] {
   // 1. User-global instructions
   try {
     const home = homedir();
-    addSource(sources, seen, join(home, ".swifty", "LARKY.md"));
+    addSource(sources, seen, join(home, ".swifty", "SWIFTY.md"));
     addSource(sources, seen, join(home, ".swifty", "AGENTS.md"));
-  } catch {
+  } catch (err) {
+    log.error({ err }, "memory operation failed");
+
     // Skip if $HOME is unavailable
   }
 
   // 2. Every directory from git root to workDir
   const dirs = projectInstructionDirs(workDir);
   for (const dir of dirs) {
-    addSource(sources, seen, join(dir, "LARKY.md"));
+    addSource(sources, seen, join(dir, "SWIFTY.md"));
     addSource(sources, seen, join(dir, "AGENTS.md"));
   }
 
@@ -77,21 +84,18 @@ export function discoverInstructions(workDir: string): InstructionSource[] {
   addSource(sources, seen, join(workDir, ".swifty", "INSTRUCTIONS.md"));
 
   // 4. Local private override
-  addSource(sources, seen, join(workDir, "LARKY.local.md"));
+  addSource(sources, seen, join(workDir, "SWIFTY.local.md"));
 
   return sources;
 }
 
 /** Attempts to read an instruction file and add it to the list, supporting @include expansion */
-function addSource(
-  out: InstructionSource[],
-  seen: Set<string>,
-  filePath: string,
-): void {
+function addSource(out: InstructionSource[], seen: Set<string>, filePath: string): void {
   let abs: string;
   try {
     abs = resolve(filePath);
-  } catch {
+  } catch (err) {
+    log.error({ err }, "memory operation failed");
     return;
   }
   if (seen.has(abs)) {
@@ -104,7 +108,9 @@ function addSource(
   let data: string;
   try {
     data = readFileSync(abs, "utf-8");
-  } catch {
+  } catch (err) {
+    log.error({ err }, "memory operation failed");
+
     return;
   }
   seen.add(abs);
@@ -149,7 +155,8 @@ function expandIncludes(
           let abs: string;
           try {
             abs = resolve(resolved);
-          } catch {
+          } catch (err) {
+            log.error({ err }, "memory operation failed");
             out.push(line);
             continue;
           }
@@ -160,7 +167,8 @@ function expandIncludes(
               out.push(`<!-- included from ${includePath} -->`);
               out.push(expandIncludes(data, dirname(abs), seen, depth + 1));
               continue;
-            } catch {
+            } catch (err) {
+              log.error({ err }, "memory operation failed");
               // On read failure, keep the original line visible to the user
             }
           }
@@ -211,7 +219,8 @@ function resolveInclude(p: string, baseDir: string): string {
   if (p.startsWith("~/")) {
     try {
       return join(homedir(), p.slice(2));
-    } catch {
+    } catch (err) {
+      log.error({ err }, "memory operation failed");
       return "";
     }
   }
@@ -229,7 +238,8 @@ function projectInstructionDirs(workDir: string): string[] {
   let abs: string;
   try {
     abs = resolve(workDir);
-  } catch {
+  } catch (err) {
+    log.error({ err }, "memory operation failed");
     return [workDir];
   }
 
@@ -266,7 +276,8 @@ function findGitRoot(start: string): string {
       if (existsSync(gitPath)) {
         return cur;
       }
-    } catch {
+    } catch (err) {
+      log.error({ err }, "memory operation failed");
       // ignore
     }
     const parent = dirname(cur);

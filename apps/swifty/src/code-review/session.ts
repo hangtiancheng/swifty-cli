@@ -1,3 +1,7 @@
+import { createChildLogger } from "../logger/index.js";
+
+const log = createChildLogger({ module: "code-review" });
+
 import type { CodeReviewManager, CodeReviewMember } from "./manager.js";
 
 export interface ReviewRequest {
@@ -25,7 +29,7 @@ export function asCriticEvaluation(str: string): CriticEvaluation {
   if (isCriticEvaluation(str)) {
     return str;
   } else {
-    console.error(str);
+    log.error({ str }, "code-review operation failed");
     return "partially-reasonable"; // best-effort
   }
 }

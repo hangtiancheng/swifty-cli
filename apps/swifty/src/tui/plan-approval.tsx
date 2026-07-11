@@ -10,7 +10,7 @@ interface PlanApprovalDialogProps {
 const PLAN_APPROVAL_OPTIONS = [
   "Yes, enter YOLO mode (auto-approve all)",
   "Yes, manually approve edits",
-  "Tell Swiftyy what to change",
+  "Tell Swifty what to change",
 ];
 
 export function PlanApprovalDialog(props: PlanApprovalDialogProps) {
@@ -59,8 +59,7 @@ export function PlanApprovalDialog(props: PlanApprovalDialogProps) {
   return (
     <Box flexDirection="column" marginTop={1}>
       <Text bold color="magenta">
-        Swiftyy has written up a plan and is ready to execute. Would you like to
-        proceed?
+        Swifty has written up a plan and is ready to execute. Would you like to proceed?
       </Text>
       <Box flexDirection="column" marginTop={1}>
         {PLAN_APPROVAL_OPTIONS.map((label, i) => (
@@ -79,9 +78,7 @@ export function PlanApprovalDialog(props: PlanApprovalDialogProps) {
         ))}
         {cursor === 2 && (
           <Box marginLeft={4} flexDirection="column">
-            <Text>
-              {feedbackText || <Text dimColor>Type feedback here...</Text>}|
-            </Text>
+            <Text>{feedbackText || <Text dimColor>Type feedback here...</Text>}|</Text>
             <Text dimColor>shift+tab to approve with this feedback</Text>
           </Box>
         )}

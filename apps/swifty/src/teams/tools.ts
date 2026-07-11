@@ -1,3 +1,7 @@
+import { createChildLogger } from "../logger/index.js";
+
+const log = createChildLogger({ module: "teams" });
+
 import { asErrorString, strArg } from "@/utils/index.js";
 import type { Tool, ToolContext, ToolResult, ToolSchema } from "../tools/types.js";
 import type { TeamManager, RunAgent } from "./team.js";
@@ -139,9 +143,10 @@ export class SendMessageTool implements Tool {
     }
     try {
       await t.sendMessage("lead", to, message);
-    } catch (e) {
+    } catch (err) {
+      log.error({ err }, "teams operation failed");
       return {
-        output: `Error: ${asErrorString(e)}`,
+        output: `Error: ${asErrorString(err)}`,
         isError: true,
       };
     }

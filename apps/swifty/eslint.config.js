@@ -9,7 +9,17 @@ import globals from "globals";
 import tseslint from "typescript-eslint";
 
 export default defineConfig(
-  globalIgnores(["./dist", "./node_modules"]),
+  globalIgnores([
+    "app",
+    "dist",
+    "node_modules",
+    "out",
+    "eslint.config.js",
+    "rspress.config.ts",
+    "tsup.config.ts",
+    "vitest.config.ts",
+    "src/remote/fe",
+  ]),
   {
     files: ["**/*.{ts,tsx}"],
     extends: [
@@ -35,7 +45,7 @@ export default defineConfig(
       "@typescript-eslint/consistent-type-imports": ["error", { prefer: "type-imports" }],
       "@typescript-eslint/no-floating-promises": ["error", { ignoreVoid: true }],
       "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_" }],
-      "@typescript-eslint/no-unnecessary-condition": "warn",
+      "@typescript-eslint/no-unnecessary-condition": "off",
       "@typescript-eslint/ban-ts-comment": "error",
       "@typescript-eslint/consistent-type-assertions": [
         "error",

@@ -37,6 +37,21 @@ describe("Builtin Tools", () => {
       expect(result.isError).toBe(true);
       expect(result.content).toContain("exit 1");
     });
+
+    // Feature: Verify BashTool kills process with SIGKILL on timeout
+    // Design: Run sleep with timeout=1, verify timeout error and no lingering process
+    test("kills process on timeout", async () => {
+      const tool = new BashTool();
+      const start = Date.now();
+      const result = await tool.invoke({ command: "sleep 100", timeout: 1 });
+      const elapsed = Date.now() - start;
+
+      // Should return within ~2s (1s timeout + overhead), not 100s
+      expect(elapsed).toBeLessThan(5000);
+      expect(result.isError).toBe(true);
+      expect(result.errorType).toBe("timeout");
+      expect(result.content).toContain("timeout");
+    });
   });
 
   describe("ReadFileTool", () => {

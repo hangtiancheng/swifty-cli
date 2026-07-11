@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { resolveModelId } from "../src/llm/model-resolver.js";
-import { BUILTIN_AGENTS } from "../src/sub-agent/definition.js";
+import { BUILTIN_AGENTS } from "../src/subagent/definition.js";
 
 describe("model alias resolution", () => {
   it("resolves short aliases to full model ids", () => {

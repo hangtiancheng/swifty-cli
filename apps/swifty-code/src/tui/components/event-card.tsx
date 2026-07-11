@@ -3,16 +3,15 @@
 // Supports: subagent tree, collapsible tools, permission resolution, markdown rendering
 import React from "react";
 import { Box, Text } from "ink";
-import { marked, type MarkedExtension } from "marked";
-import { markedTerminal } from "marked-terminal";
+import { marked } from "marked";
+import { markedTerminal } from "@swifty.js/marked-terminal";
 
 import { theme, truncate, formatTimestamp } from "../theme.js";
 import { isRecord } from "../../core/bus/envelope.js";
 import { ToolUseCard } from "./tool-use-card.js";
 
 // Configure marked with terminal renderer (cached, created once)
-// eslint-disable-next-line @typescript-eslint/consistent-type-assertions
-marked.use(markedTerminal() as MarkedExtension);
+marked.use(markedTerminal());
 
 // Normalized event representation for rendering
 export interface AgentEvent {
@@ -254,7 +253,7 @@ export function EventCard({ event, context }: EventCardProps): React.JSX.Element
     // Permission request — inline warning indicator
     case "permission.requested": {
       const toolName = str(data, "tool_name");
-      const paramsPreview = str(data, "params_preview");
+      const paramsPreview = str(data, "param_preview");
       return (
         <Box flexDirection="column" marginLeft={2} marginTop={0}>
           <Box>

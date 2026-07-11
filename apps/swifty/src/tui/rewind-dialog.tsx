@@ -78,7 +78,7 @@ function RewindDialog(props: Props) {
   if (phase === 0) {
     return (
       <Box flexDirection="column" paddingLeft={1} paddingTop={1}>
-        <Text bold>{COLORS.primary("⟲ Rewind to checkpoint")}</Text>{" "}
+        <Text bold>{COLORS.primary("⟲ Rewind to checkpoint")}</Text>
         {snapshots.map((snap, idx) => {
           const fileCount = Object.keys(snap.backups).length;
           const ago = formatAgo(snap.timestamp);
@@ -105,10 +105,10 @@ function RewindDialog(props: Props) {
   const snap = snapshots[selectedIndex];
   return (
     <Box flexDirection="column" paddingLeft={1} paddingTop={1}>
-      <Text bold>{COLORS.primary("⟲ Rewind to checkpoint")}</Text>{" "}
+      <Text bold>{COLORS.primary("⟲ Rewind to checkpoint")}</Text>
       <Text dimColor>
         Selected: [{selectedIndex + 1}] {snap.userText}
-      </Text>{" "}
+      </Text>
       {RESTORE_OPTIONS.map((opt, idx) => (
         <Box key={idx}>
           <Text>

@@ -73,11 +73,11 @@ export class TaskList {
     if (!task) {
       return undefined;
     }
-    // Object.assign(task, updates);
     task = {
       ...task,
       ...updates,
     };
+    this.tasks.set(id, task);
     this.persist();
     return task;
   }

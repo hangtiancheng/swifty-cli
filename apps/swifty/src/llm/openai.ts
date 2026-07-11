@@ -1,19 +1,11 @@
+import { createChildLogger } from "../logger/index.js";
+
+const log = createChildLogger({ module: "llm" });
+
 import OpenAI from "openai";
-import {
-  getMaxOutputTokens,
-  type ProviderConfig,
-  resolveAPIKey,
-} from "../config/config.js";
-import type {
-  ConversationManager,
-  Message,
-} from "../conversation/conversation.js";
-import {
-  asRecord,
-  asString,
-  DANGEROUSLY_JSON,
-  isRecord,
-} from "../utils/index.js";
+import { getMaxOutputTokens, type ProviderConfig, resolveAPIKey } from "../config/config.js";
+import type { ConversationManager, Message } from "../conversation/conversation.js";
+import { asRecord, asString, DANGEROUSLY_JSON, isRecord, strArg } from "../utils/index.js";
 import type { LLMClient } from "./client.js";
 import {
   AuthenticationError,
@@ -108,6 +100,8 @@ export class OpenAIClient implements LLMClient {
       let currentToolName = "";
       let currentToolId = "";
       let jsonAccumulate = "";
+      let reasoningId = "";
+      let reasoningText = "";
 
       for await (const event of stream) {
         if (event.type === "response.output_text.delta") {
@@ -116,7 +110,16 @@ export class OpenAIClient implements LLMClient {
             text: event.delta,
           };
         } // end if (event.type === "response.output_text.delta")
-        else if (event.type === "response.function_call_arguments.delta") {
+        else if (event.type === "response.reasoning_summary_text.delta") {
+          reasoningText += event.delta;
+          yield { type: "thinking_delta", text: event.delta };
+        } else if (event.type === "response.reasoning_summary_text.done") {
+          yield {
+            type: "thinking_complete",
+            thinking: reasoningText,
+            signature: reasoningId,
+          };
+        } else if (event.type === "response.function_call_arguments.delta") {
           jsonAccumulate += event.delta;
           yield {
             type: "tool_call_delta",
@@ -134,6 +137,9 @@ export class OpenAIClient implements LLMClient {
               toolName: currentToolName,
               toolId: currentToolId,
             };
+          } else if (event.item.type === "reasoning") {
+            reasoningId = event.item.id ?? "";
+            reasoningText = "";
           }
         } // end if (event.type === "response.output_item.added")
         else if (event.type === "response.output_item.done") {
@@ -142,11 +148,9 @@ export class OpenAIClient implements LLMClient {
             if (jsonAccumulate) {
               try {
                 const parsed: unknown = JSON.parse(jsonAccumulate);
-                args = isRecord(parsed)
-                  ? asRecord(parsed)
-                  : { [DANGEROUSLY_JSON]: jsonAccumulate };
-              } catch (e) {
-                console.error(e);
+                args = isRecord(parsed) ? asRecord(parsed) : { [DANGEROUSLY_JSON]: jsonAccumulate };
+              } catch (err) {
+                log.error({ err }, "llm operation failed");
                 args = {
                   [DANGEROUSLY_JSON]: jsonAccumulate,
                 };
@@ -178,10 +182,7 @@ export class OpenAIClient implements LLMClient {
 
             // input_tokens already includes the cached prefix;
             // subtract so the usage anchor (input + cache_read) doesn't double-count it.
-            inputTokens = Math.max(
-              0,
-              usage.input_tokens - cacheReadInputTokens,
-            );
+            inputTokens = Math.max(0, usage.input_tokens - cacheReadInputTokens);
           } // end if (usage)
 
           // Parse the actual stop reason from the Responses API.
@@ -211,12 +212,14 @@ export class OpenAIClient implements LLMClient {
           };
         } // end if (event.type === "response.completed")
       }
-    } catch (e) {
-      console.error(e);
-      throw classifyOpenAIError(e);
+    } catch (err) {
+      log.error({ err }, "llm operation failed");
+      throw classifyOpenAIError(err);
     }
   }
-
+  setSystemPrompt(prompt: string): void {
+    this.systemPrompt = prompt;
+  }
   setMaxOutputTokens(maxTokens: number): void {
     this.maxOutputTokens = maxTokens;
   }
@@ -237,15 +240,30 @@ type OpenAIMessageParam =
       type: "function_call_output";
       call_id: string;
       output: string;
+    }
+  | {
+      type: "reasoning";
+      id: string;
+      summary: { type: "summary_text"; text: string }[];
     };
 
-// Convert Swiftyy's conversation into Responses API input items:
+// Convert Swifty's conversation into Responses API input items:
 // assistant tool calls become function_call items and
 // tool results become function_call_output items,
 // so multi-turn tool use works over the Responses endpoint.
 export function buildOpenAIInput(messages: Message[]): OpenAIMessageParam[] {
   const result: OpenAIMessageParam[] = [];
   for (const m of messages) {
+    if (m.thinkingBlocks) {
+      for (const tb of m.thinkingBlocks) {
+        result.push({
+          type: "reasoning",
+          id: tb.signature,
+          summary: [{ type: "summary_text", text: tb.thinking }],
+        } satisfies OpenAIMessageParam);
+      }
+    }
+
     if (m.toolUses && m.toolUses.length > 0) {
       if (m.content) {
         result.push({
@@ -291,7 +309,7 @@ function containsContextLengthError(msg: string): boolean {
   );
 }
 
-// Convert Swiftyy's conversation into Chat Completions messages,
+// Convert Swifty's conversation into Chat Completions messages,
 // preserving assistant tool_calls and tool-result (role: "tool") turns so multi-turn tool use works over the openai-compat (Chat Completions) endpoint.
 export function buildChatCompletionMessage(
   messages: Message[],
@@ -357,7 +375,9 @@ export class OpenAICompatClient implements LLMClient {
     this.systemPrompt = systemPrompt;
     this.maxOutputTokens = getMaxOutputTokens(config);
   }
-
+  setSystemPrompt(prompt: string): void {
+    this.systemPrompt = prompt;
+  }
   setMaxOutputTokens(maxTokens: number): void {
     this.maxOutputTokens = maxTokens;
   }
@@ -391,6 +411,7 @@ export class OpenAICompatClient implements LLMClient {
       model: this.model,
       messages,
       stream: true,
+      stream_options: { include_usage: true },
       max_tokens: this.maxOutputTokens,
       ...(tools.length > 0 ? { tools } : {}),
     };
@@ -417,14 +438,32 @@ export class OpenAICompatClient implements LLMClient {
 
       /** enum: "length" | "tool_calls" */
       let finishReason: string | null = null;
+      let reasoningAccumulate = "";
+
       for await (const chunk of stream) {
+        // Usage may arrive in a trailing chunk with empty choices,
+        // so check it before the delta guard.
+        if (chunk.usage) {
+          outputTokens = chunk.usage.completion_tokens ?? 0;
+          cacheReadInputTokens = chunk.usage.prompt_tokens_details?.cached_tokens ?? 0;
+          inputTokens = Math.max(0, (chunk.usage.prompt_tokens ?? 0) - cacheReadInputTokens);
+        }
+
         if (chunk.choices.length === 0) {
           continue;
         }
-        const delta = chunk.choices[0].delta;
+        const delta: OpenAI.Chat.Completions.ChatCompletionChunk.Choice.Delta =
+          chunk.choices[0].delta;
         if (delta.content) {
           yield { type: "text_delta", text: delta.content };
         } // end if (delta.content)
+
+        // const reasoningContent = delta.reasoning_content;
+        const reasoningContent = strArg(asRecord(delta), "reasoning_content");
+        if (reasoningContent) {
+          reasoningAccumulate += reasoningContent;
+          yield { type: "thinking_delta", text: reasoningContent };
+        }
 
         if (delta.tool_calls) {
           for (const tc of delta.tool_calls) {
@@ -467,17 +506,23 @@ export class OpenAICompatClient implements LLMClient {
 
         if (chunk.choices[0].finish_reason) {
           finishReason = chunk.choices[0].finish_reason;
+          if (reasoningAccumulate) {
+            yield {
+              type: "thinking_complete",
+              thinking: reasoningAccumulate,
+              signature: "",
+            };
+            reasoningAccumulate = "";
+          }
           for (const tu of toolCalls.values()) {
             let args: Record<string, unknown> = {};
             const jsonArgs = tu.args;
             if (jsonArgs) {
               try {
                 const parsed: unknown = JSON.parse(jsonArgs);
-                args = isRecord(parsed)
-                  ? asRecord(parsed)
-                  : { [DANGEROUSLY_JSON]: jsonArgs };
+                args = isRecord(parsed) ? asRecord(parsed) : { [DANGEROUSLY_JSON]: jsonArgs };
               } catch (err) {
-                console.error(err);
+                log.error({ err }, "llm operation failed");
                 args = {
                   [DANGEROUSLY_JSON]: jsonArgs,
                 };
@@ -492,25 +537,25 @@ export class OpenAICompatClient implements LLMClient {
           }
         } // end if (chunk.choices[0].finish_reason)
 
-        if (chunk.usage) {
-          outputTokens = chunk.usage.completion_tokens;
+        // if (chunk.usage) {
+        //   outputTokens = chunk.usage.completion_tokens;
 
-          // Responses API exposes the cached prefix via
-          // input_tokens_details.cached_tokens, absent -> 0.
-          // There is no cache_creation concept here, so it stays 0.
-          cacheReadInputTokens =
-            chunk.usage.prompt_tokens_details?.cached_tokens ?? 0;
+        //   // Responses API exposes the cached prefix via
+        //   // input_tokens_details.cached_tokens, absent -> 0.
+        //   // There is no cache_creation concept here, so it stays 0.
+        //   cacheReadInputTokens =
+        //     chunk.usage.prompt_tokens_details?.cached_tokens ?? 0;
 
-          // input_tokens already includes the cached prefix;
-          // subtract so the usage anchor (input + cache_read) doesn't double-count it.
-          inputTokens = Math.max(
-            0,
-            chunk.usage.prompt_tokens - cacheReadInputTokens,
-          );
-        }
+        //   // input_tokens already includes the cached prefix;
+        //   // subtract so the usage anchor (input + cache_read) doesn't double-count it.
+        //   inputTokens = Math.max(
+        //     0,
+        //     chunk.usage.prompt_tokens - cacheReadInputTokens,
+        //   );
+        // }
       }
 
-      // Map Chat Completions finish_reason to Swiftyy's internal stop reason.
+      // Map Chat Completions finish_reason to Swifty's internal stop reason.
       // "length" means the model hit max_tokens
       // "tool_calls" means tool use;
       // "stop" (or anything else) means normal end_turn
@@ -535,7 +580,7 @@ export class OpenAICompatClient implements LLMClient {
         },
       };
     } catch (err) {
-      console.error(err);
+      log.error({ err }, "llm operation failed");
       throw classifyOpenAIError(err);
     }
   }
@@ -544,8 +589,7 @@ function classifyOpenAIError(err: unknown) {
   if (err instanceof OpenAI.APIError) {
     if (
       err.status === OpenAIErrorCode.PromptTooLong ||
-      (err.status === OpenAIErrorCode.BadRequest &&
-        containsContextLengthError(err.message))
+      (err.status === OpenAIErrorCode.BadRequest && containsContextLengthError(err.message))
     ) {
       return new ContextTooLongError(`Context Too Long: ${err.message}`);
     }
@@ -558,17 +602,13 @@ function classifyOpenAIError(err: unknown) {
       return new RateLimitError(`Rate limit error, please wait.`);
     }
 
-    return new LLMError(
-      `OpenAI API error (${asString(err.status)}): ${err.message}`,
-    );
+    return new LLMError(`OpenAI API error (${asString(err.status)}): ${err.message}`);
   }
 
-  return new NetworkError(
-    `Network error: ${err instanceof Error ? err.message : asString(err)}`,
-  );
+  return new NetworkError(`Network error: ${err instanceof Error ? err.message : asString(err)}`);
 }
 
-// Convert Swiftyy's conversation into Chat Completions messages,
+// Convert Swifty's conversation into Chat Completions messages,
 // preserving assistant tool_calls and tool_results (role: "tool") turns
 // so multi-turn tool use works over the openai-compat (Chat Completions) endpoint.
 
@@ -577,6 +617,8 @@ export function buildChatCompletionMessages(
 ): OpenAI.ChatCompletionMessageParam[] {
   const params: OpenAI.ChatCompletionMessageParam[] = [];
   for (const m of messages) {
+    const reasoning = m.thinkingBlocks?.map((tb) => tb.thinking).join("") ?? "";
+
     if (m.toolUses && m.toolUses.length > 0) {
       params.push({
         role: "assistant",
@@ -588,6 +630,11 @@ export function buildChatCompletionMessages(
             name: tu.toolName,
             arguments: JSON.stringify(tu.arguments),
           },
+          ...(reasoning
+            ? {
+                reasoning_content: reasoning,
+              }
+            : {}),
         })),
       });
     } // end if (m.toolUses && m.toolUses.length > 0)
@@ -604,6 +651,11 @@ export function buildChatCompletionMessages(
       params.push({
         role: "assistant",
         content: m.content,
+        ...(reasoning
+          ? {
+              reasoning_content: reasoning,
+            }
+          : {}),
       });
     } // end if (m.role === "assistant")
     else {

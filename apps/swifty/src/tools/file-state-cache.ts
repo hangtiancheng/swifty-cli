@@ -1,3 +1,7 @@
+import { createChildLogger } from "../logger/index.js";
+
+const log = createChildLogger({ module: "file-state-cache" });
+
 import { statSync } from "fs";
 
 interface CacheEntry {
@@ -35,7 +39,7 @@ export class FileStateCache {
     } catch (err) {
       // File may have been deleted between read and edit
       // -- let the calling tool surface a more specific error later
-      console.error(err);
+      log.error({ err }, "file state cache operation failed");
       return { ok: true };
     }
 
@@ -61,7 +65,7 @@ export class FileStateCache {
     } catch (err) {
       // If we can't stat (shouldn't happen right after a write),
       // just remove the entry so next edit requires a fresh read
-      console.error(err);
+      log.error({ err }, "file state cache operation failed");
       this.cache.delete(filePath);
 
       return;

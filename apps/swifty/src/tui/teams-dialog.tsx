@@ -62,8 +62,8 @@ export function TeamsDialog({ teammates, onClose, onKill, onShutdown }: Props) {
   if (teammates.length === 0) {
     return (
       <Box flexDirection="column" paddingLeft={1} paddingTop={1}>
-        <Text>{COLORS.primary("━━━ Teams ━━━━━━━━━━━━━━━━━━━━━━━━")}</Text>{" "}
-        <Text dimColor> No active teammates</Text>{" "}
+        <Text>{COLORS.primary("━━━ Teams ━━━━━━━━━━━━━━━━━━━━━━━━")}</Text>
+        <Text dimColor> No active teammates</Text>
         <Text>{COLORS.primary("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")}</Text>
         <Text dimColor>Esc close</Text>
       </Box>
@@ -114,7 +114,7 @@ function statusColor(status: TeammateUIState["status"]): string {
 function renderList(teammates: TeammateUIState[], selectedIndex: number) {
   return (
     <Box flexDirection="column" paddingLeft={1} paddingTop={1}>
-      <Text>{COLORS.primary("━━━ Teams ━━━━━━━━━━━━━━━━━━━━━━━━")}</Text>{" "}
+      <Text>{COLORS.primary("━━━ Teams ━━━━━━━━━━━━━━━━━━━━━━━━")}</Text>
       {teammates.map((mate, i) => {
         const isSelected = i === selectedIndex;
         const indicator = isSelected ? COLORS.tool(`${ICONS.prompt} `) : "  ";
@@ -124,7 +124,7 @@ function renderList(teammates: TeammateUIState[], selectedIndex: number) {
         return (
           <Text key={mate.name}>
             {indicator}
-            <Text color={isSelected ? "cyan" : ""} dimColor={!isSelected}>
+            <Text color={isSelected ? "cyan" : undefined} dimColor={!isSelected}>
               @{mate.name}
             </Text>
             <Text dimColor={!isSelected}>
@@ -134,7 +134,7 @@ function renderList(teammates: TeammateUIState[], selectedIndex: number) {
             </Text>
           </Text>
         );
-      })}{" "}
+      })}
       <Text>{COLORS.primary("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")}</Text>
       <Text dimColor>{"  ↑/↓ select · Enter detail · k kill · s shutdown · Esc close"}</Text>
     </Box>
@@ -150,12 +150,12 @@ function renderDetail(mate: TeammateUIState) {
 
   return (
     <Box flexDirection="column" paddingLeft={1} paddingTop={1}>
-      <Text>{COLORS.primary(`━━━ @${mate.name} ━━━━━━━━━━━━━━━━━━━━━━━`)}</Text>{" "}
+      <Text>{COLORS.primary(`━━━ @${mate.name} ━━━━━━━━━━━━━━━━━━━━━━━`)}</Text>
       <Text>
         {"  Status: "}
         <Text color={statusColor(mate.status)}>{mate.status}</Text> {ICONS.dot} {elapsed}{" "}
         {ICONS.dot} {tools} {toolLabel} {ICONS.dot} {tokens} tokens
-      </Text>{" "}
+      </Text>
       {activities.length > 0 ? (
         <>
           <Text dimColor> Recent Activity:</Text>
@@ -165,7 +165,7 @@ function renderDetail(mate: TeammateUIState) {
             return (
               <Text key={i}>
                 {isLast ? COLORS.tool(prefix) : <Text dimColor>{prefix}</Text>}
-                <Text color={isLast ? "cyan" : ""} dimColor={!isLast}>
+                <Text color={isLast ? "cyan" : undefined} dimColor={!isLast}>
                   {act.activityDescription}
                 </Text>
               </Text>
@@ -177,7 +177,6 @@ function renderDetail(mate: TeammateUIState) {
       )}
       {mate.lastMessage && (
         <>
-          {" "}
           <Text dimColor> Last message:</Text>
           <Text>
             {"  "}
@@ -186,7 +185,7 @@ function renderDetail(mate: TeammateUIState) {
               : mate.lastMessage}
           </Text>
         </>
-      )}{" "}
+      )}
       <Text>{COLORS.primary("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")}</Text>
       <Text dimColor>{"  ← back · k kill · s shutdown · Esc close"}</Text>
     </Box>

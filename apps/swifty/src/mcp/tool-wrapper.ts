@@ -1,3 +1,7 @@
+import { createChildLogger } from "../logger/index.js";
+
+const log = createChildLogger({ module: "mcp" });
+
 import { asErrorString } from "@/utils/index.js";
 import type { Tool, ToolResult, ToolContext, ToolCategory, ToolSchema } from "../tools/types.js";
 import type { MCPClient, MCPTool } from "./client.js";
@@ -38,9 +42,10 @@ export class MCPToolWrapper implements Tool {
 
   async execute(_ctx: ToolContext, args: Record<string, unknown>): Promise<ToolResult> {
     try {
-      const output = await this.client.callTool(this.originalName, args);
-      return { output, isError: false };
+      const { output, isError } = await this.client.callTool(this.originalName, args);
+      return { output, isError };
     } catch (err) {
+      log.error({ err }, "mcp operation failed");
       return {
         output: `MCP tool error: ${asErrorString(err)}`,
         isError: true,

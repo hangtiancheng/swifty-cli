@@ -1,3 +1,7 @@
+import { createChildLogger } from "../logger/index.js";
+
+const log = createChildLogger({ module: "tools" });
+
 import { asErrorString } from "../utils/index.js";
 import { hasWorktreeChanges, removeAgentWorktree } from "../worktree/worktree.js";
 import {
@@ -69,6 +73,7 @@ export class ExitWorktreeTool implements Tool {
           isError: false,
         };
       } catch (err) {
+        log.error({ err }, "tool operation failed");
         return {
           output: `Error cleaning up worktree: ${asErrorString(err)}`,
           isError: true,

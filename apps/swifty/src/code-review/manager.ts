@@ -1,3 +1,7 @@
+import { createChildLogger } from "../logger/index.js";
+
+const log = createChildLogger({ module: "code-review" });
+
 import { join } from "node:path";
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import type { TeamManager } from "../teams/team.js";
@@ -45,7 +49,9 @@ export class CodeReviewManager {
         for (const team of parsed) {
           this.teams.set(team.name, team);
         }
-      } catch {
+      } catch (err) {
+        log.error({ err }, "code-review operation failed");
+
         // Start fresh if file is corrupted
       }
     }
@@ -60,10 +66,7 @@ export class CodeReviewManager {
     writeFileSync(this.configPath, JSON.stringify(teams, null, 2));
   }
 
-  createTeam(
-    name: string,
-    members: Omit<CodeReviewMember, "active">[],
-  ): CodeReviewTeam {
+  createTeam(name: string, members: Omit<CodeReviewMember, "active">[]): CodeReviewTeam {
     const team: CodeReviewTeam = {
       name,
       members: members.map((m) => ({ ...m, active: true })),

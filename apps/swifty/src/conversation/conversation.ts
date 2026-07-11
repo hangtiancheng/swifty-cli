@@ -56,11 +56,7 @@ export class ConversationManager {
     this.history.push({ role: "assistant", content: text, toolUses });
   }
 
-  addAssistantFull(
-    text: string,
-    thinking: ThinkingBlock[],
-    toolUses: ToolUseBlock[],
-  ): void {
+  addAssistantFull(text: string, thinking: ThinkingBlock[], toolUses: ToolUseBlock[]): void {
     this.history.push({
       role: "assistant",
       content: text,
@@ -69,11 +65,7 @@ export class ConversationManager {
     });
   }
 
-  addToolResultMessage(
-    toolUseId: string,
-    content: string,
-    isError: boolean,
-  ): void {
+  addToolResultMessage(toolUseId: string, content: string, isError: boolean): void {
     this.history.push({
       role: "user",
       content: "",
@@ -103,27 +95,25 @@ export class ConversationManager {
     const sections: string[] = [];
     if (instructions) {
       sections.push(
-        `
-        # Swiftyy.md
-        Codebase and user instructions are as follows.
-        You MUST adhere to these instructions.
-        IMPORTANT: these instructions OVERRIDE any previous/default instructions, you MUST follow them exactly.\n\n
-        ${instructions}
-        `,
+        "# SWIFTY.md\nCodebase and user instructions are shown below. Be sure to adhere to these instructions. IMPORTANT: These instructions OVERRIDE any default behavior and you MUST follow them exactly as written.\n\n" +
+          instructions,
       );
     }
     if (memories) {
-      sections.push(`## Auto Memory\n${memories}`);
+      sections.push("# Auto Memory\n" + memories);
     }
     if (sections.length === 0) {
       return;
     }
     const today = new Date().toISOString().split("T")[0];
-    sections.push(`### Current Date\nToday's date is ${today}.`);
+    sections.push("# Current Date\nToday's date is " + today + ".");
     const body = sections.join("\n\n");
-    const wrapped = `<system-reminder>\nAs you answer the user's questions, you can use the following context:\n${body}\n
-      IMPORTANT: This context may not be relevant to your tasks. You should NOT respond to this context unless it is highly relevant to your tasks.\n</system-reminder>
-      `;
+    const wrapped = `
+<system-reminder>
+  As you answer the user's questions, you can use the following context:
+  \n${body}\n
+  IMPORTANT: this context may or may not be relevant to your tasks. You should not respond to this context unless it is highly relevant to your task.
+</system-reminder>`;
 
     this.history.unshift({ role: "user", content: wrapped });
     this.longTermMemoryInjected = true;
@@ -149,24 +139,15 @@ export class ConversationManager {
     return [...this.history];
   }
 
-  /**
-   * Rebuild the history after a compaction:
-   * A summary user message followed by the verbatim (完整) recent tail
-   * (kept messages, structured preserved -- tool_use/tool_result blocks intact).
-   * Use by `doCompact` so recent original messages survive instead of
-   * being collapsed into the summary.
-   * Mirrors Claude Code's `buildPostCompactMessages` ordering (summary first, then messagesToKeep).
-   * No assistant ack -- the kept tail already starts with an assistant message in most cases, and injecting an artificial ack wastes tokens and confuses the model's sense of conversation flow.
-   * @param summaryContent A summary user message
-   * @param messagesToKeep Kept messages, structured preserved -- tool_use/tool_result blocks intact
-   */
-  replaceWithCompacted(
-    summaryContent: string,
-    messagesToKeep: Message[],
-  ): void {
-    this.history = [
-      { role: "user", content: summaryContent },
-      ...messagesToKeep,
-    ];
+  // Rebuild the history after a compaction: a summary user message followed by
+  // the verbatim recent tail (kept messages, structure preserved —
+  // tool_use/tool_result blocks intact). Used by doCompact so recent original
+  // messages survive instead of being collapsed into the summary. Ordering:
+  // summary first, then kept messages. No assistant ack — the kept tail already starts with an
+  // assistant message in most cases, and injecting an artificial ack wastes
+  // tokens and confuses the model's sense of conversation flow.
+  replaceWithCompacted(summaryContent: string, messagesToKeep: Message[]): void {
+    this.history = [{ role: "user", content: summaryContent }, ...messagesToKeep];
+    this.longTermMemoryInjected = false;
   }
 }

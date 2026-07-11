@@ -1,3 +1,7 @@
+import { createChildLogger } from "../logger/index.js";
+
+const log = createChildLogger({ module: "tools" });
+
 import { existsSync, mkdirSync, writeFileSync } from "fs";
 import { dirname } from "path";
 import { asErrorString } from "../utils/index.js";
@@ -72,10 +76,11 @@ export class WriteFileTool implements Tool {
       ctx.fileStateCache?.update(filePath, content);
       const lineCount = content.split("\n").length;
       return Promise.resolve({
-        output: `File written: ${filePath} (${String(lineCount)} lines)`,
+        output: `Successfully wrote to ${filePath} (${String(lineCount)} lines)`,
         isError: false,
       });
     } catch (err) {
+      log.error({ err }, "tool operation failed");
       return Promise.resolve({
         output: `Error writing file: ${asErrorString(err)}`,
         isError: true,

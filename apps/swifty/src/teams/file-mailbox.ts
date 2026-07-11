@@ -1,3 +1,7 @@
+import { createChildLogger } from "../logger/index.js";
+
+const log = createChildLogger({ module: "teams" });
+
 import {
   readFileSync,
   writeFileSync,
@@ -52,6 +56,7 @@ function acquireLock(lockFile: string): void {
       closeSync(fd);
       return; // lock acquired
     } catch (err: unknown) {
+      log.error({ err }, "teams operation failed");
       const { data, success } = safeParse(ErrnoExceptionSchema, err);
       let code = "";
       if (success && data.code) {
@@ -68,11 +73,13 @@ function acquireLock(lockFile: string): void {
         if (Date.now() - info.mtimeMs > LOCK_STALE_MS) {
           try {
             unlinkSync(lockFile);
-          } catch {
+          } catch (err) {
+            log.error({ err }, "teams operation failed");
             // another process may have removed it already
           }
         }
-      } catch {
+      } catch (err2) {
+        log.error({ err: err2 }, "teams operation failed");
         // stat failed — file may have been removed between our open and stat
       }
 
@@ -88,7 +95,8 @@ function acquireLock(lockFile: string): void {
 function releaseLock(lockFile: string): void {
   try {
     unlinkSync(lockFile);
-  } catch {
+  } catch (err) {
+    log.error({ err }, "teams operation failed");
     // best-effort — file may already be gone
   }
 }
@@ -123,7 +131,8 @@ export class FileMailbox {
   private loadReadState(): number {
     try {
       return parseInt(readFileSync(this.readStatePath, "utf-8").trim(), 10) || 0;
-    } catch {
+    } catch (err) {
+      log.error({ err }, "teams operation failed");
       return 0;
     }
   }
@@ -131,7 +140,8 @@ export class FileMailbox {
   private saveReadState(): void {
     try {
       writeFileSync(this.readStatePath, String(this.lastReadLines), "utf-8");
-    } catch {
+    } catch (err) {
+      log.error({ err }, "teams operation failed");
       // best-effort
     }
   }
@@ -173,7 +183,8 @@ export class FileMailbox {
           const raw: unknown = JSON.parse(line);
           const parsed = parse(FileMailMessageSchema, raw);
           out.push(parsed);
-        } catch {
+        } catch (err) {
+          log.error({ err }, "teams operation failed");
           // skip malformed line
         }
       }

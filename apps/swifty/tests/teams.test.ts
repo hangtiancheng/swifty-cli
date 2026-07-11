@@ -23,9 +23,7 @@ describe("teams orchestration", () => {
     await wait(200);
     const drained = mgr.drainLeads();
     // The teammate sends an [idle] notification with its name after finishing
-    expect(
-      drained.some((d) => d.includes("scout") && d.includes("[idle]")),
-    ).toBe(true);
+    expect(drained.some((d) => d.includes("scout") && d.includes("[idle]"))).toBe(true);
     // Drained messages are consumed.
     expect(mgr.drainLeads()).toEqual([]);
   });
@@ -62,9 +60,7 @@ describe("teams orchestration", () => {
     );
     expect(r.isError).toBe(false);
     await wait(200);
-    expect(
-      mgr.drainLeads().some((d) => d.includes("w1") && d.includes("[idle]")),
-    ).toBe(true);
+    expect(mgr.drainLeads().some((d) => d.includes("w1") && d.includes("[idle]"))).toBe(true);
 
     // SendMessage to an existing member lands in that member's mailbox.
     const send = await new SendMessageTool(mgr).execute(

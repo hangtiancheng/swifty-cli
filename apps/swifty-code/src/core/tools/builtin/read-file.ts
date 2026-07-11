@@ -1,6 +1,5 @@
 // ReadFileTool: read file contents with size limit and path traversal protection
 import { readFileSync } from "node:fs";
-import path from "node:path";
 
 import { z } from "zod";
 
@@ -32,8 +31,8 @@ export class ReadFileTool implements BaseTool {
     const parsed = ReadFileParamsSchema.parse(params);
     const filePath = parsed.path;
 
-    // Path traversal check: reject raw path components before normalize
-    if (filePath.split(path.sep).includes("..")) {
+    // Path traversal check: reject raw ".." components on both POSIX and Windows
+    if (filePath.split(/[/\\]/).includes("..")) {
       return Promise.resolve(toolError(`path traversal not allowed: ${filePath}`, "runtime_error"));
     }
 

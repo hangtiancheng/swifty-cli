@@ -104,11 +104,17 @@ export class SocketClient {
 
   // Close TCP connection and reset internal state for reconnection
   close(): void {
+    // Reject all pending commands before clearing, matching rl.on("close") behavior.
+    // This ensures pending sendCommand() promises settle even if the readline "close"
+    // event never fires (e.g., socket already destroyed externally).
+    for (const [, pending] of this._pending) {
+      pending.reject(new Error("connection closed"));
+    }
+    this._pending.clear();
     if (this._socket) {
       this._socket.destroy();
       this._socket = null;
     }
-    this._pending.clear();
   }
 
   // Register callback for server-pushed events (persists across reconnections)

@@ -8,7 +8,6 @@ import { SkillCatalog } from "../src/skills/catalog.js";
 const SKILL = `---
 name: commit-helper
 description: Helps write commits
-allowed_tools: [Bash, ReadFile]
 ---
 Write a conventional-commit message for the staged changes.`;
 
@@ -28,13 +27,7 @@ describe("InstallSkillTool", () => {
 
     expect(r.isError).toBe(false);
     expect(r.output).toContain("commit-helper");
-    const installed = join(
-      workDir,
-      ".swifty",
-      "skills",
-      "commit-helper",
-      "SKILL.md",
-    );
+    const installed = join(workDir, ".swifty", "skills", "commit-helper", "SKILL.md");
     expect(existsSync(installed)).toBe(true);
     expect(readFileSync(installed, "utf-8")).toContain("conventional-commit");
     // catalog reloaded with the new skill
@@ -64,8 +57,6 @@ describe("InstallSkillTool", () => {
         name: "renamed",
       },
     );
-    expect(
-      existsSync(join(workDir, ".swifty", "skills", "renamed", "SKILL.md")),
-    ).toBe(true);
+    expect(existsSync(join(workDir, ".swifty", "skills", "renamed", "SKILL.md"))).toBe(true);
   });
 });

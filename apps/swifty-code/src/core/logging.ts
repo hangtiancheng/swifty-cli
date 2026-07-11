@@ -15,14 +15,7 @@ const MAX_LOG_BYTES = 10 * 1024 * 1024;
 const MAX_BACKUPS = 5;
 
 // Valid pino log level set
-const VALID_LEVELS = new Set<string>([
-  "fatal",
-  "error",
-  "warn",
-  "info",
-  "debug",
-  "trace",
-]);
+const VALID_LEVELS = new Set<string>(["fatal", "error", "warn", "info", "debug", "trace"]);
 
 // Convert config level string to pino-compatible PinoLevel
 function toPinoLevel(raw: string): PinoLevel {

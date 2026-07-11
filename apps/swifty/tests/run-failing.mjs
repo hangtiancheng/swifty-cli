@@ -1,6 +1,6 @@
 // @ts-check
 /**
- * Failing-test runner for Swiftyy via tmux.
+ * Failing-test runner for Swifty via tmux.
  *
  * Ported from run-failing.sh. Runs two scenarios (identity + rewind) that
  * previously failed, asserting on captured pane output and file state.
@@ -16,10 +16,10 @@ import { readFileSync, rmSync } from "node:fs";
  */
 
 // --- Configuration (override via env, no hardcoded home paths) ---
-const SESS = process.env.LARKY_SESS ?? "swifty-test-ts";
-const CWD = process.env.LARKY_CWD ?? process.cwd();
-const STDERR_LOG = process.env.LARKY_STDERR_LOG ?? "/tmp/swifty-ts-stderr.log";
-const RUN_CMD = process.env.LARKY_RUN_CMD ?? "npx tsx src/main.tsx";
+const SESS = process.env.SWIFTY_SESS ?? "swifty-test-ts";
+const CWD = process.env.SWIFTY_CWD ?? process.cwd();
+const STDERR_LOG = process.env.SWIFTY_STDERR_LOG ?? "/tmp/swifty-ts-stderr.log";
+const RUN_CMD = process.env.SWIFTY_RUN_CMD ?? "npx tsx src/main.tsx";
 
 /**
  * @param {number} ms
@@ -40,9 +40,10 @@ function tmux(args, options) {
       stdio: ["ignore", "pipe", "ignore"],
       cwd: options?.cwd,
     }).trimEnd();
-  } catch (e) {
+  } catch (err) {
+    console.error(err);
     if (options?.ignoreError) return "";
-    throw e;
+    throw err;
   }
 }
 
@@ -138,7 +139,8 @@ function stopSession() {
 function catFile(file) {
   try {
     return readFileSync(file, "utf-8");
-  } catch {
+  } catch (err) {
+    console.error(err);
     return "NOT FOUND";
   }
 }

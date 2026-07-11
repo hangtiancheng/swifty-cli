@@ -1,11 +1,9 @@
+import { createChildLogger } from "../logger/index.js";
+
+const log = createChildLogger({ module: "file-history" });
+
 import { createHash } from "crypto";
-import {
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  unlinkSync,
-  writeFileSync,
-} from "fs";
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "fs";
 import { join, resolve } from "path";
 
 const MAX_SNAPSHOTS = 100;
@@ -37,7 +35,7 @@ export class FileHistory {
   private snapshots: Snapshot[] = [];
 
   constructor(baseDir: string, sessionID: string) {
-    this.sessionDir = join(baseDir, "./swifty", "file-history", sessionID);
+    this.sessionDir = join(baseDir, ".swifty", "file-history", sessionID);
     mkdirSync(this.sessionDir, { recursive: true });
   }
 
@@ -50,8 +48,8 @@ export class FileHistory {
         const content = readFileSync(absPath);
         const backupName = getBackupName(absPath, newVersion);
         writeFileSync(join(this.sessionDir, backupName), content);
-      } catch (e) {
-        console.error(e);
+      } catch (err) {
+        log.error({ err }, "file-history operation failed");
         // Skip unreadable file
       }
     }
@@ -76,7 +74,7 @@ export class FileHistory {
         try {
           writeFileSync(backupPath, readFileSync(filePath));
         } catch (err) {
-          console.error(err);
+          log.error({ err }, "file-history operation failed");
           // Skip...
         }
       }
@@ -95,9 +93,7 @@ export class FileHistory {
     });
 
     if (this.snapshots.length > MAX_SNAPSHOTS) {
-      this.snapshots = this.snapshots.slice(
-        this.snapshots.length - MAX_SNAPSHOTS,
-      );
+      this.snapshots = this.snapshots.slice(this.snapshots.length - MAX_SNAPSHOTS);
     }
   }
 
@@ -113,14 +109,14 @@ export class FileHistory {
       try {
         backupData = readFileSync(backup.backupPath);
       } catch (err) {
-        console.error(err);
+        log.error({ err }, "file-history operation failed");
 
         // Backup missing -> file didn't exist at snapshot time -> delete it now.
         if (existsSync(filePath)) {
           try {
             unlinkSync(filePath);
           } catch (err2) {
-            console.error(err2);
+            log.error({ err: err2 }, "file-history operation failed");
             // Skip
           }
         }
@@ -134,24 +130,25 @@ export class FileHistory {
         currentData = readFileSync(filePath);
       } catch (err) {
         // File doesn't exist now but backup exists -> restore
-        console.error(err);
+        log.error({ err }, "file-history operation failed");
       }
 
       const backupStr = backupData.toString();
       const currentStr = currentData?.toString();
       if (backupStr !== currentStr) {
         try {
+          // mkdirSync(dirname(filePath), { recursive: true });
           writeFileSync(filePath, backupData);
           changed.push(filePath);
         } catch (err) {
-          console.error(err);
+          log.error({ err }, "file-history operation failed");
 
           // Skip
         }
       }
     }
 
-    // Truncate snapshot history -- can't redo forward (重做)
+    // Truncate snapshot history -- can't redo forward
     this.snapshots = this.snapshots.slice(0, snapshotIndex + 1);
 
     // Reset version counters to snapshot state

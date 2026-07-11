@@ -1,3 +1,7 @@
+import { createChildLogger } from "../logger/index.js";
+
+const log = createChildLogger({ module: "tools" });
+
 import { readFile, writeFile } from "node:fs/promises";
 import { asErrorString } from "../utils/index.js";
 import { EDIT_FILE_DESCRIPTION } from "./descriptions.js";
@@ -9,6 +13,7 @@ import {
   type ToolSchema,
 } from "./types.js";
 import { boolArg, strArg } from "../utils/index.js";
+import { buildDiff } from "./diff.js";
 
 export class EditFileTool implements Tool {
   // Use a hardcoded string instead of EditFileTool.name.replace("Tool", "")
@@ -95,6 +100,7 @@ export class EditFileTool implements Tool {
     try {
       content = await readFile(filePath, "utf-8");
     } catch (err) {
+      log.error({ err }, "tool operation failed");
       return {
         output: `Error reading file: ${asErrorString(err)}`,
         isError: true,
@@ -123,12 +129,15 @@ export class EditFileTool implements Tool {
     try {
       await writeFile(filePath, newContent, "utf-8");
       ctx.fileStateCache?.update(filePath, newContent);
-      const msg =
+      // 带上具体 diff 而不是只报一句"改好了"：模型和 TUI 都需要知道具体改了哪几行
+      const { text: diffText, additions, removals } = buildDiff(content, newContent);
+      const summary =
         replaceAll && count > 1
-          ? `File edited: ${filePath} (${String(count)} replacements)`
-          : `File edited: ${filePath}`;
-      return { output: msg, isError: false };
+          ? `Updated ${filePath} with ${String(additions)} addition${additions === 1 ? "" : "s"} and ${String(removals)} removal${removals === 1 ? "" : "s"} (${String(count)} replacements)`
+          : `Updated ${filePath} with ${String(additions)} addition${additions === 1 ? "" : "s"} and ${String(removals)} removal${removals === 1 ? "" : "s"}`;
+      return { output: `${summary}\n${diffText}`, isError: false };
     } catch (err) {
+      log.error({ err }, "tool operation failed");
       return {
         output: `Error writing file: ${asErrorString(err)}`,
         isError: true,

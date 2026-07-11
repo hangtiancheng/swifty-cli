@@ -52,6 +52,8 @@ export interface LLMClient extends Partial<MaxTokensSetter> {
     toolSchemas: ToolSchema[],
     abortSignal?: AbortSignal,
   ): AsyncGenerator<StreamEvent>;
+
+  setSystemPrompt(prompt: string): void;
 }
 
 export interface MaxTokensSetter {

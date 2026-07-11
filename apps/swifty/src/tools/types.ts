@@ -30,11 +30,7 @@ export interface ToolSchema {
     properties: Record<string, object>;
     required?: string[];
   };
-  allowed_callers?: (
-    | "direct"
-    | "code_execution_20250825"
-    | "code_execution_20260120"
-  )[];
+  allowed_callers?: ("direct" | "code_execution_20250825" | "code_execution_20260120")[];
   cache_control?: { type: "ephemeral"; ttl?: "5m" | "1h" };
   eager_input_streaming?: boolean;
 }
@@ -53,9 +49,11 @@ export interface Tool {
 export const SKIP_DIRS = new Set([
   ".claude", // Claude Code
   ".git", // Git
-  ".swifty", // Swiftyy
+  ".swifty", // Swifty
   ".next", // Next.js
   ".venv", // Python venv
+  ".mypy_cache", // Python mypy
+  ".tox", // Python tox
   "__pycache__", // Python
   "build", // C++
   "dist", // Webpack, Vite

@@ -1,6 +1,6 @@
 // @ts-check
 /**
- * Automated E2E test runner for Swiftyy via tmux.
+ * Automated E2E test runner for Swifty via tmux.
  *
  * Ported from run-e2e.sh. Drives the TUI by shelling out to `tmux`, sends
  * prompts parsed from markdown spec files, and checks assertions against the
@@ -24,13 +24,13 @@ import path from "node:path";
  */
 
 // --- Configuration (override via env, no hardcoded home paths) ---
-const SESS = process.env.LARKY_SESS ?? "swifty-test-ts";
-const CWD = process.env.LARKY_CWD ?? process.cwd();
-const PROMPTS_DIR = process.env.LARKY_PROMPTS_DIR ?? path.join(process.cwd(), "tests/prompts");
-const RESULTS_FILE = process.env.LARKY_RESULTS_FILE ?? "/tmp/swifty-ts-e2e-results.txt";
-const STDERR_LOG = process.env.LARKY_STDERR_LOG ?? "/tmp/swifty-ts-stderr.log";
+const SESS = process.env.SWIFTY_SESS ?? "swifty-test-ts";
+const CWD = process.env.SWIFTY_CWD ?? process.cwd();
+const PROMPTS_DIR = process.env.SWIFTY_PROMPTS_DIR ?? path.join(process.cwd(), "tests/prompts");
+const RESULTS_FILE = process.env.SWIFTY_RESULTS_FILE ?? "/tmp/swifty-ts-e2e-results.txt";
+const STDERR_LOG = process.env.SWIFTY_STDERR_LOG ?? "/tmp/swifty-ts-stderr.log";
 // Node-based runner (replaces `bun run src/main.tsx`).
-const RUN_CMD = process.env.LARKY_RUN_CMD ?? "npx tsx src/main.tsx";
+const RUN_CMD = process.env.SWIFTY_RUN_CMD ?? "npx tsx src/main.tsx";
 
 /** @type {Stats} */
 const stats = { passed: 0, failed: 0, skipped: 0 };
@@ -56,9 +56,10 @@ function tmux(args, options) {
       stdio: ["ignore", "pipe", "ignore"],
       cwd: options?.cwd,
     }).trimEnd();
-  } catch (e) {
+  } catch (err) {
+    console.error(err);
     if (options?.ignoreError) return "";
-    throw e;
+    throw err;
   }
 }
 
@@ -200,7 +201,8 @@ function checkAssertion(output, assertion) {
       if (!m) return false;
       try {
         return readFileSync(m[1], "utf-8").includes(m[2]);
-      } catch {
+      } catch (err) {
+        console.error(err);
         return false;
       }
     }
@@ -375,7 +377,7 @@ async function main() {
     rmSync(f, { force: true });
   }
 
-  log(`Starting Swiftyy TS E2E tests (${TESTABLE_TESTS.length} tests)...`);
+  log(`Starting Swifty TS E2E tests (${TESTABLE_TESTS.length} tests)...`);
 
   for (const t of TESTABLE_TESTS) {
     const ok = await startSession();

@@ -1,3 +1,7 @@
+import { createChildLogger } from "../logger/index.js";
+
+const log = createChildLogger({ module: "memory" });
+
 import {
   readFileSync,
   readdirSync,
@@ -7,12 +11,13 @@ import {
   writeFileSync,
   statSync,
 } from "node:fs";
-import { join, relative } from "node:path";
+import { join, relative, basename } from "node:path";
 import { homedir } from "node:os";
 import yaml from "js-yaml";
 import type { LLMClient } from "../llm/client.js";
 import { ConversationManager } from "../conversation/conversation.js";
 import z, { parse } from "zod";
+import { memoryAge, memoryFreshnessText } from "./memory-age.js";
 
 /** Caps for MEMORY.md index content: 200 lines or 25KB, whichever is hit first. */
 const MAX_ENTRYPOINT_LINES = 200;
@@ -50,12 +55,12 @@ export interface RelevantMemory {
 }
 
 /** The system prompt for the selector agent. Mirrors the Go SelectMemoriesSystemPrompt. */
-const SELECT_MEMORIES_SYSTEM_PROMPT = `You are selecting memories that will be useful to Swiftyy as it processes a user's query. You will be given the user's query and a list of available memory files with their filenames and descriptions.
+const SELECT_MEMORIES_SYSTEM_PROMPT = `You are selecting memories that will be useful to Swifty as it processes a user's query. You will be given the user's query and a list of available memory files with their filenames and descriptions.
 
-Return a list of filenames for the memories that will clearly be useful to Swiftyy as it processes the user's query (up to 5). Only include memories that you are certain will be helpful based on their name and description.
+Return a list of filenames for the memories that will clearly be useful to Swifty as it processes the user's query (up to 5). Only include memories that you are certain will be helpful based on their name and description.
 - If you are unsure if a memory will be useful in processing the user's query, then do not include it in your list. Be selective and discerning.
 - If there are no memories in the list that would clearly be useful, feel free to return an empty list.
-- If a list of recently-used tools is provided, do not select memories that are usage reference or API documentation for those tools (Swiftyy is already exercising them). DO still select memories containing warnings, gotchas, or known issues about those tools — active use is exactly when those matter.
+- If a list of recently-used tools is provided, do not select memories that are usage reference or API documentation for those tools (Swifty is already exercising them). DO still select memories containing warnings, gotchas, or known issues about those tools — active use is exactly when those matter.
 
 Respond with valid JSON only, no markdown, in this exact shape: {"selected_memories": ["filename1.md", "filename2.md"]}`;
 
@@ -74,9 +79,7 @@ export class MemoryManager {
       if (!existsSync(dir)) {
         continue;
       }
-      const files = readdirSync(dir).filter(
-        (f) => f.endsWith(".md") && f !== MEMORY_INDEX_NAME,
-      );
+      const files = readdirSync(dir).filter((f) => f.endsWith(".md") && f !== MEMORY_INDEX_NAME);
       for (const file of files) {
         const fullPath = join(dir, file);
         try {
@@ -92,7 +95,7 @@ export class MemoryManager {
             });
           }
         } catch (err) {
-          console.error(err);
+          log.error({ err }, "memory operation failed");
           continue;
         }
       }
@@ -111,9 +114,7 @@ export class MemoryManager {
       return "";
     }
 
-    const lines = memories.map(
-      (m) => `- [${m.name}] (${m.type}): ${m.description}`,
-    );
+    const lines = memories.map((m) => `- [${m.name}] (${m.type}): ${m.description}`);
     return `Active memories:\n${lines.join("\n")}`;
   }
 
@@ -126,7 +127,8 @@ export class MemoryManager {
       for (const file of files) {
         try {
           unlinkSync(join(dir, file));
-        } catch {
+        } catch (err) {
+          log.error({ err }, "memory operation failed");
           continue;
         }
       }
@@ -153,9 +155,7 @@ export class MemoryManager {
       if (!existsSync(dir)) {
         continue;
       }
-      const files = readdirSync(dir).filter(
-        (f) => f.endsWith(".md") && f !== MEMORY_INDEX_NAME,
-      );
+      const files = readdirSync(dir).filter((f) => f.endsWith(".md") && f !== MEMORY_INDEX_NAME);
       try {
         for (const file of files) {
           const fullPath = join(dir, file);
@@ -173,20 +173,18 @@ export class MemoryManager {
 
             entries.push({ name, relPath: relativePath, description });
           } catch (err) {
-            console.error(err);
+            log.error({ err }, "memory operation failed");
             continue;
           }
         }
       } catch (err2) {
-        console.error(err2);
+        log.error({ err: err2 }, "memory operation failed");
         continue;
       }
     }
 
     // Sort alphabetically by name (case-insensitive)
-    entries.sort((a, b) =>
-      a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
-    );
+    entries.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
 
     // Build index lines
     const lines: string[] = [];
@@ -213,11 +211,7 @@ export class MemoryManager {
 
     // Write MEMORY.md into projectDir, ensuring the dir exists
     mkdirSync(this.projectDir, { recursive: true });
-    writeFileSync(
-      join(this.projectDir, MEMORY_INDEX_NAME),
-      content + "\n",
-      "utf-8",
-    );
+    writeFileSync(join(this.projectDir, MEMORY_INDEX_NAME), content + "\n", "utf-8");
   }
 
   // ── Feature 2: findRelevantMemories ────────────────────────────────
@@ -244,9 +238,7 @@ export class MemoryManager {
     }
 
     // Filter out already-surfaced files
-    const candidates = allHeaders.filter(
-      (h) => !alreadySurfaced.has(h.filePath),
-    );
+    const candidates = allHeaders.filter((h) => !alreadySurfaced.has(h.filePath));
     if (candidates.length === 0) {
       return [];
     }
@@ -266,9 +258,7 @@ export class MemoryManager {
       // The TS LLMClient binds system prompts at construction time, so we
       // inline the selector instructions as a user message (same pattern as
       // the MemoryExtractor).
-      conversation.addUserMessage(
-        SELECT_MEMORIES_SYSTEM_PROMPT + "\n\n" + userMessage,
-      );
+      conversation.addUserMessage(SELECT_MEMORIES_SYSTEM_PROMPT + "\n\n" + userMessage);
 
       const stream = client.stream(conversation, []);
       for await (const event of stream) {
@@ -276,7 +266,8 @@ export class MemoryManager {
           rawResponse += event.text;
         }
       }
-    } catch {
+    } catch (err) {
+      log.error({ err }, "memory operation failed");
       return [];
     }
 
@@ -291,7 +282,7 @@ export class MemoryManager {
       const raw: unknown = JSON.parse(jsonStr);
       parsed = parse(SelectedMemoriesSchema, raw);
     } catch (err) {
-      console.error(err);
+      log.error({ err }, "memory operation failed");
       return [];
     }
 
@@ -316,6 +307,32 @@ export class MemoryManager {
 
     return selected;
   }
+
+  renderReminder(memories: RelevantMemory[]): string {
+    if (memories.length === 0) {
+      return "";
+    }
+
+    const parts: string[] = [
+      "The following relevant memories from prior conversations may help:\n",
+    ];
+    for (const mem of memories) {
+      let content: string;
+      try {
+        content = readFileSync(mem.path, "utf-8");
+      } catch {
+        continue;
+      }
+      const name = basename(mem.path);
+      parts.push(`## Memory: ${name} (saved ${memoryAge(mem.mtimeMs)})\n`);
+      const note = memoryFreshnessText(mem.mtimeMs);
+      if (note) {
+        parts.push(note + "\n");
+      }
+      parts.push(content + "\n\n---\n");
+    }
+    return parts.join("\n");
+  }
 }
 
 /**
@@ -330,10 +347,9 @@ function scanMemoryHeaders(dir: string, scope: string): MemoryHeader[] {
 
   let files: string[];
   try {
-    files = readdirSync(dir).filter(
-      (f) => f.endsWith(".md") && f !== MEMORY_INDEX_NAME,
-    );
-  } catch {
+    files = readdirSync(dir).filter((f) => f.endsWith(".md") && f !== MEMORY_INDEX_NAME);
+  } catch (err) {
+    log.error({ err }, "memory operation failed");
     return [];
   }
 
@@ -360,7 +376,8 @@ function scanMemoryHeaders(dir: string, scope: string): MemoryHeader[] {
         description: parsed.description ?? "",
         type: parsed.type ?? "",
       });
-    } catch {
+    } catch (err) {
+      log.error({ err }, "memory operation failed");
       continue;
     }
   }
@@ -468,7 +485,7 @@ function parseFrontmatter(content: string): ParsedFrontmatter | null {
       body,
     };
   } catch (err) {
-    console.error(err);
+    log.error({ err }, "memory operation failed");
     return { body: content };
   }
 }

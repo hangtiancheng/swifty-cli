@@ -1,9 +1,15 @@
+import { createChildLogger } from "../logger/index.js";
+
+const log = createChildLogger({ module: "skills" });
+
 import { readdirSync, readFileSync, existsSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import yaml from "js-yaml";
 import type { Skill, SkillMeta } from "./skill.js";
 import { parse, z } from "zod";
+import { loadBuiltins } from "./builtins.js";
+
 /**
  * Internal skill storage with source file path and load timestamp for hot reloading
  *
@@ -19,9 +25,23 @@ interface CatalogEntry {
 
 export class SkillCatalog {
   private entries = new Map<string, CatalogEntry>();
+  private workDir = "";
+  private dirModTimes = new Map<string, number>();
 
   load(workDir: string): void {
-    // Scan user directory first, then project directory. Project skills override user skills with the same name.
+    this.workDir = workDir;
+    // 三层加载，后面的覆盖前面的同名 skill：
+    // Tier 1: 内置 skill（当前为空）
+    for (const skill of loadBuiltins()) {
+      this.entries.set(skill.meta.name, {
+        skill,
+        filePath: "",
+        loadedMtimeMs: 0,
+      });
+    }
+
+    // Tier 2: 用户全局 ~/.swifty/skills/
+    // Tier 3: 项目级 $workDir/.swifty/skills/（最高优先级）
     const dirs = [
       join(homedir(), ".trae", "skills"),
       join(homedir(), ".claude", "skills"),
@@ -40,12 +60,70 @@ export class SkillCatalog {
 
       this.scanDirectory(dir);
     }
+
+    this.snapshotDirModTimes();
   }
+
+  /**
+   * 检查 skill 目录的 modtime 是否变化（新增或删除了 skill）。
+   * 已有 skill 的文件编辑由 get() 的按需重读处理。
+   */
+  needsReload(): boolean {
+    for (const [dir, recorded] of this.dirModTimes) {
+      try {
+        const current = statSync(dir).mtimeMs;
+        if (current !== recorded) {
+          return true;
+        }
+      } catch {
+        if (recorded !== 0) {
+          return true;
+        }
+      }
+    }
+    const dirs = this.skillDirPaths();
+    for (const dir of dirs) {
+      if (!this.dirModTimes.has(dir)) {
+        try {
+          statSync(dir);
+          return true;
+        } catch {
+          // 目录仍不存在
+        }
+      }
+    }
+    return false;
+  }
+
+  reload(): void {
+    this.entries.clear();
+    this.load(this.workDir);
+  }
+
+  private snapshotDirModTimes(): void {
+    this.dirModTimes.clear();
+    for (const dir of this.skillDirPaths()) {
+      try {
+        this.dirModTimes.set(dir, statSync(dir).mtimeMs);
+      } catch {
+        this.dirModTimes.set(dir, 0);
+      }
+    }
+  }
+
+  private skillDirPaths(): string[] {
+    return [
+      join(homedir(), ".swifty", "skills"),
+      ...(this.workDir ? [join(this.workDir, ".swifty", "skills")] : []),
+    ];
+  }
+
   scanDirectory(dir: string) {
     let dirEntries: string[];
     try {
       dirEntries = readdirSync(dir);
-    } catch {
+    } catch (err) {
+      log.error({ err }, "skills operation failed");
       return;
     }
 
@@ -80,7 +158,8 @@ export class SkillCatalog {
       let mtimeMs = 0;
       try {
         mtimeMs = statSync(filePath).mtimeMs;
-      } catch {
+      } catch (err) {
+        log.error({ err }, "skills operation failed");
         // Fail gracefully if timestamp cannot be retrieved
       }
 
@@ -90,7 +169,7 @@ export class SkillCatalog {
         loadedMtimeMs: mtimeMs,
       });
     } catch (err) {
-      console.error(err);
+      log.error({ err }, "skills operation failed");
       // Skip invalid skill
     }
   }
@@ -129,7 +208,8 @@ export class SkillCatalog {
           }
           // Retain the cached version if parsing fails (consistent with Go behavior)
         }
-      } catch {
+      } catch (err) {
+        log.error({ err }, "skills operation failed");
         // Retain the cached version if reading fails
       }
     }
@@ -174,7 +254,7 @@ function parseSkillFile(content: string): {
       meta: {
         name: data.name,
         description: data.description ?? "",
-        allowedTools: data.allowed_tools,
+        // allowedTools: data.allowed_tools,
         mode: data.mode ?? "inline",
         model: data.model,
         forkContext: data.fork_context,
@@ -182,7 +262,7 @@ function parseSkillFile(content: string): {
       body,
     };
   } catch (err) {
-    console.error(err);
+    log.error({ err }, "skills operation failed");
     return null;
   }
 }

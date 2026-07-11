@@ -34,7 +34,7 @@ export const CMD_COLORS = {
 
 export const BORDER_COLORS = {
   idle: "gray",
-  focused: "gray",
+  focused: "#a78bfa",
   agent: "#a855f6",
   error: "red",
 } as const;

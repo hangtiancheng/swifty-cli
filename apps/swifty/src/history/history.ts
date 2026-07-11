@@ -1,6 +1,9 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { parse, z } from "zod";
+import { createChildLogger } from "../logger/index.js";
+
+const log = createChildLogger({ module: "history" });
 
 const MAX_ENTRIES = 200;
 const FILENAME = "prompt_history.jsonl";
@@ -24,12 +27,12 @@ export function load(dir: string): string[] {
           const { text } = parse(JSONLSchema, entry);
           return text;
         } catch (err) {
-          console.error(err);
+          log.error({ err }, "parse history line failed");
           return "";
         }
       });
   } catch (err2) {
-    console.error(err2);
+    log.error({ err: err2 }, "load history failed");
     return [];
   }
 }

@@ -1,0 +1,64 @@
+# Project-level permission rules — safe to commit, shared with the team.
+# Format: - rule: ToolName(glob_pattern)
+#           effect: allow | deny | ask
+# Precedence: user (~/.swifty/permissions.yaml) → project (.swifty/permissions.yaml) → local (.swifty/permissions.local.yaml)
+# Last-matching rule wins within each file.
+
+# ── Read-only tools: always allow ──────────────────────────────────────
+- rule: ReadFile(*)
+  effect: allow
+- rule: Glob(*)
+  effect: allow
+- rule: Grep(*)
+  effect: allow
+- rule: ToolSearch(*)
+  effect: allow
+
+# ── Safe Bash commands for this project ────────────────────────────────
+# Build & test
+- rule: Bash(npm test*)
+  effect: allow
+- rule: Bash(npm run test*)
+  effect: allow
+- rule: Bash(npx vitest*)
+  effect: allow
+
+# Lint & typecheck
+- rule: Bash(npm run lint*)
+  effect: allow
+- rule: Bash(npx eslint*)
+  effect: allow
+- rule: Bash(npx tsc*)
+  effect: allow
+- rule: Bash(npx oxfmt*)
+  effect: allow
+
+# Build
+- rule: Bash(npm run build*)
+  effect: allow
+- rule: Bash(npx tsup*)
+  effect: allow
+
+# Git read-only
+- rule: Bash(git status*)
+  effect: allow
+- rule: Bash(git diff*)
+  effect: allow
+- rule: Bash(git log*)
+  effect: allow
+- rule: Bash(git show*)
+  effect: allow
+- rule: Bash(git branch*)
+  effect: allow
+- rule: Bash(git remote -v*)
+  effect: allow
+
+# ── Deny dangerous operations ──────────────────────────────────────────
+- rule: Bash(rm -rf /*)
+  effect: deny
+- rule: Bash(rm -rf ~*)
+  effect: deny
+- rule: Bash(git push --force*)
+  effect: deny
+- rule: Bash(git push -f*)
+  effect: deny

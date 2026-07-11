@@ -1,3 +1,7 @@
+import { createChildLogger } from "../logger/index.js";
+
+const log = createChildLogger({ module: "plan-file" });
+
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 
@@ -55,9 +59,7 @@ function isPlanUnderWorkDir(planPath: string, workDir: string): boolean {
 export function getOrCreatePlanPath(workDir: string): string {
   if (currentPlanPath && existsSync(currentPlanPath)) {
     if (!isPlanUnderWorkDir(currentPlanPath, workDir)) {
-      console.warn(
-        `Warn: current plan path "${currentPlanPath}" is not under work dir "${workDir}/.swifty/plans".`,
-      );
+      log.warn({ planPath: currentPlanPath, workDir }, "current plan path is not under work dir");
     } else {
       return currentPlanPath;
     }
@@ -88,9 +90,7 @@ export function planExists(workDir: string): boolean {
     return false;
   }
   if (!isPlanUnderWorkDir(currentPlanPath, workDir)) {
-    console.warn(
-      `Warn: current plan path "${currentPlanPath}" is not under work dir "${workDir}/.swifty/plans"`,
-    );
+    log.warn({ planPath: currentPlanPath, workDir }, "current plan path is not under work dir");
     return false;
   }
   return true;

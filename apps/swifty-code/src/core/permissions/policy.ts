@@ -62,7 +62,7 @@ export function paramPreview(toolName: string, params: Record<string, unknown>):
     const raw = params[key];
     let val = typeof raw === "string" ? raw : String(raw);
     if (val.length > PREVIEW_MAX) val = val.slice(0, PREVIEW_MAX) + "…";
-    return `${key}=${val}`;
+    return `${key}='${val}'`;
   }
   const snippet = JSON.stringify(params);
   return snippet.length > PREVIEW_MAX ? snippet.slice(0, PREVIEW_MAX) : snippet;

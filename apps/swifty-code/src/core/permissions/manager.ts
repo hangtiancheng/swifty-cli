@@ -124,7 +124,7 @@ export class PermissionManager {
       tool_use_id: toolUseId,
       tool_name: toolName,
       params,
-      params_preview: paramPreview(toolName, params),
+      param_preview: paramPreview(toolName, params),
       session_id: sessionId,
       timestamp: new Date().toISOString(),
     });

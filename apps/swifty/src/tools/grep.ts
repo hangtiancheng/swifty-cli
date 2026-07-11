@@ -1,8 +1,11 @@
+import { createChildLogger } from "../logger/index.js";
+
+const log = createChildLogger({ module: "tools" });
+
 import type { Stats } from "node:fs";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { Glob } from "@swifty.js/glob-wasm";
-import { asErrorString } from "../utils/index.js";
 import { GREP_DESCRIPTION } from "./descriptions.js";
 import {
   SKIP_DIRS,
@@ -12,8 +15,7 @@ import {
   type ToolResult,
   type ToolSchema,
 } from "./types.js";
-import { strArg } from "../utils/index.js";
-
+import { asErrorString, strArg } from "../utils/index.js";
 const MAX_RESULTS = 500;
 
 export class GrepTool implements Tool {
@@ -21,9 +23,7 @@ export class GrepTool implements Tool {
   // because class names are not stable after minification — bundlers like
   // Terser/esbuild may rename or mangle them, producing incorrect tool names at runtime.
   name = "Grep";
-
   description = GREP_DESCRIPTION;
-
   category: ToolCategory = "read";
 
   schema(): ToolSchema {
@@ -54,16 +54,10 @@ export class GrepTool implements Tool {
     };
   }
 
-  async execute(
-    ctx: ToolContext,
-    args: Record<string, unknown>,
-  ): Promise<ToolResult> {
+  async execute(ctx: ToolContext, args: Record<string, unknown>): Promise<ToolResult> {
     const pattern = strArg(args, "pattern");
     if (!pattern) {
-      return {
-        output: "Error: pattern is required",
-        isError: true,
-      };
+      return { output: "Error: pattern is required", isError: true };
     }
 
     const searchPath = strArg(args, "path", ctx.workDir);
@@ -71,9 +65,9 @@ export class GrepTool implements Tool {
 
     let regex: RegExp;
     try {
-      regex = new RegExp(pattern, "i");
+      regex = new RegExp(pattern);
     } catch (err) {
-      console.error(err);
+      log.error({ err }, "tool operation failed");
       return {
         output: `Error: invalid regex pattern: ${pattern}`,
         isError: true,
@@ -91,7 +85,8 @@ export class GrepTool implements Tool {
       let entries: string[];
       try {
         entries = await readdir(dir);
-      } catch {
+      } catch (err) {
+        log.error({ err }, "tool operation failed");
         return;
       }
 
@@ -107,7 +102,8 @@ export class GrepTool implements Tool {
         let fileStat: Stats;
         try {
           fileStat = await stat(fullPath);
-        } catch {
+        } catch (err) {
+          log.error({ err }, "tool operation failed");
           continue;
         }
 
@@ -133,7 +129,8 @@ export class GrepTool implements Tool {
             results.push(`${rel}:${String(i + 1)}:${lines[i]}`);
           }
         }
-      } catch {
+      } catch (err) {
+        log.error({ err }, "tool operation failed");
         // skip binary or unreadable files
       }
     };

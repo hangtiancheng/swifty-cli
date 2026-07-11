@@ -1,1 +1,2 @@
-echo "Husky pre-commit hook"
+# pnpm --filter @swifty.js/swifty format
+pnpm exec lint-staged

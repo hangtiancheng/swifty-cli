@@ -16,7 +16,10 @@ function q(overrides: Partial<Question> = {}): Question {
   return {
     question: "Pick one",
     header: "Choice",
-    options: [{ label: "A" }, { label: "B" }],
+    options: [
+      { label: "A", description: "Option A" },
+      { label: "B", description: "Option B" },
+    ],
     multiSelect: false,
     ...overrides,
   };
@@ -41,14 +44,20 @@ describe("AskUserQuestionTool", () => {
       toolContext,
 
       {
-        questions: [q({ options: [{ label: "only" }] })],
+        questions: [q({ options: [{ label: "only", description: "only" }] })],
       },
     );
     expect(tooFew.isError).toBe(true);
     const tooMany = await tool.execute(toolContext, {
       questions: [
         q({
-          options: [{ label: "1" }, { label: "2" }, { label: "3" }, { label: "4" }, { label: "5" }],
+          options: [
+            { label: "1", description: "one" },
+            { label: "2", description: "two" },
+            { label: "3", description: "three" },
+            { label: "4", description: "four" },
+            { label: "5", description: "five" },
+          ],
         }),
       ],
     });

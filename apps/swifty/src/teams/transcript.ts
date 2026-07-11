@@ -1,3 +1,7 @@
+import { createChildLogger } from "../logger/index.js";
+
+const log = createChildLogger({ module: "teams" });
+
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import type { ConversationManager } from "../conversation/conversation.js";
@@ -23,7 +27,7 @@ const TranscriptEntrySchema = z.object({
   tool_results: z.array(TranscriptToolResultSchema).optional(),
 });
 
-type TranscriptEntry = z.infer<typeof TranscriptEntrySchema>;
+export type TranscriptEntry = z.infer<typeof TranscriptEntrySchema>;
 
 // Serialization / Deserialization
 
@@ -31,9 +35,7 @@ type TranscriptEntry = z.infer<typeof TranscriptEntrySchema>;
  * Serializes the conversation history into a list of persistable entries.
  */
 
-function serializeConversation(
-  conversation: ConversationManager,
-): TranscriptEntry[] {
+function serializeConversation(conversation: ConversationManager): TranscriptEntry[] {
   const entries: TranscriptEntry[] = [];
   for (const msg of conversation.getMessages()) {
     const entry: TranscriptEntry = { role: msg.role, content: msg.content };
@@ -98,7 +100,8 @@ export function loadTranscript(
     const raw: unknown = JSON.parse(readFileSync(path, "utf-8"));
     const parsed = parse(z.array(TranscriptEntrySchema), raw);
     return parsed;
-  } catch {
+  } catch (err) {
+    log.error({ err }, "teams operation failed");
     return null;
   }
 }

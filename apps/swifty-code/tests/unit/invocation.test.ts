@@ -7,6 +7,8 @@ import { toolSuccess, toolError } from "../../src/core/tools/base.js";
 import { EventBus } from "../../src/core/events/bus.js";
 import type { ToolUseBlock } from "../../src/core/llm/types.js";
 import type { PermissionManager } from "../../src/core/permissions/manager.js";
+import { paramPreview } from "../../src/core/permissions/policy.js";
+import type { Event } from "../../src/core/bus/events.js";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -295,5 +297,72 @@ describe("Tool Invocation", () => {
 
     expect(result.isError).toBe(true);
     expect(result.errorType).toBe("permission_denied");
+  });
+
+  // Feature: Verify permission.requested event includes non-empty param_preview with quotes
+  // Design: Mock permission manager emits event, verify param_preview field is populated
+  test("permission.requested event includes non-empty param_preview", async () => {
+    const tool: BaseTool = {
+      name: "bash",
+      description: "Bash tool",
+      inputSchema: { type: "object" as const, properties: {} },
+      invoke: () => Promise.resolve(toolSuccess("done")),
+    };
+    const registry = new ToolRegistry();
+    registry.register(tool);
+
+    const bus = new EventBus();
+    const events: Event[] = [];
+    bus.subscribe((e) => {
+      events.push(e);
+      return Promise.resolve();
+    });
+
+    const toolUse: ToolUseBlock = {
+      id: "call_1",
+      name: "bash",
+      input: { command: "ls -la" },
+      type: "tool_use",
+      caller: { type: "direct" },
+    };
+
+    // Mock PermissionManager that emits permission.requested then allows
+    const mockPermissionManager = {
+      evaluate: (): "ask" => "ask",
+      checkAndWait: async (
+        toolUseId: string,
+        toolName: string,
+        params: Record<string, unknown>,
+        sessionId: string,
+        eventEmitter: (event: Record<string, unknown>) => Promise<void>,
+      ): Promise<[boolean, string]> => {
+        await eventEmitter({
+          type: "permission.requested",
+          tool_use_id: toolUseId,
+          tool_name: toolName,
+          params,
+          param_preview: paramPreview(toolName, params),
+          session_id: sessionId,
+        });
+        return [true, "allow_once"];
+      },
+      respond: (_toolUseId: string, _decision: string): void => undefined,
+      cancelSession: (_sessionId: string): void => undefined,
+    };
+
+    if (!isPermissionManager(mockPermissionManager)) {
+      throw new Error("Invalid PermissionManager mock");
+    }
+
+    await invokeTool(registry, toolUse, bus, "r1", {
+      permissionManager: mockPermissionManager,
+      sessionId: "s1",
+    });
+
+    const permEvents = events.filter((e) => e.type === "permission.requested");
+    expect(permEvents).toHaveLength(1);
+    const preview: unknown = permEvents[0].param_preview;
+    expect(preview).toBeTruthy();
+    expect(preview).toContain("'");
   });
 });

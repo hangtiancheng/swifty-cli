@@ -1,3 +1,7 @@
+import { createChildLogger } from "../../logger/index.js";
+
+const log = createChildLogger({ module: "tools" });
+
 import type { Stats } from "node:fs";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { join, relative } from "node:path";
@@ -54,10 +58,7 @@ export class GrepTool implements Tool {
     };
   }
 
-  async execute(
-    ctx: ToolContext,
-    args: Record<string, unknown>,
-  ): Promise<ToolResult> {
+  async execute(ctx: ToolContext, args: Record<string, unknown>): Promise<ToolResult> {
     const pattern = strArg(args, "pattern");
     if (!pattern) {
       return {
@@ -73,7 +74,7 @@ export class GrepTool implements Tool {
     try {
       regex = new RegExp(pattern, "i");
     } catch (err) {
-      console.error(err);
+      log.error({ err }, "tool operation failed");
       return {
         output: `Error: invalid regex pattern: ${pattern}`,
         isError: true,
@@ -91,7 +92,8 @@ export class GrepTool implements Tool {
       let entries: string[];
       try {
         entries = await readdir(dir);
-      } catch {
+      } catch (err) {
+        log.error({ err }, "tool operation failed");
         return;
       }
 
@@ -106,7 +108,8 @@ export class GrepTool implements Tool {
         let fileStat: Stats;
         try {
           fileStat = await stat(fullPath);
-        } catch {
+        } catch (err) {
+          log.error({ err }, "tool operation failed");
           continue;
         }
 
@@ -132,7 +135,8 @@ export class GrepTool implements Tool {
             results.push(`${rel}:${String(i + 1)}:${lines[i]}`);
           }
         }
-      } catch {
+      } catch (err) {
+        log.error({ err }, "tool operation failed");
         // skip binary or unreadable files
       }
     };
@@ -145,6 +149,7 @@ export class GrepTool implements Tool {
         await walk(searchPath);
       }
     } catch (err) {
+      log.error({ err }, "tool operation failed");
       return {
         output: `Error: ${asErrorString(err)}`,
         isError: true,

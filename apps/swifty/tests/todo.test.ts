@@ -12,9 +12,7 @@ describe("todo store-backed persistence", () => {
     list.create("first task", "do the thing");
     list.create("second task", "do another");
 
-    expect(existsSync(join(workDir, ".swifty", "tasks", "sess1.json"))).toBe(
-      true,
-    );
+    expect(existsSync(join(workDir, ".swifty", "tasks", "sess1.json"))).toBe(true);
 
     // A fresh list over the same store recovers the tasks and continues ids.
     const reloaded = new TaskList(new TaskStore(workDir, "sess1"));

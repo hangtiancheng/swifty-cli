@@ -1,3 +1,7 @@
+import { createChildLogger } from "../logger/index.js";
+
+const log = createChildLogger({ module: "mcp" });
+
 import { asErrorString } from "@/utils/index.js";
 import type { MCPServerConfig } from "../config/config.js";
 import { MCPClient } from "./client.js";
@@ -40,6 +44,7 @@ export class MCPManager {
           });
         }
       } catch (err) {
+        log.error({ err }, "mcp operation failed");
         result.errors.push({
           serverName: cfg.name,
           error: asErrorString(err),

@@ -1,31 +1,37 @@
----
-title: "Function Calling (Tool Use)"
-description: "Function Calling (Tool Use)"
-sidebar_position: 3
----
-
-# Function Calling (Tool Use)
+# 工具调用
 
 ## 告诉 LLM 有哪些工具
 
 调用 LLM API 时, 可以通过 tools 参数告诉 LLM 有哪些工具, 包括名称 name, 描述 description, 参数格式 tool schema
+
+<!-- 源码: src/tools/descriptions.ts, src/tools/read-file.ts -->
 
 ```json
 {
   "tools": [
     {
       "name": "ReadFile",
-      "description": "Read the text content of a file, path must be absolute.",
+      "description": "Read a file and return its contents with line numbers.\n\nUsage Notes\n\n- The file_path should be an absolute path when possible.\n- By default reads up to 2000 lines from the beginning of the file.\n- Use offset and limit to read specific parts of large files. Only read what you need.\n- Results are returned with line numbers (1-based) for easy reference.\n- This tool can only read files, not directories. Use glob to list directory contents.\n- Do NOT re-read a file you just edited to verify -- EditFile would have errored if the change failed.",
       "input_schema": {
         "type": "object",
         "properties": {
-          "path": {
+          "file_path": {
             "type": "string",
-            "description": "Absolute path to the file."
+            "description": "Absolute path to the file"
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Line number to start from (0-based)",
+            "default": 0
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Max lines to read",
+            "default": 2000
           }
-        }
-      },
-      "required": ["path"]
+        },
+        "required": ["file_path"]
+      }
     }
   ]
 }
@@ -48,7 +54,7 @@ LLM 决定调用工具时, LLM API 的响应中包含一个结构化的工具调
       "id": "toolu_123abc",
       "name": "ReadFile",
       "input": {
-        "path": "src/main.go"
+        "file_path": "src/main.go"
       }
     }
   ]
@@ -62,16 +68,18 @@ LLM 决定调用工具时, LLM API 的响应中包含一个结构化的工具调
 
 - CLI 收到 tool_use 工具调用请求后, CLI 执行工具调用相关代码, 将工具调用结果返回给 LLM API
 
-```json
+```jsonc
 {
-  // 用户执行工具调用, role 是 user
+  // 执行工具调用, role 是 user
   "role": "user",
-  "content": {
-    "type": "tool_result",
-    // 必须和 tool_use 工具调用请求的 ID 相同
-    "tool_use_id": "toolu_123abc",
-    "content": "1\tfunction main() {\n2\t  console.log(\"javascript newbie\")\n3\t}"
-  }
+  "content": [
+    {
+      "type": "tool_result",
+      // 必须和 tool_use 工具调用请求的 ID 相同
+      "tool_use_id": "toolu_123abc",
+      "content": "1\tfunction main() {\n2\t  console.log(\"javascript newbie\")\n3\t}",
+    },
+  ],
 }
 ```
 
@@ -86,46 +94,62 @@ LLM 负责决策, 请求调用工具; CLI 负责执行工具调用, 将工具调
 
 ## 工具接口设计
 
-- 身份信息: name、description、schema (inputSchema / parameters)
-- 元信息: readonly? (只读)、destructive? (破坏性的)、concurrencySafe? (是否可以和其他工具并发执行)、category
+<!-- 源码: src/tools/types.ts -->
+
+- 身份信息: name, description, schema (input_schema)
+- 元信息
+  - category 分类
+  - deferred? 延迟加载
+  - system? 内部工具
+  - concurrencySafe? 是否可以和其他工具并发执行
 - 行为: execute、validateInput?
+
+<!-- 源码: src/tools/types.ts -->
 
 ```ts
 export interface ToolResult {
   output: string;
-  // 工具执行失败对于 LLM 是有价值的反馈, 引导 LLM 调整策略
+  // 工具执行失败对于 LLM 是有价值的反馈, 提示 LLM 调整策略
   isError: boolean;
 }
 ```
 
 ### ReadFile
 
+<!-- 源码: src/tools/read-file.ts -->
+
 - properties: file_path, offset, limit
-- metadata: 只读、非破坏性、分类 file
+- 元信息: 只读、非破坏性, `category: read`
 - 行号: 读文件需要带行号前缀, 方便定位代码位置 `"1\tfunction main() {\n2\t  console.log(\"javascript newbie\")\n3\t}"`
-- 大文件: 支持 offset 和 limit 参数, 指定从第 offset 行开始读、读 limit 行, 使得 LLM 可以分段读文件
+- 大文件: 支持 offset 和 limit 参数, offset 默认 0, limit 默认 2000, 指定从第 offset 行开始读、读 limit 行, 使得 LLM 可以分段读文件
 - 二进制文件: 通过读文件的前 512 字节, 如果包含 NUL 字符 (\x00), 则判定为二进制文件并拒绝读取, 提示 LLM 使用 bash 工具处理
 
 ### WriteFile
 
+<!-- 源码: src/tools/write-file.ts -->
+
 - properties: file_path, content
-- metadata: 非只读、非破坏性、分类 file
-- 创建或重写, 创建时需要递归的创建父目录 (权限 0755)
+- 元信息: 非只读、非破坏性, `category: write`
+- 创建或重写, 创建时需要递归的创建父目录
 
 ### EditFile
 
+<!-- 源码: src/tools/edit-file.ts -->
+
 - properties: file_path, old_string, new_string, replace_all
-- metadata: 非只读、非破坏性、分类 file
+- 元信息: 非只读、非破坏性, `category: write`
 - 如果 replace_all === false, 则 old_string 必须唯一匹配
   - 如果匹配多个, 报错提示: 该 old_string 匹配 N 个, 请提供更多的上下文使得 old_string 唯一匹配
   - 如果没有找到, 说明 LLM 记忆的文件内容可能过时
-- 替换成功后, 返回修改位置附近几行的内容 (带行号前缀), 返回给 LLM 确认修改是否正确
+- 替换成功后, 返回 "Successfully edited ${filePath}", 提供给 LLM 确认修改是否正确
 - new_string 为空, 表示删除 old_string
 
 ### Bash
 
+<!-- 源码: src/tools/bash.ts -->
+
 - properties: command, timeout
-- metadata: 非只读、破坏性、分类 shell
+- 元信息: 非只读、破坏性, `category: command`
 - 工作目录: 项目根目录, 超时: 120s
 - 输出: stdout、stderr 合并到一个流; 输出过长时截断, 保留前面的部分和截断标记
 - 命令退出码的语义
@@ -135,26 +159,32 @@ export interface ToolResult {
 
 ### Glob
 
+<!-- 源码: src/tools/glob.ts -->
+
 - properties: pattern, path
-- metadata: 只读、非破坏性、分类 search
-- glob 查找文件内容
+- 元信息: 只读、非破坏性, `category: read`
+- glob 查找文件名
 - 搜索结果按修改时间倒序排序, 最新修改的排在前面
 
 ### Grep
 
+<!-- 源码: src/tools/grep.ts -->
+
 - properties: pattern, path, include
-- metadata: 只读、非破坏性、分类 search
+- 元信息: 只读、非破坏性, `category: read`
 - grep 找文件内容
 - 输出格式: 文件路径:行号:匹配的内容
 
-| 工具      | 分类   | 只读 | 破坏性 | 场景           |
-| --------- | ------ | ---- | ------ | -------------- |
-| ReadFile  | file   | 是   | 否     | 读文件         |
-| WriteFile | file   | 否   | 否     | 创建或重写文件 |
-| EditFile  | file   | 否   | 否     | 修改文件       |
-| Bash      | shell  | 否   | 是     | all            |
-| Glob      | search | 是   | 否     | 查找文件名     |
-| Grep      | search | 是   | 否     | 查找文件内容   |
+<!-- 源码: src/tools/types.ts (ToolCategory = "read" | "write" | "command") -->
+
+| 工具      | 分类    | 只读 | 破坏性 | 场景            |
+| --------- | ------- | ---- | ------ | --------------- |
+| ReadFile  | read    | 是   | 否     | 读文件          |
+| WriteFile | write   | 否   | 否     | 创建或重写文件  |
+| EditFile  | write   | 否   | 否     | 修改文件        |
+| Bash      | command | 否   | 是     | 执行 shell 命令 |
+| Glob      | read    | 是   | 否     | 查找文件名      |
+| Grep      | read    | 是   | 否     | 查找文件内容    |
 
 ## 流式 tool_use 解析: 拼接 partialJson JSON 碎片
 

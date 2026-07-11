@@ -199,12 +199,14 @@ export class SessionManager {
     this._getSession(sid);
     const mutex = this._mutexes.get(sid);
     if (!mutex) throw new HandlerError(SESSION_NOT_FOUND, "session mutex missing");
-    if (!this._provider) {
-      throw new HandlerError(PROVIDER_NOT_AVAILABLE, "provider not available for compaction");
-    }
 
+    // Check busy first, then provider — matches Python session/manager.py order
     if (!mutex.tryAcquire()) {
       throw new HandlerError(SESSION_BUSY, "session is busy");
+    }
+    if (!this._provider) {
+      mutex.release();
+      throw new HandlerError(PROVIDER_NOT_AVAILABLE, "provider not available for compaction");
     }
     try {
       const messages = this._store.readMessages(sid);

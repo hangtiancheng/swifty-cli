@@ -42,10 +42,9 @@ describe("MemoryExtractor", () => {
     ].join("\n");
 
     const workDir = mkdtempSync(join(tmpdir(), "swifty-mem-"));
-    const saved = await new MemoryExtractor(
-      new MockClient(response),
-      workDir,
-    ).extract("conversation");
+    const saved = await new MemoryExtractor(new MockClient(response), workDir).extract(
+      "conversation",
+    );
 
     expect(saved.sort()).toEqual(["api-docs", "build-cmd"]);
 
@@ -59,10 +58,9 @@ describe("MemoryExtractor", () => {
 
   it("returns nothing when the model says NONE", async () => {
     const workDir = mkdtempSync(join(tmpdir(), "swifty-mem-"));
-    const saved = await new MemoryExtractor(
-      new MockClient("NONE"),
-      workDir,
-    ).extract("conversation");
+    const saved = await new MemoryExtractor(new MockClient("NONE"), workDir).extract(
+      "conversation",
+    );
     expect(saved).toEqual([]);
   });
 });

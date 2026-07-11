@@ -1,3 +1,7 @@
+import { createChildLogger } from "../logger/index.js";
+
+const log = createChildLogger({ module: "todo" });
+
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import z, { parse } from "zod";
@@ -37,7 +41,8 @@ export class TaskStore {
       const raw: unknown = JSON.parse(data);
       const parsed = parse(z.array(TaskSchema), raw);
       return parsed;
-    } catch {
+    } catch (err) {
+      log.error({ err }, "todo operation failed");
       return [];
     }
   }

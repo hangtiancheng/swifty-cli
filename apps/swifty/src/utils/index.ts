@@ -1,3 +1,7 @@
+import { createChildLogger } from "../logger/index.js";
+
+const log = createChildLogger({ module: "utils" });
+
 export const DANGEROUSLY_JSON = "dangerouslyJson";
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
@@ -48,8 +52,8 @@ export function toTry<T extends (...args: any) => any>(fn: T, ctx?: ThisParamete
     try {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       ret = ctx ? fn.call(ctx, ...args) : fn.call(this, ...args);
-    } catch (e) {
-      console.error(e);
+    } catch (err) {
+      log.error({ err }, "utils operation failed");
       return undefined;
     }
     return ret;
@@ -85,7 +89,7 @@ export function strArg(args: Record<string, unknown>, key: string, fallback?: st
     return v;
   }
 
-  return fallback ?? String(v);
+  return fallback ?? "";
 }
 
 export function boolArg(args: Record<string, unknown>, key: string, fallback?: boolean): boolean {
@@ -95,4 +99,34 @@ export function boolArg(args: Record<string, unknown>, key: string, fallback?: b
   }
 
   return fallback ?? Boolean(v);
+}
+
+export function quickSort<T>(arr: readonly T[], compare: (a: T, b: T) => number): T[] {
+  if (arr.length <= 1) {
+    return [...arr];
+  }
+
+  const pivotIndex = Math.floor(arr.length / 2);
+  const pivot = arr[pivotIndex];
+
+  if (pivot === undefined) {
+    return [...arr];
+  }
+
+  const left: T[] = [];
+  const right: T[] = [];
+  const equal: T[] = [];
+
+  for (const item of arr) {
+    const result = compare(item, pivot);
+    if (result < 0) {
+      left.push(item);
+    } else if (result > 0) {
+      right.push(item);
+    } else {
+      equal.push(item);
+    }
+  }
+
+  return [...quickSort(left, compare), ...equal, ...quickSort(right, compare)];
 }

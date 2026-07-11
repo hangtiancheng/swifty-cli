@@ -1,12 +1,6 @@
 // End-to-end integration test for the agent pipeline.
-// Requires a real ANTHROPIC_API_KEY — skipped automatically when absent.
-import {
-  mkdtempSync,
-  rmSync,
-  readFileSync,
-  writeFileSync,
-  readdirSync,
-} from "node:fs";
+// Uses a mock LLM provider to avoid requiring a real ANTHROPIC_API_KEY.
+import { mkdtempSync, rmSync, readFileSync, writeFileSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -15,6 +9,9 @@ import { describe, expect, test } from "vitest";
 import { AgentRunner } from "../../src/core/runner.js";
 import { isRecord } from "../../src/core/bus/envelope.js";
 import type { SwiftyConfig } from "../../src/core/config.js";
+import type { LLMProvider } from "../../src/core/llm/base.js";
+import type { LlmResponse } from "../../src/core/llm/types.js";
+import type { EventBus } from "../../src/core/events/bus.js";
 
 function makeConfig(overrides?: Partial<SwiftyConfig>): SwiftyConfig {
   return {
@@ -47,13 +44,98 @@ function parseEvents(content: string): Record<string, unknown>[] {
   return events;
 }
 
-// Skip all tests when ANTHROPIC_API_KEY is not set
-const hasKey = Boolean(process.env["ANTHROPIC_API_KEY"]);
-const describeIfKey = hasKey ? describe : describe.skip;
+// Mock LLM provider that simulates a two-step agent interaction:
+// Step 1: LLM requests to read_file("sample.txt")
+// Step 2: LLM reports the magic number found in the file
+function mockReadFileProvider(): LLMProvider {
+  let callCount = 0;
+  return {
+    async chat(
+      _messages: unknown[],
+      _toolSchemas: unknown[],
+      bus: EventBus,
+      runId: string,
+      _options?: { step?: number; system?: string | null },
+    ): Promise<LlmResponse> {
+      callCount++;
+      const now = new Date().toISOString();
 
-describeIfKey("run e2e integration", () => {
-  // Feature: Full end-to-end agent pipeline: real LLM -> read_file tool -> success with events.jsonl
-  // Design: Write a sample file, run agent with goal referencing it, verify events.jsonl has all key stages
+      await bus.publish({
+        type: "llm.model_selected",
+        run_id: runId,
+        model: "claude-sonnet-4-6",
+        strategy: "static",
+        timestamp: now,
+      });
+
+      if (callCount === 1) {
+        // First call: request to read the file
+        await bus.publish({
+          type: "llm.usage",
+          run_id: runId,
+          input_tokens: 100,
+          output_tokens: 50,
+          cache_read_input_tokens: 0,
+          cache_creation_input_tokens: 0,
+          context_percent: 0.05,
+          timestamp: now,
+        });
+
+        return {
+          stopReason: "tool_use",
+          toolUses: [
+            {
+              id: "tu-1",
+              name: "read_file",
+              input: { path: "sample.txt" },
+              type: "tool_use" as const,
+              caller: { type: "direct" },
+            },
+          ],
+          text: "",
+          usage: {
+            inputTokens: 100,
+            outputTokens: 50,
+            cacheReadInputTokens: 0,
+            cacheCreationInputTokens: 0,
+            contextPercent: 0.05,
+          },
+          thinkingBlocks: [],
+        };
+      }
+
+      // Second call: report the magic number
+      await bus.publish({
+        type: "llm.usage",
+        run_id: runId,
+        input_tokens: 200,
+        output_tokens: 30,
+        cache_read_input_tokens: 50,
+        cache_creation_input_tokens: 0,
+        context_percent: 0.1,
+        timestamp: now,
+      });
+
+      return {
+        stopReason: "end_turn",
+        toolUses: [],
+        text: "The magic number mentioned in the file is 7391.",
+        usage: {
+          inputTokens: 200,
+          outputTokens: 30,
+          cacheReadInputTokens: 50,
+          cacheCreationInputTokens: 0,
+          contextPercent: 0.1,
+        },
+        thinkingBlocks: [],
+      };
+    },
+  };
+}
+
+describe("run e2e integration", () => {
+  // Feature: Full end-to-end agent pipeline: mock LLM -> read_file tool -> success with events.jsonl
+  // Design: Write a sample file, run agent with mock provider, verify events.jsonl has all key stages
   test("agent reads file and completes successfully", async () => {
     const dir = mkdtempSync(path.join(tmpdir(), "swifty-e2e-"));
     const origDir = process.cwd();
@@ -69,7 +151,10 @@ describeIfKey("run e2e integration", () => {
 
       const runsDir = path.join(dir, "runs");
       const config = makeConfig();
-      const runner = new AgentRunner(config, { runsDir });
+      const runner = new AgentRunner(config, {
+        runsDir,
+        provider: mockReadFileProvider(),
+      });
 
       await runner.run(
         "Use the read_file tool to read the file 'sample.txt' and report the magic number it mentions.",
@@ -103,9 +188,7 @@ describeIfKey("run e2e integration", () => {
       expect(finished["status"]).toBe("success");
 
       // read_file was actually invoked
-      const toolStarts = events.filter(
-        (e) => e["type"] === "tool.call_started",
-      );
+      const toolStarts = events.filter((e) => e["type"] === "tool.call_started");
       expect(toolStarts.some((e) => e["tool_name"] === "read_file")).toBe(true);
 
       // run_id is consistent across the event stream

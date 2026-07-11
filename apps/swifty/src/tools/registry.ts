@@ -88,7 +88,14 @@ export class ToolRegistry {
   }
 
   findDeferredByNames(names: string[]): Tool[] {
-    return names.map((n) => this.tools.get(n)).filter((t): t is Tool => t?.deferred ?? false);
+    // Case-insensitive name matching
+    const lowerMap = new Map<string, Tool>();
+    for (const [name, tool] of this.tools) {
+      lowerMap.set(name.toLowerCase(), tool);
+    }
+    return names
+      .map((n) => lowerMap.get(n.toLowerCase()))
+      .filter((t): t is Tool => t?.deferred ?? false);
   }
 
   markDiscovered(name: string): void {

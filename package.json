@@ -8,11 +8,18 @@
     "git:commit:n": "git add -A && git commit -m \"feat: Introduce new features\" --no-verify",
     "git:push": "pnpm git:commit && git push origin main",
     "git:push:n": "pnpm git:commit:n && git push origin main",
+    "format": "shfmt -w ./install.sh",
     "prepare": "husky"
   },
   "keywords": [],
   "devDependencies": {
-    "husky": "^9.1.7"
+    "husky": "^9.1.7",
+    "lint-staged": "^17.0.8"
+  },
+  "lint-staged": {
+    "apps/swifty/**/*.{json,jsonc,js,cjs,mjs,jsx,ts,cts,mts,tsx,html,vue,css,scss,md,mdx}": [
+      "pnpm --filter @swifty.js/swifty format"
+    ]
   },
   "author": "https://github.com/hangtiancheng",
   "license": "ISC",

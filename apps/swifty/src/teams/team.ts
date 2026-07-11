@@ -1,3 +1,7 @@
+import { createChildLogger } from "../logger/index.js";
+
+const log = createChildLogger({ module: "teams" });
+
 import { join } from "node:path";
 import { mkdirSync } from "node:fs";
 import { FileMailbox } from "./file-mailbox.js";
@@ -35,10 +39,7 @@ export interface Member {
 // layer stays decoupled from the LLM/agent layer (and is unit-testable).
 // The optional onEvent callback lets the team layer observe agent events
 // (tool_use, usage) without coupling to the Agent/LLM types directly.
-export type RunAgent = (
-  task: string,
-  onEvent?: AgentEventCallback,
-) => Promise<string>;
+export type RunAgent = (task: string, onEvent?: AgentEventCallback) => Promise<string>;
 
 export class Team {
   name: string;
@@ -99,11 +100,7 @@ export class Team {
           break;
         case "usage":
           if (event.usage) {
-            recordTokens(
-              uiState.progress,
-              event.usage.inputTokens,
-              event.usage.outputTokens,
-            );
+            recordTokens(uiState.progress, event.usage.inputTokens, event.usage.outputTokens);
           }
           break;
         case "stream_text":
@@ -123,15 +120,11 @@ export class Team {
           // Execute one turn of the agent
           uiState.status = "running";
           const result = await runAgent(nextPrompt, onEvent);
-          uiState.lastMessage =
-            result.length > 200 ? result.slice(0, 200) + "..." : result;
+          uiState.lastMessage = result.length > 200 ? result.slice(0, 200) + "..." : result;
 
           // Send idle notification to the lead
           uiState.status = "idle";
-          await this.leadMailbox.send(
-            name,
-            `[idle] ${name} (reason: ${idleReason})`,
-          );
+          await this.leadMailbox.send(name, `[idle] ${name} (reason: ${idleReason})`);
           idleReason = "available";
 
           // Poll mailbox for new messages or shutdown
@@ -143,9 +136,10 @@ export class Team {
         }
 
         uiState.status = "completed";
-      } catch (e) {
+      } catch (err) {
+        log.error({ err }, "teams operation failed");
         uiState.status = "failed";
-        uiState.lastMessage = asErrorString(e);
+        uiState.lastMessage = asErrorString(err);
         await this.leadMailbox.send(name, `[idle] ${name} (reason: failed)`);
       } finally {
         member.active = false;
@@ -156,7 +150,8 @@ export class Team {
         if (member.conversation) {
           try {
             saveTranscript(this.workDir, this.name, name, member.conversation);
-          } catch {
+          } catch (err) {
+            log.error({ err }, "teams operation failed");
             // Best-effort: persistence failure should not block normal exit
           }
         }
@@ -180,9 +175,7 @@ export class Team {
       }
 
       // Check for a shutdown request
-      const hasShutdown = msgs.some((m) =>
-        m.text.trimStart().startsWith(Team.SHUTDOWN_PREFIX),
-      );
+      const hasShutdown = msgs.some((m) => m.text.trimStart().startsWith(Team.SHUTDOWN_PREFIX));
       if (hasShutdown) {
         return { prompt: "", shutdown: true };
       }
@@ -292,11 +285,11 @@ export class TeamManager {
         continue;
       }
       const lines: string[] = [];
-      lines.push(`<team-notification team="${team.name}">`);
+      lines.push(`<task-notification team="${team.name}">`);
       for (const msg of msgs) {
         lines.push(`from=${msg.from}: ${msg.text}`);
       }
-      lines.push("</team-notification>");
+      lines.push("</task-notification>");
       out.push(lines.join("\n"));
     }
     return out;

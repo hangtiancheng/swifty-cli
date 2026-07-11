@@ -7,10 +7,7 @@ import type { EventBus } from "../events/bus.js";
 import type { TraceWriter } from "./writer.js";
 import type { LLMProvider } from "../llm/base.js";
 import type { LlmResponse } from "../llm/types.js";
-
-function now(): string {
-  return new Date().toISOString();
-}
+import { makeApiCallTrace, makeApiResponseTrace } from "./record.js";
 
 export class TracingProvider implements LLMProvider {
   private _inner: LLMProvider;
@@ -39,16 +36,7 @@ export class TracingProvider implements LLMProvider {
       ? { messages, tool_schemas: toolSchemas, system }
       : { message_count: messages.length, tool_count: toolSchemas.length };
 
-    this._trace.emit({
-      ts: now(),
-      direction: "CORE→LLM",
-      layer: "llm",
-      kind: "api_call",
-      run_id: runId,
-      step,
-      client_id: null,
-      data: callData,
-    });
+    this._trace.emit(makeApiCallTrace(runId, step, callData));
 
     const t0 = performance.now();
     const result = await this._inner.chat(messages, toolSchemas, bus, runId, {
@@ -61,7 +49,7 @@ export class TracingProvider implements LLMProvider {
       ? {
           stop_reason: result.stopReason,
           text: result.text,
-          tool_uses: result.toolUses,
+          tool_calls: result.toolUses,
           usage: result.usage ?? {},
           latency_ms: latencyMs,
         }
@@ -71,16 +59,7 @@ export class TracingProvider implements LLMProvider {
           latency_ms: latencyMs,
         };
 
-    this._trace.emit({
-      ts: now(),
-      direction: "LLM→CORE",
-      layer: "llm",
-      kind: "api_response",
-      run_id: runId,
-      step,
-      client_id: null,
-      data: respData,
-    });
+    this._trace.emit(makeApiResponseTrace(runId, step, respData));
 
     return result;
   }

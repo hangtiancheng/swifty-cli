@@ -1,5 +1,4 @@
-import { execSync } from "child_process";
-import { safeParseAsync, z } from "zod";
+import { spawnSync } from "node:child_process";
 import { BASH_DESCRIPTION } from "./descriptions.js";
 import {
   type Tool,
@@ -9,66 +8,59 @@ import {
   type ToolSchema,
 } from "./types.js";
 import { intArg, strArg } from "../utils/index.js";
+import type { Sandbox, SandboxConfig } from "@/sandbox/index.js";
 
 const MAX_TIMEOUT = 600;
 
-// Command exit code semantic mapping table:
-// Some command use non-zero exit code to indicate normal result;
-
-// e.g. grep returns when no match is found
-// The value represents the minimum exit code threshold for determining a real error.
-
-const commandErrorThresholds = new Map<string, number>([
-  ["grep", 2], // exit 1 = no match found, not an error
-  ["egrep", 2],
-  ["fgrep", 2],
-  ["rg", 2], // MacOS ripgrep shares the same exit code semantics as grep,
-  ["diff", 2], // exit 1 = files differ, not an error
-  ["test", 2], // exit 1 = condition is false, not an error
-  ["find", 1],
-]);
-
 /**
- * Determines whether an exit code indicates an error based on command semantics.
- *
- * For piped commands, only the last segment is considered (as Bash defaults to returning the exit code of the last command in the pipeline)
- *
+ * 从命令字符串中提取基础命令名。
+ * 管道命令取最后一段（bash 默认返回管道最后一个命令的退出码）。
  */
-
-function interpretExitCode(command: string, exitCode: number): boolean {
-  // Split by pipeline operator and take the last command segment
+function extractBaseCmd(command: string): string {
+  // 按管道符拆分，取最后一段命令
   const lastSegment = command.split("|").pop()?.trim() ?? command;
-
-  // Extract the base command name: skip env variable assignments and path prefixes
+  // 提取基础命令名：跳过 env 变量赋值和路径前缀
   const tokens = lastSegment.split(/\s+/);
-
-  let baseCmd = "";
   for (const token of tokens) {
-    // SKip env variable assignments like JANE=doe
+    // 跳过形如 VAR=value 的环境变量设置
     if (token.includes("=") && !token.startsWith("-")) {
       continue;
     }
-    // Strip path prefixes and keep only the command name
-    baseCmd = token.split("/").pop() ?? token;
-    break;
+    // 去掉路径前缀，只保留命令名
+    return token.split("/").pop() ?? token;
   }
-
-  const threshold = commandErrorThresholds.get(baseCmd);
-  if (threshold !== undefined) {
-    return exitCode >= threshold;
-  }
-
-  // Default rule: any non-zero exit code is considered an error
-  return exitCode !== 0;
+  return "";
 }
 
-const BashErrorSchema = z.object({
-  status: z.coerce.number().optional(),
-  stdout: z.string().optional(),
-  stderr: z.string().optional(),
-  killed: z.boolean().optional(),
-  message: z.string().optional(),
-});
+// 特殊命令的退出码语义提示，帮助 LLM 理解非零退出码的含义
+const exitCodeHints = new Map<string, Map<number, string>>([
+  ["grep", new Map([[1, "no matches found"]])],
+  ["egrep", new Map([[1, "no matches found"]])],
+  ["fgrep", new Map([[1, "no matches found"]])],
+  ["rg", new Map([[1, "no matches found"]])],
+  ["diff", new Map([[1, "files differ"]])],
+  ["test", new Map([[1, "condition is false"]])],
+  ["[", new Map([[1, "condition is false"]])],
+  ["find", new Map([[1, "partial success"]])],
+]);
+
+/**
+ * 为特殊命令的非零退出码返回语义提示，帮助 LLM 理解退出码含义。
+ * 如果不是已知的特殊命令或退出码，返回空字符串。
+ */
+function exitCodeHint(command: string, exitCode: number): string {
+  const baseCmd = extractBaseCmd(command);
+  const hints = exitCodeHints.get(baseCmd);
+  return hints?.get(exitCode) ?? "";
+}
+
+// const BashErrorSchema = z.object({
+//   status: z.coerce.number().optional(),
+//   stdout: z.string().optional(),
+//   stderr: z.string().optional(),
+//   killed: z.boolean().optional(),
+//   message: z.string().optional(),
+// });
 
 export class BashTool implements Tool {
   // Use a hardcoded string instead of BashTool.name.replace("Tool", "")
@@ -78,6 +70,14 @@ export class BashTool implements Tool {
 
   description: string = BASH_DESCRIPTION;
   category: ToolCategory = "command";
+
+  // OS 级沙箱实例及配置，由外部注入
+  sandbox: Sandbox | null = null;
+  sandboxConfig: SandboxConfig = {
+    allowWrite: [],
+    denyWrite: [],
+    networkEnabled: true,
+  };
 
   schema(): ToolSchema {
     const inputSchema = {
@@ -103,14 +103,14 @@ export class BashTool implements Tool {
     };
   }
 
-  async execute(ctx: ToolContext, args: Record<string, unknown>): Promise<ToolResult> {
+  execute(ctx: ToolContext, args: Record<string, unknown>): Promise<ToolResult> {
     // TODO: Migrate manual parse to zod.
     const command = strArg(args, "command");
     if (!command) {
-      return {
+      return Promise.resolve({
         output: "Error: command is required",
         isError: true,
-      };
+      });
     }
 
     let timeout = intArg(args, "timeout", 120);
@@ -118,53 +118,52 @@ export class BashTool implements Tool {
       timeout = MAX_TIMEOUT;
     }
 
-    try {
-      const result = execSync(command, {
-        shell: "bash",
-        cwd: ctx.workDir,
-        timeout: timeout * 1000,
-        encoding: "utf-8",
-        stdio: ["pipe", "pipe", "pipe"],
-        maxBuffer: 10 * 1024 * 1024,
-      });
-
-      return {
-        output: `$ ${command}\n${result}(exit code 0)`,
-        isError: false,
-      };
-    } catch (err) {
-      const {
-        success,
-        data: errData,
-        error: parseErr,
-      } = await safeParseAsync(BashErrorSchema, err);
-      if (!success) {
-        return {
-          output: `Error: execute error ${err instanceof Error ? err.message : String(err)}, parse error ${parseErr.message}`,
-          isError: true,
-        };
-      }
-
-      if (errData.killed) {
-        return {
-          output: `Error: command timeout after ${String(timeout)}s`,
-          isError: true,
-        };
-      } // end if (errData.killed)
-
-      const exitCode = errData.status ?? 1;
-      let output = `$ ${command}\n`;
-      if (errData.stdout) {
-        output += `stdout: ${errData.stdout}\n`;
-      }
-      if (errData.stderr) {
-        output += `stderr: ${errData.stderr}\n`;
-      }
-      output += `(exit code: ${String(exitCode)})`;
-      return {
-        output,
-        isError: interpretExitCode(command, exitCode),
-      };
+    // 沙箱包装：如果沙箱可用，将命令包装在沙箱环境中执行
+    let actualCommand = command;
+    if (this.sandbox?.available()) {
+      actualCommand = this.sandbox.wrap(command, this.sandboxConfig);
     }
+
+    // stdout 和 stderr 分别捕获，后续合并为统一输出
+    const result = spawnSync("bash", ["-c", actualCommand], {
+      cwd: ctx.workDir,
+      timeout: timeout * 1000,
+      encoding: "utf-8",
+      stdio: ["pipe", "pipe", "pipe"],
+      maxBuffer: 10 * 1024 * 1024,
+    });
+
+    if (result.error && result.signal === "SIGTERM") {
+      return Promise.resolve({
+        output: `Error: command timed out after ${String(timeout)}s`,
+        isError: true,
+      });
+    }
+
+    if (result.error && !result.stdout && !result.stderr) {
+      return Promise.resolve({
+        output: `Error executing command: ${result.error.message}`,
+        isError: true,
+      });
+    }
+
+    const exitCode = result.status ?? 0;
+    let output = `$ ${command}\n`;
+    // 合并 stdout 和 stderr，不加前缀
+    if (result.stdout) {
+      output += result.stdout;
+    }
+    if (result.stderr) {
+      output += result.stderr;
+    }
+
+    if (exitCode !== 0) {
+      const hint = exitCodeHint(command, exitCode);
+      output += hint
+        ? `\nExit code ${String(exitCode)} (${hint})`
+        : `\nExit code ${String(exitCode)}`;
+    }
+
+    return Promise.resolve({ output, isError: false });
   }
 }

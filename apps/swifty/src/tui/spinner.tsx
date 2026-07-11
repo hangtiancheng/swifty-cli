@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { randomVerb } from "./verbs.js";
 import InkSpinner from "ink-spinner";
 import { Text } from "ink";
+import React from "react";
 
 function formatTokens(n: number): string {
   if (n >= 1000000) {
@@ -57,4 +58,4 @@ function Spinner(props: SpinnerProps) {
   );
 }
 
-export default Spinner;
+export default React.memo(Spinner);

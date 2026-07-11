@@ -6,10 +6,12 @@ import {
   statSync,
   existsSync,
   unlinkSync,
+  rmSync,
 } from "node:fs";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
 import z, { parse, safeParse } from "zod";
+import { createChildLogger } from "../logger/index.js";
 
 // Persistent session lines. Ordinary messages have an empty `type`, while compaction boundary records
 // have the type COMPACT_BOUNDARY. Their `content` is the JSON-serialized CompactBoundaryPayload
@@ -25,7 +27,7 @@ const SESSION_EXPIRY_DAYS = 30;
 
 const SessionMessageSchema = z.object({
   role: z.string(),
-  content: z.string(),
+  content: z.string().min(1),
   timestamp: z.string(),
   type: z.string().optional(),
   /** Tool call ID, used to verify the integrity of the tool_use/tool_result chain during restoration. */
@@ -50,9 +52,7 @@ const CompactBoundaryPayloadSchema = z.object({
 });
 
 // Structured payload serialized into a compact_boundary record's `content`.
-export type CompactBoundaryPayload = z.infer<
-  typeof CompactBoundaryPayloadSchema
->;
+export type CompactBoundaryPayload = z.infer<typeof CompactBoundaryPayloadSchema>;
 
 export interface SessionInfo {
   id: string;
@@ -61,6 +61,8 @@ export interface SessionInfo {
   size: number;
   modTime: Date;
 }
+
+const log = createChildLogger({ module: "session" });
 
 function sessionsDir(workDir: string): string {
   return join(workDir, ".swifty", "sessions");
@@ -76,11 +78,7 @@ export function newSessionId(): string {
   return `${ts}-${rand}`;
 }
 
-export function saveMessage(
-  workDir: string,
-  sessionId: string,
-  msg: SessionMessage,
-): void {
+export function saveMessage(workDir: string, sessionId: string, msg: SessionMessage): void {
   const dir = sessionsDir(workDir);
   mkdirSync(dir, { recursive: true });
   const filePath = join(dir, `${sessionId}.jsonl`);
@@ -106,10 +104,7 @@ export function saveCompactBoundary(
   });
 }
 
-export function loadSession(
-  workDir: string,
-  sessionId: string,
-): SessionMessage[] {
+export function loadSession(workDir: string, sessionId: string): SessionMessage[] {
   const filePath = join(sessionsDir(workDir), `${sessionId}.jsonl`);
   if (!existsSync(filePath)) {
     return [];
@@ -129,9 +124,10 @@ export function loadSession(
       if (success) {
         out.push(data);
       } else {
-        console.error(error);
+        log.error({ err: error }, "session operation failed");
       }
-    } catch {
+    } catch (err) {
+      log.error({ err }, "session operation failed");
       // skip malformed line
     }
   }
@@ -173,7 +169,8 @@ export function rebuildFromSession(saved: SessionMessage[]): RestoredMessage[] {
     try {
       const payload_: unknown = JSON.parse(saved[lastBoundary].content);
       payload = parse(CompactBoundaryPayloadSchema, payload_);
-    } catch {
+    } catch (err) {
+      log.error({ err }, "session operation failed");
       payload = null;
     }
     if (payload) {
@@ -245,7 +242,8 @@ export function listSessions(workDir: string): SessionInfo[] {
         try {
           const raw: unknown = JSON.parse(line);
           m = parse(SessionMessageSchema, raw);
-        } catch {
+        } catch (err) {
+          log.error({ err }, "session operation failed");
           continue;
         }
         messageCount++;
@@ -254,7 +252,8 @@ export function listSessions(workDir: string): SessionInfo[] {
           firstMessage = m.content.slice(0, 100);
         }
       }
-    } catch {
+    } catch (err2) {
+      log.error({ err: err2 }, "session operation failed");
       continue;
     }
 
@@ -289,7 +288,8 @@ export function cleanExpiredSessions(workDir: string): number {
   let files: string[];
   try {
     files = readdirSync(dir).filter((f) => f.endsWith(".jsonl"));
-  } catch {
+  } catch (err) {
+    log.error({ err }, "session operation failed");
     return 0;
   }
 
@@ -299,9 +299,24 @@ export function cleanExpiredSessions(workDir: string): number {
       const stat = statSync(filePath);
       if (now - stat.mtimeMs > expiryMs) {
         unlinkSync(filePath);
+        // 清理对应的 tool_results 目录
+        const id = file.replace(".jsonl", "");
+        const toolResultsDir = join(workDir, ".swifty", "sessions", id, "tool_results");
+        try {
+          rmSync(toolResultsDir, { recursive: true, force: true });
+        } catch {
+          /** noop */
+        }
+        const sessionSubdir = join(workDir, ".swifty", "sessions", id);
+        try {
+          rmSync(sessionSubdir, { recursive: false });
+        } catch {
+          /** noop */
+        }
         removed++;
       }
-    } catch {
+    } catch (err) {
+      log.error({ err }, "session operation failed");
       // Silently skip if deletion fails
     }
   }

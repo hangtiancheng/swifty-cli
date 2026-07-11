@@ -36,7 +36,7 @@ export function PermissionDialog(props: PermissionDialogProps) {
 
   return (
     <Box flexDirection="column" paddingLeft={1} paddingTop={1}>
-      <Text bold>{COLORS.warning(`  ${toolName} command`)}</Text>{" "}
+      <Text bold>{COLORS.warning(`  ${toolName} command`)}</Text>
       {argsSummary && (
         <Text>
           {" "}
@@ -44,8 +44,9 @@ export function PermissionDialog(props: PermissionDialogProps) {
             {argsSummary.length > 120 ? argsSummary.slice(0, 120) + "…" : argsSummary}
           </Text>
         </Text>
-      )}{" "}
-      <Text dimColor> This command requires approval</Text> <Text> Do you want to proceed?</Text>
+      )}
+      <Text dimColor> This command requires approval</Text>
+      <Text> Do you want to proceed?</Text>
       {PERMISSION_OPTIONS.map((opt, i) => (
         <Text key={opt.label}>
           {i === cursor ? COLORS.tool(` ${ICONS.prompt} `) : "   "}
@@ -55,7 +56,7 @@ export function PermissionDialog(props: PermissionDialogProps) {
             <Text dimColor>{`${String(i + 1)}. ${opt.label}`}</Text>
           )}
         </Text>
-      ))}{" "}
+      ))}
     </Box>
   );
 }

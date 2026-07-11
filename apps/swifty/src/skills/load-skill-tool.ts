@@ -4,13 +4,12 @@ import type { SkillHost } from "./skill.js";
 import { runInline } from "./executor.js";
 import { strArg } from "@/utils/index.js";
 
-// On-demand skill activation: lets the model load a skill's SOP into context
-// (progressive disclosure) instead of every skill being inlined up front.
-// Mirrors Go's LoadSkill tool.
+// On-demand skill activation: returns the full SOP body so it enters the
+// conversation as a regular message (progressive disclosure). Mirrors Go.
 export class LoadSkillTool implements Tool {
   name = "LoadSkill";
   description =
-    "Activate a skill by name to load its workflow/SOP into context. Use this when a task matches an available skill's description.";
+    "Activate a skill by name. Returns the full SOP body so you can follow its instructions. Use this when a task matches an available skill's description.";
   category = "read" as const;
   system = true;
 

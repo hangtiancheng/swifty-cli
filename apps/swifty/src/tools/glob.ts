@@ -1,3 +1,7 @@
+import { createChildLogger } from "../logger/index.js";
+
+const log = createChildLogger({ module: "tools" });
+
 import { statSync } from "fs";
 import { Glob } from "@swifty.js/glob-wasm";
 import { join } from "path";
@@ -45,10 +49,7 @@ export class GlobTool implements Tool {
     };
   }
 
-  async execute(
-    ctx: ToolContext,
-    args: Record<string, unknown>,
-  ): Promise<ToolResult> {
+  async execute(ctx: ToolContext, args: Record<string, unknown>): Promise<ToolResult> {
     const pattern = strArg(args, "pattern");
     if (!pattern) {
       return {
@@ -77,7 +78,8 @@ export class GlobTool implements Tool {
           const ma = statSync(join(basePath, a)).mtimeMs;
           const mb = statSync(join(basePath, b)).mtimeMs;
           return mb - ma;
-        } catch {
+        } catch (err) {
+          log.error({ err }, "tool operation failed");
           return a.localeCompare(b);
         }
       });
@@ -94,6 +96,7 @@ export class GlobTool implements Tool {
         isError: false,
       };
     } catch (err) {
+      log.error({ err }, "tool operation failed");
       return {
         output: `Error: ${asErrorString(err)}`,
         isError: true,

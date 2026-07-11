@@ -150,7 +150,7 @@ export class Compactor {
             blocks.push(block.text);
           } else if (block.type === "tool_use") {
             blocks.push(
-              `<tool_call name=${block.name} id=${block.id}>\n${JSON.stringify(block.input)}\n`,
+              `<tool_call name=${block.name} id=${block.id}>\n${JSON.stringify(block.input)}\n</tool_call>`,
             );
           } else if (block.type === "tool_result") {
             const resultContent =

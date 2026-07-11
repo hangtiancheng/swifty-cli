@@ -1,3 +1,7 @@
+import { createChildLogger } from "../logger/index.js";
+
+const log = createChildLogger({ module: "tui" });
+
 import { readFileSync, statSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 
@@ -25,7 +29,8 @@ export function expandAtRefs(text: string, workDir: string): string {
       if (st.isFile() && st.size <= MAX_INLINE_BYTES) {
         appendix += `\n\n<file path="${ref}">\n${readFileSync(p, "utf-8")}\n</file>`;
       }
-    } catch {
+    } catch (err) {
+      log.error({ err }, "tui operation failed");
       // not a readable file → leave the @token as literal text
     }
   }

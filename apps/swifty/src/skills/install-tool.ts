@@ -1,11 +1,10 @@
+import { createChildLogger } from "../logger/index.js";
+
+const log = createChildLogger({ module: "skills" });
+
 import { mkdirSync, writeFileSync, readFileSync, existsSync } from "node:fs";
 import { join, isAbsolute, basename } from "node:path";
-import type {
-  Tool,
-  ToolContext,
-  ToolResult,
-  ToolSchema,
-} from "../tools/types.js";
+import type { Tool, ToolContext, ToolResult, ToolSchema } from "../tools/types.js";
 import type { SkillCatalog } from "./catalog.js";
 import { asErrorString, strArg } from "@/utils/index.js";
 
@@ -26,8 +25,7 @@ function nameFromFrontmatter(content: string): string {
 // InstallSkill tool.
 export class InstallSkillTool implements Tool {
   name = "InstallSkill";
-  description =
-    "Install a skill from a local file path or an https URL into .swifty/skills.";
+  description = "Install a skill from a local file path or an https URL into .swifty/skills.";
   category = "read" as const;
   system = true;
 
@@ -58,10 +56,7 @@ export class InstallSkillTool implements Tool {
     };
   }
 
-  async execute(
-    ctx: ToolContext,
-    args: Record<string, unknown>,
-  ): Promise<ToolResult> {
+  async execute(ctx: ToolContext, args: Record<string, unknown>): Promise<ToolResult> {
     const source = strArg(args, "source");
     if (!source) {
       return { output: "Error: source is required", isError: true };
@@ -78,9 +73,10 @@ export class InstallSkillTool implements Tool {
           };
         }
         content = await resp.text();
-      } catch (e) {
+      } catch (err) {
+        log.error({ err }, "skills operation failed");
         return {
-          output: `Error fetching skill: ${asErrorString(e)}`,
+          output: `Error fetching skill: ${asErrorString(err)}`,
           isError: true,
         };
       }
@@ -93,9 +89,7 @@ export class InstallSkillTool implements Tool {
     }
 
     const name =
-      strArg(args, "name") ||
-      nameFromFrontmatter(content) ||
-      basename(source).replace(/\.md$/, "");
+      strArg(args, "name") || nameFromFrontmatter(content) || basename(source).replace(/\.md$/, "");
     if (!name) {
       return { output: "Error: could not determine skill name", isError: true };
     }

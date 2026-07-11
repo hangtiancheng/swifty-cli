@@ -38,8 +38,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 // Safely convert an unknown value to a display string
 function toDisplayString(value: unknown): string {
   if (typeof value === "string") return value;
-  if (typeof value === "number" || typeof value === "boolean")
-    return String(value);
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
   return JSON.stringify(value);
 }
 
@@ -51,15 +50,10 @@ export class McpClient {
   private _rl: ReturnType<typeof createInterface> | null = null;
   private _transport: "stdio" | "tcp" | "" = "";
   private _lock = new PromiseQueue();
-  private _stderrLines: string[] = [];
   private _connected = false;
 
   // Connect via stdio: spawn a subprocess and perform MCP initialize handshake
-  async connectStdio(
-    command: string,
-    args: string[],
-    env?: Record<string, string>,
-  ): Promise<void> {
+  async connectStdio(command: string, args: string[], env?: Record<string, string>): Promise<void> {
     const mergedEnv = { ...process.env, ...(env ?? {}) };
     this._proc = spawn(command, args, {
       stdio: ["pipe", "pipe", "pipe"],
@@ -68,7 +62,7 @@ export class McpClient {
 
     this._proc.stderr?.on("data", (chunk: Buffer) => {
       const line = chunk.toString("utf-8").trim();
-      if (line) this._stderrLines.push(line);
+      if (line) console.debug(`mcp stderr: ${line}`);
     });
 
     this._proc.on("exit", (_code) => {
@@ -105,8 +99,7 @@ export class McpClient {
     for (const t of rawTools) {
       if (!isRecord(t)) continue;
       const name = typeof t["name"] === "string" ? t["name"] : "";
-      const description =
-        typeof t["description"] === "string" ? t["description"] : "";
+      const description = typeof t["description"] === "string" ? t["description"] : "";
       const schemaRaw: unknown = t["inputSchema"];
       const inputSchema = isRecord(schemaRaw) ? schemaRaw : {};
       tools.push({ name, description, inputSchema });
@@ -115,10 +108,7 @@ export class McpClient {
   }
 
   // Call a tool on the MCP server; concatenate all text content parts
-  async callTool(
-    name: string,
-    arguments_: Record<string, unknown>,
-  ): Promise<string> {
+  async callTool(name: string, arguments_: Record<string, unknown>): Promise<string> {
     const response = await this._call("tools/call", {
       name,
       arguments: arguments_,
@@ -196,10 +186,7 @@ export class McpClient {
   }
 
   // Send a JSON-RPC notification (no response expected)
-  private async _notify(
-    method: string,
-    params: Record<string, unknown>,
-  ): Promise<void> {
+  private async _notify(method: string, params: Record<string, unknown>): Promise<void> {
     const notification = { jsonrpc: "2.0", method, params };
     await this._writeLine(JSON.stringify(notification));
   }
@@ -235,9 +222,7 @@ export class McpClient {
                 ? toDisplayString(rawError["message"])
                 : toDisplayString(rawError);
               const errCode =
-                isRecord(rawError) && typeof rawError["code"] === "number"
-                  ? rawError["code"]
-                  : -1;
+                isRecord(rawError) && typeof rawError["code"] === "number" ? rawError["code"] : -1;
               reject(new McpToolError(errMsg, errCode));
             } else {
               const result = msg["result"];
@@ -333,9 +318,7 @@ class PromiseQueue {
   }[] = [];
   private _running = false;
 
-  enqueue(
-    fn: () => Promise<Record<string, unknown>>,
-  ): Promise<Record<string, unknown>> {
+  enqueue(fn: () => Promise<Record<string, unknown>>): Promise<Record<string, unknown>> {
     return new Promise<Record<string, unknown>>((resolve, reject) => {
       this._queue.push({ fn, resolve, reject });
       void this._drain();

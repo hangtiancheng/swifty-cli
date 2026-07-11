@@ -2,9 +2,11 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import net from "node:net";
 import { createInterface } from "node:readline";
+import { ZodError } from "zod";
 import {
   HandlerError,
   INTERNAL_ERROR,
+  INVALID_PARAMS,
   INVALID_REQUEST,
   JsonRpcRequestSchema,
   METHOD_NOT_FOUND,
@@ -13,6 +15,7 @@ import {
 } from "../bus/envelope.js";
 import type { JsonRpcSuccess } from "../bus/envelope.js";
 import type { TraceWriter } from "../trace/writer.js";
+import { makeCommandTrace, makeErrorTrace, makeResponseTrace } from "../trace/record.js";
 
 export type CommandHandler = (params: Record<string, unknown>) => Promise<unknown>;
 
@@ -29,6 +32,14 @@ export function getConnectionWriter(): net.Socket {
 }
 
 const MAX_LINE_BYTES = 64 * 1024 * 1024; // 64 MB per frame
+
+// Return peer address string for trace client_id (matches Python peername)
+function peerAddress(socket: net.Socket): string {
+  const addr = socket.remoteAddress;
+  const port = socket.remotePort;
+  if (addr && port) return `${addr}:${String(port)}`;
+  return "<unknown>";
+}
 
 // Send JSON line to socket and record trace
 async function sendJson(socket: net.Socket, data: unknown): Promise<void> {
@@ -130,11 +141,11 @@ export class SocketServer {
       terminal: false,
     });
 
-    let currentLineBytes = 0;
-
     rl.on("line", (line) => {
-      currentLineBytes += Buffer.byteLength(line, "utf-8") + 1;
-      if (currentLineBytes > MAX_LINE_BYTES) {
+      // Enforce per-line size limit (not cumulative): a long-lived connection must
+      // be able to send many small commands without being disconnected.
+      const lineBytes = Buffer.byteLength(line, "utf-8") + 1;
+      if (lineBytes > MAX_LINE_BYTES) {
         void sendJson(socket, makeError(null, INVALID_REQUEST, "Request too large"));
         socket.destroy();
         return;
@@ -174,16 +185,7 @@ export class SocketServer {
 
     // Trace: CLIENT->CORE command
     if (this._trace) {
-      this._trace.emit({
-        ts: new Date().toISOString(),
-        direction: "CLIENT→CORE",
-        layer: "ipc",
-        kind: "command",
-        run_id: null,
-        step: null,
-        client_id: null,
-        data: { method: req.method, params: req.params },
-      });
+      this._trace.emit(makeCommandTrace(peerAddress(socket), req.method, req.id, req.params));
     }
 
     const handler = this._handlers.get(req.method);
@@ -191,16 +193,7 @@ export class SocketServer {
       const errorResponse = makeError(req.id, METHOD_NOT_FOUND, `Method not found: ${req.method}`);
       // Trace: CORE->CLIENT error
       if (this._trace) {
-        this._trace.emit({
-          ts: new Date().toISOString(),
-          direction: "CORE→CLIENT",
-          layer: "ipc",
-          kind: "error",
-          run_id: null,
-          step: null,
-          client_id: null,
-          data: { method: req.method, error: "method_not_found" },
-        });
+        this._trace.emit(makeErrorTrace(peerAddress(socket), req.method, "method_not_found"));
       }
       await sendJson(socket, errorResponse);
       return;
@@ -215,37 +208,19 @@ export class SocketServer {
       };
       // Trace: CORE->CLIENT response
       if (this._trace) {
-        this._trace.emit({
-          ts: new Date().toISOString(),
-          direction: "CORE→CLIENT",
-          layer: "ipc",
-          kind: "response",
-          run_id: null,
-          step: null,
-          client_id: null,
-          data: { method: req.method },
-        });
+        this._trace.emit(makeResponseTrace(peerAddress(socket), req.method, req.id, result));
       }
       await sendJson(socket, response);
     } catch (e) {
       // Trace: CORE->CLIENT handler error
       if (this._trace) {
-        this._trace.emit({
-          ts: new Date().toISOString(),
-          direction: "CORE→CLIENT",
-          layer: "ipc",
-          kind: "error",
-          run_id: null,
-          step: null,
-          client_id: null,
-          data: {
-            method: req.method,
-            error: e instanceof Error ? e.message : String(e),
-          },
-        });
+        const errMsg = e instanceof Error ? e.message : String(e);
+        this._trace.emit(makeErrorTrace(peerAddress(socket), req.method, errMsg));
       }
       if (e instanceof HandlerError) {
         await sendJson(socket, makeError(req.id, e.code, e.message, e.data));
+      } else if (e instanceof ZodError) {
+        await sendJson(socket, makeError(req.id, INVALID_PARAMS, "Invalid params", e.message));
       } else if (e instanceof Error) {
         console.error(`handler ${req.method} raised:`, e);
         await sendJson(socket, makeError(req.id, INTERNAL_ERROR, "Internal error"));
