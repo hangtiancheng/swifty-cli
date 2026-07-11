@@ -30,8 +30,8 @@ export class SkillCatalog {
 
   load(workDir: string): void {
     this.workDir = workDir;
-    // 三层加载，后面的覆盖前面的同名 skill：
-    // Tier 1: 内置 skill（当前为空）
+    // Three-tier loading: later tiers override same-named skills from earlier tiers:
+    // Tier 1: Built-in skills (currently empty)
     for (const skill of loadBuiltins()) {
       this.entries.set(skill.meta.name, {
         skill,
@@ -40,8 +40,8 @@ export class SkillCatalog {
       });
     }
 
-    // Tier 2: 用户全局 ~/.swifty/skills/
-    // Tier 3: 项目级 $workDir/.swifty/skills/（最高优先级）
+    // Tier 2: User-global ~/.swifty/skills/
+    // Tier 3: Project-level $workDir/.swifty/skills/ (highest priority)
     const dirs = [
       join(homedir(), ".trae", "skills"),
       join(homedir(), ".claude", "skills"),
@@ -65,8 +65,8 @@ export class SkillCatalog {
   }
 
   /**
-   * 检查 skill 目录的 mtime 是否变化（新增或删除了 skill）。
-   * 已有 skill 的文件编辑由 get() 的按需重读处理。
+   * Check whether a skill directory mtime has changed (a skill was added or deleted).
+   * Edits to existing skill files are handled by lazy re-reading in get().
    */
   needsReload(): boolean {
     for (const [dir, recorded] of this.dirModTimes) {
@@ -88,7 +88,7 @@ export class SkillCatalog {
           statSync(dir);
           return true;
         } catch {
-          // 目录仍不存在
+          // Directory still does not exist
         }
       }
     }

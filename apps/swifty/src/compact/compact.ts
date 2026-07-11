@@ -187,8 +187,9 @@ export function currentContextTokens(
   anchor: UsageAnchor | null,
   budgetMessages?: Message[],
 ): number {
-  // budget 裁剪后的消息更接近实际发送量：当调用方提供了 budget-applied 消息列表时，
-  // 用它来估算 token 数，这样 auto-compact 的判断基于缩减后的实际大小而非原始大小。
+  // Budget-trimmed messages better reflect actual send volume: when the caller provides
+  // a budget-applied message list, estimate tokens against it so auto-compact decisions
+  // are based on the reduced (actual) size, not the original size.
   if (budgetMessages && budgetMessages.length > 0) {
     if (!anchor) {
       return estimateMessages(budgetMessages);
@@ -219,9 +220,9 @@ export async function manageContext(
   sessionFilePath = "",
   budgetMessages?: Message[],
 ): Promise<CompactResult> {
-  // 先应用 tool-result budget，再做 auto-compact，确保预算内的结果不会被误压缩。
-  // 当调用方提供了 budget-applied 消息列表时，用它来估算 token 数，
-  // 这样 compact 判断基于缩减后的实际大小。
+  // Apply tool-result budget first, then auto-compact, ensuring in-budget results
+  // are not mistakenly compressed. When the caller provides a budget-applied message
+  // list, estimate tokens against it so compact decisions reflect the reduced size.
   const tokens = currentContextTokens(conv, anchor, budgetMessages);
   const autoThreshold = computeCompactThreshold(contextWindow, maxOutput);
   const hardBlock = computeCompactThreshold(contextWindow, maxOutput, true);
@@ -280,9 +281,9 @@ export async function forceCompact(
   );
 }
 
-// 压缩摘要采用 9 段式结构，覆盖关键上下文维度。
-// 采用 analysis/summary 两阶段：<analysis> 是草稿区，帮助模型整理思路；
-// <summary> 是最终输出，只有这部分会被保留到上下文中。
+// Summary structure uses 9 sections to cover the key context dimensions.
+// Two-phase analysis/summary: <analysis> is the scratch area for the model to organize its thoughts;
+// <summary> is the final output and the only part retained in context.
 const SUMMARY_SYSTEM_PROMPT = `Your task is to create a detailed summary of the conversation so far, paying close attention to the user's explicit requests and your previous actions.
 This summary should be thorough in capturing technical details, code patterns, and architectural decisions that would be essential for continuing development work without losing context.
 
@@ -368,12 +369,12 @@ Here's an example of how your output should be structured:
 
 Please provide your summary based on the conversation so far, following this structure and ensuring precision and thoroughness in your response.`;
 
-// 拼装完整的摘要请求消息：系统提示 + 对话原文
+// Assemble the full summary request message: system prompt + raw conversation
 function buildSummaryPrompt(conversationText: string): string {
   return SUMMARY_SYSTEM_PROMPT + "\n\n" + conversationText;
 }
 
-/** 按 API 轮次分组：每个助手新回复开始一个新组 */
+/** Group messages by API round: each new assistant reply starts a new group */
 function groupMessagesByAPIRound(messages: Message[]): Message[][] {
   const groups: Message[][] = [];
   let current: Message[] = [];
@@ -393,7 +394,7 @@ function groupMessagesByAPIRound(messages: Message[]): Message[][] {
   return groups;
 }
 
-/** 从最老的 API 轮次组开始丢弃，直到腾出足够 token */
+/** Drop the oldest API round groups until enough tokens are freed */
 function truncateHeadForPTL(prefix: Message[], tokenGap: number): Message[] | null {
   const groups = groupMessagesByAPIRound(prefix);
   if (groups.length < 2) {
@@ -427,7 +428,7 @@ function truncateHeadForPTL(prefix: Message[], tokenGap: number): Message[] | nu
   return result;
 }
 
-/** 序列化前缀消息为文本 */
+/** Serialize prefix messages to text */
 function serializePrefixText(messages: Message[]): string {
   return messages
     .map((m) => {
@@ -440,7 +441,7 @@ function serializePrefixText(messages: Message[]): string {
     .join("\n\n");
 }
 
-/** 带 PTL 重试的摘要生成 */
+/** Summary generation with PTL retry */
 async function requestSummaryWithPTLRetry(
   client: LLMClient,
   prefix: Message[],
@@ -490,9 +491,10 @@ async function doCompact(
   sessionFilePath = "",
   budgetMessages?: Message[],
 ): Promise<CompactResult> {
-  // 先应用 tool-result budget，再做 auto-compact，确保预算内的结果不会被误压缩。
-  // 当调用方提供了 budget-applied 消息列表时，用它来估算 token 和决定保留边界，
-  // 这样 compact 的 keepStart 判断基于缩减后的实际 token 大小。
+  // Apply tool-result budget first, then auto-compact, ensuring in-budget results
+  // are not mistakenly compressed. When the caller provides a budget-applied message
+  // list, estimate tokens and determine the retention boundary against it so
+  // compact keepStart decisions reflect the reduced token size.
   const estimationMessages =
     budgetMessages && budgetMessages.length > 0 ? budgetMessages : conv.getMessages();
 
@@ -514,8 +516,8 @@ async function doCompact(
   const toSummarize = estimationMessages.slice(0, keepStart);
   const toKeep = estimationMessages.slice(keepStart);
 
-  // 带 PTL 重试的摘要生成：摘要请求本身超出上下文窗口时，
-  // 按 API 轮次从最老的开始丢弃，最多重试 MAX_PTL_RETRIES 次。
+  // Summary generation with PTL retry: when the summary request itself exceeds the
+  // context window, drop the oldest API rounds and retry up to MAX_PTL_RETRIES times.
   const summary = await requestSummaryWithPTLRetry(client, toSummarize, toolSchemas);
 
   const recoveryAttachment = recoveryState

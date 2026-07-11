@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import type { AskUserItem, Question } from '../types';
+import { useState } from "react";
+import type { AskUserItem, Question } from "../types";
 
 interface QuestionDraft {
   radio: string;
@@ -16,7 +16,7 @@ export function AskUserDialog({ item, onAnswer }: AskUserDialogProps) {
   const [drafts, setDrafts] = useState<Record<string, QuestionDraft>>({});
 
   const getDraft = (key: string): QuestionDraft =>
-    drafts[key] ?? { radio: '', other: '', useOther: false };
+    drafts[key] ?? { radio: "", other: "", useOther: false };
 
   const updateDraft = (key: string, patch: Partial<QuestionDraft>) => {
     setDrafts((prev) => ({ ...prev, [key]: { ...getDraft(key), ...patch } }));
@@ -78,9 +78,7 @@ interface QuestionRowProps {
 function QuestionRow({ question, name, draft, onChange }: QuestionRowProps) {
   return (
     <div className="mb-3">
-      <div className="mb-1.5 text-bright">
-        {question.question || question.header}
-      </div>
+      <div className="mb-1.5 text-bright">{question.question || question.header}</div>
       {question.options.map((opt) => (
         <label key={opt.label} className="my-1 block cursor-pointer">
           <input
@@ -92,9 +90,7 @@ function QuestionRow({ question, name, draft, onChange }: QuestionRowProps) {
             className="mr-1.5"
           />
           <span className="text-blue">{opt.label}</span>
-          {opt.description && (
-            <span className="ml-1 text-xs text-dim">— {opt.description}</span>
-          )}
+          {opt.description && <span className="ml-1 text-xs text-dim">— {opt.description}</span>}
         </label>
       ))}
       <label className="my-1 block cursor-pointer">

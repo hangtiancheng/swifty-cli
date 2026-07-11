@@ -129,7 +129,7 @@ export class EditFileTool implements Tool {
     try {
       await writeFile(filePath, newContent, "utf-8");
       ctx.fileStateCache?.update(filePath, newContent);
-      // 带上具体 diff 而不是只报一句"改好了"：模型和 TUI 都需要知道具体改了哪几行
+      // Include the concrete diff rather than just saying "updated": both the model and TUI need to know which lines changed
       const { text: diffText, additions, removals } = buildDiff(content, newContent);
       const summary =
         replaceAll && count > 1

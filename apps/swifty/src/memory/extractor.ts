@@ -13,7 +13,7 @@ import { GrepTool } from "../tools/grep.js";
 import { Agent } from "../agent/agent.js";
 import { PermissionChecker } from "../permissions/checker.js";
 
-/** 一条从 LLM 流式文本中解析出的记忆块（MEMORY_NAME/MEMORY_TYPE/MEMORY_DESC/MEMORY_BODY）。 */
+/** A memory block parsed from LLM streamed text (MEMORY_NAME/MEMORY_TYPE/MEMORY_DESC/MEMORY_BODY). */
 interface ParsedTextMemory {
   name: string;
   type: string;
@@ -22,13 +22,14 @@ interface ParsedTextMemory {
 }
 
 /**
- * MemoryExtractor 实现后台记忆提取子代理。
- * 参照 Go 版 extractor.go 的提取逻辑：
- * - 用子 agent + 工具（ReadFile/WriteFile/EditFile）替代裸 LLM 调用
- * - 提取前发送已有记忆 manifest 给 LLM 做去重
- * - turnsSinceLastExtraction 节流
- * - inProgress + pendingContext 合并策略
- * - 子 agent 未发起工具调用时，回退解析其流式文本块（MEMORY_NAME/...）并落盘
+ * MemoryExtractor implements the background memory-extraction subagent.
+ * Mirrors the Go extractor.go logic:
+ * - Uses a child agent + tools (ReadFile/WriteFile/EditFile) instead of bare LLM calls
+ * - Sends existing memory manifest to the LLM before extraction for deduplication
+ * - turnsSinceLastExtraction throttling
+ * - inProgress + pendingContext merge strategy
+ * - When the child agent makes no tool calls, falls back to parsing streamed
+ *   text blocks (MEMORY_NAME/...) and writing them to disk
  */
 export class MemoryExtractor {
   private client: LLMClient;
@@ -55,7 +56,7 @@ export class MemoryExtractor {
     conversationSummary: string,
     isTrailingRun: boolean,
   ): Promise<string[]> {
-    // 节流：至少间隔 1 轮（trailing run 跳过节流）
+    // Throttle: at least 1 round apart (trailing runs skip throttling)
     if (!isTrailingRun) {
       this.turnsSinceLastExtraction++;
       if (this.turnsSinceLastExtraction < 1) {
@@ -82,7 +83,7 @@ export class MemoryExtractor {
     return result;
   }
 
-  /** 扫描已有记忆文件，生成 manifest 给 LLM 做去重 */
+  /** Scan existing memory files and build a manifest for LLM deduplication */
   private scanExistingMemories(): string {
     const dirs = [join(this.workDir, ".swifty", "memory"), join(homedir(), ".swifty", "memory")];
     const entries: string[] = [];
@@ -115,7 +116,7 @@ export class MemoryExtractor {
     return entries.length > 0 ? entries.join("\n") : "";
   }
 
-  /** 构建提取 prompt（参照 Go 版 prompts.go） */
+  /** Build the extraction prompt (mirrors Go prompts.go) */
   private buildExtractionPrompt(conversationSummary: string): string {
     const manifest = this.scanExistingMemories();
     const projectMemDir = join(this.workDir, ".swifty", "memory");
@@ -183,11 +184,11 @@ export class MemoryExtractor {
     ].join("\n");
   }
 
-  /** 核心提取逻辑：用子 agent + 工具 */
+  /** Core extraction logic: child agent + tools */
   private async doExtract(conversationSummary: string): Promise<string[]> {
     const extractionPrompt = this.buildExtractionPrompt(conversationSummary);
 
-    // 构建子 agent 的工具注册表（只包含文件操作工具）
+    // Build the child agent tool registry (file-operation tools only)
     const subRegistry = new ToolRegistry();
     subRegistry.register(new ReadFileTool());
     subRegistry.register(new WriteFileTool());
@@ -195,7 +196,7 @@ export class MemoryExtractor {
     subRegistry.register(new GlobTool());
     subRegistry.register(new GrepTool());
 
-    // bypass 权限（后台 agent 不需要用户确认）
+    // Bypass permissions (background agent requires no user confirmation)
     const subChecker = new PermissionChecker(this.workDir, "bypassPermissions");
 
     const forkedConv = new ConversationManager();
@@ -210,8 +211,9 @@ export class MemoryExtractor {
       maxIterations: 5,
     });
 
-    // 驱动子 agent 到完成，不传播事件到 UI；同时收集流式文本，作为 LLM 未发起
-    // 工具调用（直接输出结构化文本块）时的回退解析来源
+    // Drive the child agent to completion without propagating events to the UI;
+    // concurrently collect streamed text as a fallback parse source when the LLM
+    // issues no tool calls (i.e., emits structured text blocks directly).
     let streamedText = "";
     for await (const event of subagent.run()) {
       if (event.type === "stream_text") {
@@ -228,7 +230,7 @@ export class MemoryExtractor {
     if (memoryPaths.length > 0) {
       saved = memoryPaths.map((p) => basename(p));
     } else {
-      // 回退路径：LLM 直接输出了 MEMORY_NAME/... 文本块，由本机解析并落盘
+      // Fallback path: LLM emitted MEMORY_NAME/... text blocks directly; parse locally and persist
       saved = this.persistTextMemories(streamedText);
     }
 
@@ -241,14 +243,14 @@ export class MemoryExtractor {
     return saved;
   }
 
-  /** 从对话消息中提取 WriteFile/EditFile 工具调用的文件路径 */
+  /** Extract file paths from WriteFile/EditFile tool calls in conversation messages */
   private extractWrittenPaths(messages: { role: string; content: string }[]): string[] {
     const paths: string[] = [];
     for (const msg of messages) {
       if (msg.role !== "assistant") {
         continue;
       }
-      // 匹配 tool_use 中的 file_path 参数
+      // Match the file_path argument in tool_use blocks
       const filePathMatches = msg.content.matchAll(/"file_path"\s*:\s*"([^"]+)"/g);
       for (const m of filePathMatches) {
         if (m[1] && (m[1].includes("memory") || m[1].endsWith(".md"))) {
@@ -280,7 +282,7 @@ export class MemoryExtractor {
     return saved;
   }
 
-  /** 解析结构化文本块；NONE 或空文本返回空数组。 */
+  /** Parse structured text blocks; returns empty array for NONE or empty text. */
   private parseTextMemoryBlocks(text: string): ParsedTextMemory[] {
     const trimmed = text.trim();
     if (trimmed === "" || trimmed === "NONE") {
@@ -288,7 +290,7 @@ export class MemoryExtractor {
     }
 
     const memories: ParsedTextMemory[] = [];
-    // 按单独一行的 --- 分块（m 标志让 ^/$ 匹配行首/行尾）
+    // Split on standalone --- lines (m flag lets ^/$ match line start/end)
     const blocks = trimmed.split(/^---\s*$/m);
     for (const block of blocks) {
       const mem = this.parseTextMemoryBlock(block);
@@ -299,7 +301,7 @@ export class MemoryExtractor {
     return memories;
   }
 
-  /** 解析单个块；MEMORY_BODY 支持多行。无 MEMORY_NAME 的块返回 null。 */
+  /** Parse a single block; MEMORY_BODY supports multi-line. Returns null for blocks without MEMORY_NAME. */
   private parseTextMemoryBlock(block: string): ParsedTextMemory | null {
     const lines = block.split("\n");
     const mem: ParsedTextMemory = {
@@ -342,13 +344,13 @@ export class MemoryExtractor {
       return null;
     }
     if (!mem.type) {
-      // 无类型默认归到项目级 reference
+      // Default to project-level reference when no type is given
       mem.type = "reference";
     }
     return mem;
   }
 
-  /** 根据 type 路由到对应目录：user/feedback → 用户级，其余 → 项目级 */
+  /** Route to the appropriate directory by type: user/feedback -> user-level; otherwise -> project-level */
   private dirForMemoryType(type: string): string {
     const t = type.toLowerCase();
     if (t === "user" || t === "feedback") {
@@ -357,7 +359,7 @@ export class MemoryExtractor {
     return join(this.workDir, ".swifty", "memory");
   }
 
-  /** 格式化记忆文件：frontmatter（name/description/type）+ 正文 */
+  /** Format a memory file: frontmatter (name/description/type) + body */
   private formatMemoryFile(mem: ParsedTextMemory): string {
     return [
       "---",

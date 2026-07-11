@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import type { SlashCommand } from '../types';
-import { SlashMenu } from './slash-menu';
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { SlashCommand } from "../types";
+import { SlashMenu } from "./slash-menu";
 
 interface InputAreaProps {
   streaming: boolean;
@@ -11,13 +11,13 @@ interface InputAreaProps {
 const MAX_TEXTAREA_HEIGHT = 200;
 
 export function InputArea({ streaming, commands, onSend }: InputAreaProps) {
-  const [value, setValue] = useState('');
+  const [value, setValue] = useState("");
   const [slashOpen, setSlashOpen] = useState(false);
   const [slashCursor, setSlashCursor] = useState(0);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   const filtered = useMemo<SlashCommand[]>(() => {
-    if (!value.startsWith('/') || value.includes(' ') || value.includes('\n')) {
+    if (!value.startsWith("/") || value.includes(" ") || value.includes("\n")) {
       return [];
     }
     const prefix = value.slice(1).toLowerCase();
@@ -34,7 +34,7 @@ export function InputArea({ streaming, commands, onSend }: InputAreaProps) {
   useEffect(() => {
     const el = textareaRef.current;
     if (!el) return;
-    el.style.height = 'auto';
+    el.style.height = "auto";
     el.style.height = `${Math.min(el.scrollHeight, MAX_TEXTAREA_HEIGHT)}px`;
   }, [value]);
 
@@ -55,34 +55,34 @@ export function InputArea({ streaming, commands, onSend }: InputAreaProps) {
     const text = value.trim();
     if (!text || streaming) return;
     onSend(text);
-    setValue('');
+    setValue("");
     setSlashOpen(false);
   };
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (slashOpen) {
-      if (e.key === 'ArrowDown') {
+      if (e.key === "ArrowDown") {
         e.preventDefault();
         setSlashCursor((c) => Math.min(c + 1, filtered.length - 1));
         return;
       }
-      if (e.key === 'ArrowUp') {
+      if (e.key === "ArrowUp") {
         e.preventDefault();
         setSlashCursor((c) => Math.max(c - 1, 0));
         return;
       }
-      if (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey)) {
+      if (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey)) {
         e.preventDefault();
         selectSlash(slashCursor);
         return;
       }
-      if (e.key === 'Escape') {
+      if (e.key === "Escape") {
         e.preventDefault();
         setSlashOpen(false);
         return;
       }
     }
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       send();
     }

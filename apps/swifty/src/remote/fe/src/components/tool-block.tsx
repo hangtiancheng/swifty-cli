@@ -1,29 +1,24 @@
-import { argsPreview, formatArgs, truncateOutput } from '../lib/format';
-import type { ToolItem } from '../types';
-import { Collapsible } from './collapsible';
+import { argsPreview, formatArgs, truncateOutput } from "../lib/format";
+import type { ToolItem } from "../types";
+import { Collapsible } from "./collapsible";
 
 interface ToolBlockProps {
   item: ToolItem;
 }
 
-const STATUS_META: Record<
-  ToolItem['status'],
-  { label: string; className: string }
-> = {
-  running: { label: '⏳ running...', className: 'text-yellow' },
-  ok: { label: '✓', className: 'text-green' },
-  err: { label: '✗', className: 'text-red' },
+const STATUS_META: Record<ToolItem["status"], { label: string; className: string }> = {
+  running: { label: "⏳ running...", className: "text-yellow" },
+  ok: { label: "✓", className: "text-green" },
+  err: { label: "✗", className: "text-red" },
 };
 
 export function ToolBlock({ item }: ToolBlockProps) {
   const meta = STATUS_META[item.status];
   const statusText =
-    item.status === 'running'
-      ? meta.label
-      : `${meta.label} ${item.elapsed.toFixed(1)}s`;
+    item.status === "running" ? meta.label : `${meta.label} ${item.elapsed.toFixed(1)}s`;
   const preview = argsPreview(item.args);
   const argsStr = formatArgs(item.args);
-  const output = item.output ? truncateOutput(item.output) : '';
+  const output = item.output ? truncateOutput(item.output) : "";
 
   return (
     <Collapsible
@@ -35,16 +30,14 @@ export function ToolBlock({ item }: ToolBlockProps) {
               {preview}
             </span>
           )}
-          <span className={`ml-auto text-xs ${meta.className}`}>
-            {statusText}
-          </span>
+          <span className={`ml-auto text-xs ${meta.className}`}>{statusText}</span>
         </>
       }
     >
       {argsStr && (
         <div className="mb-2 text-blue">
           Args:
-          {'\n'}
+          {"\n"}
           {argsStr}
         </div>
       )}

@@ -32,7 +32,7 @@ describe("tool result budget wiring", () => {
     // 60000-character raw output (exceeds SINGLE_RESULT_LIMIT) is replaced in-place with a spill preview
     expect(result?.length).toBeLessThan(60000);
     expect(result).toContain("Full content saved to:");
-    // 替换后的内容以 persistedTagPrefix 开头
+    // Replaced content should start with the persistedTagPrefix
     expect(result).toMatch(/^\[Result of /);
   });
 
@@ -46,7 +46,7 @@ describe("tool result budget wiring", () => {
       join(workDir, ".swifty", "sessions", "test-session", "tool_results"),
     ).length;
 
-    // 再次应用，已替换的内容应保持不变，不会写新的 spill 文件
+    // Re-applying: already-replaced content should remain unchanged, no new spill files written
     applyBudget(messages, workDir, "test-session");
     const second = messages[2].toolResults?.[0].content;
     const spillCountAfter = readdirSync(
@@ -62,7 +62,7 @@ describe("tool result budget wiring", () => {
     const messages = bigToolResultConversation(100);
 
     applyBudget(messages, workDir, "test-session");
-    // 小结果不应被修改
+    // Small results should not be modified
     expect(messages[2].toolResults?.[0].content).toBe("x".repeat(100));
   });
 
@@ -73,7 +73,7 @@ describe("tool result budget wiring", () => {
 
     applyBudget(messages, workDir, "test-session");
 
-    // 同一个对象引用被修改
+    // The same object reference was modified
     expect(originalRef?.content).toContain("saved to");
     expect(messages[2].toolResults?.[0]).toBe(originalRef);
   });

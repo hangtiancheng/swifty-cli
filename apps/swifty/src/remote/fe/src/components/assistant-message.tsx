@@ -1,21 +1,18 @@
-import { isOpenThinking, splitThinking, stripThinkOpen } from '../lib/format';
-import { renderMarkdown } from '../lib/markdown';
-import { StreamingCursor } from './streaming-cursor';
-import { ThinkingBlock } from './thinking-block';
+import { isOpenThinking, splitThinking, stripThinkOpen } from "../lib/format";
+import { renderMarkdown } from "../lib/markdown";
+import { StreamingCursor } from "./streaming-cursor";
+import { ThinkingBlock } from "./thinking-block";
 
 interface AssistantMessageProps {
   content: string;
   streaming: boolean;
 }
 
-export function AssistantMessage({
-  content,
-  streaming,
-}: AssistantMessageProps) {
+export function AssistantMessage({ content, streaming }: AssistantMessageProps) {
   const { thinking, body } = splitThinking(content);
   const showOpenThinking = streaming && isOpenThinking(content);
 
-  let bodyHtml = '';
+  let bodyHtml = "";
   if (showOpenThinking) {
     // While <think ...> is open, the visible body is empty.
   } else if (thinking) {
@@ -28,11 +25,7 @@ export function AssistantMessage({
     <div className="mb-4 leading-relaxed">
       {thinking && <ThinkingBlock text={thinking} label="💭 Thought" />}
       {showOpenThinking && (
-        <ThinkingBlock
-          text={stripThinkOpen(content)}
-          label="💭 Thinking..."
-          streaming
-        />
+        <ThinkingBlock text={stripThinkOpen(content)} label="💭 Thinking..." streaming />
       )}
       {bodyHtml && (
         <div

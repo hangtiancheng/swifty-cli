@@ -10,7 +10,7 @@ describe("buildDiff", () => {
     expect(removals).toBe(1);
     expect(text).toContain("-    3  c");
     expect(text).toContain("+    3  X");
-    // 上下文行应带正确原始行号
+    // Context lines should carry the correct original line numbers
     expect(text).toContain("   2  b");
     expect(text).toContain("   4  d");
   });

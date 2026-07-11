@@ -1,4 +1,4 @@
-import { useCallback, useReducer } from 'react';
+import { useCallback, useReducer } from "react";
 import type {
   ChatItem,
   ConnectionStatus,
@@ -8,8 +8,8 @@ import type {
   ThinkingItem,
   ToolItem,
   UsagePayload,
-} from '../types';
-import { toolKey } from '../types';
+} from "../types";
+import { toolKey } from "../types";
 
 /** Monotonic id generator for newly created chat items. */
 let idCounter = 0;
@@ -36,9 +36,9 @@ export interface ChatState {
 
 export const initialState: ChatState = {
   items: [],
-  connection: 'connecting',
-  session: '',
-  cwd: '',
+  connection: "connecting",
+  session: "",
+  cwd: "",
   commands: [],
   usage: null,
   streaming: false,
@@ -48,10 +48,10 @@ export const initialState: ChatState = {
 };
 
 type Action =
-  | { kind: 'message'; message: ServerMessage }
-  | { kind: 'connection'; status: ConnectionStatus }
-  | { kind: 'respondPermission'; id: string; response: PermissionResponse }
-  | { kind: 'markAskAnswered'; id: string };
+  | { kind: "message"; message: ServerMessage }
+  | { kind: "connection"; status: ConnectionStatus }
+  | { kind: "respondPermission"; id: string; response: PermissionResponse }
+  | { kind: "markAskAnswered"; id: string };
 
 function finalizeCurrentThinking(state: ChatState): ChatState {
   if (state.currentThinkingId === null) return state;
@@ -60,7 +60,7 @@ function finalizeCurrentThinking(state: ChatState): ChatState {
     ...state,
     currentThinkingId: null,
     items: state.items.map((it) =>
-      it.kind === 'thinking' && it.id === id ? { ...it, done: true } : it,
+      it.kind === "thinking" && it.id === id ? { ...it, done: true } : it,
     ),
   };
 }
@@ -72,16 +72,14 @@ function finalizeAssistant(state: ChatState): ChatState {
     ...state,
     currentAssistantId: null,
     items: state.items.map((it) =>
-      it.kind === 'assistant' && it.id === id
-        ? { ...it, streaming: false }
-        : it,
+      it.kind === "assistant" && it.id === id ? { ...it, streaming: false } : it,
     ),
   };
 }
 
 function applyMessage(state: ChatState, msg: ServerMessage): ChatState {
   switch (msg.type) {
-    case 'connected': {
+    case "connected": {
       if (state.greeted) return state;
       return {
         ...state,
@@ -91,71 +89,65 @@ function applyMessage(state: ChatState, msg: ServerMessage): ChatState {
         items: [
           ...state.items,
           {
-            kind: 'system',
-            id: nextId('sys'),
+            kind: "system",
+            id: nextId("sys"),
             content: `Session: ${msg.data.session} | CWD: ${msg.data.cwd}`,
           },
         ],
       };
     }
 
-    case 'commands':
+    case "commands":
       return { ...state, commands: msg.data ?? [] };
 
-    case 'system':
+    case "system":
       return {
         ...state,
-        items: [
-          ...state.items,
-          { kind: 'system', id: nextId('sys'), content: msg.data.message },
-        ],
+        items: [...state.items, { kind: "system", id: nextId("sys"), content: msg.data.message }],
       };
 
-    case 'clear':
+    case "clear":
       return {
         ...state,
         currentAssistantId: null,
         currentThinkingId: null,
         items: [
           {
-            kind: 'system',
-            id: nextId('sys'),
-            content: 'Conversation cleared.',
+            kind: "system",
+            id: nextId("sys"),
+            content: "Conversation cleared.",
           },
         ],
       };
 
-    case 'command_done':
+    case "command_done":
       return { ...state, streaming: false };
 
-    case 'replay_user':
+    case "replay_user":
       return {
         ...state,
-        items: [
-          ...state.items,
-          { kind: 'user', id: nextId('usr'), content: msg.data.content },
-        ],
+        items: [...state.items, { kind: "user", id: nextId("usr"), content: msg.data.content }],
       };
 
-    case 'replay_assistant':
+    case "replay_assistant":
       return {
         ...state,
         items: [
           ...state.items,
           {
-            kind: 'assistant',
-            id: nextId('ast'),
+            kind: "assistant",
+            id: nextId("ast"),
             content: msg.data.content,
             streaming: false,
           },
         ],
       };
 
-    case 'thinking_text': {
+    case "thinking_text": {
       if (state.currentThinkingId === null) {
-        const id = nextId('thk');
+        const id = nextId("thk");
         const item: ThinkingItem = {
-          kind: 'thinking',
+          kind: "thinking",
           id,
           content: msg.data.text,
           done: false,
@@ -170,23 +162,23 @@ function applyMessage(state: ChatState, msg: ServerMessage): ChatState {
       return {
         ...state,
         items: state.items.map((it) =>
-          it.kind === 'thinking' && it.id === id
+          it.kind === "thinking" && it.id === id
             ? { ...it, content: it.content + msg.data.text }
             : it,
         ),
       };
     }
 
-    case 'stream_text': {
+    case "stream_text": {
       let next = finalizeCurrentThinking(state);
       if (next.currentAssistantId === null) {
-        const id = nextId('ast');
+        const id = nextId("ast");
         next = {
           ...next,
           currentAssistantId: id,
           items: [
             ...next.items,
-            { kind: 'assistant', id, content: msg.data.text, streaming: true },
+            { kind: "assistant", id, content: msg.data.text, streaming: true },
           ],
         };
       } else {
@@ -194,7 +186,7 @@ function applyMessage(state: ChatState, msg: ServerMessage): ChatState {
         next = {
           ...next,
           items: next.items.map((it) =>
-            it.kind === 'assistant' && it.id === id
+            it.kind === "assistant" && it.id === id
               ? { ...it, content: it.content + msg.data.text }
               : it,
           ),
@@ -203,40 +195,40 @@ function applyMessage(state: ChatState, msg: ServerMessage): ChatState {
       return next;
     }
 
-    case 'stream_end':
+    case "stream_end":
       return finalizeAssistant(state);
 
-    case 'tool_use': {
+    case "tool_use": {
       let next = finalizeCurrentThinking(state);
       next = finalizeAssistant(next);
       const key = toolKey(msg.data.toolName, msg.data.toolId);
       const exists = next.items.some(
-        (it) => it.kind === 'tool' && toolKey(it.toolName, it.toolId) === key,
+        (it) => it.kind === "tool" && toolKey(it.toolName, it.toolId) === key,
       );
       if (exists) return next;
       const item: ToolItem = {
-        kind: 'tool',
-        id: nextId('tool'),
+        kind: "tool",
+        id: nextId("tool"),
         toolId: msg.data.toolId,
         toolName: msg.data.toolName,
         args: msg.data.args,
-        status: 'running',
-        output: '',
+        status: "running",
+        output: "",
         isError: false,
         elapsed: 0,
       };
       return { ...next, items: [...next.items, item] };
     }
 
-    case 'tool_result': {
+    case "tool_result": {
       const key = toolKey(msg.data.toolName, msg.data.toolId);
       let updated = false;
       const items = state.items.map((it) => {
-        if (it.kind === 'tool' && toolKey(it.toolName, it.toolId) === key) {
+        if (it.kind === "tool" && toolKey(it.toolName, it.toolId) === key) {
           updated = true;
           return {
             ...it,
-            status: msg.data.isError ? ('err' as const) : ('ok' as const),
+            status: msg.data.isError ? ("err" as const) : ("ok" as const),
             output: msg.data.output,
             isError: msg.data.isError,
             elapsed: msg.data.elapsed,
@@ -246,12 +238,12 @@ function applyMessage(state: ChatState, msg: ServerMessage): ChatState {
       });
       if (updated) return { ...state, items };
       const item: ToolItem = {
-        kind: 'tool',
-        id: nextId('tool'),
+        kind: "tool",
+        id: nextId("tool"),
         toolId: msg.data.toolId,
         toolName: msg.data.toolName,
         args: null,
-        status: msg.data.isError ? 'err' : 'ok',
+        status: msg.data.isError ? "err" : "ok",
         output: msg.data.output,
         isError: msg.data.isError,
         elapsed: msg.data.elapsed,
@@ -259,13 +251,13 @@ function applyMessage(state: ChatState, msg: ServerMessage): ChatState {
       return { ...state, items: [...state.items, item] };
     }
 
-    case 'permission_request':
+    case "permission_request":
       return {
         ...state,
         items: [
           ...state.items,
           {
-            kind: 'permission',
+            kind: "permission",
             id: msg.data.id,
             toolName: msg.data.toolName,
             description: msg.data.description,
@@ -275,13 +267,13 @@ function applyMessage(state: ChatState, msg: ServerMessage): ChatState {
         ],
       };
 
-    case 'ask_user':
+    case "ask_user":
       return {
         ...state,
         items: [
           ...state.items,
           {
-            kind: 'askUser',
+            kind: "askUser",
             id: msg.data.id,
             questions: msg.data.questions,
             answered: false,
@@ -289,62 +281,56 @@ function applyMessage(state: ChatState, msg: ServerMessage): ChatState {
         ],
       };
 
-    case 'turn_complete':
+    case "turn_complete":
       return state;
 
-    case 'loop_complete': {
+    case "loop_complete": {
       let next = finalizeAssistant(state);
       next = finalizeCurrentThinking(next);
       return {
         ...next,
         streaming: false,
-        items: [
-          ...next.items,
-          { kind: 'done', id: nextId('done'), elapsed: msg.data.elapsed },
-        ],
+        items: [...next.items, { kind: "done", id: nextId("done"), elapsed: msg.data.elapsed }],
       };
     }
 
-    case 'usage':
+    case "usage":
       return { ...state, usage: msg.data };
 
-    case 'error':
+    case "error":
       return {
         ...state,
         streaming: false,
-        items: [
-          ...state.items,
-          { kind: 'error', id: nextId('err'), content: msg.data.message },
-        ],
+        items: [...state.items, { kind: "error", id: nextId("err"), content: msg.data.message }],
       };
 
-    case 'compact':
+    case "compact":
       return {
         ...state,
         items: [
           ...state.items,
           {
-            kind: 'system',
-            id: nextId('sys'),
+            kind: "system",
+            id: nextId("sys"),
             content: `⟳ ${msg.data.message}`,
           },
         ],
       };
 
-    case 'retry':
+    case "retry":
       return {
         ...state,
         items: [
           ...state.items,
           {
-            kind: 'system',
-            id: nextId('sys'),
+            kind: "system",
+            id: nextId("sys"),
             content: `↻ Retrying: ${msg.data.reason}`,
           },
         ],
       };
 
-    case 'pong':
+    case "pong":
       return state;
 
     default:
@@ -354,29 +340,27 @@ function applyMessage(state: ChatState, msg: ServerMessage): ChatState {
 
 function reducer(state: ChatState, action: Action): ChatState {
   switch (action.kind) {
-    case 'connection':
+    case "connection":
       return { ...state, connection: action.status };
 
-    case 'message':
+    case "message":
       return applyMessage(state, action.message);
 
-    case 'respondPermission':
+    case "respondPermission":
       return {
         ...state,
         items: state.items.map((it) =>
-          it.kind === 'permission' && it.id === action.id
+          it.kind === "permission" && it.id === action.id
             ? { ...it, responded: true, response: action.response }
             : it,
         ),
       };
 
-    case 'markAskAnswered':
+    case "markAskAnswered":
       return {
         ...state,
         items: state.items.map((it) =>
-          it.kind === 'askUser' && it.id === action.id
-            ? { ...it, answered: true }
-            : it,
+          it.kind === "askUser" && it.id === action.id ? { ...it, answered: true } : it,
         ),
       };
 
@@ -397,22 +381,19 @@ export function useChat(): ChatApi {
   const [state, dispatch] = useReducer(reducer, initialState);
 
   const dispatchMessage = useCallback((message: ServerMessage) => {
-    dispatch({ kind: 'message', message });
+    dispatch({ kind: "message", message });
   }, []);
 
   const setConnection = useCallback((status: ConnectionStatus) => {
-    dispatch({ kind: 'connection', status });
+    dispatch({ kind: "connection", status });
   }, []);
 
-  const respondPermission = useCallback(
-    (id: string, response: PermissionResponse) => {
-      dispatch({ kind: 'respondPermission', id, response });
-    },
-    [],
-  );
+  const respondPermission = useCallback((id: string, response: PermissionResponse) => {
+    dispatch({ kind: "respondPermission", id, response });
+  }, []);
 
   const markAskAnswered = useCallback((id: string) => {
-    dispatch({ kind: 'markAskAnswered', id });
+    dispatch({ kind: "markAskAnswered", id });
   }, []);
 
   return {

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from "react";
 
 /**
  * Keeps a scroll container pinned to the bottom while new content streams in,
@@ -26,12 +26,11 @@ export function useAutoScroll<T extends HTMLElement>(dep: unknown) {
     const el = ref.current;
     if (!el) return;
     const onScroll = () => {
-      const distanceFromBottom =
-        el.scrollHeight - el.scrollTop - el.clientHeight;
+      const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
       setAutoScroll(distanceFromBottom < 60);
     };
-    el.addEventListener('scroll', onScroll, { passive: true });
-    return () => el.removeEventListener('scroll', onScroll);
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
   }, []);
 
   return { ref, autoScroll, setAutoScroll };

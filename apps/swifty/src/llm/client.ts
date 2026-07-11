@@ -60,7 +60,7 @@ export interface MaxTokensSetter {
   setMaxOutputTokens(maxTokens: number): void;
 }
 
-// Use dynamic import. 按需加载
+// Use dynamic import for lazy loading
 export async function createClient(config: ProviderConfig, systemPrompt: string) {
   switch (config.protocol) {
     case "anthropic": {

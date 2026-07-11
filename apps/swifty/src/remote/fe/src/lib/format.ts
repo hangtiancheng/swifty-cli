@@ -1,4 +1,4 @@
-import type { ToolArgs } from '../types';
+import type { ToolArgs } from "../types";
 
 /** Format a token count with K/M suffixes for compact display. */
 export function formatTokens(n: number): string {
@@ -17,19 +17,19 @@ export function truncateOutput(output: string, max = 5000): string {
 
 /** Pretty-print tool args as indented JSON, or empty string when absent. */
 export function formatArgs(args: ToolArgs): string {
-  if (!args) return '';
+  if (!args) return "";
   return JSON.stringify(args, null, 2);
 }
 
 /** Extract a short, human-readable preview from well-known tool arg fields. */
 export function argsPreview(args: ToolArgs): string {
-  if (!args) return '';
-  const candidates = ['command', 'file_path', 'pattern', 'path'] as const;
+  if (!args) return "";
+  const candidates = ["command", "file_path", "pattern", "path"] as const;
   for (const key of candidates) {
     const v = args[key];
-    if (typeof v === 'string' && v.length > 0) return v;
+    if (typeof v === "string" && v.length > 0) return v;
   }
-  return '';
+  return "";
 }
 
 /** Parse a `<think ...>...</think ...>` envelope embedded in streamed text.
@@ -42,7 +42,7 @@ export function splitThinking(text: string): {
   if (match) {
     return { thinking: match[1].trim(), body: match[2].trim() };
   }
-  return { thinking: '', body: text };
+  return { thinking: "", body: text };
 }
 
 /** Detect an open (not yet closed) `<think ...>` tag at the start of a stream. */
@@ -52,5 +52,5 @@ export function isOpenThinking(text: string): boolean {
 
 /** Strip the leading `<think ...>` marker from an in-progress thinking stream. */
 export function stripThinkOpen(text: string): string {
-  return text.replace(/^<think\s*>\s*/, '');
+  return text.replace(/^<think\s*>\s*/, "");
 }

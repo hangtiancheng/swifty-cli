@@ -112,31 +112,31 @@ export interface RetryPayload {
 
 /** Discriminated union of all server messages. `type` is the discriminant. */
 export type ServerMessage =
-  | { type: 'connected'; data: ConnectedPayload }
-  | { type: 'commands'; data: SlashCommand[] }
-  | { type: 'system'; data: SystemPayload }
-  | { type: 'clear'; data: null }
-  | { type: 'command_done'; data: null }
-  | { type: 'replay_user'; data: ReplayUserPayload }
-  | { type: 'replay_assistant'; data: ReplayAssistantPayload }
-  | { type: 'stream_text'; data: StreamTextPayload }
-  | { type: 'stream_end'; data: StreamEndPayload }
-  | { type: 'thinking_text'; data: ThinkingTextPayload }
-  | { type: 'tool_use'; data: ToolUsePayload }
-  | { type: 'tool_result'; data: ToolResultPayload }
-  | { type: 'permission_request'; data: PermissionRequestPayload }
-  | { type: 'ask_user'; data: AskUserPayload }
-  | { type: 'turn_complete'; data: TurnCompletePayload }
-  | { type: 'loop_complete'; data: LoopCompletePayload }
-  | { type: 'usage'; data: UsagePayload }
-  | { type: 'error'; data: ErrorPayload }
-  | { type: 'compact'; data: CompactPayload }
-  | { type: 'retry'; data: RetryPayload }
-  | { type: 'pong'; data: null };
+  | { type: "connected"; data: ConnectedPayload }
+  | { type: "commands"; data: SlashCommand[] }
+  | { type: "system"; data: SystemPayload }
+  | { type: "clear"; data: null }
+  | { type: "command_done"; data: null }
+  | { type: "replay_user"; data: ReplayUserPayload }
+  | { type: "replay_assistant"; data: ReplayAssistantPayload }
+  | { type: "stream_text"; data: StreamTextPayload }
+  | { type: "stream_end"; data: StreamEndPayload }
+  | { type: "thinking_text"; data: ThinkingTextPayload }
+  | { type: "tool_use"; data: ToolUsePayload }
+  | { type: "tool_result"; data: ToolResultPayload }
+  | { type: "permission_request"; data: PermissionRequestPayload }
+  | { type: "ask_user"; data: AskUserPayload }
+  | { type: "turn_complete"; data: TurnCompletePayload }
+  | { type: "loop_complete"; data: LoopCompletePayload }
+  | { type: "usage"; data: UsagePayload }
+  | { type: "error"; data: ErrorPayload }
+  | { type: "compact"; data: CompactPayload }
+  | { type: "retry"; data: RetryPayload }
+  | { type: "pong"; data: null };
 
 /* ───────────────────────── Client → Server messages ───────────────────────── */
 
-export type PermissionResponse = 'allow' | 'deny' | 'allowAlways';
+export type PermissionResponse = "allow" | "deny" | "allowAlways";
 
 export interface UserMessagePayload {
   content: string;
@@ -153,45 +153,45 @@ export interface AskUserResponsePayload {
 }
 
 export type ClientMessage =
-  | { type: 'user_message'; data: UserMessagePayload }
-  | { type: 'permission_response'; data: PermissionResponsePayload }
-  | { type: 'ask_user_response'; data: AskUserResponsePayload }
-  | { type: 'cancel'; data: null }
-  | { type: 'ping'; data: Record<string, never> };
+  | { type: "user_message"; data: UserMessagePayload }
+  | { type: "permission_response"; data: PermissionResponsePayload }
+  | { type: "ask_user_response"; data: AskUserResponsePayload }
+  | { type: "cancel"; data: null }
+  | { type: "ping"; data: Record<string, never> };
 
 /* ───────────────────────── Chat item model ───────────────────────── */
 
-export type ConnectionStatus = 'connecting' | 'connected' | 'reconnecting';
+export type ConnectionStatus = "connecting" | "connected" | "reconnecting";
 
-export type ToolStatus = 'running' | 'ok' | 'err';
+export type ToolStatus = "running" | "ok" | "err";
 
 export interface UserItem {
-  kind: 'user';
+  kind: "user";
   id: string;
   content: string;
 }
 
 export interface AssistantItem {
-  kind: 'assistant';
+  kind: "assistant";
   id: string;
   content: string;
   streaming: boolean;
 }
 
 export interface SystemItem {
-  kind: 'system';
+  kind: "system";
   id: string;
   content: string;
 }
 
 export interface ErrorItem {
-  kind: 'error';
+  kind: "error";
   id: string;
   content: string;
 }
 
 export interface ThinkingItem {
-  kind: 'thinking';
+  kind: "thinking";
   id: string;
   content: string;
   /** When true the thinking block is finalized and its header shows "Thought". */
@@ -199,7 +199,7 @@ export interface ThinkingItem {
 }
 
 export interface ToolItem {
-  kind: 'tool';
+  kind: "tool";
   id: string;
   toolId: string;
   toolName: string;
@@ -211,7 +211,7 @@ export interface ToolItem {
 }
 
 export interface PermissionItem {
-  kind: 'permission';
+  kind: "permission";
   id: string;
   toolName: string;
   description: string;
@@ -220,14 +220,14 @@ export interface PermissionItem {
 }
 
 export interface AskUserItem {
-  kind: 'askUser';
+  kind: "askUser";
   id: string;
   questions: Question[];
   answered: boolean;
 }
 
 export interface DoneItem {
-  kind: 'done';
+  kind: "done";
   id: string;
   elapsed: number;
 }

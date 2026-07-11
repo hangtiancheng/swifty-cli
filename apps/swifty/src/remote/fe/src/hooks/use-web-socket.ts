@@ -1,5 +1,5 @@
-import { useEffect, useRef } from 'react';
-import type { ClientMessage, ServerMessage } from '../types';
+import { useEffect, useRef } from "react";
+import type { ClientMessage, ServerMessage } from "../types";
 
 interface UseWebSocketOptions {
   onMessage: (message: ServerMessage) => void;
@@ -39,7 +39,7 @@ export function useWebSocket(opts: UseWebSocketOptions): UseWebSocketResult {
 
     const connect = () => {
       if (disposed) return;
-      const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
       const url = `${proto}//${window.location.host}/ws`;
       const ws = new WebSocket(url);
       wsRef.current = ws;
@@ -49,7 +49,7 @@ export function useWebSocket(opts: UseWebSocketOptions): UseWebSocketResult {
         if (pingRef.current) clearInterval(pingRef.current);
         pingRef.current = setInterval(() => {
           if (ws.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify({ type: 'ping', data: {} }));
+            ws.send(JSON.stringify({ type: "ping", data: {} }));
           }
         }, PING_INTERVAL_MS);
       };
@@ -74,7 +74,7 @@ export function useWebSocket(opts: UseWebSocketOptions): UseWebSocketResult {
           const parsed = JSON.parse(evt.data) as ServerMessage;
           onMessageRef.current(parsed);
         } catch (err) {
-          console.error('[ws] failed to parse message', err);
+          console.error("[ws] failed to parse message", err);
         }
       };
     };

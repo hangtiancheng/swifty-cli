@@ -1,7 +1,6 @@
-// 来源：公众号@小林coding
-// 后端八股网站：xiaolincoding.com
-// Agent网站：xiaolinnote.com
-// 简历模版：jianli.xiaolinnote.com
+// Source: xiaolincoding.com
+// Agent site: xiaolinnote.com
+// Resume template: jianli.xiaolinnote.com
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { Box, Static, Text, useApp, useInput } from "ink";
@@ -227,7 +226,7 @@ export function App({
   const [error, setError] = useState<string | null>(null);
   const [planApprovalActive, setPlanApprovalActive] = useState(false);
   const [prePlanMode, setPrePlanMode] = useState<PermissionMode>("default");
-  // 记录本次会话是否曾退出过 Plan Mode，用于重入时注入提示
+  // //  Plan Mode，
   const hasExitedPlanModeRef = useRef(false);
   const permModeRef = useRef(permMode);
   useEffect(() => {
@@ -282,7 +281,7 @@ export function App({
   const teamManagerRef = useRef(new TeamManager(workDir));
   const fileHistoryRef = useRef<FileHistory | null>(null);
   const fileStateCacheRef = useRef(new FileStateCache());
-  // 沙箱相关状态
+  // // 
   const sandboxRef = useRef<Promise<Sandbox | null>>(createSandbox());
   const [sandboxEnabled, setSandboxEnabled] = useState(sandboxYaml?.enabled ?? false);
   const [sandboxAutoAllow, setSandboxAutoAllow] = useState(sandboxYaml?.auto_allow ?? false);
@@ -325,8 +324,8 @@ export function App({
     };
   }, []);
 
-  // shift+tab 模式切换由 InputBox 的 useInput 统一处理（input.tsx），
-  // 不再在 app 层额外注册 raw stdin listener，否则同一次按键会触发两次导致跳两级。
+  // // shift+tab  InputBox  useInput （input.tsx），
+  // //  app  raw stdin listener，。
 
   // ctrl+c: interrupt streaming or exit app
   const ctrlCCountRef = useRef(0);
@@ -344,7 +343,7 @@ export function App({
         exit();
         return;
       }
-      // 用临时提示而不是写进聊天记录，避免污染对话历史；2 秒内没有再按则重置计数
+      // // ，；2 
       setCtrlCHint(true);
       if (ctrlCTimerRef.current) {
         clearTimeout(ctrlCTimerRef.current);
@@ -431,7 +430,7 @@ export function App({
         catalog.load(workDir);
         skillCatalogRef.current = catalog;
 
-        // 将 skill 列表注入系统提示
+        // //  skill 
         const skillSection = buildSkillSection(catalog, workDir);
         if (skillSection) {
           const fullPrompt = buildSystemPrompt(env, { skillSection });
@@ -446,7 +445,7 @@ export function App({
         registryRef.current.register(
           new InstallSkillTool(workDir, catalog, () => {
             wireSkillsToRegistry(catalog, cmdRegistryRef.current, skillHostRef.current);
-            // 安装后刷新系统提示
+            // // 
             const updatedSection = buildSkillSection(catalog, workDir);
             const updatedPrompt = buildSystemPrompt(
               { ...detectEnvironment(workDir), model: selectedProvider.model },
@@ -710,21 +709,21 @@ export function App({
       const action = cmd.handler({ workDir, args: parsed.args });
       switch (action) {
         case "clear": {
-          // 开启全新会话：重置所有会话级状态
+          // // ：
           setMessages([]);
           committedIndexRef.current = 0;
           convRef.current = new ConversationManager();
-          // 新 session ID + 关联的持久化存储
+          // //  session ID + 
           sessionIdRef.current = sessionMod.newSessionId();
           taskListRef.current.useStore(new TaskStore(workDir, sessionIdRef.current));
           fileHistoryRef.current = new FileHistory(workDir, sessionIdRef.current);
-          // 重置 token 计数
+          // //  token 
           setInputTokens(0);
           setOutputTokens(0);
-          // 重置记忆提取游标
+          // // 
           memCursorRef.current = 0;
           memExtractingRef.current = false;
-          // 清掉终端缓冲区中 <Static> 写入的历史内容，然后重新打印 Header
+          // //  <Static> ， Header
           const p = COLORS.primary;
           const d = COLORS.dim;
           process.stdout.write(
@@ -751,7 +750,7 @@ export function App({
                 "Investigate and design your approach. The agent will call ExitPlanMode when the plan is ready.",
             },
           ]);
-          // 重入检测：如果本次会话曾退出过 Plan Mode 且 plan 文件已存在，注入重入提示
+          // // ： Plan Mode  plan ，
           if (hasExitedPlanModeRef.current && planExists(workDir)) {
             const reentryMsg = buildPlanModeReentryReminder(planPath, true);
             if (reentryMsg) {
@@ -764,7 +763,7 @@ export function App({
         }
         case "do": {
           setPermMode("default");
-          // 标记本次会话已退出过 Plan Mode，后续重入时可注入提示
+          // //  Plan Mode，
           hasExitedPlanModeRef.current = true;
           const planContent = loadPlan(/** workDir */);
           const exitPlanPath = getOrCreatePlanPath(workDir);
@@ -897,7 +896,7 @@ export function App({
               { role: "system", content: "Skills: no catalog loaded." },
             ]);
           } else if (parsed.args.trim() === "reload") {
-            // /skills reload — 手动热加载
+            // // /skills reload — 
             catalog.reload();
             wireSkillsToRegistry(catalog, cmdRegistryRef.current, skillHostRef.current);
             if (clientRef.current) {
@@ -976,7 +975,7 @@ export function App({
           const arg = parsed.args.trim();
           const sbAvailable = (await sandboxRef.current)?.available() ?? false;
           if (arg === "1" || arg === "on") {
-            // 模式 1：沙箱 + 自动放行
+            // //  1： + 
             setSandboxEnabled(true);
             setSandboxAutoAllow(true);
             sandboxEnabledRef.current = true;
@@ -989,7 +988,7 @@ export function App({
               },
             ]);
           } else if (arg === "2" || arg === "manual") {
-            // 模式 2：沙箱 + 常规权限
+            // //  2： + 
             setSandboxEnabled(true);
             setSandboxAutoAllow(false);
             sandboxEnabledRef.current = true;
@@ -1002,7 +1001,7 @@ export function App({
               },
             ]);
           } else if (arg === "3" || arg === "off") {
-            // 模式 3：关闭沙箱
+            // //  3：
             setSandboxEnabled(false);
             setSandboxAutoAllow(false);
             sandboxEnabledRef.current = false;
@@ -1015,7 +1014,7 @@ export function App({
               },
             ]);
           } else {
-            // 显示当前状态和三种模式
+            // // 
             const status = sandboxEnabled
               ? sandboxAutoAllow
                 ? "ON + auto-allow"
@@ -1156,11 +1155,11 @@ export function App({
     // modeOverride avoids a stale-closure read of permMode right after a
     // setPermMode call (e.g. plan approval switching out of plan mode in the same tick).
     const checker = new PermissionChecker(workDir, modeOverride ?? permMode);
-    // 将沙箱状态注入权限检查器
+    // // 
     checker.sandboxEnabled = sandboxEnabledRef.current;
     checker.sandboxAutoAllow = sandboxAutoAllowRef.current;
 
-    // 将沙箱注入 BashTool
+    // //  BashTool
     // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
     const bashTool = registryRef.current.get("Bash") as BashTool | undefined;
     if (bashTool && sandboxEnabledRef.current) {
@@ -1177,7 +1176,7 @@ export function App({
     } else if (bashTool) {
       bashTool.sandbox = null;
     }
-    // 非阻塞 memory recall：与主 LLM 调用并行，工具执行后注入
+    // //  memory recall： LLM ，
     const recallPromise =
       memManagerRef.current && clientRef.current
         ? memManagerRef.current
@@ -1251,7 +1250,7 @@ export function App({
           .map((m) => `[${m.role}]: ${m.content}`)
           .filter((s) => s.length > 12)
           .join("\n");
-        // 复用同一个 Extractor 实例（节流状态跨轮次保持）
+        // //  Extractor （）
         memExtractorRef.current ??= new MemoryExtractor(client, workDir);
         memExtractorRef.current
           .extract(summary)
@@ -1268,7 +1267,7 @@ export function App({
             }
           })
           .catch((err: unknown) => {
-            // 不吞错误，至少 debug 输出
+            // // ， debug 
             console.error("[memory-extractor]", asErrorString(err));
           })
           .finally(() => {
@@ -1317,7 +1316,7 @@ export function App({
         case "stream_text":
           fullText += event.text;
           streamingTextRef.current = fullText;
-          // 节流：50ms 内的 delta 合并为一次 React 状态更新，减少重渲染
+          // // ：50ms  delta  React ，
           streamThrottleRef.current ??= setTimeout(() => {
             setStreamingText(streamingTextRef.current);
             streamThrottleRef.current = null;
@@ -1479,7 +1478,7 @@ export function App({
       }
 
       if (choice === "yolo") {
-        // 标记本次会话已退出过 Plan Mode，后续重入时可注入提示
+        // //  Plan Mode，
         hasExitedPlanModeRef.current = true;
         setPermMode("bypassPermissions");
         convRef.current.addSystemReminder(buildPlanModeExitReminder(planPath, !!planContent));
@@ -1491,7 +1490,7 @@ export function App({
           void handleSubmit(`Execute this plan:\n\n${planContent}`);
         }
       } else if (choice === "manual") {
-        // 标记本次会话已退出过 Plan Mode，后续重入时可注入提示
+        // //  Plan Mode，
         hasExitedPlanModeRef.current = true;
         setPermMode(prePlanMode);
         convRef.current.addSystemReminder(buildPlanModeExitReminder(planPath, !!planContent));
@@ -1660,7 +1659,7 @@ export function App({
         }
         setMessages((prev) => [...prev, { role: "system", content: "(response interrupted)" }]);
       } else {
-        // 保留 API 错误前已输出的流式文本
+        // //  API 
         const partialText = streamingTextRef.current;
         if (partialText) {
           setMessages((prev) => [...prev, { role: "assistant", content: partialText }]);

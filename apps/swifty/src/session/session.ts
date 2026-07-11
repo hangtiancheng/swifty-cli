@@ -299,7 +299,7 @@ export function cleanExpiredSessions(workDir: string): number {
       const stat = statSync(filePath);
       if (now - stat.mtimeMs > expiryMs) {
         unlinkSync(filePath);
-        // 清理对应的 tool_results 目录
+        // Clean up the corresponding tool_results directory
         const id = file.replace(".jsonl", "");
         const toolResultsDir = join(workDir, ".swifty", "sessions", id, "tool_results");
         try {

@@ -52,7 +52,7 @@ function buildSpillPreview(content: string, spillPath: string): string {
   return msg;
 }
 
-// 检查工具结果是否已被替换过（通过前缀标记判断）
+// Check whether a tool result has already been replaced (detected by prefix tag)
 function isAlreadyReplaced(content: string): boolean {
   return content.startsWith(PERSISTED_TAG_PREFIX);
 }
@@ -80,14 +80,15 @@ function buildToolUseIndex(messages: Message[]): Map<string, ToolUseBlock> {
 }
 
 /**
- * applyBudget 就地修改 messages 中超限的 toolResult.content：
- * - Pass 1: 单条结果超过 SINGLE_RESULT_LIMIT → 溢出到磁盘
- * - Pass 2: 单消息聚合超过 MESSAGE_AGGREGATE_LIMIT → 溢出最大的结果
- * 已替换的结果（带 persistedTagPrefix 前缀）会被跳过，保证幂等。
+ * applyBudget modifies messages in-place for oversized toolResult.content:
+ * - Pass 1: Single results exceeding SINGLE_RESULT_LIMIT are spilled to disk.
+ * - Pass 2: Message-aggregate exceeding MESSAGE_AGGREGATE_LIMIT spills the largest results.
+ * Already-replaced results (with persistedTagPrefix prefix) are skipped for idempotence.
  */
 export function applyBudget(messages: Message[], workDir: string, sessionId: string): void {
-  // 从尾部往前找需要处理的消息。旧消息的 tool_result 已经在之前的轮次
-  // 被替换过了，碰到一条全部是 preview 的消息就可以停下来。
+  // Walk from the tail to find messages that need processing. Older messages have
+  // already had their tool_results replaced in previous rounds; stop once we hit
+  // a message whose results are all previews.
   const toProcess: number[] = [];
   for (let i = messages.length - 1; i >= 0; i--) {
     const trs = messages[i].toolResults;
@@ -105,9 +106,9 @@ export function applyBudget(messages: Message[], workDir: string, sessionId: str
     const msg = messages[idx];
     if (!msg.toolResults || msg.toolResults.length === 0) continue;
 
-    // Pass 1: 单条结果超限 → 溢出到磁盘
+    // Pass 1: Single result exceeds limit -> spill to disk
     for (const tr of msg.toolResults) {
-      // 已替换过的结果跳过，保持幂等
+      // Skip already-replaced results for idempotence
       if (isAlreadyReplaced(tr.content)) continue;
 
       if (tr.content.length > SINGLE_RESULT_LIMIT) {
@@ -117,10 +118,10 @@ export function applyBudget(messages: Message[], workDir: string, sessionId: str
       }
     }
 
-    // Pass 2: 单消息聚合超限 → 溢出最大的结果
+    // Pass 2: Message-aggregate over limit -> spill the largest result
     let totalLen = msg.toolResults.reduce((sum, r) => sum + r.content.length, 0);
     if (totalLen > MESSAGE_AGGREGATE_LIMIT) {
-      // 按内容长度降序排列，优先溢出最大的
+      // Sort by content length descending; spill the largest first
       const sorted = [...msg.toolResults].sort((a, b) => b.content.length - a.content.length);
       for (const r of sorted) {
         if (totalLen <= MESSAGE_AGGREGATE_LIMIT) break;

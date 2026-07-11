@@ -347,7 +347,7 @@ At session end, generate a learner-facing notes file at `{topic-slug}/{topic-slu
 
 ---
 
-## n. 实战参数 / Cheat Sheet (if applicable)
+## n. Practical Cheatsheet (if applicable)
 
 {Practical commands, config, or quick-reference table}
 

@@ -112,7 +112,7 @@ const fetchedWindowCache = new Map<string, number>();
 // 3. built-in model-name → window table
 // 4. conservative default
 // `fetcher` is injected (defaults to fetchModelContextWindow)
-// so it can be stubbed (打桩 / 桩替换) in tests.
+// so it can be stubbed (mock substitution) in tests.
 // The fetcher itself must never throw — but we still guard here
 // so a rejected promise degrades silently to layers 3/4 instead of blocking startup.
 export async function getContextWindowAsync(

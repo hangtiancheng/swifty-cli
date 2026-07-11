@@ -13,26 +13,26 @@ import type { Sandbox, SandboxConfig } from "@/sandbox/index.js";
 const MAX_TIMEOUT = 600;
 
 /**
- * 从命令字符串中提取基础命令名。
- * 管道命令取最后一段（bash 默认返回管道最后一个命令的退出码）。
+ * Extract the base command name from a command string.
+ * For piped commands, take the last segment (bash returns the exit code of the last command in a pipeline by default).
  */
 function extractBaseCmd(command: string): string {
-  // 按管道符拆分，取最后一段命令
+  // Split by pipe, take the last segment command
   const lastSegment = command.split("|").pop()?.trim() ?? command;
-  // 提取基础命令名：跳过 env 变量赋值和路径前缀
+  // Extract base command name: skip env variable assignments and path prefixes
   const tokens = lastSegment.split(/\s+/);
   for (const token of tokens) {
-    // 跳过形如 VAR=value 的环境变量设置
+    // Skip tokens like VAR=value (environment variable assignments)
     if (token.includes("=") && !token.startsWith("-")) {
       continue;
     }
-    // 去掉路径前缀，只保留命令名
+    // Strip path prefix, keep only the command name
     return token.split("/").pop() ?? token;
   }
   return "";
 }
 
-// 特殊命令的退出码语义提示，帮助 LLM 理解非零退出码的含义
+// Exit code semantics for special commands, helping the LLM understand non-zero exit codes
 const exitCodeHints = new Map<string, Map<number, string>>([
   ["grep", new Map([[1, "no matches found"]])],
   ["egrep", new Map([[1, "no matches found"]])],
@@ -45,8 +45,8 @@ const exitCodeHints = new Map<string, Map<number, string>>([
 ]);
 
 /**
- * 为特殊命令的非零退出码返回语义提示，帮助 LLM 理解退出码含义。
- * 如果不是已知的特殊命令或退出码，返回空字符串。
+ * Return a semantic hint for non-zero exit codes of special commands, helping the LLM understand the exit code meaning.
+ * Returns empty string if the command or exit code is not recognized.
  */
 function exitCodeHint(command: string, exitCode: number): string {
   const baseCmd = extractBaseCmd(command);
@@ -71,7 +71,7 @@ export class BashTool implements Tool {
   description: string = BASH_DESCRIPTION;
   category: ToolCategory = "command";
 
-  // OS 级沙箱实例及配置，由外部注入
+  // OS-level sandbox instance and config, injected externally
   sandbox: Sandbox | null = null;
   sandboxConfig: SandboxConfig = {
     allowWrite: [],
@@ -118,13 +118,13 @@ export class BashTool implements Tool {
       timeout = MAX_TIMEOUT;
     }
 
-    // 沙箱包装：如果沙箱可用，将命令包装在沙箱环境中执行
+    // Sandbox wrapping: if a sandbox is available, wrap the command in the sandbox environment
     let actualCommand = command;
     if (this.sandbox?.available()) {
       actualCommand = this.sandbox.wrap(command, this.sandboxConfig);
     }
 
-    // stdout 和 stderr 分别捕获，后续合并为统一输出
+    // stdout and stderr captured separately, merged into unified output later
     const result = spawnSync("bash", ["-c", actualCommand], {
       cwd: ctx.workDir,
       timeout: timeout * 1000,
@@ -149,7 +149,7 @@ export class BashTool implements Tool {
 
     const exitCode = result.status ?? 0;
     let output = `$ ${command}\n`;
-    // 合并 stdout 和 stderr，不加前缀
+    // Merge stdout and stderr, no prefix added
     if (result.stdout) {
       output += result.stdout;
     }

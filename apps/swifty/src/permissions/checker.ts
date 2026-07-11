@@ -119,21 +119,21 @@ export class PathSandbox {
     // is /var/folders/..., not /tmp.
     this.projectDir = resolve(projectDir);
     this.allowedRoots = [this.projectDir, tmpdir()];
-    // 将相对路径转为绝对路径
+    // Convert relative paths to absolute paths
     this.denyWritePaths = DEFAULT_DENY_WRITE.map((p) => join(this.projectDir, p));
   }
 
   addRoot(root: string): void {
     this.allowedRoots.push(resolve(root));
   }
-  // 添加自定义拒绝写入路径
+  // Add custom deny-write paths
   addDenyWrite(path: string): void {
     this.denyWritePaths.push(resolve(path));
   }
 
   /**
-   * 检查路径是否在拒绝写入列表中。
-   * denyWrite 优先级最高——即使路径在允许根目录内，也会被拒绝写入。
+   * Check whether a path is in the deny-write list.
+   * denyWrite has the highest priority — even if the path is within an allowed root, writes are still denied.
    */
   checkDenyWrite(filePath: string): Decision | null {
     const absolute = resolve(filePath);
@@ -169,7 +169,7 @@ function globMatch(pattern: string, content: string): boolean {
     "^" +
     pattern
       .replace(/[.+^${}()|[\]\\]/g, "\\$&")
-      // Bash 命令中 * 应匹配包括 / 在内的任意字符（命令不是路径）
+      // In bash commands, * should match any character including / (commands are not paths)
       .replace(/\*/g, ".*")
       .replace(/\?/g, ".") +
     "$";
@@ -322,7 +322,7 @@ function modeDecide(mode: PermissionMode, category: "read" | "write" | "command"
 export class PermissionChecker {
   mode: PermissionMode;
   planFilePath = "";
-  // 沙箱模式：开启后 command 类工具走 OS 沙箱隔离，可选自动放行
+  // Sandbox mode: when enabled, command-category tools run through OS sandbox isolation, with optional auto-allow
   sandboxEnabled = false;
   sandboxAutoAllow = false;
   private sandbox: PathSandbox;
@@ -372,8 +372,8 @@ export class PermissionChecker {
       };
     }
 
-    // Layer 3.5: 沙箱自动放行——OS 沙箱已隔离写入，非危险命令可跳过人工确认。
-    // 拆分复合命令逐条检查 deny/ask 规则，防止通过命令拼接绕过权限检查。
+    // Layer 3.5: Sandbox auto-allow — OS sandbox already isolates writes; non-dangerous commands can skip human confirmation.
+    // Split compound commands and check deny/ask rules individually to prevent bypassing permission checks via command chaining.
     if (this.sandboxEnabled && this.sandboxAutoAllow && category === "command") {
       const subcommands = strArg(args, "command")
         .split(/\s*(?:&&|\|\||[;|])\s*/)
@@ -404,7 +404,7 @@ export class PermissionChecker {
     // Layer 4: path sandbox (file tools only).
     const filePath = strArg(args, "file_path", strArg(args, "path", ""));
     if ((category === "read" || category === "write") && filePath) {
-      // denyWrite 检查优先：敏感路径始终拒绝写入
+      // denyWrite check takes priority: sensitive paths always deny writes
       if (category === "write") {
         const denyDecision = this.sandbox.checkDenyWrite(filePath);
         if (denyDecision) {

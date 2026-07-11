@@ -48,10 +48,10 @@ export interface AgentConfig {
   onLoopComplete?: (conversation: ConversationManager) => void;
   activeSkills?: Map<string, string>;
   toolFilter?: (name: string) => boolean;
-  // 项目指令和记忆内容，压缩后需要重新注入
+  // Project instructions and memory content, need re-injection after compaction
   instructions?: string;
   memoryContent?: string;
-  // 非阻塞 memory recall：prefetch promise 与主 LLM 调用并行，工具执行后注入
+  // Non-blocking memory recall: prefetch promise runs in parallel with the main LLM call, injected after tool execution
   memoryRecallPromise?: Promise<string>;
   onPermissionRequest?: (
     toolName: string,
@@ -182,7 +182,7 @@ export class Agent {
         await this.fireLifecycle("turn_start");
         await this.fireLifecycle("pre_send");
 
-        // Layer 1: 就地裁剪超限的工具结果
+        // Layer 1: Trim oversized tool results in-place
         applyBudget(this.conversation.getMessages(), this.workDir, this.sessionId);
 
         // Layer 2: auto-compact when the window fills up
@@ -203,7 +203,7 @@ export class Agent {
         }
         if (mc.compacted) {
           this.usageAnchor = null;
-          // 压缩后消息已变，重新应用 budget
+          // Messages changed after compaction, re-apply budget
           applyBudget(this.conversation.getMessages(), this.workDir, this.sessionId);
           this.conversation.injectLongTermMemory(this.instructions, this.memoryContent);
         }
@@ -214,7 +214,7 @@ export class Agent {
         const sentMessageCount = this.conversation.len();
 
         try {
-          // 直接用 conversation 发起 API 调用，无需重建
+          // Initiate API call directly with the conversation — no need to rebuild
           const stream = this.client.stream(
             this.conversation,
             toolSchemas as ToolSchema[],
@@ -292,7 +292,7 @@ export class Agent {
           // Self-heal: context too long → force-compact, then retry the turn.
           if (err instanceof ContextTooLongError) {
             try {
-              // 先应用 tool-result budget，再做 auto-compact
+              // Apply tool-result budget first, then auto-compact
               applyBudget(this.conversation.getMessages(), this.workDir, this.sessionId);
               const result = await forceCompact(
                 this.conversation,
@@ -422,7 +422,7 @@ export class Agent {
           const exitPlanCalled = toolUses.some((tu) => tu.toolName === "ExitPlanMode");
           this.conversation.addToolResultsMessage(toolResults);
 
-          // 非阻塞 memory recall：工具执行完后检查 prefetch 是否就绪
+          // Non-blocking memory recall: check if prefetch is ready after tool execution
           if (this.memoryRecallPromise && !this.memoryRecallConsumed) {
             try {
               // Promise.race with an immediately-resolved marker to avoid blocking
@@ -512,7 +512,7 @@ export class Agent {
   private async executeTools(toolUses: ToolUseBlock[]): Promise<AgentEvent[]> {
     const events: AgentEvent[] = [];
 
-    // 按相邻性分批：连续的只读工具合成一个并行批次，写/命令工具各自独占一批
+    // Partition by adjacency: consecutive read-only tools form one parallel batch; write/command tools each get their own batch
     const batches = this.partitionToolCalls(toolUses);
 
     for (const batch of batches) {
@@ -581,7 +581,7 @@ export class Agent {
           type: "tool_result",
           toolName: tu.toolName,
           toolId: tu.toolUseId,
-          output: `Permission denied: ${decision.reason}. 此操作已被安全策略拦截和阻止，请告知用户该命令被拒绝，不要描述该命令会做什么。`,
+          output: `Permission denied: ${decision.reason}. This operation has been blocked by the security policy. Inform the user that the command was denied; do not describe what the command would do.`,
           isError: true,
           elapsed: 0,
         });

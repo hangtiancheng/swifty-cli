@@ -1,4 +1,4 @@
-import { Collapsible } from './collapsible';
+import { Collapsible } from "./collapsible";
 
 interface ThinkingBlockProps {
   text: string;
@@ -6,11 +6,7 @@ interface ThinkingBlockProps {
   streaming?: boolean;
 }
 
-export function ThinkingBlock({
-  text,
-  label,
-  streaming = false,
-}: ThinkingBlockProps) {
+export function ThinkingBlock({ text, label, streaming = false }: ThinkingBlockProps) {
   return (
     <Collapsible
       header={
@@ -20,7 +16,7 @@ export function ThinkingBlock({
         </span>
       }
     >
-      <span className="italic">{text || '(empty)'}</span>
+      <span className="italic">{text || "(empty)"}</span>
     </Collapsible>
   );
 }

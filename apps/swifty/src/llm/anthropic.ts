@@ -155,14 +155,14 @@ export function buildAnthropicMessages(messages: Message[]): Anthropic.MessagePa
       result.push({ role: "user", content: blocks });
     } //! end if (m.toolResults && m.toolResults.length > 0)
 
-    // 第一条消息的 role 必须是 user
+    // The first message's role MUST be user
     else {
       // Summary (role: "user")
       // Kept user messages (with no intervening assistant turn)
       //
-      // Merge consecutive (连续的) user text messages to maintain alternation (交替对话格式).
-      // After compaction the summary (user) may be followed by kept user messages with no intervening (中间的) assistant turn. The Anthropic API requires strict user/assistant alternation,
-      // so we merge them into a single user entry (条目) with multiple text blocks.
+      // Merge consecutive user text messages to maintain alternation.
+      // After compaction the summary (user) may be followed by kept user messages with no intervening assistant turn. The Anthropic API requires strict user/assistant alternation,
+      // so we merge them into a single user entry with multiple text blocks.
       // Only merge when the previous entry is a plain-text user (not a tool_result user).
 
       if (result.length === 0) {
@@ -277,7 +277,7 @@ export class AnthropicClient implements LLMClient {
     if (antToolSchemas.length > 0) {
       // Mark last tool schema for cache control
       antToolSchemas[antToolSchemas.length - 1].cache_control = {
-        type: "ephemeral", // 短暂的
+        type: "ephemeral", // ephemeral cache
       };
 
       // for (const schema of antToolSchemas) {

@@ -125,14 +125,14 @@ describe("MemoryConsolidator", () => {
       const memDir = join(dir, ".swifty", "memory");
       mkdirSync(memDir, { recursive: true });
 
-      // 写两个重复的记忆
+      // Write two duplicate memories
       writeMemory(
         memDir,
         "feedback_no_push.md",
         "feedback",
         "no-push",
         "Don't push without asking",
-        "用户不希望自动 push 代码",
+        "The user does not want code pushed automatically",
       );
 
       writeMemory(
@@ -141,25 +141,25 @@ describe("MemoryConsolidator", () => {
         "feedback",
         "auto-push",
         "Don't auto push code",
-        "用户不喜欢自动 push，每次都要先问一下",
+        "The user dislikes auto-push and prefers to be asked first",
       );
 
-      // 写一个正常的记忆
+      // Write a normal memory
       writeMemory(
         memDir,
         "user_role.md",
         "user",
         "user-role",
         "User is a backend engineer",
-        "用户是后端工程师，主要用 Go 和 Java",
+        "The user is a backend engineer who primarily works with Go and Java",
       );
 
-      // 写 MEMORY.md
+      // Write MEMORY.md
       writeFileSync(
         join(memDir, "MEMORY.md"),
-        `- [No push](feedback_no_push.md) — 不要自动 push
-- [Auto push](feedback_auto_push.md) — 不要自动 push 代码
-- [User role](user_role.md) — 后端工程师
+        `- [No push](feedback_no_push.md) — Do not auto push
+- [Auto push](feedback_auto_push.md) — Do not auto push code
+- [User role](user_role.md) — Backend engineer
 `,
       );
 
@@ -167,7 +167,7 @@ describe("MemoryConsolidator", () => {
       console.log("  Files:", readdirSync(memDir));
       console.log("  MEMORY.md:", readFileSync(join(memDir, "MEMORY.md"), "utf-8"));
 
-      // 构建 LLM 客户端
+      // Build LLM client
       const { OpenAICompatClient } = await import("../src/llm/openai.js");
       const client = new OpenAICompatClient(
         {
