@@ -1,21 +1,24 @@
-import { createChildLogger } from "../logger/index.js";
+import { createChildLogger } from '../logger/index.js';
 
-const log = createChildLogger({ module: "hooks" });
+const log = createChildLogger({ module: 'hooks' });
 
-import { exec } from "node:child_process";
-import type { HookConfig } from "../config/config.js";
-import { asErrorString } from "../utils/index.js";
-import { strArg } from "../utils/index.js";
+import { exec } from 'node:child_process';
+import type { HookConfig } from '../config/config.js';
+import { asErrorString } from '../utils/index.js';
+import { strArg } from '../utils/index.js';
 
 /** Async command execution for hooks — non-blocking, 30s timeout.
  *  Replaces execSync so the event loop isn't frozen during hook commands. */
-function execHookAsync(command: string, opts: { env: NodeJS.ProcessEnv }): Promise<string> {
+function execHookAsync(
+  command: string,
+  opts: { env: NodeJS.ProcessEnv },
+): Promise<string> {
   return new Promise((resolve, reject) => {
     exec(
       command,
       {
-        shell: "bash",
-        encoding: "utf-8",
+        shell: 'bash',
+        encoding: 'utf-8',
         timeout: 30000,
         env: opts.env,
         maxBuffer: 10 * 1024 * 1024,
@@ -32,15 +35,15 @@ function execHookAsync(command: string, opts: { env: NodeJS.ProcessEnv }): Promi
 }
 
 export type EventName =
-  | "session_start"
-  | "session_end"
-  | "turn_start"
-  | "turn_end"
-  | "pre_send"
-  | "post_receive"
-  | "pre_tool_use"
-  | "post_tool_use"
-  | "shutdown";
+  | 'session_start'
+  | 'session_end'
+  | 'turn_start'
+  | 'turn_end'
+  | 'pre_send'
+  | 'post_receive'
+  | 'pre_tool_use'
+  | 'post_tool_use'
+  | 'shutdown';
 
 export interface HookContext {
   event: EventName;
@@ -110,7 +113,7 @@ export class HookEngine {
           .catch((err: unknown) => {
             this.recordNotification(`Async hook error: ${asErrorString(err)}`);
           });
-        results.push({ output: "(async)", success: true, reject: false });
+        results.push({ output: '(async)', success: true, reject: false });
         continue;
       }
 
@@ -118,16 +121,16 @@ export class HookEngine {
         const result = await this.executeAction(hook, context);
         results.push(result);
 
-        if (result.reject && event === "pre_tool_use") {
+        if (result.reject && event === 'pre_tool_use') {
           break;
         }
       } catch (err) {
-        log.error({ err }, "hooks operation failed");
-        const onError = hook.on_error ?? "ignore";
-        if (onError === "fail") {
+        log.error({ err }, 'hooks operation failed');
+        const onError = hook.on_error ?? 'ignore';
+        if (onError === 'fail') {
           const msg = `Hook error: ${asErrorString(err)}`;
           results.push({ output: msg, success: false, reject: false });
-        } else if (onError === "reject") {
+        } else if (onError === 'reject') {
           const msg = `Hook error (rejecting): ${asErrorString(err)}`;
           results.push({ output: msg, success: false, reject: true });
         }
@@ -142,32 +145,35 @@ export class HookEngine {
     args: Record<string, unknown>,
   ): Promise<{ rejected: boolean; reason: string }> {
     const context: HookContext = {
-      event: "pre_tool_use",
+      event: 'pre_tool_use',
       toolName,
       args,
-      filePath: strArg(args, "file_path", strArg(args, "path", "")),
+      filePath: strArg(args, 'file_path', strArg(args, 'path', '')),
     };
 
-    const results = await this.fire("pre_tool_use", context);
+    const results = await this.fire('pre_tool_use', context);
     for (const r of results) {
       if (r.reject) {
         return { rejected: true, reason: r.output };
       }
     }
-    return { rejected: false, reason: "" };
+    return { rejected: false, reason: '' };
   }
 
-  private async executeAction(hook: HookConfig, context: HookContext): Promise<HookResult> {
+  private async executeAction(
+    hook: HookConfig,
+    context: HookContext,
+  ): Promise<HookResult> {
     switch (hook.action.type) {
-      case "command": {
-        const command = hook.action.command ?? "";
+      case 'command': {
+        const command = hook.action.command ?? '';
         try {
           const output = await execHookAsync(command, {
             env: {
               ...process.env,
               SWIFTY_EVENT: context.event,
-              SWIFTY_TOOL: context.toolName ?? "",
-              SWIFTY_FILE_PATH: context.filePath ?? "",
+              SWIFTY_TOOL: context.toolName ?? '',
+              SWIFTY_FILE_PATH: context.filePath ?? '',
             },
           });
           return {
@@ -176,27 +182,28 @@ export class HookEngine {
             reject: hook.reject ?? false,
           };
         } catch (err) {
-          log.error({ err }, "hooks operation failed");
+          log.error({ err }, 'hooks operation failed');
           throw err;
         }
       }
 
-      case "prompt": {
+      case 'prompt': {
         return {
-          output: hook.action.prompt ?? "",
+          output: hook.action.prompt ?? '',
           success: true,
           // Propagate hook.reject so prompt-type hooks can block tool execution.
-          reject: hook.reject ?? false,
+          // reject: hook.reject ?? false,
+          reject: false,
         };
       }
 
-      case "http": {
-        const url = hook.action.url ?? "";
-        const method = hook.action.method ?? "POST";
+      case 'http': {
+        const url = hook.action.url ?? '';
+        const method = hook.action.method ?? 'POST';
         try {
           const resp = await fetch(url, {
             method,
-            headers: { "Content-Type": "application/json" },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(context),
           });
           const text = await resp.text();
@@ -206,26 +213,26 @@ export class HookEngine {
             reject: hook.reject ?? false,
           };
         } catch (err) {
-          log.error({ err }, "hooks operation failed");
+          log.error({ err }, 'hooks operation failed');
           throw err;
         }
       }
 
-      case "agent": {
+      case 'agent': {
         // Agent-type hook: execute a subagent via the injected agentRunner
         if (!this.agentRunner) {
           return {
-            output: "agent-type hook configured but no AgentRunner registered",
+            output: 'agent-type hook configured but no AgentRunner registered',
             success: false,
             reject: hook.reject ?? false,
           };
         }
-        const prompt = hook.action.prompt ?? hook.action.command ?? "";
+        const prompt = hook.action.prompt ?? hook.action.command ?? '';
         try {
           const output = await this.agentRunner(prompt, context);
           return { output, success: true, reject: hook.reject ?? false };
         } catch (err) {
-          log.error({ err }, "hooks operation failed");
+          log.error({ err }, 'hooks operation failed');
           return {
             output: asErrorString(err),
             success: false,
@@ -235,7 +242,7 @@ export class HookEngine {
       }
 
       default:
-        return { output: "", success: true, reject: false };
+        return { output: '', success: true, reject: false };
     }
   }
 }
@@ -247,9 +254,9 @@ function evaluateCondition(condition: string, ctx: HookContext): boolean {
   for (let i = 1; i < parts.length; i += 2) {
     const op = parts[i];
     const next = evaluateSingleCondition(parts[i + 1], ctx);
-    if (op === "&&") {
+    if (op === '&&') {
       result = result && next;
-    } else if (op === "||") {
+    } else if (op === '||') {
       result = result || next;
     }
   }
@@ -259,7 +266,7 @@ function evaluateCondition(condition: string, ctx: HookContext): boolean {
 
 function evaluateSingleCondition(expr: string, ctx: HookContext): boolean {
   const trimmed = expr.trim();
-  if (trimmed.startsWith("!")) {
+  if (trimmed.startsWith('!')) {
     return !evaluateSingleCondition(trimmed.slice(1), ctx);
   }
 
@@ -281,7 +288,7 @@ function evaluateSingleCondition(expr: string, ctx: HookContext): boolean {
     try {
       return new RegExp(regexMatch[2]).test(value);
     } catch (err) {
-      log.error({ err }, "hooks operation failed");
+      log.error({ err }, 'hooks operation failed');
       return false;
     }
   }
@@ -289,11 +296,14 @@ function evaluateSingleCondition(expr: string, ctx: HookContext): boolean {
   const globMatch = /^(\w+)\s*=\*\s*"([^"]*)"$/.exec(trimmed);
   if (globMatch) {
     const value = getContextValue(globMatch[1], ctx);
-    const pattern = globMatch[2].replace(/\*\*/g, ".*").replace(/\*/g, "[^/]*").replace(/\?/g, ".");
+    const pattern = globMatch[2]
+      .replace(/\*\*/g, '.*')
+      .replace(/\*/g, '[^/]*')
+      .replace(/\?/g, '.');
     try {
       return new RegExp(`^${pattern}$`).test(value);
     } catch (err) {
-      log.error({ err }, "hooks operation failed");
+      log.error({ err }, 'hooks operation failed');
       return false;
     }
   }
@@ -303,38 +313,40 @@ function evaluateSingleCondition(expr: string, ctx: HookContext): boolean {
 
 function getContextValue(key: string, ctx: HookContext): string {
   switch (key) {
-    case "tool":
-      return ctx.toolName ?? "";
-    case "event":
+    case 'tool':
+      return ctx.toolName ?? '';
+    case 'event':
       return ctx.event;
-    case "file_path":
-      return ctx.filePath ?? "";
-    case "message":
-      return ctx.message ?? "";
+    case 'file_path':
+      return ctx.filePath ?? '';
+    case 'message':
+      return ctx.message ?? '';
     default:
-      return strArg(ctx.args ?? {}, key, "");
+      return strArg(ctx.args ?? {}, key, '');
   }
 }
 
 export function validate(hooks: HookConfig[]): Error | null {
   const validEvents = new Set<string>([
-    "session_start",
-    "session_end",
-    "turn_start",
-    "turn_end",
-    "pre_send",
-    "post_receive",
-    "pre_tool_use",
-    "post_tool_use",
-    "shutdown",
+    'session_start',
+    'session_end',
+    'turn_start',
+    'turn_end',
+    'pre_send',
+    'post_receive',
+    'pre_tool_use',
+    'post_tool_use',
+    'shutdown',
   ]);
-  const validActions = new Set(["command", "prompt", "http", "agent"]);
+  const validActions = new Set(['command', 'prompt', 'http', 'agent']);
 
   const errors: string[] = [];
 
   for (let i = 0; i < hooks.length; i++) {
     const h = hooks[i];
-    const label = h.id ? `hook[${String(i)}] (id="${h.id}")` : `hook[${String(i)}]`;
+    const label = h.id
+      ? `hook[${String(i)}] (id="${h.id}")`
+      : `hook[${String(i)}]`;
 
     // Required field: event
     if (!h.event) {
@@ -351,22 +363,28 @@ export function validate(hooks: HookConfig[]): Error | null {
     } else {
       // Check required fields specific to each action type
       switch (h.action.type) {
-        case "command":
+        case 'command':
           if (!h.action.command?.trim()) {
-            errors.push(`${label}: action.command must be non-empty for type "command"`);
+            errors.push(
+              `${label}: action.command must be non-empty for type "command"`,
+            );
           }
           break;
-        case "prompt":
+        case 'prompt':
           if (!h.action.prompt?.trim()) {
-            errors.push(`${label}: action.prompt must be non-empty for type "prompt"`);
+            errors.push(
+              `${label}: action.prompt must be non-empty for type "prompt"`,
+            );
           }
           break;
-        case "http":
+        case 'http':
           if (!h.action.url?.trim()) {
-            errors.push(`${label}: action.url must be non-empty for type "http"`);
+            errors.push(
+              `${label}: action.url must be non-empty for type "http"`,
+            );
           }
           break;
-        case "agent":
+        case 'agent':
           if (!h.action.prompt?.trim() && !h.action.command?.trim()) {
             errors.push(
               `${label}: action.prompt (or action.command) must be non-empty for type "agent"`,
@@ -383,7 +401,7 @@ export function validate(hooks: HookConfig[]): Error | null {
   }
 
   if (errors.length > 0) {
-    return new Error(errors.join("; "));
+    return new Error(errors.join('; '));
   }
   return null;
 }

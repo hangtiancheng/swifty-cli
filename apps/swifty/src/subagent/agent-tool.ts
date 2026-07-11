@@ -1,18 +1,23 @@
-import { createChildLogger } from "../logger/index.js";
+import { createChildLogger } from '../logger/index.js';
 
-const log = createChildLogger({ module: "subagent" });
+const log = createChildLogger({ module: 'subagent' });
 
-import type { Tool, ToolResult, ToolContext, ToolSchema } from "../tools/types.js";
-import type { AgentDefinition } from "./definition.js";
-import { loadAgentDefinitions } from "./loader.js";
-import type { ToolRegistry } from "../tools/registry.js";
-import type { ConversationManager } from "../conversation/conversation.js";
-import type { TeamManager, RunAgent } from "../teams/team.js";
-import { asErrorString, boolArg, strArg } from "@/utils/index.js";
+import type {
+  Tool,
+  ToolResult,
+  ToolContext,
+  ToolSchema,
+} from '../tools/types.js';
+import type { AgentDefinition } from './definition.js';
+import { loadAgentDefinitions } from './loader.js';
+import type { ToolRegistry } from '../tools/registry.js';
+import type { ConversationManager } from '../conversation/conversation.js';
+import type { TeamManager, RunAgent } from '../teams/team.js';
+import { asErrorString, boolArg, strArg } from '@/utils/index.js';
 
 // Leading marker for forked child Agents — used for nested fork detection
-const FORK_BOILERPLATE_TAG = "<fork_boilerplate>";
-const FORK_QUERY_SOURCE = "agent:builtin:fork";
+const FORK_BOILERPLATE_TAG = '<fork_boilerplate>';
+const FORK_QUERY_SOURCE = 'agent:builtin:fork';
 
 // System instructions injected into forked child Agents
 const FORK_BOILERPLATE = `${FORK_BOILERPLATE_TAG}
@@ -26,9 +31,9 @@ Rules (non-negotiable):
 </fork_boilerplate>`;
 
 export class AgentTool implements Tool {
-  name = "Agent";
-  description = "Launch a subagent to handle complex, multi-step tasks.";
-  category = "read" as const;
+  name = 'Agent';
+  description = 'Launch a subagent to handle complex, multi-step tasks.';
+  category = 'read' as const;
   system = true;
 
   private definitions: AgentDefinition[];
@@ -37,7 +42,7 @@ export class AgentTool implements Tool {
 
   // Identifies the derived context of the current AgentTool instance;
   // re-forking is prohibited when non-empty and equal to FORK_QUERY_SOURCE
-  querySource = "";
+  querySource = '';
 
   /** Optional: Team manager, enables the team_name parameter. */
   private teamManager?: TeamManager;
@@ -97,40 +102,41 @@ export class AgentTool implements Tool {
       name: this.name,
       description: this.buildDescription(),
       input_schema: {
-        type: "object",
+        type: 'object',
         properties: {
           description: {
-            type: "string",
-            description: "Short description of what the agent will do",
+            type: 'string',
+            description: 'Short description of what the agent will do',
           },
           prompt: {
-            type: "string",
-            description: "The task for the agent to perform",
+            type: 'string',
+            description: 'The task for the agent to perform',
           },
           subagent_type: {
-            type: "string",
+            type: 'string',
             enum: agentTypes,
-            description: "Agent type. Omit to fork current conversation context.",
+            description:
+              'Agent type. Omit to fork current conversation context.',
           },
           model: {
-            type: "string",
-            description: "Override the model for this agent.",
+            type: 'string',
+            description: 'Override the model for this agent.',
           },
           run_in_background: {
-            type: "boolean",
-            description: "Run in background",
+            type: 'boolean',
+            description: 'Run in background',
             default: false,
           },
           team_name: {
-            type: "string",
+            type: 'string',
             description:
-              "REQUIRED when creating team members. Spawns the agent as a long-running " +
-              "teammate under this team (created via TeamCreate). Unlike regular subagents, " +
-              "team members persist after the lead returns and communicate via SendMessage. " +
-              "Without team_name the agent runs as a one-shot subagent that blocks and returns inline.",
+              'REQUIRED when creating team members. Spawns the agent as a long-running ' +
+              'teammate under this team (created via TeamCreate). Unlike regular subagents, ' +
+              'team members persist after the lead returns and communicate via SendMessage. ' +
+              'Without team_name the agent runs as a one-shot subagent that blocks and returns inline.',
           },
         },
-        required: ["description", "prompt"],
+        required: ['description', 'prompt'],
       },
     };
   }
@@ -163,20 +169,23 @@ When tasks are independent, launch multiple subagents in parallel by making mult
     return desc;
   }
 
-  async execute(_ctx: ToolContext, args: Record<string, unknown>): Promise<ToolResult> {
-    const description = strArg(args, "description");
-    const prompt = strArg(args, "prompt");
+  async execute(
+    _ctx: ToolContext,
+    args: Record<string, unknown>,
+  ): Promise<ToolResult> {
+    const description = strArg(args, 'description');
+    const prompt = strArg(args, 'prompt');
     if (!description || !prompt) {
       return {
-        output: "Error: description and prompt are required",
+        output: 'Error: description and prompt are required',
         isError: true,
       };
     }
 
-    const subagentType = strArg(args, "subagent_type");
-    const modelOverride = strArg(args, "model");
-    const background = boolArg(args, "run_in_background");
-    const teamName = strArg(args, "team_name");
+    const subagentType = strArg(args, 'subagent_type');
+    const modelOverride = strArg(args, 'model');
+    const background = boolArg(args, 'run_in_background');
+    const teamName = strArg(args, 'team_name');
 
     // Team-member path: team_name takes precedence over fork/subagent. Runs the agent as a
     // persistent teammate and notifies the lead via SendMessage / mailbox upon completion.
@@ -193,7 +202,7 @@ When tasks are independent, launch multiple subagents in parallel by making mult
     const definition = this.definitions.find((d) => d.name === subagentType);
     if (!definition) {
       return {
-        output: `Error: unknown agent type '${subagentType}'. Available: ${this.definitions.map((d) => d.name).join(", ")}`,
+        output: `Error: unknown agent type '${subagentType}'. Available: ${this.definitions.map((d) => d.name).join(', ')}`,
         isError: true,
       };
     }
@@ -207,7 +216,7 @@ When tasks are independent, launch multiple subagents in parallel by making mult
       );
       return { output, isError: false };
     } catch (err) {
-      log.error({ err }, "subagent operation failed");
+      log.error({ err }, 'subagent operation failed');
       return {
         output: `Agent error: ${asErrorString(err)}`,
         isError: true,
@@ -219,7 +228,11 @@ When tasks are independent, launch multiple subagents in parallel by making mult
    * Team-member mode: Spawns a persistent teammate in the specified team.
    * Delegates to Team.spawnTeammate() to start the idle-poll main loop.
    */
-  private runAsTeammate(teamName: string, description: string, prompt: string): ToolResult {
+  private runAsTeammate(
+    teamName: string,
+    description: string,
+    prompt: string,
+  ): ToolResult {
     const team = this.teamManager?.get(teamName);
     if (!team) {
       return {
@@ -229,7 +242,10 @@ When tasks are independent, launch multiple subagents in parallel by making mult
     }
 
     // Derive teammate name from description and deduplicate
-    let memberName = description.replace(/\s+/g, "-").toLowerCase().slice(0, 30);
+    let memberName = description
+      .replace(/\s+/g, '-')
+      .toLowerCase()
+      .slice(0, 30);
     let suffix = 2;
     const base = memberName;
     while (team.getMember(memberName)) {
@@ -260,7 +276,7 @@ When tasks are independent, launch multiple subagents in parallel by making mult
   ): Promise<ToolResult> {
     if (!this.conversation || !this.forkHandler) {
       return {
-        output: "Error: fork requires parent conversation context",
+        output: 'Error: fork requires parent conversation context',
         isError: true,
       };
     }
@@ -271,7 +287,7 @@ When tasks are independent, launch multiple subagents in parallel by making mult
     if (this.querySource === FORK_QUERY_SOURCE) {
       return {
         output:
-          "Error: cannot fork from a forked agent. Use subagent_type to spawn a definition-based agent instead.",
+          'Error: cannot fork from a forked agent. Use subagent_type to spawn a definition-based agent instead.',
         isError: true,
       };
     }
@@ -279,16 +295,16 @@ When tasks are independent, launch multiple subagents in parallel by making mult
       if (msg.content.includes(FORK_BOILERPLATE_TAG)) {
         return {
           output:
-            "Error: cannot fork from a forked agent. Use subagent_type to spawn a definition-based agent instead.",
+            'Error: cannot fork from a forked agent. Use subagent_type to spawn a definition-based agent instead.',
           isError: true,
         };
       }
     }
 
     try {
-      const { cloneRegistryForFork } = await import("./tool-filter.js");
+      const { cloneRegistryForFork } = await import('./tool-filter.js');
       const forkedRegistry = cloneRegistryForFork(this.registry);
-      void this.forkHandler(
+      /** const output = */ await this.forkHandler(
         `${FORK_BOILERPLATE}\n\nYour task:\n${prompt}`,
         this.conversation,
         forkedRegistry,
@@ -299,7 +315,7 @@ When tasks are independent, launch multiple subagents in parallel by making mult
         isError: false,
       };
     } catch (err) {
-      log.error({ err }, "subagent operation failed");
+      log.error({ err }, 'subagent operation failed');
       return {
         output: `Fork error: ${asErrorString(err)}`,
         isError: true,

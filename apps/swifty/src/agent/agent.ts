@@ -1,25 +1,32 @@
 /* eslint-disable @typescript-eslint/consistent-type-assertions */
-import type { LLMClient } from "../llm/client.js";
-import type { ConversationManager } from "../conversation/conversation.js";
-import type { ToolUseBlock, ToolResultBlock } from "../conversation/conversation.js";
-import type { ToolRegistry } from "../tools/registry.js";
-import type { PermissionChecker, Decision } from "../permissions/checker.js";
-import type { HookEngine, EventName } from "../hooks/hooks.js";
-import type { FileHistory } from "../file-history/file-history.js";
-import type { FileStateCache } from "../tools/file-state-cache.js";
-import type { AgentEvent } from "./events.js";
-import { StreamingExecutor } from "./streaming-executor.js";
-import { manageContext, forceCompact, AutoCompactTrackingState } from "../compact/compact.js";
-import { getSessionFilePath } from "../session/session.js";
-import type { UsageAnchor } from "../compact/compact.js";
-import { RecoveryState } from "../compact/recovery.js";
-import { ContextTooLongError, RateLimitError } from "../llm/errors.js";
-import { getOrCreatePlanPath, planExists } from "../plan-file/plan-file.js";
-import { buildPlanModeReminder } from "../prompt/plan-mode.js";
-import { applyBudget } from "../tool-result/budget.js";
-import { readFile } from "node:fs/promises";
-import { asErrorString, asRecord, strArg } from "@/utils/index.js";
-import type { ToolSchema } from "@/tools/types.js";
+import type { LLMClient } from '../llm/client.js';
+import type { ConversationManager } from '../conversation/conversation.js';
+import type {
+  ToolUseBlock,
+  ToolResultBlock,
+} from '../conversation/conversation.js';
+import type { ToolRegistry } from '../tools/registry.js';
+import type { PermissionChecker, Decision } from '../permissions/checker.js';
+import type { HookEngine, EventName } from '../hooks/hooks.js';
+import type { FileHistory } from '../file-history/file-history.js';
+import type { FileStateCache } from '../tools/file-state-cache.js';
+import type { AgentEvent } from './events.js';
+import { StreamingExecutor } from './streaming-executor.js';
+import {
+  manageContext,
+  forceCompact,
+  AutoCompactTrackingState,
+} from '../compact/compact.js';
+import { getSessionFilePath } from '../session/session.js';
+import type { UsageAnchor } from '../compact/compact.js';
+import { RecoveryState } from '../compact/recovery.js';
+import { ContextTooLongError, RateLimitError } from '../llm/errors.js';
+import { getOrCreatePlanPath, planExists } from '../plan-file/plan-file.js';
+import { buildPlanModeReminder } from '../prompt/plan-mode.js';
+import { applyBudget } from '../tool-result/budget.js';
+import { readFile } from 'node:fs/promises';
+import { asRecord, strArg } from '@/utils/index.js';
+import type { ToolSchema } from '@/tools/types.js';
 
 // When the model stops on max_tokens, escalate its output ceiling once to this
 // value, then attempt a bounded number of multi-turn recoveries. Mirrors Go.
@@ -57,7 +64,7 @@ export interface AgentConfig {
     toolName: string,
     args: Record<string, unknown>,
     decision: Decision,
-  ) => Promise<"allow" | "deny" | "allowAlways">;
+  ) => Promise<'allow' | 'deny' | 'allowAlways'>;
 }
 
 export class Agent {
@@ -84,7 +91,7 @@ export class Agent {
   // whole-transcript char estimation (cold start). Mirrors python
   // conversation.last_input_tokens, extended with cache tokens + an increment.
   private usageAnchor: UsageAnchor | null = null;
-  private onPermissionRequest?: AgentConfig["onPermissionRequest"];
+  private onPermissionRequest?: AgentConfig['onPermissionRequest'];
   private toolFilter?: (name: string) => boolean;
   activeSkills: Map<string, string>;
   private instructions: string;
@@ -98,10 +105,10 @@ export class Agent {
     this.checker = config.checker;
     this.conversation = config.conversation;
     this.workDir = config.workDir;
-    this.sessionId = config.sessionId ?? "";
+    this.sessionId = config.sessionId ?? '';
     this.sessionFilePath = config.sessionId
       ? getSessionFilePath(config.workDir, config.sessionId)
-      : "";
+      : '';
     this.hookEngine = config.hookEngine;
     this.fileHistory = config.fileHistory;
     this.fileStateCache = config.fileStateCache;
@@ -115,8 +122,8 @@ export class Agent {
     this.onPermissionRequest = config.onPermissionRequest;
     this.activeSkills = config.activeSkills ?? new Map<string, string>();
     this.toolFilter = config.toolFilter;
-    this.instructions = config.instructions ?? "";
-    this.memoryContent = config.memoryContent ?? "";
+    this.instructions = config.instructions ?? '';
+    this.memoryContent = config.memoryContent ?? '';
     this.memoryRecallPromise = config.memoryRecallPromise;
   }
 
@@ -137,32 +144,38 @@ export class Agent {
     let consecutiveUnknown = 0;
     let iteration = 0;
 
-    await this.fireLifecycle("session_start");
+    await this.fireLifecycle('session_start');
     try {
       let looping = true;
       while (looping) {
         iteration++;
         if (this.maxIterations > 0 && iteration > this.maxIterations) {
           yield {
-            type: "error",
-            error: new Error(`Agent reached maximum iterations (${String(this.maxIterations)})`),
+            type: 'error',
+            error: new Error(
+              `Agent reached maximum iterations (${String(this.maxIterations)})`,
+            ),
           };
           return;
         }
 
-        let fullText = "";
+        let fullText = '';
         const thinkingBlocks: { thinking: string; signature: string }[] = [];
         const toolUses: ToolUseBlock[] = [];
-        let stopReason = "end_turn";
+        let stopReason = 'end_turn';
 
         // Plan mode: sync the plan path onto the checker (so the Layer-0 plan-file
         // write exception works however plan mode was entered) and inject a
         // per-turn reminder keeping the model read-only.
-        if (this.checker.mode === "plan") {
+        if (this.checker.mode === 'plan') {
           const planPath = getOrCreatePlanPath(this.workDir);
           this.checker.planFilePath = planPath;
           this.conversation.addSystemReminder(
-            buildPlanModeReminder(planPath, planExists(this.workDir), iteration),
+            buildPlanModeReminder(
+              planPath,
+              planExists(this.workDir),
+              iteration,
+            ),
           );
         }
 
@@ -179,11 +192,15 @@ export class Agent {
           }
         }
 
-        await this.fireLifecycle("turn_start");
-        await this.fireLifecycle("pre_send");
+        await this.fireLifecycle('turn_start');
+        await this.fireLifecycle('pre_send');
 
         // Layer 1: 就地裁剪超限的工具结果
-        applyBudget(this.conversation.getMessages(), this.workDir, this.sessionId);
+        applyBudget(
+          this.conversation.getMessages(),
+          this.workDir,
+          this.sessionId,
+        );
 
         // Layer 2: auto-compact when the window fills up
         const mc = await manageContext(
@@ -194,19 +211,25 @@ export class Agent {
           this.compactTracking,
           this.recoveryState,
           toolSchemaNames,
-          // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
           toolSchemas as ToolSchema[],
           this.usageAnchor,
           this.sessionFilePath,
         );
         if (mc.message) {
-          yield { type: "compact", message: mc.message, boundary: mc.boundary };
+          yield { type: 'compact', message: mc.message, boundary: mc.boundary };
         }
         if (mc.compacted) {
           this.usageAnchor = null;
           // 压缩后消息已变，重新应用 budget
-          applyBudget(this.conversation.getMessages(), this.workDir, this.sessionId);
-          this.conversation.injectLongTermMemory(this.instructions, this.memoryContent);
+          applyBudget(
+            this.conversation.getMessages(),
+            this.workDir,
+            this.sessionId,
+          );
+          this.conversation.injectLongTermMemory(
+            this.instructions,
+            this.memoryContent,
+          );
         }
 
         // Message count of the live conversation at the moment we send. The API
@@ -228,45 +251,45 @@ export class Agent {
               break;
             }
             switch (event.type) {
-              case "text_delta":
+              case 'text_delta':
                 fullText += event.text;
-                yield { type: "stream_text", text: event.text };
+                yield { type: 'stream_text', text: event.text };
                 break;
 
-              case "thinking_delta":
-                yield { type: "thinking_text", text: event.text };
+              case 'thinking_delta':
+                yield { type: 'thinking_text', text: event.text };
                 break;
 
-              case "thinking_complete":
+              case 'thinking_complete':
                 thinkingBlocks.push({
                   thinking: event.thinking,
                   signature: event.signature,
                 });
                 yield {
-                  type: "thinking_complete",
+                  type: 'thinking_complete',
                   thinking: event.thinking,
                   signature: event.signature,
                 };
                 break;
 
-              case "tool_call_start":
+              case 'tool_call_start':
                 break;
 
-              case "tool_call_complete":
+              case 'tool_call_complete':
                 toolUses.push({
                   toolUseId: event.toolId,
                   toolName: event.toolName,
                   arguments: event.arguments,
                 });
                 yield {
-                  type: "tool_use",
+                  type: 'tool_use',
                   toolName: event.toolName,
                   toolId: event.toolId,
                   args: event.arguments,
                 };
                 break;
 
-              case "stream_end":
+              case 'stream_end':
                 stopReason = event.stopReason;
                 // Record the real-token anchor: the full context size the API
                 // just reported (input + cache_read + cache_creation + output)
@@ -280,13 +303,13 @@ export class Agent {
                     event.usage.outputTokens,
                   anchorCount: sentMessageCount,
                 };
-                yield { type: "usage", usage: event.usage };
+                yield { type: 'usage', usage: event.usage };
                 break;
             }
           }
         } catch (err) {
           if (this.abortSignal?.aborted) {
-            yield { type: "loop_complete", stopReason: "interrupted" };
+            yield { type: 'loop_complete', stopReason: 'interrupted' };
             return;
           }
 
@@ -294,13 +317,16 @@ export class Agent {
           if (err instanceof ContextTooLongError) {
             try {
               // 先应用 tool-result budget，再做 auto-compact
-              applyBudget(this.conversation.getMessages(), this.workDir, this.sessionId);
+              applyBudget(
+                this.conversation.getMessages(),
+                this.workDir,
+                this.sessionId,
+              );
               const result = await forceCompact(
                 this.conversation,
                 this.client,
                 this.recoveryState,
                 toolSchemaNames,
-                // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
                 toolSchemas as ToolSchema[],
                 this.sessionFilePath,
               );
@@ -308,33 +334,37 @@ export class Agent {
               // reset after manageContext above). Drop it so the retry re-estimates
               // against the compacted transcript.
               this.usageAnchor = null;
-              this.conversation.injectLongTermMemory(this.instructions, this.memoryContent);
+              this.conversation.injectLongTermMemory(
+                this.instructions,
+                this.memoryContent,
+              );
               yield {
-                type: "compact",
-                message: "Auto-compacted due to context length: " + result.message,
+                type: 'compact',
+                message:
+                  'Auto-compacted due to context length: ' + result.message,
                 boundary: result.boundary,
               };
               continue;
             } catch {
-              yield { type: "error", error: err };
+              yield { type: 'error', error: err };
               return;
             }
           }
 
           // Self-heal: rate limited → wait (Retry-After header or 5s), then retry.
           if (err instanceof RateLimitError) {
-            const waitMs = parseRetryAfter(strArg(asRecord(err), "retryAfter"));
-            yield { type: "retry", reason: "rate limited", delay: waitMs };
+            const waitMs = parseRetryAfter(strArg(asRecord(err), 'retryAfter'));
+            yield { type: 'retry', reason: 'rate limited', delay: waitMs };
             if (await this.interruptibleSleep(waitMs)) {
-              yield { type: "loop_complete", stopReason: "interrupted" };
+              yield { type: 'loop_complete', stopReason: 'interrupted' };
               return;
             }
             continue;
           }
 
           yield {
-            type: "error",
-            error: new Error(asErrorString(err)),
+            type: 'error',
+            error: err as Error,
           };
           return;
         }
@@ -343,16 +373,16 @@ export class Agent {
           if (fullText) {
             this.conversation.addAssistantFull(fullText, thinkingBlocks, []);
           }
-          yield { type: "loop_complete", stopReason: "interrupted" };
+          yield { type: 'loop_complete', stopReason: 'interrupted' };
           return;
         }
 
-        await this.fireLifecycle("post_receive", fullText);
+        await this.fireLifecycle('post_receive', fullText);
 
         // Handle the max_tokens stop reason: escalate the output ceiling once,
         // then do up to N multi-turn recoveries before giving up. Each recovery
         // re-prompts the model to resume from where it stopped. Mirrors Go.
-        if (stopReason === "max_tokens") {
+        if (stopReason === 'max_tokens') {
           if (!maxTokensEscalated) {
             const setter = this.client;
             setter.setMaxOutputTokens?.(MAX_TOKENS_CEILING);
@@ -360,19 +390,19 @@ export class Agent {
             if (fullText) {
               this.conversation.addAssistantFull(fullText, thinkingBlocks, []);
               this.conversation.addUserMessage(
-                "Output token limit hit. Resume directly from where you stopped. Do not apologize or repeat previous content. Pick up mid-thought if needed.",
+                'Output token limit hit. Resume directly from where you stopped. Do not apologize or repeat previous content. Pick up mid-thought if needed.',
               );
             }
-            yield { type: "retry", reason: "max_tokens escalation", delay: 0 };
+            yield { type: 'retry', reason: 'max_tokens escalation', delay: 0 };
             continue;
           } else if (outputRecoveries < MAX_OUTPUT_TOKENS_RECOVERIES) {
             outputRecoveries++;
             this.conversation.addAssistantFull(fullText, thinkingBlocks, []);
             this.conversation.addUserMessage(
-              "Output token limit hit. Resume directly from where you stopped. Break remaining work into smaller pieces.",
+              'Output token limit hit. Resume directly from where you stopped. Break remaining work into smaller pieces.',
             );
             yield {
-              type: "retry",
+              type: 'retry',
               reason: `max_tokens recovery ${String(outputRecoveries)}/${String(MAX_OUTPUT_TOKENS_RECOVERIES)}`,
               delay: 0,
             };
@@ -402,26 +432,29 @@ export class Agent {
           }
           if (consecutiveUnknown >= 3) {
             yield {
-              type: "error",
-              error: new Error("Too many consecutive unknown tool calls"),
+              type: 'error',
+              error: new Error('Too many consecutive unknown tool calls'),
             };
             return;
           }
 
           const toolResults: ToolResultBlock[] = [];
           for (const r of results) {
-            if (r.type === "tool_result") {
+            if (r.type === 'tool_result') {
               toolResults.push({
                 toolUseId: r.toolId,
                 content:
                   r.output.length > MAX_OUTPUT_CHARS
-                    ? r.output.slice(0, MAX_OUTPUT_CHARS) + "\n… (output truncated)"
+                    ? r.output.slice(0, MAX_OUTPUT_CHARS) +
+                      '\n… (output truncated)'
                     : r.output,
                 isError: r.isError,
               });
             }
           }
-          const exitPlanCalled = toolUses.some((tu) => tu.toolName === "ExitPlanMode");
+          const exitPlanCalled = toolUses.some(
+            (tu) => tu.toolName === 'ExitPlanMode',
+          );
           this.conversation.addToolResultsMessage(toolResults);
 
           // 非阻塞 memory recall：工具执行完后检查 prefetch 是否就绪
@@ -433,7 +466,7 @@ export class Agent {
                   done: true,
                   value: r,
                 })),
-                Promise.resolve({ done: false, value: "" }),
+                Promise.resolve({ done: false, value: '' }),
               ]);
               if (settled.done) {
                 if (settled.value) {
@@ -447,20 +480,21 @@ export class Agent {
           }
 
           if (exitPlanCalled) {
-            yield { type: "turn_complete" };
-            yield { type: "loop_complete", stopReason: "end_turn" };
+            yield { type: 'turn_complete' };
+            yield { type: 'loop_complete', stopReason: 'end_turn' };
             return;
           }
 
-          yield { type: "turn_complete" };
-          await this.fireLifecycle("turn_end");
+          yield { type: 'turn_complete' };
+          await this.fireLifecycle('turn_end');
         } else {
           looping = false;
           if (this.fileHistory) {
-            const summary = fullText.length > 60 ? fullText.slice(0, 60) + "..." : fullText;
+            const summary =
+              fullText.length > 60 ? fullText.slice(0, 60) + '...' : fullText;
             this.fileHistory.makeSnapshot(this.conversation.len(), summary);
           }
-          yield { type: "loop_complete", stopReason };
+          yield { type: 'loop_complete', stopReason };
           // Fire-and-forget post-completion hook (e.g. background memory
           // extraction). Mirrors Go's OnLoopComplete goroutine.
           if (this.onLoopComplete) {
@@ -473,13 +507,16 @@ export class Agent {
         }
       }
     } finally {
-      await this.fireLifecycle("session_end");
+      await this.fireLifecycle('session_end');
     }
   }
 
   // Fire a lifecycle hook event and queue any non-empty hook output as a
   // notification to be surfaced on the next turn. No-op without a HookEngine.
-  private async fireLifecycle(event: EventName, message?: string): Promise<void> {
+  private async fireLifecycle(
+    event: EventName,
+    message?: string,
+  ): Promise<void> {
     if (!this.hookEngine) {
       return;
     }
@@ -504,10 +541,10 @@ export class Agent {
         resolve(true);
       };
       const timer = setTimeout(() => {
-        this.abortSignal?.removeEventListener("abort", onAbort);
+        this.abortSignal?.removeEventListener('abort', onAbort);
         resolve(false);
       }, ms);
-      this.abortSignal?.addEventListener("abort", onAbort, { once: true });
+      this.abortSignal?.addEventListener('abort', onAbort, { once: true });
     });
   }
 
@@ -534,9 +571,13 @@ export class Agent {
     const batches: { concurrent: boolean; blocks: ToolUseBlock[] }[] = [];
     for (const tu of toolUses) {
       const tool = this.registry.get(tu.toolName);
-      const safe = (tool?.category ?? "command") === "read";
+      const safe = (tool?.category ?? 'command') === 'read';
 
-      if (safe && batches.length > 0 && batches[batches.length - 1].concurrent) {
+      if (
+        safe &&
+        batches.length > 0 &&
+        batches[batches.length - 1].concurrent
+      ) {
         batches[batches.length - 1].blocks.push(tu);
       } else {
         batches.push({ concurrent: safe, blocks: [tu] });
@@ -548,7 +589,10 @@ export class Agent {
   // executeBatch runs a set of tool calls through permission checks, hooks,
   // and the streaming executor. When parallel is true all calls run
   // concurrently; otherwise they run one at a time.
-  private async executeBatch(toolUses: ToolUseBlock[], parallel: boolean): Promise<AgentEvent[]> {
+  private async executeBatch(
+    toolUses: ToolUseBlock[],
+    parallel: boolean,
+  ): Promise<AgentEvent[]> {
     const events: AgentEvent[] = [];
     const executor = new StreamingExecutor(this.registry, {
       workDir: this.workDir,
@@ -559,10 +603,13 @@ export class Agent {
     for (const tu of toolUses) {
       // Fire pre-tool hooks
       if (this.hookEngine) {
-        const hookResult = await this.hookEngine.firePreToolHooks(tu.toolName, tu.arguments);
+        const hookResult = await this.hookEngine.firePreToolHooks(
+          tu.toolName,
+          tu.arguments,
+        );
         if (hookResult.rejected) {
           events.push({
-            type: "tool_result",
+            type: 'tool_result',
             toolName: tu.toolName,
             toolId: tu.toolUseId,
             output: `Rejected by hook: ${hookResult.reason}`,
@@ -574,13 +621,13 @@ export class Agent {
       }
 
       const tool = this.registry.get(tu.toolName);
-      const category = tool?.category ?? "command";
+      const category = tool?.category ?? 'command';
 
       const decision = this.checker.check(tu.toolName, category, tu.arguments);
 
-      if (decision.effect === "deny") {
+      if (decision.effect === 'deny') {
         events.push({
-          type: "tool_result",
+          type: 'tool_result',
           toolName: tu.toolName,
           toolId: tu.toolUseId,
           output: `Permission denied: ${decision.reason}. 此操作已被安全策略拦截和阻止，请告知用户该命令被拒绝，不要描述该命令会做什么。`,
@@ -590,20 +637,24 @@ export class Agent {
         continue;
       }
 
-      if (decision.effect === "ask" && this.onPermissionRequest) {
-        const response = await this.onPermissionRequest(tu.toolName, tu.arguments, decision);
-        if (response === "deny") {
+      if (decision.effect === 'ask' && this.onPermissionRequest) {
+        const response = await this.onPermissionRequest(
+          tu.toolName,
+          tu.arguments,
+          decision,
+        );
+        if (response === 'deny') {
           events.push({
-            type: "tool_result",
+            type: 'tool_result',
             toolName: tu.toolName,
             toolId: tu.toolUseId,
-            output: "Permission denied by user",
+            output: 'Permission denied by user',
             isError: true,
             elapsed: 0,
           });
           continue;
         }
-        if (response === "allowAlways") {
+        if (response === 'allowAlways') {
           this.checker.allowAlways(tu.toolName, tu.arguments);
         }
       }
@@ -645,12 +696,12 @@ export class Agent {
     // Snapshot ReadFile content into recovery state so a later auto-compact
     // can replay it after the transcript collapses into a summary. Mirrors
     // Go agent.go executeSingleTool's RecordFileRead.
-    if (!r.result.isError && r.toolName === "ReadFile") {
+    if (!r.result.isError && r.toolName === 'ReadFile') {
       const tu = toolUses.find((t) => t.toolUseId === r.toolId);
-      const p = strArg(tu?.arguments ?? {}, "file_path");
+      const p = strArg(tu?.arguments ?? {}, 'file_path');
       if (p) {
         try {
-          this.recoveryState.recordFileRead(p, await readFile(p, "utf-8"));
+          this.recoveryState.recordFileRead(p, await readFile(p, 'utf-8'));
         } catch {
           /* best-effort; recovery snapshots are optional */
         }
@@ -658,7 +709,7 @@ export class Agent {
     }
 
     events.push({
-      type: "tool_result",
+      type: 'tool_result',
       toolName: r.toolName,
       toolId: r.toolId,
       output: r.result.output,
@@ -668,8 +719,8 @@ export class Agent {
 
     // Fire post-tool hooks; queue any output as a notification.
     if (this.hookEngine) {
-      const hookResults = await this.hookEngine.fire("post_tool_use", {
-        event: "post_tool_use",
+      const hookResults = await this.hookEngine.fire('post_tool_use', {
+        event: 'post_tool_use',
         toolName: r.toolName,
         message: r.result.output,
       });

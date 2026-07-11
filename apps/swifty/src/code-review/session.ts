@@ -1,8 +1,8 @@
-import { createChildLogger } from "../logger/index.js";
+import { createChildLogger } from '../logger/index.js';
 
-const log = createChildLogger({ module: "code-review" });
+const log = createChildLogger({ module: 'code-review' });
 
-import type { CodeReviewManager, CodeReviewMember } from "./manager.js";
+import type { CodeReviewManager, CodeReviewMember } from './manager.js';
 
 export interface ReviewRequest {
   id: string;
@@ -11,26 +11,43 @@ export interface ReviewRequest {
   author: string;
   branch: string;
   files: string[];
-  status: "pending" | "in-review" | "approved" | "rejected" | "changes-requested";
+  status:
+    | 'pending'
+    | 'in-review'
+    | 'approved'
+    | 'rejected'
+    | 'changes-requested';
   createdAt: string;
   updatedAt: string;
   reviewers: string[];
   comments: ReviewComment[];
 }
 
-export type CommentResolution = "accepted" | "rejected" | "pending" | "resolved";
-export type CriticEvaluation = "reasonable" | "unreasonable" | "partially-reasonable";
+export type CommentResolution =
+  | 'accepted'
+  | 'rejected'
+  | 'pending'
+  | 'resolved';
+export type CriticEvaluation =
+  | 'reasonable'
+  | 'unreasonable'
+  | 'partially-reasonable';
 
 export function isCriticEvaluation(str: string): str is CriticEvaluation {
-  return str === "reasonable" || str === "unreasonable" || str === "partially-reasonable";
+  return (
+    str === 'reasonable' ||
+    str === 'unreasonable' ||
+    str === 'partially-reasonable'
+  );
 }
 
 export function asCriticEvaluation(str: string): CriticEvaluation {
   if (isCriticEvaluation(str)) {
     return str;
   } else {
-    log.error({ str }, "code-review operation failed");
-    return "partially-reasonable"; // best-effort
+    log.error({ str }, 'code-review operation failed');
+    // return "partially-reasonable"; // best-effort
+    throw new Error(str);
   }
 }
 
@@ -66,7 +83,7 @@ export interface ReviewSummary {
   rejectedSuggestions: number;
   pendingSuggestions: number;
   resolvedIssues: number;
-  overallConclusion: "approved" | "rejected" | "changes-requested";
+  overallConclusion: 'approved' | 'rejected' | 'changes-requested';
   keyFindings: string[];
   fileSpecificFeedback: Map<string, FileFeedback>;
   generatedAt: string;
@@ -107,7 +124,7 @@ export class ReviewSession {
     if (!team) {
       throw new Error(`Team '${teamName}' not found`);
     }
-    return team.members.filter((m) => m.active && m.role === "critic");
+    return team.members.filter((m) => m.active && m.role === 'critic');
   }
 
   private loadRequests(): void {
@@ -127,7 +144,9 @@ export class ReviewSession {
       throw new Error(`Team '${teamName}' not found`);
     }
 
-    const reviewers = this.manager.getActiveReviewers(teamName).map((r) => r.name);
+    const reviewers = this.manager
+      .getActiveReviewers(teamName)
+      .map((r) => r.name);
     if (reviewers.length === 0) {
       throw new Error(`No active reviewers in team '${teamName}'`);
     }
@@ -139,7 +158,7 @@ export class ReviewSession {
       author,
       branch,
       files,
-      status: "pending",
+      status: 'pending',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       reviewers,
@@ -154,7 +173,7 @@ export class ReviewSession {
     return this.requests.get(id);
   }
 
-  updateRequestStatus(id: string, status: ReviewRequest["status"]): void {
+  updateRequestStatus(id: string, status: ReviewRequest['status']): void {
     const request = this.requests.get(id);
     if (!request) {
       throw new Error(`Request '${id}' not found`);
@@ -201,12 +220,16 @@ export class ReviewSession {
       throw new Error(`Comment '${commentId}' not found`);
     }
     comment.resolved = true;
-    comment.resolution = "resolved";
+    comment.resolution = 'resolved';
     comment.resolutionTimestamp = new Date().toISOString();
     request.updatedAt = new Date().toISOString();
   }
 
-  acceptComment(requestId: string, commentId: string, authorResponse?: string): void {
+  acceptComment(
+    requestId: string,
+    commentId: string,
+    authorResponse?: string,
+  ): void {
     const request = this.requests.get(requestId);
     if (!request) {
       throw new Error(`Request '${requestId}' not found`);
@@ -216,13 +239,17 @@ export class ReviewSession {
       throw new Error(`Comment '${commentId}' not found`);
     }
     comment.resolved = true;
-    comment.resolution = "accepted";
+    comment.resolution = 'accepted';
     comment.authorResponse = authorResponse;
     comment.resolutionTimestamp = new Date().toISOString();
     request.updatedAt = new Date().toISOString();
   }
 
-  rejectComment(requestId: string, commentId: string, authorResponse?: string): void {
+  rejectComment(
+    requestId: string,
+    commentId: string,
+    authorResponse?: string,
+  ): void {
     const request = this.requests.get(requestId);
     if (!request) {
       throw new Error(`Request '${requestId}' not found`);
@@ -232,7 +259,7 @@ export class ReviewSession {
       throw new Error(`Comment '${commentId}' not found`);
     }
     comment.resolved = true;
-    comment.resolution = "rejected";
+    comment.resolution = 'rejected';
     comment.authorResponse = authorResponse;
     comment.resolutionTimestamp = new Date().toISOString();
     request.updatedAt = new Date().toISOString();
@@ -274,8 +301,16 @@ export class ReviewSession {
     isReasonable: boolean,
     reasoning: string,
   ): CriticAssessment {
-    const evaluation: CriticEvaluation = isReasonable ? "reasonable" : "unreasonable";
-    return this.addCriticAssessment(requestId, commentId, criticName, evaluation, reasoning);
+    const evaluation: CriticEvaluation = isReasonable
+      ? 'reasonable'
+      : 'unreasonable';
+    return this.addCriticAssessment(
+      requestId,
+      commentId,
+      criticName,
+      evaluation,
+      reasoning,
+    );
   }
 
   getCriticSummary(requestId: string): string {
@@ -302,25 +337,25 @@ export class ReviewSession {
 
       summary += `* Comment by ${comment.reviewer}\n`;
       if (comment.file) {
-        summary += `   File: ${comment.file}${comment.line ? `:${String(comment.line)}` : ""}\n`;
+        summary += `   File: ${comment.file}${comment.line ? `:${String(comment.line)}` : ''}\n`;
       }
-      summary += `   "${comment.content.substring(0, 80)}${comment.content.length > 80 ? "..." : ""}"\n\n`;
+      summary += `   "${comment.content.substring(0, 80)}${comment.content.length > 80 ? '...' : ''}"\n\n`;
 
       for (const assessment of comment.criticAssessments) {
         const icon =
-          assessment.evaluation === "reasonable"
-            ? "Y"
-            : assessment.evaluation === "unreasonable"
-              ? "N"
-              : "!";
+          assessment.evaluation === 'reasonable'
+            ? 'Y'
+            : assessment.evaluation === 'unreasonable'
+              ? 'N'
+              : '!';
         summary += `   ${icon} Critic: ${assessment.critic}\n`;
         summary += `   Verdict: ${assessment.evaluation.toUpperCase()}\n`;
         summary += `   Reasoning: ${assessment.reasoning}\n`;
         summary += `   Time: ${new Date(assessment.timestamp).toLocaleString()}\n\n`;
 
-        if (assessment.evaluation === "reasonable") {
+        if (assessment.evaluation === 'reasonable') {
           reasonableCount++;
-        } else if (assessment.evaluation === "unreasonable") {
+        } else if (assessment.evaluation === 'unreasonable') {
           unreasonableCount++;
         } else {
           partiallyReasonableCount++;
@@ -336,9 +371,13 @@ export class ReviewSession {
     summary += `* Partially Reasonable: ${String(partiallyReasonableCount)}\n`;
     summary += `* Not Evaluated: ${String(notEvaluatedCount)}\n`;
 
-    const totalEvaluated = reasonableCount + unreasonableCount + partiallyReasonableCount;
+    const totalEvaluated =
+      reasonableCount + unreasonableCount + partiallyReasonableCount;
     if (totalEvaluated > 0) {
-      const reasonablePercentage = ((reasonableCount / totalEvaluated) * 100).toFixed(1);
+      const reasonablePercentage = (
+        (reasonableCount / totalEvaluated) *
+        100
+      ).toFixed(1);
       summary += `* Reasonable Rate: ${reasonablePercentage}%\n`;
     }
 
@@ -351,29 +390,33 @@ export class ReviewSession {
       throw new Error(`Request '${requestId}' not found`);
     }
 
-    const acceptedCount = request.comments.filter((c) => c.resolution === "accepted").length;
-    const rejectedCount = request.comments.filter((c) => c.resolution === "rejected").length;
+    const acceptedCount = request.comments.filter(
+      (c) => c.resolution === 'accepted',
+    ).length;
+    const rejectedCount = request.comments.filter(
+      (c) => c.resolution === 'rejected',
+    ).length;
     const pendingCount = request.comments.filter(
-      (c) => !c.resolution || c.resolution === "pending",
+      (c) => !c.resolution || c.resolution === 'pending',
     ).length;
     const resolvedCount = request.comments.filter((c) => c.resolved).length;
 
     // Determine overall conclusion
-    let overallConclusion: "approved" | "rejected" | "changes-requested";
+    let overallConclusion: 'approved' | 'rejected' | 'changes-requested';
     if (rejectedCount > acceptedCount && rejectedCount >= 3) {
-      overallConclusion = "rejected";
+      overallConclusion = 'rejected';
     } else if (pendingCount > 0 || (acceptedCount > 0 && rejectedCount > 0)) {
-      overallConclusion = "changes-requested";
+      overallConclusion = 'changes-requested';
     } else {
-      overallConclusion = "approved";
+      overallConclusion = 'approved';
     }
 
     // Extract key findings from comments
     const keyFindings = request.comments
-      .filter((c) => c.resolution === "accepted" || c.resolution === "pending")
+      .filter((c) => c.resolution === 'accepted' || c.resolution === 'pending')
       .map(
         (c) =>
-          `[${c.reviewer}] ${c.content.substring(0, 100)}${c.content.length > 100 ? "..." : ""}`,
+          `[${c.reviewer}] ${c.content.substring(0, 100)}${c.content.length > 100 ? '...' : ''}`,
       );
 
     // Group feedback by file
@@ -401,9 +444,9 @@ export class ReviewSession {
       }
       feedback.totalComments++;
 
-      if (comment.resolution === "accepted") {
+      if (comment.resolution === 'accepted') {
         feedback.acceptedCount++;
-      } else if (comment.resolution === "rejected") {
+      } else if (comment.resolution === 'rejected') {
         feedback.rejectedCount++;
       } else {
         feedback.pendingCount++;
@@ -414,7 +457,8 @@ export class ReviewSession {
         reviewer: comment.reviewer,
         line: comment.line,
         content: comment.content,
-        resolution: comment.resolution ?? "pending",
+        // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
+        resolution: comment.resolution || 'pending',
         authorResponse: comment.authorResponse,
       });
     }
@@ -438,9 +482,9 @@ export class ReviewSession {
 
   formatFinalReport(summary: ReviewSummary): string {
     const conclusionColors = {
-      approved: "Y",
-      rejected: "N",
-      "changes-requested": "!",
+      approved: 'Y',
+      rejected: 'N',
+      'changes-requested': '!',
     };
 
     let report = `
@@ -453,7 +497,7 @@ export class ReviewSession {
 Request ID:     ${summary.requestId}
 Title:          ${summary.title}
 Author:         ${summary.author}
-Reviewers:      ${summary.reviewers.join(", ")}
+Reviewers:      ${summary.reviewers.join(', ')}
 Generated:      ${new Date(summary.generatedAt).toLocaleString()}
 
 > SUMMARY STATISTICS
@@ -472,7 +516,7 @@ Total Comments:          ${String(summary.totalComments)}
 `;
 
     if (summary.keyFindings.length === 0) {
-      report += "No key findings identified.\n";
+      report += 'No key findings identified.\n';
     } else {
       summary.keyFindings.forEach((finding, index) => {
         report += `${String(index + 1)}. ${finding}\n`;
@@ -485,12 +529,12 @@ Total Comments:          ${String(summary.totalComments)}
 `;
 
     if (summary.fileSpecificFeedback.size === 0) {
-      report += "No file-specific feedback available.\n";
+      report += 'No file-specific feedback available.\n';
     } else {
       for (const [fileName, feedback] of summary.fileSpecificFeedback) {
         report += `
 File: ${fileName}
-${"─".repeat(60)}
+${'─'.repeat(60)}
 Total Comments: ${String(feedback.totalComments)}
   Y Accepted: ${String(feedback.acceptedCount)}
   N Rejected: ${String(feedback.rejectedCount)}
@@ -500,10 +544,10 @@ Total Comments: ${String(feedback.totalComments)}
         if (feedback.issues.length > 0) {
           feedback.issues.forEach((issue, idx) => {
             const resolutionIcon = {
-              accepted: "Y",
-              rejected: "N",
-              pending: "...",
-              resolved: "OK",
+              accepted: 'Y',
+              rejected: 'N',
+              pending: '...',
+              resolved: 'OK',
             }[issue.resolution];
 
             report += `  ${String(idx + 1)}. ${resolutionIcon} [${issue.reviewer}]`;
@@ -532,7 +576,7 @@ Total Comments: ${String(feedback.totalComments)}
 
   getPendingRequests(): ReviewRequest[] {
     return [...this.requests.values()].filter(
-      (r) => r.status === "pending" || r.status === "in-review",
+      (r) => r.status === 'pending' || r.status === 'in-review',
     );
   }
 
@@ -548,7 +592,7 @@ Total Comments: ${String(feedback.totalComments)}
       `Author: ${request.author}\n` +
       `Branch: ${request.branch}\n` +
       `Status: ${request.status}\n` +
-      `Reviewers: ${request.reviewers.join(", ")}\n` +
+      `Reviewers: ${request.reviewers.join(', ')}\n` +
       `Files: ${String(request.files.length)}\n` +
       `Comments: ${String(request.comments.length)} (${String(resolvedComments)} resolved)\n` +
       `Created: ${new Date(request.createdAt).toLocaleString()}`

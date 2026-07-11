@@ -114,7 +114,7 @@ Wrap your analysis in <analysis> tags, then provide the summary in <summary> tag
 
 <!-- 对话摘要 -->
 
-[user] This session continues from a previous conversation that was compacted due to context window limits. Below is a summary of the earlier conversation:
+[user] This session continues from a previous conversation, which has been compressed due to context limitations. Here is a summary of the earlier messages:
 
 (摘要内容)
 
@@ -122,7 +122,7 @@ Recent messages have been preserved verbatim.
 
 <!-- 会话记录日志路径 -->
 
-If you need specific details from before compaction (code snippets, error messages, etc.), use ReadFile to load the full session transcript: $HOME/path/to/.swifty/sessions/YYYY-MM-DD-abc123.jsonl
+If you need specific details from before compaction (code snippets, error messages, etc.), use ReadFile to read the full session transcript: $HOME/path/to/.swifty/sessions/YYYY-MM-DD-abc123.jsonl
 
 ---
 
