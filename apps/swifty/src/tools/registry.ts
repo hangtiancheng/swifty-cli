@@ -1,6 +1,6 @@
-import type Anthropic from '@anthropic-ai/sdk';
-import type { Tool } from './types.js';
-import type { FunctionTool as OpenAITool } from 'openai/resources/responses/responses';
+import type Anthropic from "@anthropic-ai/sdk";
+import type { Tool } from "./types.js";
+import type { FunctionTool as OpenAITool } from "openai/resources/responses/responses";
 
 export class ToolRegistry {
   private tools = new Map<string, Tool>();
@@ -18,10 +18,10 @@ export class ToolRegistry {
     return [...this.tools.values()];
   }
 
-  getAllSchemas(protocol?: 'anthropic'): Anthropic.Tool[];
-  getAllSchemas(protocol: 'openai' | 'openai-compat'): OpenAITool[];
+  getAllSchemas(protocol?: "anthropic"): Anthropic.Tool[];
+  getAllSchemas(protocol: "openai" | "openai-compat"): OpenAITool[];
   getAllSchemas(
-    protocol: 'anthropic' | 'openai' | 'openai-compat' = 'anthropic',
+    protocol: "anthropic" | "openai" | "openai-compat" = "anthropic",
   ): (Anthropic.Tool | OpenAITool)[] {
     const result: (Anthropic.Tool | OpenAITool)[] = [];
     for (const tool of this.tools.values()) {
@@ -29,12 +29,12 @@ export class ToolRegistry {
         continue;
       }
       const s = tool.schema();
-      if (protocol === 'anthropic') {
+      if (protocol === "anthropic") {
         result.push({
           name: s.name,
           description: s.description,
           input_schema: {
-            type: 'object',
+            type: "object",
             properties: s.input_schema.properties,
             required: s.input_schema.required ?? [],
           },
@@ -43,7 +43,7 @@ export class ToolRegistry {
         // openai and openai-compat both use FunctionTool shape
         result.push({
           strict: false, // Whether to enforce strict parameter validation. Default true.
-          type: 'function',
+          type: "function",
           name: s.name,
           description: s.description,
           parameters: s.input_schema,
@@ -64,9 +64,7 @@ export class ToolRegistry {
   }
 
   getDeferredTools(): Tool[] {
-    return [...this.tools.values()].filter(
-      (t) => t.deferred && !this.discovered.has(t.name),
-    );
+    return [...this.tools.values()].filter((t) => t.deferred && !this.discovered.has(t.name));
   }
 
   searchDeferred(query: string, maxResults = 5): Tool[] {

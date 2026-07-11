@@ -1,14 +1,14 @@
-import { createChildLogger } from '../logger/index.js';
+import { createChildLogger } from "../logger/index.js";
 
-const log = createChildLogger({ module: 'skills' });
+const log = createChildLogger({ module: "skills" });
 
-import { readdirSync, readFileSync, existsSync, statSync } from 'node:fs';
-import { join } from 'node:path';
-import { homedir } from 'node:os';
-import yaml from 'js-yaml';
-import type { Skill, SkillMeta } from './skill.js';
-import { parse, z } from 'zod';
-import { loadBuiltins } from './builtins.js';
+import { readdirSync, readFileSync, existsSync, statSync } from "node:fs";
+import { join } from "node:path";
+import { homedir } from "node:os";
+import yaml from "js-yaml";
+import type { Skill, SkillMeta } from "./skill.js";
+import { parse, z } from "zod";
+import { loadBuiltins } from "./builtins.js";
 
 /**
  * Internal skill storage with source file path and load timestamp for hot reloading
@@ -25,7 +25,7 @@ interface CatalogEntry {
 
 export class SkillCatalog {
   private entries = new Map<string, CatalogEntry>();
-  private workDir = '';
+  private workDir = "";
   private dirModTimes = new Map<string, number>();
 
   load(workDir: string): void {
@@ -35,7 +35,7 @@ export class SkillCatalog {
     for (const skill of loadBuiltins()) {
       this.entries.set(skill.meta.name, {
         skill,
-        filePath: '',
+        filePath: "",
         loadedMtimeMs: 0,
       });
     }
@@ -43,14 +43,14 @@ export class SkillCatalog {
     // Tier 2: 用户全局 ~/.swifty/skills/
     // Tier 3: 项目级 $workDir/.swifty/skills/（最高优先级）
     const dirs = [
-      join(homedir(), '.trae', 'skills'),
-      join(homedir(), '.claude', 'skills'),
-      join(homedir(), '.github', 'skills'),
-      join(homedir(), '.swifty', 'skills'),
-      join(workDir, '.trae', 'skills'),
-      join(workDir, '.claude', 'skills'),
-      join(workDir, '.github', 'skills'),
-      join(workDir, '.swifty', 'skills'),
+      join(homedir(), ".trae", "skills"),
+      join(homedir(), ".claude", "skills"),
+      join(homedir(), ".github", "skills"),
+      join(homedir(), ".swifty", "skills"),
+      join(workDir, ".trae", "skills"),
+      join(workDir, ".claude", "skills"),
+      join(workDir, ".github", "skills"),
+      join(workDir, ".swifty", "skills"),
     ];
 
     for (const dir of dirs) {
@@ -113,8 +113,8 @@ export class SkillCatalog {
 
   private skillDirPaths(): string[] {
     return [
-      join(homedir(), '.swifty', 'skills'),
-      ...(this.workDir ? [join(this.workDir, '.swifty', 'skills')] : []),
+      join(homedir(), ".swifty", "skills"),
+      ...(this.workDir ? [join(this.workDir, ".swifty", "skills")] : []),
     ];
   }
 
@@ -123,7 +123,7 @@ export class SkillCatalog {
     try {
       dirEntries = readdirSync(dir);
     } catch (err) {
-      log.error({ err }, 'skills operation failed');
+      log.error({ err }, "skills operation failed");
       return;
     }
 
@@ -132,7 +132,7 @@ export class SkillCatalog {
       const stat = statSync(fullPath);
 
       if (stat.isDirectory()) {
-        const skillFile = join(fullPath, 'SKILL.md');
+        const skillFile = join(fullPath, "SKILL.md");
         if (existsSync(skillFile)) {
           this.loadSkill(skillFile, fullPath, true);
         }
@@ -144,7 +144,7 @@ export class SkillCatalog {
   }
   private loadSkill(filePath: string, sourceDir: string, isDirectory: boolean) {
     try {
-      const raw = readFileSync(filePath, 'utf-8');
+      const raw = readFileSync(filePath, "utf-8");
       const parsed = parseSkillFile(raw);
       if (!parsed) {
         return;
@@ -162,7 +162,7 @@ export class SkillCatalog {
       try {
         mtimeMs = statSync(filePath).mtimeMs;
       } catch (err) {
-        log.error({ err }, 'skills operation failed');
+        log.error({ err }, "skills operation failed");
         // Fail gracefully if timestamp cannot be retrieved
       }
 
@@ -172,7 +172,7 @@ export class SkillCatalog {
         loadedMtimeMs: mtimeMs,
       });
     } catch (err) {
-      log.error({ err }, 'skills operation failed');
+      log.error({ err }, "skills operation failed");
       // Skip invalid skill
     }
   }
@@ -198,7 +198,7 @@ export class SkillCatalog {
         const currentMtime = statSync(entry.filePath).mtimeMs;
         if (currentMtime > entry.loadedMtimeMs) {
           // File has been modified, re-read it
-          const raw = readFileSync(entry.filePath, 'utf-8');
+          const raw = readFileSync(entry.filePath, "utf-8");
           const parsed = parseSkillFile(raw);
           if (parsed) {
             entry.skill = {
@@ -212,7 +212,7 @@ export class SkillCatalog {
           // Retain the cached version if parsing fails (consistent with Go behavior)
         }
       } catch (err) {
-        log.error({ err }, 'skills operation failed');
+        log.error({ err }, "skills operation failed");
         // Retain the cached version if reading fails
       }
     }
@@ -229,20 +229,20 @@ const YamlFrontmatterSchema = z.looseObject({
   name: z.string(),
   description: z.string().optional(),
   allowed_tools: z.array(z.string()).optional(),
-  mode: z.enum(['inline', 'fork']).optional(),
+  mode: z.enum(["inline", "fork"]).optional(),
   model: z.string().optional(),
-  fork_context: z.enum(['full', 'none', 'recent']).optional(),
+  fork_context: z.enum(["full", "none", "recent"]).optional(),
 });
 
 function parseSkillFile(content: string): {
   meta: SkillMeta;
   body: string;
 } | null {
-  if (!content.startsWith('---')) {
+  if (!content.startsWith("---")) {
     return null;
   }
 
-  const endIdx = content.indexOf('---', 3);
+  const endIdx = content.indexOf("---", 3);
   if (endIdx === -1) {
     return null;
   }
@@ -256,15 +256,15 @@ function parseSkillFile(content: string): {
     return {
       meta: {
         name: data.name,
-        description: data.description ?? '',
-        mode: data.mode ?? 'inline',
+        description: data.description ?? "",
+        mode: data.mode ?? "inline",
         model: data.model,
         forkContext: data.fork_context,
       },
       body,
     };
   } catch (err) {
-    log.error({ err }, 'skills operation failed');
+    log.error({ err }, "skills operation failed");
     return null;
   }
 }

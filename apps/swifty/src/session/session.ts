@@ -7,11 +7,11 @@ import {
   existsSync,
   unlinkSync,
   rmSync,
-} from 'node:fs';
-import { join } from 'node:path';
-import { randomBytes } from 'node:crypto';
-import z, { parse, safeParse } from 'zod';
-import { createChildLogger } from '../logger/index.js';
+} from "node:fs";
+import { join } from "node:path";
+import { randomBytes } from "node:crypto";
+import z, { parse, safeParse } from "zod";
+import { createChildLogger } from "../logger/index.js";
 
 // Persistent session lines. Ordinary messages have an empty `type`, while compaction boundary records
 // have the type COMPACT_BOUNDARY. Their `content` is the JSON-serialized CompactBoundaryPayload
@@ -20,7 +20,7 @@ import { createChildLogger } from '../logger/index.js';
 // during restoration, reading the boundary is sufficient to reconstruct
 // [summary] + retained messages + messages appended after the boundary, without needing to search
 // for the retained messages in the area preceding the boundary.
-export const COMPACT_BOUNDARY = 'compact_boundary';
+export const COMPACT_BOUNDARY = "compact_boundary";
 
 /** Session expiry days. Session files older than this will be automatically cleaned up. */
 const SESSION_EXPIRY_DAYS = 30;
@@ -52,9 +52,7 @@ const CompactBoundaryPayloadSchema = z.object({
 });
 
 // Structured payload serialized into a compact_boundary record's `content`.
-export type CompactBoundaryPayload = z.infer<
-  typeof CompactBoundaryPayloadSchema
->;
+export type CompactBoundaryPayload = z.infer<typeof CompactBoundaryPayloadSchema>;
 
 export interface SessionInfo {
   id: string;
@@ -64,32 +62,28 @@ export interface SessionInfo {
   modTime: Date;
 }
 
-const log = createChildLogger({ module: 'session' });
+const log = createChildLogger({ module: "session" });
 
 function sessionsDir(workDir: string): string {
-  return join(workDir, '.swifty', 'sessions');
+  return join(workDir, ".swifty", "sessions");
 }
 
 export function getSessionFilePath(workDir: string, sessionId: string): string {
-  return join(sessionsDir(workDir), sessionId + '.jsonl');
+  return join(sessionsDir(workDir), sessionId + ".jsonl");
 }
 
 export function newSessionId(): string {
   const ts = Date.now().toString(36);
-  const rand = randomBytes(4).toString('hex');
+  const rand = randomBytes(4).toString("hex");
   return `${ts}-${rand}`;
 }
 
-export function saveMessage(
-  workDir: string,
-  sessionId: string,
-  msg: SessionMessage,
-): void {
+export function saveMessage(workDir: string, sessionId: string, msg: SessionMessage): void {
   const dir = sessionsDir(workDir);
   mkdirSync(dir, { recursive: true });
   const filePath = join(dir, `${sessionId}.jsonl`);
-  const line = JSON.stringify(msg) + '\n';
-  writeFileSync(filePath, line, { flag: /* append */ 'a', encoding: 'utf-8' });
+  const line = JSON.stringify(msg) + "\n";
+  writeFileSync(filePath, line, { flag: /* append */ "a", encoding: "utf-8" });
 }
 
 // Append a compaction boundary to the session. The summary and the verbatim
@@ -103,24 +97,21 @@ export function saveCompactBoundary(
   payload: CompactBoundaryPayload,
 ): void {
   saveMessage(workDir, sessionId, {
-    role: 'system',
+    role: "system",
     content: JSON.stringify(payload),
     timestamp: new Date().toISOString(),
     type: COMPACT_BOUNDARY,
   });
 }
 
-export function loadSession(
-  workDir: string,
-  sessionId: string,
-): SessionMessage[] {
+export function loadSession(workDir: string, sessionId: string): SessionMessage[] {
   const filePath = join(sessionsDir(workDir), `${sessionId}.jsonl`);
   if (!existsSync(filePath)) {
     return [];
   }
 
   const out: SessionMessage[] = [];
-  for (const line of readFileSync(filePath, 'utf-8').split('\n')) {
+  for (const line of readFileSync(filePath, "utf-8").split("\n")) {
     if (!line.trim()) {
       continue;
     }
@@ -133,10 +124,10 @@ export function loadSession(
       if (success) {
         out.push(data);
       } else {
-        log.error({ err: error }, 'session operation failed');
+        log.error({ err: error }, "session operation failed");
       }
     } catch (err) {
-      log.error({ err }, 'session operation failed');
+      log.error({ err }, "session operation failed");
       // skip malformed line
     }
   }
@@ -147,7 +138,7 @@ export function loadSession(
 // (as a synthetic user message) followed by their inlined kept tail; ordinary
 // records map 1:1. This is the compacted-state reconstruction.
 export interface RestoredMessage {
-  role: 'user' | 'assistant';
+  role: "user" | "assistant";
   content: string;
 }
 
@@ -179,21 +170,21 @@ export function rebuildFromSession(saved: SessionMessage[]): RestoredMessage[] {
       const payload_: unknown = JSON.parse(saved[lastBoundary].content);
       payload = parse(CompactBoundaryPayloadSchema, payload_);
     } catch (err) {
-      log.error({ err }, 'session operation failed');
+      log.error({ err }, "session operation failed");
       payload = null;
     }
     if (payload) {
       // The summary stands in for everything before the boundary, replayed as a
       // single user message (mirrors how doCompact rebuilds the live transcript).
       let resumeSummary =
-        'This session continues from a previous conversation, which has been compressed due to context limitations. Here is a summary of the earlier messages:\n\n' +
+        "This session continues from a previous conversation, which has been compressed due to context limitations. Here is a summary of the earlier messages:\n\n" +
         payload.summary;
       if (payload.keep.length > 0) {
-        resumeSummary += '\n\nRecent messages have been preserved verbatim.';
+        resumeSummary += "\n\nRecent messages have been preserved verbatim.";
       }
-      out.push({ role: 'user', content: resumeSummary });
+      out.push({ role: "user", content: resumeSummary });
       for (const k of payload.keep) {
-        if (k.role === 'user' || k.role === 'assistant') {
+        if (k.role === "user" || k.role === "assistant") {
           if (k.content) {
             out.push({ role: k.role, content: k.content });
           }
@@ -206,10 +197,10 @@ export function rebuildFromSession(saved: SessionMessage[]): RestoredMessage[] {
       if (m.type === COMPACT_BOUNDARY) {
         continue;
       } // defensive; last() already found
-      if (m.role === 'user' && m.content) {
-        out.push({ role: 'user', content: m.content });
-      } else if (m.role === 'assistant' && m.content) {
-        out.push({ role: 'assistant', content: m.content });
+      if (m.role === "user" && m.content) {
+        out.push({ role: "user", content: m.content });
+      } else if (m.role === "assistant" && m.content) {
+        out.push({ role: "assistant", content: m.content });
       }
     }
     return out;
@@ -217,10 +208,10 @@ export function rebuildFromSession(saved: SessionMessage[]): RestoredMessage[] {
 
   // No boundary → full replay (backward compatible).
   for (const m of saved) {
-    if (m.role === 'user' && m.content) {
-      out.push({ role: 'user', content: m.content });
-    } else if (m.role === 'assistant' && m.content) {
-      out.push({ role: 'assistant', content: m.content });
+    if (m.role === "user" && m.content) {
+      out.push({ role: "user", content: m.content });
+    } else if (m.role === "assistant" && m.content) {
+      out.push({ role: "assistant", content: m.content });
     }
   }
   return out;
@@ -232,18 +223,18 @@ export function listSessions(workDir: string): SessionInfo[] {
     return [];
   }
 
-  const files = readdirSync(dir).filter((f) => f.endsWith('.jsonl'));
+  const files = readdirSync(dir).filter((f) => f.endsWith(".jsonl"));
   const sessions: SessionInfo[] = [];
 
   for (const file of files) {
     const filePath = join(dir, file);
     const stat = statSync(filePath);
-    const id = file.replace('.jsonl', '');
+    const id = file.replace(".jsonl", "");
 
-    let firstMessage = '';
+    let firstMessage = "";
     let messageCount = 0;
     try {
-      for (const line of readFileSync(filePath, 'utf-8').split('\n')) {
+      for (const line of readFileSync(filePath, "utf-8").split("\n")) {
         if (!line.trim()) {
           continue;
         }
@@ -252,17 +243,17 @@ export function listSessions(workDir: string): SessionInfo[] {
           const raw: unknown = JSON.parse(line);
           m = parse(SessionMessageSchema, raw);
         } catch (err) {
-          log.error({ err }, 'session operation failed');
+          log.error({ err }, "session operation failed");
           continue;
         }
         messageCount++;
         // Label the session by its first user message (untruncated role match).
-        if (!firstMessage && m.role === 'user' && m.content) {
+        if (!firstMessage && m.role === "user" && m.content) {
           firstMessage = m.content.slice(0, 100);
         }
       }
     } catch (err2) {
-      log.error({ err: err2 }, 'session operation failed');
+      log.error({ err: err2 }, "session operation failed");
       continue;
     }
 
@@ -296,9 +287,9 @@ export function cleanExpiredSessions(workDir: string): number {
 
   let files: string[];
   try {
-    files = readdirSync(dir).filter((f) => f.endsWith('.jsonl'));
+    files = readdirSync(dir).filter((f) => f.endsWith(".jsonl"));
   } catch (err) {
-    log.error({ err }, 'session operation failed');
+    log.error({ err }, "session operation failed");
     return 0;
   }
 
@@ -309,20 +300,14 @@ export function cleanExpiredSessions(workDir: string): number {
       if (now - stat.mtimeMs > expiryMs) {
         unlinkSync(filePath);
         // 清理对应的 tool_results 目录
-        const id = file.replace('.jsonl', '');
-        const toolResultsDir = join(
-          workDir,
-          '.swifty',
-          'sessions',
-          id,
-          'tool_results',
-        );
+        const id = file.replace(".jsonl", "");
+        const toolResultsDir = join(workDir, ".swifty", "sessions", id, "tool_results");
         try {
           rmSync(toolResultsDir, { recursive: true, force: true });
         } catch {
           /** noop */
         }
-        const sessionSubdir = join(workDir, '.swifty', 'sessions', id);
+        const sessionSubdir = join(workDir, ".swifty", "sessions", id);
         try {
           rmSync(sessionSubdir, { recursive: false });
         } catch {
@@ -331,7 +316,7 @@ export function cleanExpiredSessions(workDir: string): number {
         removed++;
       }
     } catch (err) {
-      log.error({ err }, 'session operation failed');
+      log.error({ err }, "session operation failed");
       // Silently skip if deletion fails
     }
   }

@@ -1,10 +1,10 @@
-import type { LLMClient } from '../llm/client.js';
-import { ConversationManager } from '../conversation/conversation.js';
-import type { Message } from '../conversation/conversation.js';
-import type { RecoveryState } from './recovery.js';
-import type { CompactBoundaryPayload } from '../session/session.js';
-import { asErrorString } from '@/utils/index.js';
-import type { ToolSchema } from '@/tools/types.js';
+import type { LLMClient } from "../llm/client.js";
+import { ConversationManager } from "../conversation/conversation.js";
+import type { Message } from "../conversation/conversation.js";
+import type { RecoveryState } from "./recovery.js";
+import type { CompactBoundaryPayload } from "../session/session.js";
+import { asErrorString } from "@/utils/index.js";
+import type { ToolSchema } from "@/tools/types.js";
 
 // Structured outcome of a compaction. When `compacted` is true, `boundary`
 // carries the summary plus the verbatim kept tail (inlined as role+text) so the
@@ -24,8 +24,7 @@ export interface CompactResult {
 
 const MAX_CONSECUTIVE_FAILURES = 3;
 const MAX_PTL_RETRIES = 3;
-const PTL_RETRY_MARKER =
-  '[earlier conversation truncated for compaction retry]';
+const PTL_RETRY_MARKER = "[earlier conversation truncated for compaction retry]";
 const CHARS_PER_TOKEN = 3.5;
 
 // Recent-history retention budget for compaction. When we compact we keep the tail of
@@ -59,9 +58,7 @@ export function computeCompactThreshold(
   manual = false,
 ): number {
   const effective = contextWindow - Math.min(maxOutput, SUMMARY_OUTPUT_RESERVE);
-  const margin = manual
-    ? MANUAL_COMPACT_SAFETY_MARGIN
-    : AUTO_COMPACT_SAFETY_MARGIN;
+  const margin = manual ? MANUAL_COMPACT_SAFETY_MARGIN : AUTO_COMPACT_SAFETY_MARGIN;
   return effective - margin;
 }
 
@@ -118,7 +115,7 @@ function estimateOne(msg: Message): number {
 // tool_use↔tool_result pair; its partner tool_use lives on a preceding
 // assistant message. We must never keep such a message without its tool_use.
 function hasToolResult(msg: Message): boolean {
-  return msg.role === 'user' && !!msg.toolResults && msg.toolResults.length > 0;
+  return msg.role === "user" && !!msg.toolResults && msg.toolResults.length > 0;
 }
 
 // Choose where the kept (verbatim) tail begins. Walk backward from the end
@@ -167,15 +164,10 @@ function backUpPastToolUse(messages: Message[], keepStart: number): number {
     return keepStart;
   }
 
-  const ids = new Set(
-    (messages[keepStart].toolResults ?? []).map((tr) => tr.toolUseId),
-  );
+  const ids = new Set((messages[keepStart].toolResults ?? []).map((tr) => tr.toolUseId));
   for (let i = keepStart - 1; i >= 0; i--) {
     const m = messages[i];
-    if (
-      m.role === 'assistant' &&
-      m.toolUses?.some((tu) => ids.has(tu.toolUseId))
-    ) {
+    if (m.role === "assistant" && m.toolUses?.some((tu) => ids.has(tu.toolUseId))) {
       return i;
     }
   }
@@ -202,9 +194,7 @@ export function currentContextTokens(
       return estimateMessages(budgetMessages);
     }
     const start = Math.min(anchor.anchorCount, budgetMessages.length);
-    return (
-      anchor.baselineTokens + estimateMessages(budgetMessages.slice(start))
-    );
+    return anchor.baselineTokens + estimateMessages(budgetMessages.slice(start));
   }
   if (!anchor) {
     return estimateTokens(conv);
@@ -226,7 +216,7 @@ export async function manageContext(
   toolSchemaNames: string[],
   toolSchemas: ToolSchema[],
   anchor: UsageAnchor | null = null,
-  sessionFilePath = '',
+  sessionFilePath = "",
   budgetMessages?: Message[],
 ): Promise<CompactResult> {
   // 先应用 tool-result budget，再做 auto-compact，确保预算内的结果不会被误压缩。
@@ -237,15 +227,12 @@ export async function manageContext(
   const hardBlock = computeCompactThreshold(contextWindow, maxOutput, true);
 
   if (tokens < autoThreshold) {
-    return { compacted: false, message: '' };
+    return { compacted: false, message: "" };
   }
 
   // Past the hard-block line we must compact even if the circuit breaker tripped.
   const forced = tokens >= hardBlock;
-  if (
-    !forced &&
-    trackingState.consecutiveFailures >= MAX_CONSECUTIVE_FAILURES
-  ) {
+  if (!forced && trackingState.consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
     return {
       compacted: false,
       message: `Auto-compact circuit breaker: ${String(MAX_CONSECUTIVE_FAILURES)} consecutive failures`,
@@ -279,7 +266,7 @@ export async function forceCompact(
   recoveryState: RecoveryState | null,
   toolSchemaNames: string[],
   toolSchemas: ToolSchema[],
-  sessionFilePath = '',
+  sessionFilePath = "",
   budgetMessages?: Message[],
 ): Promise<CompactResult> {
   return doCompact(
@@ -383,7 +370,7 @@ Please provide your summary based on the conversation so far, following this str
 
 // 拼装完整的摘要请求消息：系统提示 + 对话原文
 function buildSummaryPrompt(conversationText: string): string {
-  return SUMMARY_SYSTEM_PROMPT + '\n\n' + conversationText;
+  return SUMMARY_SYSTEM_PROMPT + "\n\n" + conversationText;
 }
 
 /** 按 API 轮次分组：每个助手新回复开始一个新组 */
@@ -393,7 +380,7 @@ function groupMessagesByAPIRound(messages: Message[]): Message[][] {
   let prevHadToolResult = false;
 
   for (const m of messages) {
-    if (m.role === 'assistant' && prevHadToolResult && current.length > 0) {
+    if (m.role === "assistant" && prevHadToolResult && current.length > 0) {
       groups.push(current);
       current = [];
     }
@@ -407,10 +394,7 @@ function groupMessagesByAPIRound(messages: Message[]): Message[][] {
 }
 
 /** 从最老的 API 轮次组开始丢弃，直到腾出足够 token */
-function truncateHeadForPTL(
-  prefix: Message[],
-  tokenGap: number,
-): Message[] | null {
+function truncateHeadForPTL(prefix: Message[], tokenGap: number): Message[] | null {
   const groups = groupMessagesByAPIRound(prefix);
   if (groups.length < 2) {
     return null;
@@ -437,8 +421,8 @@ function truncateHeadForPTL(
   }
 
   const result = groups.slice(dropCount).flat();
-  if (result.length > 0 && result[0].role !== 'user') {
-    result.unshift({ role: 'user', content: PTL_RETRY_MARKER });
+  if (result.length > 0 && result[0].role !== "user") {
+    result.unshift({ role: "user", content: PTL_RETRY_MARKER });
   }
   return result;
 }
@@ -449,11 +433,11 @@ function serializePrefixText(messages: Message[]): string {
     .map((m) => {
       let text = `[${m.role}]: ${m.content}`;
       if (m.toolUses) {
-        text += `\n[tools: ${m.toolUses.map((t) => t.toolName).join(', ')}]`;
+        text += `\n[tools: ${m.toolUses.map((t) => t.toolName).join(", ")}]`;
       }
       return text;
     })
-    .join('\n\n');
+    .join("\n\n");
 }
 
 /** 带 PTL 重试的摘要生成 */
@@ -469,26 +453,25 @@ async function requestSummaryWithPTLRetry(
     summaryConv.addUserMessage(buildSummaryPrompt(text));
 
     try {
-      let summaryText = '';
+      let summaryText = "";
       const stream = client.stream(summaryConv, toolSchemas);
       for await (const event of stream) {
-        if (event.type === 'text_delta') {
+        if (event.type === "text_delta") {
           summaryText += event.text;
         }
       }
       const match = /<summary>([\s\S]*?)<\/summary>/.exec(summaryText);
       return match ? match[1].trim() : summaryText;
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message.toLowerCase() : '';
+      const msg = e instanceof Error ? e.message.toLowerCase() : "";
       const isPTL =
-        (msg.includes('prompt') && msg.includes('long')) ||
-        msg.includes('too many') ||
-        msg.includes('context_length');
+        (msg.includes("prompt") && msg.includes("long")) ||
+        msg.includes("too many") ||
+        msg.includes("context_length");
       if (!isPTL || attempt >= MAX_PTL_RETRIES) {
         throw e;
       }
-      const tokenGap =
-        currentPrefix.reduce((sum, m) => sum + estimateOne(m), 0) / 5;
+      const tokenGap = currentPrefix.reduce((sum, m) => sum + estimateOne(m), 0) / 5;
       const truncated = truncateHeadForPTL(currentPrefix, tokenGap);
       if (!truncated) {
         throw e;
@@ -504,16 +487,14 @@ async function doCompact(
   recoveryState: RecoveryState | null,
   toolSchemaNames: string[],
   toolSchemas: ToolSchema[],
-  sessionFilePath = '',
+  sessionFilePath = "",
   budgetMessages?: Message[],
 ): Promise<CompactResult> {
   // 先应用 tool-result budget，再做 auto-compact，确保预算内的结果不会被误压缩。
   // 当调用方提供了 budget-applied 消息列表时，用它来估算 token 和决定保留边界，
   // 这样 compact 的 keepStart 判断基于缩减后的实际 token 大小。
   const estimationMessages =
-    budgetMessages && budgetMessages.length > 0
-      ? budgetMessages
-      : conv.getMessages();
+    budgetMessages && budgetMessages.length > 0 ? budgetMessages : conv.getMessages();
 
   // Decide how much recent history to keep verbatim. Only messages[:keepStart]
   // get summarized; messages[keepStart:] are carried over untouched so the
@@ -535,23 +516,19 @@ async function doCompact(
 
   // 带 PTL 重试的摘要生成：摘要请求本身超出上下文窗口时，
   // 按 API 轮次从最老的开始丢弃，最多重试 MAX_PTL_RETRIES 次。
-  const summary = await requestSummaryWithPTLRetry(
-    client,
-    toSummarize,
-    toolSchemas,
-  );
+  const summary = await requestSummaryWithPTLRetry(client, toSummarize, toolSchemas);
 
   const recoveryAttachment = recoveryState
     ? recoveryState.buildRecoveryAttachment(toolSchemaNames)
-    : '';
+    : "";
 
   // Rebuild: summary user message (English framing, no assistant ack), then
   // the verbatim recent tail. The summary only covers messages[:keepStart].
   let summaryContent =
-    'This session continues from a previous conversation, which has been compressed due to context limitations. Here is a summary of the earlier messages:\n\n' +
+    "This session continues from a previous conversation, which has been compressed due to context limitations. Here is a summary of the earlier messages:\n\n" +
     summary;
   if (toKeep.length > 0) {
-    summaryContent += '\n\nRecent messages have been preserved verbatim.';
+    summaryContent += "\n\nRecent messages have been preserved verbatim.";
   }
   if (sessionFilePath) {
     summaryContent += `\n\nIf you need specific details from before compaction (code snippets, error messages, etc.), use ReadFile to read the full session transcript: ${sessionFilePath}`;
@@ -569,7 +546,7 @@ async function doCompact(
   // (no recovery attachment): recovery context is rebuilt fresh per process, so
   // baking it into the persisted boundary would be stale on the next resume.
   const keep = toKeep
-    .filter((m) => (m.role === 'user' || m.role === 'assistant') && m.content)
+    .filter((m) => (m.role === "user" || m.role === "assistant") && m.content)
     .map((m) => ({ role: m.role, content: m.content }));
 
   return {

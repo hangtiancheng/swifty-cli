@@ -1,23 +1,17 @@
-import {
-  readdirSync,
-  readFileSync,
-  existsSync,
-  mkdirSync,
-  writeFileSync,
-} from 'node:fs';
-import { join, basename } from 'node:path';
-import { homedir } from 'node:os';
-import type { LLMClient } from '../llm/client.js';
-import { ConversationManager } from '../conversation/conversation.js';
-import { MemoryManager } from './manager.js';
-import { ToolRegistry } from '../tools/registry.js';
-import { ReadFileTool } from '../tools/read-file.js';
-import { WriteFileTool } from '../tools/write-file.js';
-import { EditFileTool } from '../tools/edit-file.js';
-import { GlobTool } from '../tools/glob.js';
-import { GrepTool } from '../tools/grep.js';
-import { Agent } from '../agent/agent.js';
-import { PermissionChecker } from '../permissions/checker.js';
+import { readdirSync, readFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { join, basename } from "node:path";
+import { homedir } from "node:os";
+import type { LLMClient } from "../llm/client.js";
+import { ConversationManager } from "../conversation/conversation.js";
+import { MemoryManager } from "./manager.js";
+import { ToolRegistry } from "../tools/registry.js";
+import { ReadFileTool } from "../tools/read-file.js";
+import { WriteFileTool } from "../tools/write-file.js";
+import { EditFileTool } from "../tools/edit-file.js";
+import { GlobTool } from "../tools/glob.js";
+import { GrepTool } from "../tools/grep.js";
+import { Agent } from "../agent/agent.js";
+import { PermissionChecker } from "../permissions/checker.js";
 
 /** 一条从 LLM 流式文本中解析出的记忆块（MEMORY_NAME/MEMORY_TYPE/MEMORY_DESC/MEMORY_BODY）。 */
 interface ParsedTextMemory {
@@ -90,10 +84,7 @@ export class MemoryExtractor {
 
   /** 扫描已有记忆文件，生成 manifest 给 LLM 做去重 */
   private scanExistingMemories(): string {
-    const dirs = [
-      join(this.workDir, '.swifty', 'memory'),
-      join(homedir(), '.swifty', 'memory'),
-    ];
+    const dirs = [join(this.workDir, ".swifty", "memory"), join(homedir(), ".swifty", "memory")];
     const entries: string[] = [];
 
     for (const dir of dirs) {
@@ -101,18 +92,16 @@ export class MemoryExtractor {
         continue;
       }
       try {
-        const files = readdirSync(dir).filter(
-          (f) => f.endsWith('.md') && f !== 'MEMORY.md',
-        );
+        const files = readdirSync(dir).filter((f) => f.endsWith(".md") && f !== "MEMORY.md");
         for (const file of files) {
           try {
-            const content = readFileSync(join(dir, file), 'utf-8');
+            const content = readFileSync(join(dir, file), "utf-8");
             // const nameMatch = /name:\s*(.+)/.exec(content);
             const typeMatch = /type:\s*(.+)/.exec(content);
             const descMatch = /description:\s*(.+)/.exec(content);
             // const name = nameMatch?.[1]?.trim() ?? file;
-            const type = typeMatch?.[1]?.trim() ?? 'reference';
-            const desc = descMatch?.[1]?.trim() ?? '';
+            const type = typeMatch?.[1]?.trim() ?? "reference";
+            const desc = descMatch?.[1]?.trim() ?? "";
             entries.push(`- [${type}] ${file}: ${desc}`);
           } catch {
             /** noop */
@@ -123,16 +112,16 @@ export class MemoryExtractor {
       }
     }
 
-    return entries.length > 0 ? entries.join('\n') : '';
+    return entries.length > 0 ? entries.join("\n") : "";
   }
 
   /** 构建提取 prompt（参照 Go 版 prompts.go） */
   private buildExtractionPrompt(conversationSummary: string): string {
     const manifest = this.scanExistingMemories();
-    const projectMemDir = join(this.workDir, '.swifty', 'memory');
-    const userMemDir = join(homedir(), '.swifty', 'memory');
+    const projectMemDir = join(this.workDir, ".swifty", "memory");
+    const userMemDir = join(homedir(), ".swifty", "memory");
 
-    let manifestSection = '';
+    let manifestSection = "";
     if (manifest) {
       manifestSection = `\n\n## Existing memory files\n\n${manifest}\n\nCheck this list before writing — update an existing file rather than creating a duplicate.`;
     }
@@ -172,7 +161,7 @@ export class MemoryExtractor {
       ``,
       `**Step 1** — write the memory to its own file using this frontmatter format:`,
       ``,
-      '```markdown',
+      "```markdown",
       `---`,
       `name: {{short-kebab-case-slug}}`,
       `description: {{one-line summary}}`,
@@ -181,7 +170,7 @@ export class MemoryExtractor {
       `---`,
       ``,
       `{{memory content}}`,
-      '```',
+      "```",
       ``,
       `**Step 2** — add a pointer to MEMORY.md in the SAME directory. Each entry one line: \`- [Title](file.md) — one-line hook\``,
       ``,
@@ -191,7 +180,7 @@ export class MemoryExtractor {
       `## Conversation to analyze`,
       ``,
       conversationSummary,
-    ].join('\n');
+    ].join("\n");
   }
 
   /** 核心提取逻辑：用子 agent + 工具 */
@@ -207,7 +196,7 @@ export class MemoryExtractor {
     subRegistry.register(new GrepTool());
 
     // bypass 权限（后台 agent 不需要用户确认）
-    const subChecker = new PermissionChecker(this.workDir, 'bypassPermissions');
+    const subChecker = new PermissionChecker(this.workDir, "bypassPermissions");
 
     const forkedConv = new ConversationManager();
     forkedConv.addUserMessage(extractionPrompt);
@@ -223,9 +212,9 @@ export class MemoryExtractor {
 
     // 驱动子 agent 到完成，不传播事件到 UI；同时收集流式文本，作为 LLM 未发起
     // 工具调用（直接输出结构化文本块）时的回退解析来源
-    let streamedText = '';
+    let streamedText = "";
     for await (const event of subagent.run()) {
-      if (event.type === 'stream_text') {
+      if (event.type === "stream_text") {
         streamedText += event.text;
       }
       // drain
@@ -233,7 +222,7 @@ export class MemoryExtractor {
 
     // 优先路径：LLM 通过 WriteFile/EditFile 工具直接写入了记忆文件
     const writtenPaths = this.extractWrittenPaths(forkedConv.getMessages());
-    const memoryPaths = writtenPaths.filter((p) => basename(p) !== 'MEMORY.md');
+    const memoryPaths = writtenPaths.filter((p) => basename(p) !== "MEMORY.md");
 
     let saved: string[];
     if (memoryPaths.length > 0) {
@@ -253,20 +242,16 @@ export class MemoryExtractor {
   }
 
   /** 从对话消息中提取 WriteFile/EditFile 工具调用的文件路径 */
-  private extractWrittenPaths(
-    messages: { role: string; content: string }[],
-  ): string[] {
+  private extractWrittenPaths(messages: { role: string; content: string }[]): string[] {
     const paths: string[] = [];
     for (const msg of messages) {
-      if (msg.role !== 'assistant') {
+      if (msg.role !== "assistant") {
         continue;
       }
       // 匹配 tool_use 中的 file_path 参数
-      const filePathMatches = msg.content.matchAll(
-        /"file_path"\s*:\s*"([^"]+)"/g,
-      );
+      const filePathMatches = msg.content.matchAll(/"file_path"\s*:\s*"([^"]+)"/g);
       for (const m of filePathMatches) {
-        if (m[1] && (m[1].includes('memory') || m[1].endsWith('.md'))) {
+        if (m[1] && (m[1].includes("memory") || m[1].endsWith(".md"))) {
           paths.push(m[1]);
         }
       }
@@ -289,11 +274,7 @@ export class MemoryExtractor {
     for (const mem of memories) {
       const dir = this.dirForMemoryType(mem.type);
       mkdirSync(dir, { recursive: true });
-      writeFileSync(
-        join(dir, `${mem.name}.md`),
-        this.formatMemoryFile(mem),
-        'utf-8',
-      );
+      writeFileSync(join(dir, `${mem.name}.md`), this.formatMemoryFile(mem), "utf-8");
       saved.push(mem.name);
     }
     return saved;
@@ -302,7 +283,7 @@ export class MemoryExtractor {
   /** 解析结构化文本块；NONE 或空文本返回空数组。 */
   private parseTextMemoryBlocks(text: string): ParsedTextMemory[] {
     const trimmed = text.trim();
-    if (trimmed === '' || trimmed === 'NONE') {
+    if (trimmed === "" || trimmed === "NONE") {
       return [];
     }
 
@@ -320,12 +301,12 @@ export class MemoryExtractor {
 
   /** 解析单个块；MEMORY_BODY 支持多行。无 MEMORY_NAME 的块返回 null。 */
   private parseTextMemoryBlock(block: string): ParsedTextMemory | null {
-    const lines = block.split('\n');
+    const lines = block.split("\n");
     const mem: ParsedTextMemory = {
-      name: '',
-      type: '',
-      description: '',
-      body: '',
+      name: "",
+      type: "",
+      description: "",
+      body: "",
     };
     const bodyLines: string[] = [];
     let inBody = false;
@@ -354,7 +335,7 @@ export class MemoryExtractor {
     }
 
     if (mem.body) {
-      mem.body = [mem.body, ...bodyLines].join('\n').replace(/\s+$/, '');
+      mem.body = [mem.body, ...bodyLines].join("\n").replace(/\s+$/, "");
     }
 
     if (!mem.name) {
@@ -362,7 +343,7 @@ export class MemoryExtractor {
     }
     if (!mem.type) {
       // 无类型默认归到项目级 reference
-      mem.type = 'reference';
+      mem.type = "reference";
     }
     return mem;
   }
@@ -370,23 +351,23 @@ export class MemoryExtractor {
   /** 根据 type 路由到对应目录：user/feedback → 用户级，其余 → 项目级 */
   private dirForMemoryType(type: string): string {
     const t = type.toLowerCase();
-    if (t === 'user' || t === 'feedback') {
-      return join(homedir(), '.swifty', 'memory');
+    if (t === "user" || t === "feedback") {
+      return join(homedir(), ".swifty", "memory");
     }
-    return join(this.workDir, '.swifty', 'memory');
+    return join(this.workDir, ".swifty", "memory");
   }
 
   /** 格式化记忆文件：frontmatter（name/description/type）+ 正文 */
   private formatMemoryFile(mem: ParsedTextMemory): string {
     return [
-      '---',
+      "---",
       `name: ${mem.name}`,
       `description: ${mem.description}`,
       `type: ${mem.type}`,
-      '---',
-      '',
+      "---",
+      "",
       mem.body,
-      '',
-    ].join('\n');
+      "",
+    ].join("\n");
   }
 }

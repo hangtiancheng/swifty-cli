@@ -1,34 +1,21 @@
-import { createChildLogger } from '../logger/index.js';
+import { createChildLogger } from "../logger/index.js";
 
-const log = createChildLogger({ module: 'llm' });
+const log = createChildLogger({ module: "llm" });
 
-import OpenAI from 'openai';
-import {
-  getMaxOutputTokens,
-  type ProviderConfig,
-  resolveAPIKey,
-} from '../config/config.js';
-import type {
-  ConversationManager,
-  Message,
-} from '../conversation/conversation.js';
-import {
-  asRecord,
-  asString,
-  DANGEROUSLY_JSON,
-  isRecord,
-  strArg,
-} from '../utils/index.js';
-import type { LLMClient } from './client.js';
+import OpenAI from "openai";
+import { getMaxOutputTokens, type ProviderConfig, resolveAPIKey } from "../config/config.js";
+import type { ConversationManager, Message } from "../conversation/conversation.js";
+import { asRecord, asString, DANGEROUSLY_JSON, isRecord, strArg } from "../utils/index.js";
+import type { LLMClient } from "./client.js";
 import {
   AuthenticationError,
   ContextTooLongError,
   LLMError,
   NetworkError,
   RateLimitError,
-} from './errors.js';
-import type { StreamEvent } from './events.js';
-import type { ToolSchema } from '@/tools/types.js';
+} from "./errors.js";
+import type { StreamEvent } from "./events.js";
+import type { ToolSchema } from "@/tools/types.js";
 
 enum OpenAIErrorCode {
   /** 413 Payload Too Large — The request entity is larger than the server is willing or able to process. */
@@ -51,7 +38,7 @@ export class OpenAIClient implements LLMClient {
     const apiKey = resolveAPIKey(config);
     if (!apiKey) {
       throw new AuthenticationError(
-        'OpenAI API key not found, set OPENAI_API_KEY in .swifty/config.y(a)ml, or via OPENAI_API_KEY env variable.',
+        "OpenAI API key not found, set OPENAI_API_KEY in .swifty/config.y(a)ml, or via OPENAI_API_KEY env variable.",
       );
     }
 
@@ -70,9 +57,9 @@ export class OpenAIClient implements LLMClient {
   ): AsyncGenerator<StreamEvent> {
     const messages = buildOpenAIInput(conversation.getMessages());
 
-    const input: OpenAI.Responses.ResponseCreateParamsStreaming['input'] = [];
+    const input: OpenAI.Responses.ResponseCreateParamsStreaming["input"] = [];
     input.push({
-      role: 'system' as const,
+      role: "system" as const,
       content: this.systemPrompt,
     });
 
@@ -83,7 +70,7 @@ export class OpenAIClient implements LLMClient {
     const tools: OpenAI.Responses.FunctionTool[] = toolSchemas.map((s) => {
       const schema = s.input_schema;
       return {
-        type: 'function' as const,
+        type: "function" as const,
         name: s.name,
         description: s.description,
         parameters: schema,
@@ -110,62 +97,60 @@ export class OpenAIClient implements LLMClient {
         ...(abortSignal ? { signal: abortSignal } : {}),
       });
 
-      let currentToolName = '';
-      let currentToolId = '';
-      let jsonAccumulate = '';
-      let reasoningId = '';
-      let reasoningText = '';
+      let currentToolName = "";
+      let currentToolId = "";
+      let jsonAccumulate = "";
+      let reasoningId = "";
+      let reasoningText = "";
 
       for await (const event of stream) {
-        if (event.type === 'response.output_text.delta') {
+        if (event.type === "response.output_text.delta") {
           yield {
-            type: 'text_delta',
+            type: "text_delta",
             text: event.delta,
           };
         } // end if (event.type === "response.output_text.delta")
-        else if (event.type === 'response.reasoning_summary_text.delta') {
+        else if (event.type === "response.reasoning_summary_text.delta") {
           reasoningText += event.delta;
-          yield { type: 'thinking_delta', text: event.delta };
-        } else if (event.type === 'response.reasoning_summary_text.done') {
+          yield { type: "thinking_delta", text: event.delta };
+        } else if (event.type === "response.reasoning_summary_text.done") {
           yield {
-            type: 'thinking_complete',
+            type: "thinking_complete",
             thinking: reasoningText,
             signature: reasoningId,
           };
-        } else if (event.type === 'response.function_call_arguments.delta') {
+        } else if (event.type === "response.function_call_arguments.delta") {
           jsonAccumulate += event.delta;
           yield {
-            type: 'tool_call_delta',
+            type: "tool_call_delta",
             text: event.delta,
           };
         } // end if (event.type === "response.function_call_arguments.delta")
-        else if (event.type === 'response.output_item.added') {
-          if (event.item.type === 'function_call') {
+        else if (event.type === "response.output_item.added") {
+          if (event.item.type === "function_call") {
             currentToolName = event.item.name;
             currentToolId = event.item.call_id;
-            jsonAccumulate = '';
+            jsonAccumulate = "";
 
             yield {
-              type: 'tool_call_start',
+              type: "tool_call_start",
               toolName: currentToolName,
               toolId: currentToolId,
             };
-          } else if (event.item.type === 'reasoning') {
-            reasoningId = event.item.id ?? '';
-            reasoningText = '';
+          } else if (event.item.type === "reasoning") {
+            reasoningId = event.item.id ?? "";
+            reasoningText = "";
           }
         } // end if (event.type === "response.output_item.added")
-        else if (event.type === 'response.output_item.done') {
-          if (event.item.type === 'function_call' && currentToolName) {
+        else if (event.type === "response.output_item.done") {
+          if (event.item.type === "function_call" && currentToolName) {
             let args: Record<string, unknown> = {};
             if (jsonAccumulate) {
               try {
                 const parsed: unknown = JSON.parse(jsonAccumulate);
-                args = isRecord(parsed)
-                  ? asRecord(parsed)
-                  : { [DANGEROUSLY_JSON]: jsonAccumulate };
+                args = isRecord(parsed) ? asRecord(parsed) : { [DANGEROUSLY_JSON]: jsonAccumulate };
               } catch (err) {
-                log.error({ err }, 'llm operation failed');
+                log.error({ err }, "llm operation failed");
                 args = {
                   [DANGEROUSLY_JSON]: jsonAccumulate,
                 };
@@ -173,19 +158,19 @@ export class OpenAIClient implements LLMClient {
             }
 
             yield {
-              type: 'tool_call_complete',
+              type: "tool_call_complete",
               toolId: currentToolId,
               toolName: currentToolName,
               arguments: args,
             };
 
             // Reset
-            currentToolName = '';
-            currentToolId = '';
-            jsonAccumulate = '';
+            currentToolName = "";
+            currentToolId = "";
+            jsonAccumulate = "";
           }
         } // end if (event.type === "response.output_item.done")
-        else if (event.type === 'response.completed') {
+        else if (event.type === "response.completed") {
           const usage = event.response.usage;
           if (usage) {
             outputTokens = usage.output_tokens;
@@ -197,10 +182,7 @@ export class OpenAIClient implements LLMClient {
 
             // input_tokens already includes the cached prefix;
             // subtract so the usage anchor (input + cache_read) doesn't double-count it.
-            inputTokens = Math.max(
-              0,
-              usage.input_tokens - cacheReadInputTokens,
-            );
+            inputTokens = Math.max(0, usage.input_tokens - cacheReadInputTokens);
           } // end if (usage)
 
           // Parse the actual stop reason from the Responses API.
@@ -208,18 +190,18 @@ export class OpenAIClient implements LLMClient {
           // check incomplete_details.reason
           // for 'max_output_tokens' so the agent loop's max_tokens recovery can trigger.
           // Otherwise default to "end_turn".
-          let stopReason = 'end_turn';
+          let stopReason = "end_turn";
           const resp = event.response;
-          if (resp.status === 'incomplete') {
+          if (resp.status === "incomplete") {
             // 'max_output_tokens' | 'content_filter'
             const details = resp.incomplete_details;
-            if (details?.reason === 'max_output_tokens') {
-              stopReason = 'max_tokens';
+            if (details?.reason === "max_output_tokens") {
+              stopReason = "max_tokens";
             }
           }
 
           yield {
-            type: 'stream_end',
+            type: "stream_end",
             stopReason,
             usage: {
               inputTokens,
@@ -231,7 +213,7 @@ export class OpenAIClient implements LLMClient {
         } // end if (event.type === "response.completed")
       }
     } catch (err) {
-      log.error({ err }, 'llm operation failed');
+      log.error({ err }, "llm operation failed");
       throw classifyOpenAIError(err);
     }
   }
@@ -245,24 +227,24 @@ export class OpenAIClient implements LLMClient {
 
 type OpenAIMessageParam =
   | {
-      role: 'assistant' | 'user' | 'system';
+      role: "assistant" | "user" | "system";
       content: string;
     }
   | {
-      type: 'function_call';
+      type: "function_call";
       name: string;
       call_id: string;
       arguments: string;
     }
   | {
-      type: 'function_call_output';
+      type: "function_call_output";
       call_id: string;
       output: string;
     }
   | {
-      type: 'reasoning';
+      type: "reasoning";
       id: string;
-      summary: { type: 'summary_text'; text: string }[];
+      summary: { type: "summary_text"; text: string }[];
     };
 
 // Convert Swifty's conversation into Responses API input items:
@@ -275,9 +257,9 @@ export function buildOpenAIInput(messages: Message[]): OpenAIMessageParam[] {
     if (m.thinkingBlocks) {
       for (const tb of m.thinkingBlocks) {
         result.push({
-          type: 'reasoning',
+          type: "reasoning",
           id: tb.signature,
-          summary: [{ type: 'summary_text', text: tb.thinking }],
+          summary: [{ type: "summary_text", text: tb.thinking }],
         } satisfies OpenAIMessageParam);
       }
     }
@@ -285,14 +267,14 @@ export function buildOpenAIInput(messages: Message[]): OpenAIMessageParam[] {
     if (m.toolUses && m.toolUses.length > 0) {
       if (m.content) {
         result.push({
-          role: 'assistant',
+          role: "assistant",
           content: m.content,
         });
       } // end if (m.content)
 
       for (const tu of m.toolUses) {
         result.push({
-          type: 'function_call',
+          type: "function_call",
           name: tu.toolName,
           call_id: tu.toolUseId,
           arguments: JSON.stringify(tu.arguments),
@@ -302,7 +284,7 @@ export function buildOpenAIInput(messages: Message[]): OpenAIMessageParam[] {
     else if (m.toolResults && m.toolResults.length > 0) {
       for (const tr of m.toolResults) {
         result.push({
-          type: 'function_call_output',
+          type: "function_call_output",
           call_id: tr.toolUseId,
           output: tr.content,
         });
@@ -336,11 +318,11 @@ export function buildChatCompletionMessage(
   for (const m of messages) {
     if (m.toolUses && m.toolUses.length > 0) {
       params.push({
-        role: 'assistant',
+        role: "assistant",
         content: m.content || null,
         tool_calls: m.toolUses.map((tu) => ({
           id: tu.toolUseId,
-          type: 'function' as const,
+          type: "function" as const,
           function: {
             name: tu.toolName,
             arguments: JSON.stringify(tu.arguments),
@@ -351,15 +333,15 @@ export function buildChatCompletionMessage(
     else if (m.toolResults && m.toolResults.length > 0) {
       for (const tr of m.toolResults) {
         params.push({
-          role: 'tool',
+          role: "tool",
           tool_call_id: tr.toolUseId,
           content: tr.content,
         });
       }
     } // end if (m.toolResults && m.toolResults.length > 0)
-    else if (m.role === 'assistant') {
+    else if (m.role === "assistant") {
       params.push({
-        role: 'assistant',
+        role: "assistant",
         content: m.content,
       });
     } // if (m.role === "assistant")
@@ -367,7 +349,7 @@ export function buildChatCompletionMessage(
       // user (includes system-reminder turns) and any stray system messages
 
       params.push({
-        role: m.role === 'system' ? 'system' : 'user',
+        role: m.role === "system" ? "system" : "user",
         content: m.content,
       });
     }
@@ -385,7 +367,7 @@ export class OpenAICompatClient implements LLMClient {
     const apiKey = resolveAPIKey(config);
     if (!apiKey) {
       throw new AuthenticationError(
-        'OpenAI API key not found. Set OPENAI_API_KEY in .swifty/config.y(a)ml, or via OPENAI_API_KEY env variable.',
+        "OpenAI API key not found. Set OPENAI_API_KEY in .swifty/config.y(a)ml, or via OPENAI_API_KEY env variable.",
       );
     }
     this.client = new OpenAI({ apiKey, baseURL: config.base_url });
@@ -407,7 +389,7 @@ export class OpenAICompatClient implements LLMClient {
   ): AsyncGenerator<StreamEvent> {
     const messages: OpenAI.ChatCompletionMessageParam[] = [
       {
-        role: 'system',
+        role: "system",
         content: this.systemPrompt,
       },
 
@@ -417,7 +399,7 @@ export class OpenAICompatClient implements LLMClient {
     const tools: OpenAI.ChatCompletionTool[] = toolSchemas.map((ts) => ({
       // name: ts.name,
       // description: ts.description,
-      type: 'function' as const,
+      type: "function" as const,
       function: {
         name: ts.name,
         description: ts.description,
@@ -456,19 +438,15 @@ export class OpenAICompatClient implements LLMClient {
 
       /** enum: "length" | "tool_calls" */
       let finishReason: string | null = null;
-      let reasoningAccumulate = '';
+      let reasoningAccumulate = "";
 
       for await (const chunk of stream) {
         // Usage may arrive in a trailing chunk with empty choices,
         // so check it before the delta guard.
         if (chunk.usage) {
           outputTokens = chunk.usage.completion_tokens ?? 0;
-          cacheReadInputTokens =
-            chunk.usage.prompt_tokens_details?.cached_tokens ?? 0;
-          inputTokens = Math.max(
-            0,
-            (chunk.usage.prompt_tokens ?? 0) - cacheReadInputTokens,
-          );
+          cacheReadInputTokens = chunk.usage.prompt_tokens_details?.cached_tokens ?? 0;
+          inputTokens = Math.max(0, (chunk.usage.prompt_tokens ?? 0) - cacheReadInputTokens);
         }
 
         if (chunk.choices.length === 0) {
@@ -477,30 +455,30 @@ export class OpenAICompatClient implements LLMClient {
         const delta: OpenAI.Chat.Completions.ChatCompletionChunk.Choice.Delta =
           chunk.choices[0].delta;
         if (delta.content) {
-          yield { type: 'text_delta', text: delta.content };
+          yield { type: "text_delta", text: delta.content };
         } // end if (delta.content)
 
         // const reasoningContent = delta.reasoning_content;
-        const reasoningContent = strArg(asRecord(delta), 'reasoning_content');
+        const reasoningContent = strArg(asRecord(delta), "reasoning_content");
         if (reasoningContent) {
           reasoningAccumulate += reasoningContent;
-          yield { type: 'thinking_delta', text: reasoningContent };
+          yield { type: "thinking_delta", text: reasoningContent };
         }
 
         if (delta.tool_calls) {
           for (const tc of delta.tool_calls) {
             if (!toolCalls.has(tc.index)) {
               toolCalls.set(tc.index, {
-                id: tc.id ?? '',
-                name: tc.function?.name ?? '',
-                args: '',
+                id: tc.id ?? "",
+                name: tc.function?.name ?? "",
+                args: "",
               });
 
               if (tc.id) {
                 yield {
-                  type: 'tool_call_start',
-                  toolName: tc.function?.name ?? '',
-                  toolId: tc.id ?? '',
+                  type: "tool_call_start",
+                  toolName: tc.function?.name ?? "",
+                  toolId: tc.id ?? "",
                 };
               }
             } // end if (!toolCalls.has(tc.index))
@@ -518,7 +496,7 @@ export class OpenAICompatClient implements LLMClient {
               if (tc.function?.arguments) {
                 existing.args += tc.function.arguments;
                 yield {
-                  type: 'tool_call_delta',
+                  type: "tool_call_delta",
                   text: tc.function.arguments,
                 };
               }
@@ -530,11 +508,11 @@ export class OpenAICompatClient implements LLMClient {
           finishReason = chunk.choices[0].finish_reason;
           if (reasoningAccumulate) {
             yield {
-              type: 'thinking_complete',
+              type: "thinking_complete",
               thinking: reasoningAccumulate,
-              signature: '',
+              signature: "",
             };
-            reasoningAccumulate = '';
+            reasoningAccumulate = "";
           }
           for (const tu of toolCalls.values()) {
             let args: Record<string, unknown> = {};
@@ -542,17 +520,15 @@ export class OpenAICompatClient implements LLMClient {
             if (jsonArgs) {
               try {
                 const parsed: unknown = JSON.parse(jsonArgs);
-                args = isRecord(parsed)
-                  ? asRecord(parsed)
-                  : { [DANGEROUSLY_JSON]: jsonArgs };
+                args = isRecord(parsed) ? asRecord(parsed) : { [DANGEROUSLY_JSON]: jsonArgs };
               } catch (err) {
-                log.error({ err }, 'llm operation failed');
+                log.error({ err }, "llm operation failed");
                 args = {
                   [DANGEROUSLY_JSON]: jsonArgs,
                 };
               }
               yield {
-                type: 'tool_call_complete',
+                type: "tool_call_complete",
                 toolName: tu.name,
                 toolId: tu.id,
                 arguments: args,
@@ -585,16 +561,16 @@ export class OpenAICompatClient implements LLMClient {
       // "stop" (or anything else) means normal end_turn
 
       let stopReason: string;
-      if (finishReason === 'length') {
-        stopReason = 'max_tokens';
-      } else if (finishReason === 'tool_calls' || toolCalls.size > 0) {
-        stopReason = 'tool_use';
+      if (finishReason === "length") {
+        stopReason = "max_tokens";
+      } else if (finishReason === "tool_calls" || toolCalls.size > 0) {
+        stopReason = "tool_use";
       } else {
-        stopReason = 'end_turn';
+        stopReason = "end_turn";
       }
 
       yield {
-        type: 'stream_end',
+        type: "stream_end",
         stopReason,
         usage: {
           inputTokens,
@@ -604,7 +580,7 @@ export class OpenAICompatClient implements LLMClient {
         },
       };
     } catch (err) {
-      log.error({ err }, 'llm operation failed');
+      log.error({ err }, "llm operation failed");
       throw classifyOpenAIError(err);
     }
   }
@@ -613,8 +589,7 @@ function classifyOpenAIError(err: unknown) {
   if (err instanceof OpenAI.APIError) {
     if (
       err.status === OpenAIErrorCode.PromptTooLong ||
-      (err.status === OpenAIErrorCode.BadRequest &&
-        containsContextLengthError(err.message))
+      (err.status === OpenAIErrorCode.BadRequest && containsContextLengthError(err.message))
     ) {
       return new ContextTooLongError(`Context Too Long: ${err.message}`);
     }
@@ -627,14 +602,10 @@ function classifyOpenAIError(err: unknown) {
       return new RateLimitError(`Rate limit error, please wait.`);
     }
 
-    return new LLMError(
-      `OpenAI API error (${asString(err.status)}): ${err.message}`,
-    );
+    return new LLMError(`OpenAI API error (${asString(err.status)}): ${err.message}`);
   }
 
-  return new NetworkError(
-    `Network error: ${err instanceof Error ? err.message : asString(err)}`,
-  );
+  return new NetworkError(`Network error: ${err instanceof Error ? err.message : asString(err)}`);
 }
 
 // Convert Swifty's conversation into Chat Completions messages,
@@ -646,15 +617,15 @@ export function buildChatCompletionMessages(
 ): OpenAI.ChatCompletionMessageParam[] {
   const params: OpenAI.ChatCompletionMessageParam[] = [];
   for (const m of messages) {
-    const reasoning = m.thinkingBlocks?.map((tb) => tb.thinking).join('') ?? '';
+    const reasoning = m.thinkingBlocks?.map((tb) => tb.thinking).join("") ?? "";
 
     if (m.toolUses && m.toolUses.length > 0) {
       params.push({
-        role: 'assistant',
+        role: "assistant",
         content: m.content || null,
         tool_calls: m.toolUses.map((tu) => ({
           id: tu.toolUseId,
-          type: 'function' as const,
+          type: "function" as const,
           function: {
             name: tu.toolName,
             arguments: JSON.stringify(tu.arguments),
@@ -670,15 +641,15 @@ export function buildChatCompletionMessages(
     else if (m.toolResults && m.toolResults.length > 0) {
       for (const tr of m.toolResults) {
         params.push({
-          role: 'tool',
+          role: "tool",
           tool_call_id: tr.toolUseId,
           content: tr.content,
         });
       }
     } // end if (m.toolResults && m.toolResults.length > 0)
-    else if (m.role === 'assistant') {
+    else if (m.role === "assistant") {
       params.push({
-        role: 'assistant',
+        role: "assistant",
         content: m.content,
         ...(reasoning
           ? {
@@ -689,7 +660,7 @@ export function buildChatCompletionMessages(
     } // end if (m.role === "assistant")
     else {
       params.push({
-        role: m.role === 'system' ? 'system' : 'user',
+        role: m.role === "system" ? "system" : "user",
         content: m.content,
       });
     }

@@ -1,12 +1,12 @@
-import { Box, Text } from 'ink';
-import { useCallback, useImperativeHandle, type Ref } from 'react';
+import { Box, Text } from "ink";
+import { useCallback, useImperativeHandle, type Ref } from "react";
 
 type PropsWithRef<T, R> = T & { ref: Ref<R> };
 
 interface TeammateMessageProps {
   from: string;
   content: string;
-  type?: 'idle' | 'completed' | 'text' | 'shutdown';
+  type?: "idle" | "completed" | "text" | "shutdown";
 }
 
 interface TeammateMessageExpose {
@@ -27,10 +27,8 @@ const SHUTDOWN_RE = /^\[shutdown\]\s*/;
  * - completed: green checkmark + content
  * - text (default): cyan @name with content summary
  */
-export function TeammateMessage(
-  props: PropsWithRef<TeammateMessageProps, TeammateMessageExpose>,
-) {
-  const { from, content, type = 'text', ref } = props;
+export function TeammateMessage(props: PropsWithRef<TeammateMessageProps, TeammateMessageExpose>) {
+  const { from, content, type = "text", ref } = props;
 
   /**
    * Parses a raw drainLeads string into structured teammate message fields.
@@ -42,31 +40,28 @@ export function TeammateMessage(
    *
    * Returns null when the string is not a teammate message.
    */
-  const parseTeammateMessage = useCallback(
-    (raw: string): TeammateMessageProps | null => {
-      const m = TEAM_MSG_RE.exec(raw);
-      if (!m) {
-        return null;
-      }
+  const parseTeammateMessage = useCallback((raw: string): TeammateMessageProps | null => {
+    const m = TEAM_MSG_RE.exec(raw);
+    if (!m) {
+      return null;
+    }
 
-      const from = m[1];
-      const body = m[2];
+    const from = m[1];
+    const body = m[2];
 
-      if (IDLE_RE.test(body)) {
-        return { from, content: body.replace(IDLE_RE, ''), type: 'idle' };
-      }
-      if (SHUTDOWN_RE.test(body)) {
-        return {
-          from,
-          content: body.replace(SHUTDOWN_RE, ''),
-          type: 'shutdown',
-        };
-      }
+    if (IDLE_RE.test(body)) {
+      return { from, content: body.replace(IDLE_RE, ""), type: "idle" };
+    }
+    if (SHUTDOWN_RE.test(body)) {
+      return {
+        from,
+        content: body.replace(SHUTDOWN_RE, ""),
+        type: "shutdown",
+      };
+    }
 
-      return { from, content: body, type: 'text' };
-    },
-    [],
-  );
+    return { from, content: body, type: "text" };
+  }, []);
 
   useImperativeHandle(
     ref,
@@ -76,22 +71,22 @@ export function TeammateMessage(
     [parseTeammateMessage],
   );
 
-  if (type === 'idle' || type === 'shutdown') {
+  if (type === "idle" || type === "shutdown") {
     return null;
   }
 
-  if (type === 'completed') {
+  if (type === "completed") {
     return (
       <Box flexDirection="column">
         <Text>
           <Text color="cyan">@{from}</Text>
-          <Text>{'>'} </Text>
+          <Text>{">"} </Text>
           <Text color="green">✓</Text>
           <Text> Task completed</Text>
         </Text>
         {content ? (
           <Text>
-            {'  '}
+            {"  "}
             {content}
           </Text>
         ) : null}
@@ -100,20 +95,20 @@ export function TeammateMessage(
   }
 
   // type === "text" (default)
-  const lines = content.split('\n');
-  const summary = lines[0] ?? '';
-  const rest = lines.slice(1).join('\n').trimStart();
+  const lines = content.split("\n");
+  const summary = lines[0] ?? "";
+  const rest = lines.slice(1).join("\n").trimStart();
 
   return (
     <Box flexDirection="column">
       <Text>
         <Text color="cyan">@{from}</Text>
-        <Text>{'>'} </Text>
+        <Text>{">"} </Text>
         <Text>{summary}</Text>
       </Text>
       {rest ? (
         <Text>
-          {'  '}
+          {"  "}
           {rest}
         </Text>
       ) : null}

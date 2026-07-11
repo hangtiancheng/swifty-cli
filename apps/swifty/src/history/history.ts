@@ -1,12 +1,12 @@
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
-import { parse, z } from 'zod';
-import { createChildLogger } from '../logger/index.js';
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
+import { join } from "node:path";
+import { parse, z } from "zod";
+import { createChildLogger } from "../logger/index.js";
 
-const log = createChildLogger({ module: 'history' });
+const log = createChildLogger({ module: "history" });
 
 const MAX_ENTRIES = 200;
-const FILENAME = 'prompt_history.jsonl';
+const FILENAME = "prompt_history.jsonl";
 
 const JSONLSchema = z.looseObject({ text: z.string() });
 export function load(dir: string): string[] {
@@ -16,10 +16,10 @@ export function load(dir: string): string[] {
   }
 
   try {
-    const content = readFileSync(filePath, 'utf-8');
+    const content = readFileSync(filePath, "utf-8");
     return content
       .trim()
-      .split('\n')
+      .split("\n")
       .filter(Boolean)
       .map((line) => {
         try {
@@ -27,12 +27,12 @@ export function load(dir: string): string[] {
           const { text } = parse(JSONLSchema, entry);
           return text;
         } catch (err) {
-          log.error({ err }, 'parse history line failed');
-          return '';
+          log.error({ err }, "parse history line failed");
+          return "";
         }
       });
   } catch (err2) {
-    log.error({ err: err2 }, 'load history failed');
+    log.error({ err: err2 }, "load history failed");
     return [];
   }
 }
@@ -52,7 +52,6 @@ export function append(dir: string, text: string): void {
     entries.shift();
   }
 
-  const lines =
-    entries.map((t) => JSON.stringify({ text: t })).join('\n') + '\n';
-  writeFileSync(filePath, lines, 'utf-8');
+  const lines = entries.map((t) => JSON.stringify({ text: t })).join("\n") + "\n";
+  writeFileSync(filePath, lines, "utf-8");
 }

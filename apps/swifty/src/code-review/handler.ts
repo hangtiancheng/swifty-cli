@@ -1,10 +1,10 @@
-import { createChildLogger } from '../logger/index.js';
+import { createChildLogger } from "../logger/index.js";
 
-const log = createChildLogger({ module: 'code-review' });
+const log = createChildLogger({ module: "code-review" });
 
-import type { CommandContext } from '../commands/commands.js';
-import type { CodeReviewManager } from './manager.js';
-import { asCriticEvaluation, type ReviewSession } from './session.js';
+import type { CommandContext } from "../commands/commands.js";
+import type { CodeReviewManager } from "./manager.js";
+import { asCriticEvaluation, type ReviewSession } from "./session.js";
 
 export function handleCodeReviewCommand(
   ctx: CommandContext,
@@ -13,51 +13,51 @@ export function handleCodeReviewCommand(
 ): string {
   const args = ctx.args.trim().split(/\s+/);
   const command = args[0]?.toLowerCase();
-  const params = args.slice(1).join(' ');
+  const params = args.slice(1).join(" ");
 
   try {
     switch (command) {
-      case 'create':
+      case "create":
         return handleCreate(manager, params);
-      case 'add':
+      case "add":
         return handleAddMember(manager, params);
-      case 'remove':
+      case "remove":
         return handleRemoveMember(manager, params);
-      case 'list':
+      case "list":
         return handleListTeams(manager);
-      case 'status':
+      case "status":
         return handleTeamStatus(manager, params);
-      case 'activate':
+      case "activate":
         return handleActivateMember(manager, params);
-      case 'deactivate':
+      case "deactivate":
         return handleDeactivateMember(manager, params);
-      case 'request':
+      case "request":
         return handleCreateRequest(session, params);
-      case 'requests':
+      case "requests":
         return handleListRequests(session);
-      case 'comment':
+      case "comment":
         return handleAddComment(session, params);
-      case 'accept':
+      case "accept":
         return handleAcceptComment(session, params);
-      case 'reject':
+      case "reject":
         return handleRejectComment(session, params);
-      case 'report':
+      case "report":
         return handleGenerateReport(session, params);
-      case 'approve':
+      case "approve":
         return handleApproveRequest(session, params);
-      case 'reject-request':
+      case "reject-request":
         return handleRejectRequest(session, params);
-      case 'critic':
+      case "critic":
         return handleCriticEvaluate(session, params);
-      case 'critic-summary':
+      case "critic-summary":
         return handleCriticSummary(session, params);
-      case 'add-critic':
+      case "add-critic":
         return handleAddCritic(manager, params);
       default:
         return showCodeReviewHelp();
     }
   } catch (err) {
-    log.error({ err }, 'code-review operation failed');
+    log.error({ err }, "code-review operation failed");
     return `Error: ${err instanceof Error ? err.message : String(err)}`;
   }
 }
@@ -67,28 +67,28 @@ function handleCreate(manager: CodeReviewManager, params: string): string {
   const name = args[0];
 
   if (!name) {
-    return 'Usage: /code-review create <team-name> [member1,member2,member3]';
+    return "Usage: /code-review create <team-name> [member1,member2,member3]";
   }
 
   // Create 3-person review team
   const members = [
     {
-      name: args[1] || 'reviewer1',
-      email: `${args[1] || 'reviewer1'}@company.com`,
-      role: 'lead' as const,
-      expertise: ['architecture', 'security', 'performance'],
+      name: args[1] || "reviewer1",
+      email: `${args[1] || "reviewer1"}@company.com`,
+      role: "lead" as const,
+      expertise: ["architecture", "security", "performance"],
     },
     {
-      name: args[2] || 'reviewer2',
-      email: `${args[2] || 'reviewer2'}@company.com`,
-      role: 'reviewer' as const,
-      expertise: ['testing', 'code-quality', 'documentation'],
+      name: args[2] || "reviewer2",
+      email: `${args[2] || "reviewer2"}@company.com`,
+      role: "reviewer" as const,
+      expertise: ["testing", "code-quality", "documentation"],
     },
     {
-      name: args[3] || 'reviewer3',
-      email: `${args[3] || 'reviewer3'}@company.com`,
-      role: 'reviewer' as const,
-      expertise: ['typescript', 'frontend', 'ux'],
+      name: args[3] || "reviewer3",
+      email: `${args[3] || "reviewer3"}@company.com`,
+      role: "reviewer" as const,
+      expertise: ["typescript", "frontend", "ux"],
     },
   ];
 
@@ -103,32 +103,29 @@ function handleCreate(manager: CodeReviewManager, params: string): string {
 
 function handleAddMember(manager: CodeReviewManager, params: string): string {
   const args = params.split(/\s+/);
-  const [teamName, name, role = 'reviewer'] = args;
+  const [teamName, name, role = "reviewer"] = args;
 
   if (!teamName || !name) {
-    return 'Usage: /code-review add <team-name> <member-name> [role]';
+    return "Usage: /code-review add <team-name> <member-name> [role]";
   }
 
   const member = {
     name,
     email: `${name}@company.com`,
-    role: role === 'lead' ? ('lead' as const) : ('reviewer' as const),
-    expertise: ['general'],
+    role: role === "lead" ? ("lead" as const) : ("reviewer" as const),
+    expertise: ["general"],
   };
 
   manager.addMember(teamName, member);
   return `Added member '${name}' to team '${teamName}'`;
 }
 
-function handleRemoveMember(
-  manager: CodeReviewManager,
-  params: string,
-): string {
+function handleRemoveMember(manager: CodeReviewManager, params: string): string {
   const args = params.split(/\s+/);
   const [teamName, memberName] = args;
 
   if (!teamName || !memberName) {
-    return 'Usage: /code-review remove <team-name> <member-name>';
+    return "Usage: /code-review remove <team-name> <member-name>";
   }
 
   manager.removeMember(teamName, memberName);
@@ -138,7 +135,7 @@ function handleRemoveMember(
 function handleListTeams(manager: CodeReviewManager): string {
   const teams = manager.listTeams();
   if (teams.length === 0) {
-    return 'No code review teams found. Use /code-review create to create one.';
+    return "No code review teams found. Use /code-review create to create one.";
   }
 
   return teams
@@ -146,42 +143,36 @@ function handleListTeams(manager: CodeReviewManager): string {
       const activeMembers = team.members.filter((m) => m.active).length;
       return `Team: ${team.name} (${String(activeMembers)}/${String(team.members.length)} active)`;
     })
-    .join('\n');
+    .join("\n");
 }
 
 function handleTeamStatus(manager: CodeReviewManager, params: string): string {
   const teamName = params.trim();
   if (!teamName) {
-    return 'Usage: /code-review status <team-name>';
+    return "Usage: /code-review status <team-name>";
   }
 
   return manager.getTeamSummary(teamName);
 }
 
-function handleActivateMember(
-  manager: CodeReviewManager,
-  params: string,
-): string {
+function handleActivateMember(manager: CodeReviewManager, params: string): string {
   const args = params.split(/\s+/);
   const [teamName, memberName] = args;
 
   if (!teamName || !memberName) {
-    return 'Usage: /code-review activate <team-name> <member-name>';
+    return "Usage: /code-review activate <team-name> <member-name>";
   }
 
   manager.activateMember(teamName, memberName);
   return `Activated member '${memberName}' in team '${teamName}'`;
 }
 
-function handleDeactivateMember(
-  manager: CodeReviewManager,
-  params: string,
-): string {
+function handleDeactivateMember(manager: CodeReviewManager, params: string): string {
   const args = params.split(/\s+/);
   const [teamName, memberName] = args;
 
   if (!teamName || !memberName) {
-    return 'Usage: /code-review deactivate <team-name> <member-name>';
+    return "Usage: /code-review deactivate <team-name> <member-name>";
   }
 
   manager.deactivateMember(teamName, memberName);
@@ -191,25 +182,25 @@ function handleDeactivateMember(
 function handleCreateRequest(session: ReviewSession, params: string): string {
   const args = params.split(/\s+/);
   const [teamName, title, ...descParts] = args;
-  const description = descParts.join(' ');
+  const description = descParts.join(" ");
 
   if (!teamName || !title) {
-    return 'Usage: /code-review request <team-name> <title> [description]';
+    return "Usage: /code-review request <team-name> <title> [description]";
   }
 
   const request = session.createReviewRequest(
     teamName,
     title,
-    description || 'No description provided',
-    'current-user',
-    'main',
-    ['src/'],
+    description || "No description provided",
+    "current-user",
+    "main",
+    ["src/"],
   );
 
   return (
     `Created review request '${request.id}'\n` +
     `Title: ${title}\n` +
-    `Reviewers: ${request.reviewers.join(', ')}\n` +
+    `Reviewers: ${request.reviewers.join(", ")}\n` +
     `Status: ${request.status}`
   );
 }
@@ -217,54 +208,52 @@ function handleCreateRequest(session: ReviewSession, params: string): string {
 function handleListRequests(session: ReviewSession): string {
   const requests = session.getPendingRequests();
   if (requests.length === 0) {
-    return 'No pending review requests.';
+    return "No pending review requests.";
   }
 
-  return requests
-    .map((req) => `${req.id}: ${req.title} - ${req.status}`)
-    .join('\n');
+  return requests.map((req) => `${req.id}: ${req.title} - ${req.status}`).join("\n");
 }
 
 function handleAddComment(session: ReviewSession, params: string): string {
   const args = params.split(/\s+/);
   const [requestId, ...contentParts] = args;
-  const content = contentParts.join(' ');
+  const content = contentParts.join(" ");
 
   if (!requestId || !content) {
-    return 'Usage: /code-review comment <request-id> <comment-text>';
+    return "Usage: /code-review comment <request-id> <comment-text>";
   }
 
-  const comment = session.addComment(requestId, 'current-user', content);
+  const comment = session.addComment(requestId, "current-user", content);
   return `Added comment ${JSON.stringify(comment)} to request '${requestId}'`;
 }
 
 function handleApproveRequest(session: ReviewSession, params: string): string {
   const requestId = params.trim();
   if (!requestId) {
-    return 'Usage: /code-review approve <request-id>';
+    return "Usage: /code-review approve <request-id>";
   }
 
-  session.updateRequestStatus(requestId, 'approved');
+  session.updateRequestStatus(requestId, "approved");
   return `Approved request '${requestId}'`;
 }
 
 function handleRejectRequest(session: ReviewSession, params: string): string {
   const requestId = params.trim();
   if (!requestId) {
-    return 'Usage: /code-review reject-request <request-id>';
+    return "Usage: /code-review reject-request <request-id>";
   }
 
-  session.updateRequestStatus(requestId, 'rejected');
+  session.updateRequestStatus(requestId, "rejected");
   return `Rejected request '${requestId}'`;
 }
 
 function handleAcceptComment(session: ReviewSession, params: string): string {
   const args = params.split(/\s+/);
   const [requestId, commentId, ...responseParts] = args;
-  const response = responseParts.join(' ');
+  const response = responseParts.join(" ");
 
   if (!requestId || !commentId) {
-    return 'Usage: /code-review accept <request-id> <comment-id> [author-response]';
+    return "Usage: /code-review accept <request-id> <comment-id> [author-response]";
   }
 
   session.acceptComment(requestId, commentId, response || undefined);
@@ -274,10 +263,10 @@ function handleAcceptComment(session: ReviewSession, params: string): string {
 function handleRejectComment(session: ReviewSession, params: string): string {
   const args = params.split(/\s+/);
   const [requestId, commentId, ...responseParts] = args;
-  const response = responseParts.join(' ');
+  const response = responseParts.join(" ");
 
   if (!requestId || !commentId) {
-    return 'Usage: /code-review reject <request-id> <comment-id> [author-response]';
+    return "Usage: /code-review reject <request-id> <comment-id> [author-response]";
   }
 
   session.rejectComment(requestId, commentId, response || undefined);
@@ -287,7 +276,7 @@ function handleRejectComment(session: ReviewSession, params: string): string {
 function handleGenerateReport(session: ReviewSession, params: string): string {
   const requestId = params.trim();
   if (!requestId) {
-    return 'Usage: /code-review report <request-id>';
+    return "Usage: /code-review report <request-id>";
   }
 
   const summary = session.generateFinalReport(requestId);
@@ -297,29 +286,25 @@ function handleGenerateReport(session: ReviewSession, params: string): string {
 function handleCriticEvaluate(session: ReviewSession, params: string): string {
   const args = params.split(/\s+/);
   const [requestId, commentId, evaluation, ...reasoningParts] = args;
-  const reasoning = reasoningParts.join(' ');
+  const reasoning = reasoningParts.join(" ");
 
   if (!requestId || !commentId || !evaluation) {
-    return 'Usage: /code-review critic <request-id> <comment-id> <reasonable|unreasonable|partially-reasonable> [reasoning]';
+    return "Usage: /code-review critic <request-id> <comment-id> <reasonable|unreasonable|partially-reasonable> [reasoning]";
   }
 
-  const validEvaluations = [
-    'reasonable',
-    'unreasonable',
-    'partially-reasonable',
-  ];
+  const validEvaluations = ["reasonable", "unreasonable", "partially-reasonable"];
   if (!validEvaluations.includes(evaluation.toLowerCase())) {
-    return `Invalid evaluation. Must be one of: ${validEvaluations.join(', ')}`;
+    return `Invalid evaluation. Must be one of: ${validEvaluations.join(", ")}`;
   }
 
   // For now, use a default critic name
-  const criticName = 'critic-1';
+  const criticName = "critic-1";
   const assessment = session.addCriticAssessment(
     requestId,
     commentId,
     criticName,
     asCriticEvaluation(evaluation.toLowerCase()),
-    reasoning || 'No reasoning provided',
+    reasoning || "No reasoning provided",
   );
 
   return (
@@ -333,7 +318,7 @@ function handleCriticEvaluate(session: ReviewSession, params: string): string {
 function handleCriticSummary(session: ReviewSession, params: string): string {
   const requestId = params.trim();
   if (!requestId) {
-    return 'Usage: /code-review critic-summary <request-id>';
+    return "Usage: /code-review critic-summary <request-id>";
   }
 
   return session.getCriticSummary(requestId);
@@ -343,23 +328,21 @@ function handleAddCritic(manager: CodeReviewManager, params: string): string {
   const args = params.split(/\s+/);
   const [teamName, name, ...expertiseParts] = args;
   const expertise =
-    expertiseParts.length > 0
-      ? expertiseParts
-      : ['code-review', 'quality-assurance'];
+    expertiseParts.length > 0 ? expertiseParts : ["code-review", "quality-assurance"];
 
   if (!teamName || !name) {
-    return 'Usage: /code-review add-critic <team-name> <critic-name> [expertise1,expertise2,...]';
+    return "Usage: /code-review add-critic <team-name> <critic-name> [expertise1,expertise2,...]";
   }
 
   const member = {
     name,
     email: `${name}@company.com`,
-    role: 'critic' as const,
+    role: "critic" as const,
     expertise,
   };
 
   manager.addMember(teamName, member);
-  return `Added critic '${name}' to team '${teamName}' with expertise: ${expertise.join(', ')}`;
+  return `Added critic '${name}' to team '${teamName}' with expertise: ${expertise.join(", ")}`;
 }
 
 function showCodeReviewHelp(): string {

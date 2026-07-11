@@ -1,12 +1,12 @@
-import { createChildLogger } from '../logger/index.js';
+import { createChildLogger } from "../logger/index.js";
 
-const log = createChildLogger({ module: 'worktree' });
+const log = createChildLogger({ module: "worktree" });
 
-import { exec } from 'child_process';
-import { access, cp, mkdir, readFile, stat, symlink } from 'fs/promises';
-import { dirname, isAbsolute, join } from 'path';
-import { promisify } from 'util';
-import { asErrorString } from '../utils/index.js';
+import { exec } from "child_process";
+import { access, cp, mkdir, readFile, stat, symlink } from "fs/promises";
+import { dirname, isAbsolute, join } from "path";
+import { promisify } from "util";
+import { asErrorString } from "../utils/index.js";
 
 const execAsync = promisify(exec);
 
@@ -30,15 +30,15 @@ const SAFE_REF_RE = /^[a-zA-Z0-9/._+@-]+$/;
 const SHA_RE = /^[0-9a-f]{40}([0-9a-f]{24})?$/;
 
 function isSafeRefName(name: string): boolean {
-  if (!name || name.startsWith('-') || name.startsWith('/')) {
+  if (!name || name.startsWith("-") || name.startsWith("/")) {
     return false;
   }
-  if (name.includes('..')) {
+  if (name.includes("..")) {
     return false;
   }
-  const segments = name.split('/');
+  const segments = name.split("/");
   for (const seg of segments) {
-    if (seg === '.' || seg === '') {
+    if (seg === "." || seg === "") {
       return false;
     }
   }
@@ -52,7 +52,7 @@ async function pathExists(path: string): Promise<boolean> {
     await access(path);
     return true;
   } catch (err) {
-    log.error({ err }, 'worktree operation failed');
+    log.error({ err }, "worktree operation failed");
     return false;
   }
 }
@@ -63,9 +63,9 @@ async function pathExists(path: string): Promise<boolean> {
  * Returns an empty string to indicate it not a git repository
  */
 export async function resolveGitDir(root: string): Promise<string> {
-  const gitPath = join(root, '.git');
+  const gitPath = join(root, ".git");
   if (!(await pathExists(gitPath))) {
-    return '';
+    return "";
   }
   const stats = await stat(gitPath);
   if (stats.isDirectory()) {
@@ -73,11 +73,11 @@ export async function resolveGitDir(root: string): Promise<string> {
   }
 
   // Worktree / submodule: .git is a file containing `gitdir: <path>`
-  const raw = (await readFile(gitPath, 'utf-8')).trim();
-  if (!raw.startsWith('gitdir:')) {
-    return '';
+  const raw = (await readFile(gitPath, "utf-8")).trim();
+  if (!raw.startsWith("gitdir:")) {
+    return "";
   }
-  const rel = raw.slice('gitdir:'.length).trim();
+  const rel = raw.slice("gitdir:".length).trim();
   return isAbsolute(rel) ? rel : join(root, rel);
 }
 
@@ -86,12 +86,12 @@ export async function resolveGitDir(root: string): Promise<string> {
  */
 async function getCommonDir(gitDir: string): Promise<string> {
   try {
-    const commonDir = join(gitDir, 'commondir');
-    const raw = (await readFile(commonDir, 'utf-8')).trim();
+    const commonDir = join(gitDir, "commondir");
+    const raw = (await readFile(commonDir, "utf-8")).trim();
     return isAbsolute(raw) ? raw : join(gitDir, raw);
   } catch (err) {
-    log.error({ err }, 'worktree operation failed');
-    return '';
+    log.error({ err }, "worktree operation failed");
+    return "";
   }
 }
 
@@ -108,16 +108,16 @@ interface GitHead {
 async function readGitHead(gitDir: string): Promise<GitHead | null> {
   let raw: string;
   try {
-    raw = (await readFile(join(gitDir, 'HEAD'), 'utf-8')).trim();
+    raw = (await readFile(join(gitDir, "HEAD"), "utf-8")).trim();
   } catch (err) {
-    log.error({ err }, 'worktree operation failed');
+    log.error({ err }, "worktree operation failed");
     return null;
   }
 
-  if (raw.startsWith('ref:')) {
-    const ref = raw.slice('ref:'.length).trim();
-    if (ref.startsWith('refs/heads/')) {
-      const name = ref.slice('refs/heads/'.length);
+  if (raw.startsWith("ref:")) {
+    const ref = raw.slice("ref:".length).trim();
+    if (ref.startsWith("refs/heads/")) {
+      const name = ref.slice("refs/heads/".length);
       if (!isSafeRefName(name)) {
         return null;
       }
@@ -148,31 +148,31 @@ async function readGitHead(gitDir: string): Promise<GitHead | null> {
 async function resolveRefInDir(dir: string, ref: string): Promise<string> {
   // Check loose ref file first
   try {
-    const content = (await readFile(join(dir, ref), 'utf-8')).trim();
-    if (content.startsWith('ref:')) {
-      const target = content.slice('ref:'.length).trim();
+    const content = (await readFile(join(dir, ref), "utf-8")).trim();
+    if (content.startsWith("ref:")) {
+      const target = content.slice("ref:".length).trim();
       if (!isSafeRefName(target)) {
-        return '';
+        return "";
       }
       return await resolveRef(dir, target);
     }
     if (SHA_RE.test(content)) {
       return content;
     }
-    return '';
+    return "";
   } catch (err) {
-    log.error({ err }, 'worktree operation failed');
+    log.error({ err }, "worktree operation failed");
     // Loose file does not exist, try packed-refs
   }
 
   // Check packed-refs
   try {
-    const packed = await readFile(join(dir, 'packed-refs'), 'utf-8');
-    for (const line of packed.split('\n')) {
-      if (!line || line.startsWith('#') || line.startsWith('^')) {
+    const packed = await readFile(join(dir, "packed-refs"), "utf-8");
+    for (const line of packed.split("\n")) {
+      if (!line || line.startsWith("#") || line.startsWith("^")) {
         continue;
       }
-      const spaceIdx = line.indexOf(' ');
+      const spaceIdx = line.indexOf(" ");
       if (spaceIdx === -1) {
         continue;
       }
@@ -181,15 +181,15 @@ async function resolveRefInDir(dir: string, ref: string): Promise<string> {
         if (SHA_RE.test(sha)) {
           return sha;
         }
-        return '';
+        return "";
       }
     }
   } catch (err) {
-    log.error({ err }, 'worktree operation failed');
+    log.error({ err }, "worktree operation failed");
     // packed-refs does not exist
   }
 
-  return '';
+  return "";
 }
 
 /** Resolves a git ref — checks the worktree gitDir first, then falls back to commonDir */
@@ -203,7 +203,7 @@ async function resolveRef(gitDir: string, ref: string): Promise<string> {
   if (commonDir && commonDir !== gitDir) {
     return resolveRefInDir(commonDir, ref);
   }
-  return '';
+  return "";
 }
 
 /**
@@ -213,32 +213,30 @@ async function resolveRef(gitDir: string, ref: string): Promise<string> {
  *
  * Performance target: ≤10ms (pure file IO, no subprocesses).
  */
-export async function readWorktreeHeadSha(
-  worktreePath: string,
-): Promise<string> {
+export async function readWorktreeHeadSha(worktreePath: string): Promise<string> {
   let raw: string;
   try {
-    raw = (await readFile(join(worktreePath, '.git'), 'utf-8')).trim();
+    raw = (await readFile(join(worktreePath, ".git"), "utf-8")).trim();
   } catch (err) {
-    log.error({ err }, 'worktree operation failed');
-    return '';
+    log.error({ err }, "worktree operation failed");
+    return "";
   }
-  if (!raw.startsWith('gitdir:')) {
-    return '';
+  if (!raw.startsWith("gitdir:")) {
+    return "";
   }
 
-  const rel = raw.slice('gitdir:'.length).trim();
+  const rel = raw.slice("gitdir:".length).trim();
   const gitDir = isAbsolute(rel) ? rel : join(worktreePath, rel);
 
   const head = await readGitHead(gitDir);
   if (!head) {
-    return '';
+    return "";
   }
 
   if (head.branch) {
-    return resolveRef(gitDir, 'refs/heads/' + head.branch);
+    return resolveRef(gitDir, "refs/heads/" + head.branch);
   }
-  return head.sha ?? '';
+  return head.sha ?? "";
 }
 
 /**
@@ -248,25 +246,21 @@ export async function readWorktreeHeadSha(
 export async function getCurrentBranch(repoRoot: string): Promise<string> {
   const gitDir = await resolveGitDir(repoRoot);
   if (!gitDir) {
-    return '';
+    return "";
   }
   const head = await readGitHead(gitDir);
   if (!head) {
-    return '';
+    return "";
   }
-  return head.branch ?? '';
+  return head.branch ?? "";
 }
 
 // ── Worktree Management ──────────────────────────────────────────────
 
-export async function createAgentWorktree(
-  slug: string,
-  gitRoot?: string,
-): Promise<WorktreeResult> {
-  const root =
-    gitRoot ?? (await execAsync('git rev-parse --show-toplevel')).stdout.trim();
+export async function createAgentWorktree(slug: string, gitRoot?: string): Promise<WorktreeResult> {
+  const root = gitRoot ?? (await execAsync("git rev-parse --show-toplevel")).stdout.trim();
 
-  const worktreeDir = join(root, '.swifty', 'worktrees', slug);
+  const worktreeDir = join(root, ".swifty", "worktrees", slug);
   const branch = `worktree-${slug}`;
 
   // Fast path for restoration: if worktree already exists, read HEAD via pure filesystem
@@ -276,7 +270,7 @@ export async function createAgentWorktree(
       return { path: worktreeDir, branch, headCommit: head, gitRoot: root };
     }
     // Fallback to git subprocess if filesystem read fails
-    const { stdout: headFallback } = await execAsync('git rev-parse HEAD', {
+    const { stdout: headFallback } = await execAsync("git rev-parse HEAD", {
       cwd: worktreeDir,
     });
     return {
@@ -301,7 +295,7 @@ export async function createAgentWorktree(
     return { path: worktreeDir, branch, headCommit: head, gitRoot: root };
   }
   // Fallback to subprocess
-  const { stdout: headFallback } = await execAsync('git rev-parse HEAD', {
+  const { stdout: headFallback } = await execAsync("git rev-parse HEAD", {
     cwd: worktreeDir,
   });
 
@@ -323,7 +317,7 @@ export async function removeAgentWorktree(
       cwd: gitRoot,
     });
   } catch (err) {
-    log.error({ err }, 'worktree operation failed');
+    log.error({ err }, "worktree operation failed");
     // Worktree may have already been removed
   }
 
@@ -332,17 +326,14 @@ export async function removeAgentWorktree(
       cwd: gitRoot,
     });
   } catch (err) {
-    log.error({ err }, 'worktree operation failed');
+    log.error({ err }, "worktree operation failed");
     // Branch may have already been deleted
   }
 }
 
-export async function hasWorktreeChanges(
-  path: string,
-  headCommit: string,
-): Promise<boolean> {
+export async function hasWorktreeChanges(path: string, headCommit: string): Promise<boolean> {
   try {
-    const { stdout: status } = await execAsync('git status --porcelain', {
+    const { stdout: status } = await execAsync("git status --porcelain", {
       cwd: path,
     });
 
@@ -353,11 +344,11 @@ export async function hasWorktreeChanges(
     // Compare HEAD SHA: prefer pure filesystem read
     const currentHead =
       (await readWorktreeHeadSha(path)) ||
-      (await execAsync('git rev-parse HEAD', { cwd: path })).stdout.trim();
+      (await execAsync("git rev-parse HEAD", { cwd: path })).stdout.trim();
 
     return currentHead !== headCommit;
   } catch (err) {
-    log.error({ err }, 'worktree operation failed');
+    log.error({ err }, "worktree operation failed");
     return true; // Conservative handling on failure: assume there are changes
   }
 }
@@ -375,10 +366,7 @@ export function buildWorktreeNotice(parentCwd: string, wtPath: string): string {
  * main repo into a newly created worktree. Failures are logged but never
  * propagated — they must not break worktree creation.
  */
-async function performPostCreationSetup(
-  repoRoot: string,
-  wtPath: string,
-): Promise<void> {
+async function performPostCreationSetup(repoRoot: string, wtPath: string): Promise<void> {
   await copySwiftySettings(repoRoot, wtPath);
   await configureHooksPath(repoRoot, wtPath);
   await symlinkNodeModules(repoRoot, wtPath);
@@ -386,19 +374,16 @@ async function performPostCreationSetup(
 }
 
 /** Copy .swifty/ settings directory from the main repo to the worktree. */
-async function copySwiftySettings(
-  repoRoot: string,
-  wtPath: string,
-): Promise<void> {
+async function copySwiftySettings(repoRoot: string, wtPath: string): Promise<void> {
   try {
-    const src = join(repoRoot, '.swifty');
+    const src = join(repoRoot, ".swifty");
     if (!(await pathExists(src))) {
       return;
     }
-    const dst = join(wtPath, '.swifty');
+    const dst = join(wtPath, ".swifty");
     await cp(src, dst, { recursive: true });
   } catch (err) {
-    log.error({ err }, 'failed to copy .swifty/ to worktree');
+    log.error({ err }, "failed to copy .swifty/ to worktree");
   }
 }
 
@@ -406,15 +391,9 @@ async function copySwiftySettings(
  * Set core.hooksPath in the worktree so git hooks from the main repo are
  * shared. Prioritizes .husky/ over .git/hooks/.
  */
-async function configureHooksPath(
-  repoRoot: string,
-  worktreePath: string,
-): Promise<void> {
+async function configureHooksPath(repoRoot: string, worktreePath: string): Promise<void> {
   try {
-    const candidates = [
-      join(repoRoot, '.husky'),
-      join(repoRoot, '.git', 'hooks'),
-    ];
+    const candidates = [join(repoRoot, ".husky"), join(repoRoot, ".git", "hooks")];
     let hooksPath: string | undefined;
     for (const c of candidates) {
       try {
@@ -424,7 +403,7 @@ async function configureHooksPath(
           break;
         }
       } catch (err) {
-        log.error({ err }, 'worktree operation failed');
+        log.error({ err }, "worktree operation failed");
         // candidate doesn't exist, try next
       }
     }
@@ -436,7 +415,7 @@ async function configureHooksPath(
       cwd: worktreePath,
     });
   } catch (err) {
-    log.error({ err }, 'failed to configure hooks path in worktree');
+    log.error({ err }, "failed to configure hooks path in worktree");
   }
 }
 
@@ -444,24 +423,19 @@ async function configureHooksPath(
  * If node_modules exists in the source repo, create a symlink in the worktree
  * pointing to it so dependencies don't need to be re-installed.
  */
-async function symlinkNodeModules(
-  repoRoot: string,
-  worktreePath: string,
-): Promise<void> {
+async function symlinkNodeModules(repoRoot: string, worktreePath: string): Promise<void> {
   try {
-    const src = join(repoRoot, 'node_modules');
+    const src = join(repoRoot, "node_modules");
     if (!(await pathExists(src))) {
       return;
     }
-    const dst = join(worktreePath, 'node_modules');
+    const dst = join(worktreePath, "node_modules");
     if (await pathExists(dst)) {
       return;
     } // already present
     await symlink(src, dst);
   } catch (err) {
-    console.error(
-      `Warning: failed to symlink node_modules in worktree: ${asErrorString(err)}`,
-    );
+    console.error(`Warning: failed to symlink node_modules in worktree: ${asErrorString(err)}`);
   }
 }
 
@@ -470,25 +444,22 @@ async function symlinkNodeModules(
  * blank lines and #-comments skipped) and copy each listed file/directory into
  * the worktree.
  */
-async function copyWorktreeIncludeFiles(
-  repoRoot: string,
-  worktreePath: string,
-): Promise<void> {
+async function copyWorktreeIncludeFiles(repoRoot: string, worktreePath: string): Promise<void> {
   try {
-    const includeFile = join(repoRoot, '.worktreeinclude');
+    const includeFile = join(repoRoot, ".worktreeinclude");
     if (!(await pathExists(includeFile))) {
       return;
     }
 
-    const content = await readFile(includeFile, 'utf-8');
+    const content = await readFile(includeFile, "utf-8");
     const paths = content
-      .split('\n')
+      .split("\n")
       .map((l) => l.trim())
-      .filter((l) => l && !l.startsWith('#'));
+      .filter((l) => l && !l.startsWith("#"));
 
     for (const relPath of paths) {
       // Guard against path traversal.
-      if (relPath.includes('..')) {
+      if (relPath.includes("..")) {
         continue;
       }
 
@@ -508,11 +479,11 @@ async function copyWorktreeIncludeFiles(
           await cp(src, dst);
         }
       } catch (err) {
-        log.error({ err }, 'worktree operation failed');
+        log.error({ err }, "worktree operation failed");
         // best-effort per file — skip failures
       }
     }
   } catch (err) {
-    log.error({ err }, 'failed to process .worktreeinclude');
+    log.error({ err }, "failed to process .worktreeinclude");
   }
 }
