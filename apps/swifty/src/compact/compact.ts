@@ -504,7 +504,7 @@ async function doCompact(
   const keepStart = computeKeepStartIndex(estimationMessages);
 
   // Degenerate cases: if (almost) everything is already inside the kept tail,
-  // compacting would only summarize a tiny prefix — "压了个寂寞". Skip it and
+  // compacting would only summarize a tiny prefix — "compacted nothing meaningful". Skip it and
   // keep the conversation verbatim rather than churn for no real token savings.
   if (keepStart <= 0 || keepStart < MIN_COMPACT_PREFIX) {
     return {

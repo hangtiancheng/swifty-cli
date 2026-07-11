@@ -222,7 +222,7 @@ export class MemoryExtractor {
       // drain
     }
 
-    // 优先路径：LLM 通过 WriteFile/EditFile 工具直接写入了记忆文件
+    // Fast path: LLM wrote memory files directly using WriteFile/EditFile tools
     const writtenPaths = this.extractWrittenPaths(forkedConv.getMessages());
     const memoryPaths = writtenPaths.filter((p) => basename(p) !== "MEMORY.md");
 
@@ -234,7 +234,7 @@ export class MemoryExtractor {
       saved = this.persistTextMemories(streamedText);
     }
 
-    // 写入后重建索引
+    // Rebuild index after writing
     if (saved.length > 0) {
       const mgr = new MemoryManager(this.workDir);
       mgr.rebuildIndex();
@@ -262,9 +262,10 @@ export class MemoryExtractor {
   }
 
   /**
-   * 文本协议回退：当子 agent 未发起工具调用、而是直接输出结构化文本块
-   * （MEMORY_NAME/MEMORY_TYPE/MEMORY_DESC/MEMORY_BODY，以单独一行的 `---` 分隔）
-   * 时，由本机解析并按 type 路由落盘。返回写入的记忆名列表（不含扩展名）。
+   * Text protocol fallback: when the sub-agent did not invoke any tools but
+   * instead emitted structured text blocks (MEMORY_NAME/MEMORY_TYPE/MEMORY_DESC/MEMORY_BODY,
+   * separated by a standalone `---` line), parse them locally and persist by type.
+   * Returns the list of written memory names (without extensions).
    */
   private persistTextMemories(text: string): string[] {
     const memories = this.parseTextMemoryBlocks(text);

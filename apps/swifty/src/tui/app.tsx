@@ -281,7 +281,7 @@ export function App({
   const teamManagerRef = useRef(new TeamManager(workDir));
   const fileHistoryRef = useRef<FileHistory | null>(null);
   const fileStateCacheRef = useRef(new FileStateCache());
-  // // 
+  // //
   const sandboxRef = useRef<Promise<Sandbox | null>>(createSandbox());
   const [sandboxEnabled, setSandboxEnabled] = useState(sandboxYaml?.enabled ?? false);
   const [sandboxAutoAllow, setSandboxAutoAllow] = useState(sandboxYaml?.auto_allow ?? false);
@@ -343,7 +343,7 @@ export function App({
         exit();
         return;
       }
-      // // ，；2 
+      // // ，；2
       setCtrlCHint(true);
       if (ctrlCTimerRef.current) {
         clearTimeout(ctrlCTimerRef.current);
@@ -430,7 +430,7 @@ export function App({
         catalog.load(workDir);
         skillCatalogRef.current = catalog;
 
-        // //  skill 
+        // //  skill
         const skillSection = buildSkillSection(catalog, workDir);
         if (skillSection) {
           const fullPrompt = buildSystemPrompt(env, { skillSection });
@@ -445,7 +445,7 @@ export function App({
         registryRef.current.register(
           new InstallSkillTool(workDir, catalog, () => {
             wireSkillsToRegistry(catalog, cmdRegistryRef.current, skillHostRef.current);
-            // // 
+            // //
             const updatedSection = buildSkillSection(catalog, workDir);
             const updatedPrompt = buildSystemPrompt(
               { ...detectEnvironment(workDir), model: selectedProvider.model },
@@ -713,14 +713,14 @@ export function App({
           setMessages([]);
           committedIndexRef.current = 0;
           convRef.current = new ConversationManager();
-          // //  session ID + 
+          // //  session ID +
           sessionIdRef.current = sessionMod.newSessionId();
           taskListRef.current.useStore(new TaskStore(workDir, sessionIdRef.current));
           fileHistoryRef.current = new FileHistory(workDir, sessionIdRef.current);
-          // //  token 
+          // //  token
           setInputTokens(0);
           setOutputTokens(0);
-          // // 
+          // //
           memCursorRef.current = 0;
           memExtractingRef.current = false;
           // //  <Static> ， Header
@@ -896,7 +896,7 @@ export function App({
               { role: "system", content: "Skills: no catalog loaded." },
             ]);
           } else if (parsed.args.trim() === "reload") {
-            // // /skills reload — 
+            // // /skills reload —
             catalog.reload();
             wireSkillsToRegistry(catalog, cmdRegistryRef.current, skillHostRef.current);
             if (clientRef.current) {
@@ -975,7 +975,7 @@ export function App({
           const arg = parsed.args.trim();
           const sbAvailable = (await sandboxRef.current)?.available() ?? false;
           if (arg === "1" || arg === "on") {
-            // //  1： + 
+            // //  1： +
             setSandboxEnabled(true);
             setSandboxAutoAllow(true);
             sandboxEnabledRef.current = true;
@@ -988,7 +988,7 @@ export function App({
               },
             ]);
           } else if (arg === "2" || arg === "manual") {
-            // //  2： + 
+            // //  2： +
             setSandboxEnabled(true);
             setSandboxAutoAllow(false);
             sandboxEnabledRef.current = true;
@@ -1014,7 +1014,7 @@ export function App({
               },
             ]);
           } else {
-            // // 
+            // //
             const status = sandboxEnabled
               ? sandboxAutoAllow
                 ? "ON + auto-allow"
@@ -1155,7 +1155,7 @@ export function App({
     // modeOverride avoids a stale-closure read of permMode right after a
     // setPermMode call (e.g. plan approval switching out of plan mode in the same tick).
     const checker = new PermissionChecker(workDir, modeOverride ?? permMode);
-    // // 
+    // //
     checker.sandboxEnabled = sandboxEnabledRef.current;
     checker.sandboxAutoAllow = sandboxAutoAllowRef.current;
 
@@ -1267,7 +1267,7 @@ export function App({
             }
           })
           .catch((err: unknown) => {
-            // // ， debug 
+            // // ， debug
             console.error("[memory-extractor]", asErrorString(err));
           })
           .finally(() => {
@@ -1659,7 +1659,7 @@ export function App({
         }
         setMessages((prev) => [...prev, { role: "system", content: "(response interrupted)" }]);
       } else {
-        // //  API 
+        // //  API
         const partialText = streamingTextRef.current;
         if (partialText) {
           setMessages((prev) => [...prev, { role: "assistant", content: partialText }]);

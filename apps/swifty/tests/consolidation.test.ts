@@ -188,24 +188,24 @@ describe("MemoryConsolidator", () => {
         },
       });
 
-      // 直接调用 run，同步等待整理完成
+      // Call run directly, wait synchronously for consolidation to complete
       await consolidator.run(memDir, [], 0);
 
       console.log("\nAfter consolidation:");
       console.log("  Files:", readdirSync(memDir));
       console.log("  MEMORY.md:", readFileSync(join(memDir, "MEMORY.md"), "utf-8"));
 
-      // 验证 MEMORY.md 被更新了
+      // Verify MEMORY.md was updated
       const indexContent = readFileSync(join(memDir, "MEMORY.md"), "utf-8");
       const indexLines = indexContent.split("\n").filter((l) => l.trim().length > 0);
 
-      // 索引应该减少了（从 3 行减到 2 行，因为合并了重复的 push 记忆）
+      // Index should have fewer entries (from 3 lines down to 2, since duplicate push memories were merged)
       console.log(`  Index lines: ${String(indexLines.length)}`);
       expect(indexLines.length).toBeLessThanOrEqual(3);
 
       if (notified) {
         console.log(`  Notification: ${notified}`);
       }
-    }, 120000); // 120 秒超时
+    }, 120000); // 120s timeout
   });
 });
