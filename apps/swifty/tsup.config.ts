@@ -1,10 +1,14 @@
-import { copyFileSync, cpSync } from "node:fs";
+import { copyFileSync, cpSync, readFileSync } from "node:fs";
 import { builtinModules } from "node:module";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "tsup";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+
+const pkg = JSON.parse(
+	readFileSync(new URL("./package.json", import.meta.url), "utf-8"),
+) as { version: string };
 
 export default defineConfig({
   entry: ["src/main.tsx"],
@@ -25,6 +29,7 @@ export default defineConfig({
     ].join("\n"),
   },
   noExternal: [/.*/],
+	define: { __SWIFTY_VERSION__: JSON.stringify(pkg.version) },
   tsconfig: "tsconfig.json",
   esbuildPlugins: [
     {

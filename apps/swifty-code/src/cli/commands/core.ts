@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "
 import { homedir } from "node:os";
 import path from "node:path";
 import process from "node:process";
+import { fileURLToPath } from "node:url";
 
 import type { SwiftyConfig } from "../../core/config.js";
 import { cmdPing } from "../../core/commands/ping.js";
@@ -45,8 +46,13 @@ export function cmdCoreStart(config: SwiftyConfig): void {
     return;
   }
 
-  // Spawn daemon as detached process
-  const daemonPath = path.join(__dirname, "../../core/app.js");
+  // Resolve daemon entry point — works in both dev (src/) and dist (bundle).
+  // dist layout: dist/cli/main.js  → ../core/app.js  → dist/core/app.js
+  // src layout:  src/cli/commands/  → ../../core/app.ts → src/core/app.ts
+  const __dirname = path.dirname(fileURLToPath(import.meta.url));
+  const distDaemon = path.resolve(__dirname, "../core/app.js");
+  const srcDaemon = path.resolve(__dirname, "../../core/app.ts");
+  const daemonPath = existsSync(distDaemon) ? distDaemon : srcDaemon;
   const child = spawn(process.execPath, [daemonPath], {
     detached: true,
     stdio: "ignore",

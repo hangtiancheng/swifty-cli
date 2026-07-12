@@ -94,6 +94,7 @@ import { COLORS, ICONS } from "./styles.js";
 import { CommandUsageTracker } from "../commands/usage-tracker.js";
 import { randomCompletionVerb } from "./verbs.js";
 import { asErrorString, asRecord, strArg } from "@/utils/index.js";
+import { version } from "./version.js"
 
 type AppState = "providerSelect" | "chat";
 
@@ -569,7 +570,7 @@ export function App({
       headerPrintedRef.current = true;
       const p = COLORS.primary;
       const d = COLORS.dim;
-      console.log(`\n${p(" /\\_/\\    ")}${d("Swifty")}`);
+      console.log(`\n${p(" /\\_/\\    ")}${d(`Swifty v${version}`)}`);
       console.log(`${p("( o.o )   ")}${d(selectedProvider.model || selectedProvider.name)}`);
       console.log(`${p(" > ^ <    ")}${d(workDir)}\n`);
     }

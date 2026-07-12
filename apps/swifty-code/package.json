@@ -44,7 +44,7 @@
     "dev:core": "tsx ./src/core/app.ts",
     "dev:tui": "tsx ./src/tui/bootstrap.ts",
     "prepublishOnly": "pnpm build",
-    "adduser": "npm adduser --registry=https://registry.npmjs.org/",
+    "add:user": "npm adduser --registry=https://registry.npmjs.org/",
     "publish:latest": "npm publish --access public --registry=https://registry.npmjs.org/",
     "publish:alpha": "npm publish --access public --registry=https://registry.npmjs.org/ --tag alpha",
     "publish:beta": "npm publish --access public --registry=https://registry.npmjs.org/ --tag beta",

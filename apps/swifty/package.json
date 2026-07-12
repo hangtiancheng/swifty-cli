@@ -1,6 +1,6 @@
 {
   "name": "@swifty.js/swifty",
-  "version": "0.0.1-canary",
+  "version": "0.0.1",
   "description": "Swifty — CLI coding agent",
   "keywords": [
     "ai",
@@ -51,7 +51,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "format": "oxfmt --write .",
     "prepublishOnly": "pnpm build",
-    "adduser": "npm adduser --registry=https://registry.npmjs.org/",
+    "add:user": "npm adduser --registry=https://registry.npmjs.org/",
     "publish:latest": "npm publish --access public --registry=https://registry.npmjs.org/",
     "publish:alpha": "npm publish --access public --registry=https://registry.npmjs.org/ --tag alpha",
     "publish:beta": "npm publish --access public --registry=https://registry.npmjs.org/ --tag beta",
