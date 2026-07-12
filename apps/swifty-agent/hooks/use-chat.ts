@@ -79,11 +79,18 @@ function deriveTitle(messages: ChatMessage[]): string {
 
 export function useChat() {
   const [mode, setMode] = useState<Mode>("quick");
-  const [sessionId, setSessionId] = useState<string>(generateSessionId);
+  const [sessionId, setSessionId] = useState<string>("");
   const [isStreaming, setIsStreaming] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [histories, setHistories] = useState<ChatHistory[]>(loadHistories);
+  const [histories, setHistories] = useState<ChatHistory[]>([]);
   const [isFromHistory, setIsFromHistory] = useState(false);
+
+  // Hydrate client-only state after mount to avoid SSR mismatch.
+  useEffect(() => {
+    setSessionId(generateSessionId());
+    setHistories(loadHistories());
+  }, []);
+
   const [notification, setNotification] = useState<{
     message: string;
     type: NotificationType;
