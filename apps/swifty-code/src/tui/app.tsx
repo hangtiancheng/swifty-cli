@@ -414,7 +414,8 @@ export function App({ _config, client }: AppProps): React.JSX.Element {
                 ? "waiting for permission..."
                 : "input"
         }
-        placeholder="Type a message... (/compact to compress context)"
+        // Type a message... (/compact to compress context)
+        placeholder=""
       />
     </Box>
   );

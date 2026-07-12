@@ -67,9 +67,9 @@ export function EventCard({ event, context }: EventCardProps): React.JSX.Element
           <Text color={theme.accent}> step {String(step)}</Text>
           <Text color={theme.accentDim}>
             {" "}
-            {theme.indicator.thinDash}
-            {theme.indicator.thinDash}
-            {theme.indicator.thinDash}
+            {theme.indicator.yAxis}
+            {theme.indicator.yAxis}
+            {theme.indicator.yAxis}
           </Text>
         </Box>
       );
@@ -207,9 +207,13 @@ export function EventCard({ event, context }: EventCardProps): React.JSX.Element
       return (
         <Box paddingX={1}>
           <Text color={theme.textMuted}>
-            tok in:{String(inputTokens)} out:{String(outputTokens)}
+            input_tokens:{String(inputTokens)} output_tokens:
+            {String(outputTokens)}
           </Text>
-          <Text color={theme.textMuted}> ctx:{String(Math.round(contextPercent * 100))}%</Text>
+          <Text color={theme.textMuted}>
+            {" "}
+            context_percent:{String(Math.round(contextPercent * 100))}%
+          </Text>
         </Box>
       );
     }
@@ -386,7 +390,7 @@ export function EventCard({ event, context }: EventCardProps): React.JSX.Element
       const shortId = runId.slice(0, 8);
       return (
         <Box marginLeft={2} marginTop={0}>
-          <Text color={theme.subagentDim}>{theme.indicator.dash}</Text>
+          <Text color={theme.subagentDim}>{theme.indicator.xAxis}</Text>
           <Text color={theme.subagentAccent}>
             {theme.indicator.step} {truncate(description, 72)}
           </Text>
@@ -404,7 +408,7 @@ export function EventCard({ event, context }: EventCardProps): React.JSX.Element
       const color = isSuccess ? theme.success : theme.error;
       return (
         <Box marginLeft={2} marginBottom={0}>
-          <Text color={theme.subagentDim}>{theme.indicator.dash}</Text>
+          <Text color={theme.subagentDim}>{theme.indicator.xAxis}</Text>
           <Text color={color}>
             {theme.indicator.step} {icon}
           </Text>

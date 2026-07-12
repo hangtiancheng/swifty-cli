@@ -36,20 +36,20 @@ export const theme = {
 
   // Unicode indicators (Claude Code style — inline, no box borders)
   indicator: {
-    runStart: "▶",
-    runEnd: "■",
+    runStart: ">",
+    runEnd: "◼",
     step: "─",
-    toolRunning: "⏺",
+    toolRunning: "●",
     toolSuccess: "✓",
     toolFailed: "✗",
-    permission: "⚠",
+    permission: "!",
     session: "●",
     subagent: "↳",
     compact: "↻",
     bullet: "•",
-    arrow: "▸",
-    dash: "╌",
-    thinDash: "╎",
+    arrow: "->",
+    xAxis: "-",
+    yAxis: "|",
   },
 } as const;
 

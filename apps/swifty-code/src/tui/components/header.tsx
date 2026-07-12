@@ -46,7 +46,7 @@ export function Header({
       {sessionTitle ? <Text color={theme.textMuted}> {sessionTitle}</Text> : null}
       {step && step > 0 ? <Text color={theme.textDim}> step:{String(step)}</Text> : null}
       <Box flexGrow={1}>
-        <Text color={theme.textMuted}> {theme.indicator.thinDash.repeat(2)}</Text>
+        <Text color={theme.textMuted}> {theme.indicator.yAxis.repeat(2)}</Text>
       </Box>
       {errorMessage ? <Text color={theme.error}> err:{errorMessage}</Text> : null}
     </Box>

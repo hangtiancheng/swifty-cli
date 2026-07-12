@@ -73,12 +73,12 @@ export function StatusBar({
       </Text>
       {step > 0 ? <Text color={theme.textDim}> step:{String(step)}</Text> : null}
       {totalTokens > 0 ? (
-        <Text color={theme.textDim}> tok:{totalTokens.toLocaleString()}</Text>
+        <Text color={theme.textDim}> total_tokens:{totalTokens.toLocaleString()}</Text>
       ) : null}
       {elapsedMs > 0 ? <Text color={theme.textDim}> {formatDuration(elapsedMs)}</Text> : null}
       {ctxPctLabel ? (
         <>
-          <Text color={theme.textMuted}> ctx:{ctxPctLabel} </Text>
+          <Text color={theme.textMuted}> context_percent:{ctxPctLabel} </Text>
           <Text color={ctxColor} bold={ctxPctNum >= 0.85}>
             {ctxBar}
           </Text>
