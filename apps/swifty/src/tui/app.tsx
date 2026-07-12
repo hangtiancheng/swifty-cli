@@ -1,8 +1,4 @@
-// Source: xiaolincoding.com
-// Agent site: xiaolinnote.com
-// Resume template: jianli.xiaolinnote.com
-
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Box, Static, Text, useApp, useInput } from "ink";
 import type {
   ProviderConfig,
@@ -573,7 +569,7 @@ export function App({
       headerPrintedRef.current = true;
       const p = COLORS.primary;
       const d = COLORS.dim;
-      console.log(`\n${p(" /\\_/\\    ")}${d("Swifty v0.1.0")}`);
+      console.log(`\n${p(" /\\_/\\    ")}${d("Swifty")}`);
       console.log(`${p("( o.o )   ")}${d(selectedProvider.model || selectedProvider.name)}`);
       console.log(`${p(" > ^ <    ")}${d(workDir)}\n`);
     }

@@ -58,8 +58,7 @@ describe("Tool Invocation", () => {
       name: "error_tool",
       description: "Error tool",
       inputSchema: { type: "object" as const, properties: {} },
-      invoke: () =>
-        Promise.resolve(toolError("error message", "runtime_error")),
+      invoke: () => Promise.resolve(toolError("error message", "runtime_error")),
     };
     const registry = new ToolRegistry();
     registry.register(tool);
@@ -145,8 +144,7 @@ describe("Tool Invocation", () => {
       description: "Validated tool",
       inputSchema: { type: "object" as const, properties: {} },
       paramsModel: z.object({ name: z.string() }),
-      invoke: (params) =>
-        Promise.resolve(toolSuccess(`Hello ${String(params["name"])}`)),
+      invoke: (params) => Promise.resolve(toolSuccess(`Hello ${String(params["name"])}`)),
     };
     const registry = new ToolRegistry();
     registry.register(tool);
@@ -283,8 +281,7 @@ describe("Tool Invocation", () => {
     // Mock PermissionManager that always denies
     const mockPermissionManager = {
       evaluate: (): "ask" => "ask",
-      checkAndWait: (): Promise<[boolean, string]> =>
-        Promise.resolve([false, "deny_once"]),
+      checkAndWait: (): Promise<[boolean, string]> => Promise.resolve([false, "deny_once"]),
       respond: (_toolUseId: string, _decision: string): void => undefined,
       cancelSession: (_sessionId: string): void => undefined,
     };

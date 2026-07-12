@@ -43,6 +43,7 @@
     "libuv",
     "lipgloss",
     "longtask",
+    "metas",
     "milvus",
     "modelcontextprotocol",
     "moonwalking",

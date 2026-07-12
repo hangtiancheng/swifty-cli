@@ -8,10 +8,7 @@ import { ChatView, CommittedMessage, type ChatMessage } from "./chat.js";
 import { ToolDisplay, type ToolBlockInfo } from "./tool-display.js";
 import Spinner from "./spinner.js";
 import { InputBox, type Cmd } from "./input.js";
-import {
-  PermissionDialog,
-  type PermissionAction,
-} from "./permission-dialog.js";
+import { PermissionDialog, type PermissionAction } from "./permission-dialog.js";
 import { randomCompletionVerb } from "./verbs.js";
 
 import type { SocketClient } from "../core/transport/socket-client.js";
@@ -118,6 +115,7 @@ export function App({ _config, client }: AppProps): React.JSX.Element {
   const streamingTextRef = useRef("");
   const streamThrottleRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isMountedRef = useRef(true);
+  const headerPrintedRef = useRef(false);
   const lastRunIdRef = useRef<string | null>(null);
   const subagentStartTimes = useRef<Map<string, number>>(new Map());
 
@@ -191,10 +189,7 @@ export function App({ _config, client }: AppProps): React.JSX.Element {
         const fullText = streamingTextRef.current;
         if (fullText) {
           setMessages((prev) => {
-            const next = [
-              ...prev,
-              { role: "assistant" as const, content: fullText },
-            ];
+            const next = [...prev, { role: "assistant" as const, content: fullText }];
             committedIndexRef.current = next.length;
             return next;
           });
@@ -253,10 +248,7 @@ export function App({ _config, client }: AppProps): React.JSX.Element {
 
         case "llm.model_selected": {
           const model = str(event, "model");
-          setMessages((prev) => [
-            ...prev,
-            { role: "system", content: `model: ${model}` },
-          ]);
+          setMessages((prev) => [...prev, { role: "system", content: `model: ${model}` }]);
           break;
         }
 
@@ -289,10 +281,7 @@ export function App({ _config, client }: AppProps): React.JSX.Element {
           const toolName = str(event, "tool_name");
           const paramsRaw = event["params"];
           const params = isRecord(paramsRaw) ? paramsRaw : {};
-          setActiveTools((prev) => [
-            ...prev,
-            { toolName, args: params, loading: true },
-          ]);
+          setActiveTools((prev) => [...prev, { toolName, args: params, loading: true }]);
           break;
         }
 
@@ -371,9 +360,7 @@ export function App({ _config, client }: AppProps): React.JSX.Element {
             ...prev,
             {
               role: "system",
-              content: granted
-                ? `✓ permission ${decision}`
-                : `✗ permission ${decision}`,
+              content: granted ? `✓ permission ${decision}` : `✗ permission ${decision}`,
             },
           ]);
           break;
@@ -452,10 +439,7 @@ export function App({ _config, client }: AppProps): React.JSX.Element {
           const level = str(event, "level") || "INFO";
           const message = str(event, "message");
           if (level === "ERROR" || level === "WARNING" || level === "WARN") {
-            setMessages((prev) => [
-              ...prev,
-              { role: "system", content: `[${level}] ${message}` },
-            ]);
+            setMessages((prev) => [...prev, { role: "system", content: `[${level}] ${message}` }]);
           }
           break;
         }
@@ -479,16 +463,6 @@ export function App({ _config, client }: AppProps): React.JSX.Element {
           await client.connect();
           setConnected(true);
           setConnectionError(null);
-
-          // Print header banner (Swifty-style, amber)
-          const p = COLORS.primary;
-          const d = COLORS.dim;
-          process.stdout.write(
-            "\x1b[2J\x1b[H" +
-              `\n${p(" /\\_/\\    ")}${d("SwiftyCode v" + version)}\n` +
-              `${p("( o.o )   ")}${d(_config.host + ":" + String(_config.port))}\n` +
-              `${p(" > ^ <    ")}${d(process.cwd())}\n\n`,
-          );
 
           // Subscribe to event topics
           const subscribeParams: Record<string, unknown> = {
@@ -530,8 +504,7 @@ export function App({ _config, client }: AppProps): React.JSX.Element {
           setConnectionError("disconnected, retrying…");
           client.close();
         } catch (error) {
-          const errorMsg =
-            error instanceof Error ? error.message : String(error);
+          const errorMsg = error instanceof Error ? error.message : String(error);
           setConnected(false);
           setConnectionError(errorMsg);
           client.close();
@@ -550,6 +523,25 @@ export function App({ _config, client }: AppProps): React.JSX.Element {
       client.close();
     };
   }, [client, _config]);
+
+  // Print header banner once after the first successful connection.
+  // Mirrors apps/swifty/src/tui/app.tsx: use a ref guard so the banner is
+  // printed exactly once, and use console.log instead of
+  // process.stdout.write("\x1b[2J\x1b[H"...) — clearing the screen wipes
+  // Ink's rendered output and desyncs its internal line cursor, which
+  // previously caused the app not to render and the input box to appear
+  // twice on startup (every reconnect re-ran the clear+banner block).
+  useEffect(() => {
+    if (!connected || headerPrintedRef.current) {
+      return;
+    }
+    headerPrintedRef.current = true;
+    const p = COLORS.primary;
+    const d = COLORS.dim;
+    console.log(`\n${p(" /\\_/\\    ")}${d("SwiftyCode v" + version)}`);
+    console.log(`${p("( o.o )   ")}${d(_config.host + ":" + String(_config.port))}`);
+    console.log(`${p(" > ^ <    ")}${d(process.cwd())}\n`);
+  }, [connected, _config]);
 
   const handleSubmit = useCallback(
     async (value: string) => {
@@ -570,9 +562,7 @@ export function App({ _config, client }: AppProps): React.JSX.Element {
       if (trimmed === "/compact" || trimmed.startsWith("/compact ")) {
         setIsRunning(true);
         try {
-          const focus = trimmed.startsWith("/compact ")
-            ? trimmed.slice(8).trim()
-            : "";
+          const focus = trimmed.startsWith("/compact ") ? trimmed.slice(8).trim() : "";
           const result = await client.sendCommand("session.compact", {
             session_id: sessionIdRef.current,
             focus,
@@ -660,11 +650,7 @@ export function App({ _config, client }: AppProps): React.JSX.Element {
             .map((msg, i) => ({ ...msg, _key: i }))}
         >
           {(item) => (
-            <CommittedMessage
-              key={String(item._key)}
-              message={item}
-              expanded={toolsExpanded}
-            />
+            <CommittedMessage key={String(item._key)} message={item} expanded={toolsExpanded} />
           )}
         </Static>
 
@@ -676,9 +662,7 @@ export function App({ _config, client }: AppProps): React.JSX.Element {
         />
 
         {/* Real-time tool blocks */}
-        {activeTools.length > 0 && !permissionRequest ? (
-          <ToolDisplay tools={activeTools} />
-        ) : null}
+        {activeTools.length > 0 && !permissionRequest ? <ToolDisplay tools={activeTools} /> : null}
 
         {/* Spinner while running */}
         {isRunning && !permissionRequest ? (
@@ -691,10 +675,7 @@ export function App({ _config, client }: AppProps): React.JSX.Element {
         {contextPercent > 0 ? (
           <Box paddingLeft={1}>
             <Text dimColor>context </Text>
-            <Text
-              color={contextBarColor(contextPercent)}
-              bold={contextPercent >= 0.85}
-            >
+            <Text color={contextBarColor(contextPercent)} bold={contextPercent >= 0.85}>
               {contextBarFill(contextPercent)}
             </Text>
             <Text dimColor> {(contextPercent * 100).toFixed(1)}%</Text>
@@ -718,11 +699,8 @@ export function App({ _config, client }: AppProps): React.JSX.Element {
         {/* Session info line */}
         <Box paddingLeft={1}>
           <Text dimColor>
-            {ICONS.dot} {connected ? "connected" : "disconnected"} {ICONS.dot}{" "}
-            {sessionLabel}
-            {totalTokens > 0
-              ? ` ${ICONS.dot} ${String(totalTokens)} tokens`
-              : ""}
+            {ICONS.dot} {connected ? "connected" : "disconnected"} {ICONS.dot} {sessionLabel}
+            {totalTokens > 0 ? ` ${ICONS.dot} ${String(totalTokens)} tokens` : ""}
           </Text>
         </Box>
 
@@ -760,11 +738,7 @@ export function App({ _config, client }: AppProps): React.JSX.Element {
         history={promptHistory}
         commands={commandsRef.current}
         inputState={
-          connectionError
-            ? "error"
-            : isRunning || permissionRequest !== null
-              ? "idle"
-              : "focused"
+          connectionError ? "error" : isRunning || permissionRequest !== null ? "idle" : "focused"
         }
         permMode={permMode}
         onModeChange={(mode) => {

@@ -21,9 +21,7 @@ describe("StdoutPrinter", () => {
     };
     console.error = (...args: unknown[]) => {
       const first = args[0];
-      errorCalls.push(
-        typeof first === "string" ? first : JSON.stringify(first),
-      );
+      errorCalls.push(typeof first === "string" ? first : JSON.stringify(first));
     };
     printer = new StdoutPrinter((chunk: string) => {
       writeCalls.push(chunk);
@@ -64,9 +62,7 @@ describe("StdoutPrinter", () => {
       tool_name: "bash",
       params: { command: "ls" },
     });
-    expect(logCalls).toContain(
-      `[tool] bash ${JSON.stringify({ command: "ls" })}`,
-    );
+    expect(logCalls).toContain(`[tool] bash ${JSON.stringify({ command: "ls" })}`);
   });
 
   // Feature: tool.call_finished prints tool name and elapsed time
