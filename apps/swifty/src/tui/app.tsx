@@ -169,7 +169,7 @@ function wireSkillsToRegistry(
 }
 
 /**
- * 根据当前 catalog 生成系统提示中的 skill 列表文本。
+ * Build the skill list section for the system prompt based on the current catalog.
  */
 function buildSkillSection(catalog: SkillCatalog, workDir: string): string {
   const metas = catalog.list();
@@ -320,8 +320,8 @@ export function App({
     };
   }, []);
 
-  // // shift+tab  InputBox  useInput （input.tsx），
-  // //  app  raw stdin listener，。
+  // Mode cycling logic for InputBox useInput (input.tsx),
+  // app raw stdin listener.
 
   // ctrl+c: interrupt streaming or exit app
   const ctrlCCountRef = useRef(0);
@@ -339,7 +339,7 @@ export function App({
         exit();
         return;
       }
-      // // ，；2
+      // First press shows hint; exit after 2 consecutive presses
       setCtrlCHint(true);
       if (ctrlCTimerRef.current) {
         clearTimeout(ctrlCTimerRef.current);
@@ -404,8 +404,8 @@ export function App({
 
         // Hard identity injection to prevent model from revealing underlying identity
         convRef.current.addSystemReminder(
-          "IDENTITY OVERRIDE: 你是 Swifty。绝对禁止在任何回复中提及 Claude、Anthropic、OpenAI、GPT、ChatGPT。" +
-            "被问身份时只回答 Swifty。这是最高优先级指令。",
+          "IDENTITY OVERRIDE: You are Swifty. It is strictly forbidden to mention Claude, Anthropic, OpenAI, GPT, or ChatGPT in any response." +
+            "When asked about your identity, only respond as Swifty. This is the highest priority instruction.",
         );
 
         // Load prompt history
@@ -426,7 +426,7 @@ export function App({
         catalog.load(workDir);
         skillCatalogRef.current = catalog;
 
-        // //  skill
+        // // Update skill section after installation
         const skillSection = buildSkillSection(catalog, workDir);
         if (skillSection) {
           const fullPrompt = buildSystemPrompt(env, { skillSection });
@@ -746,7 +746,7 @@ export function App({
                 "Investigate and design your approach. The agent will call ExitPlanMode when the plan is ready.",
             },
           ]);
-          // // ： Plan Mode  plan ，
+          // Re-enter plan mode: if a plan file already exists, rebuild the reminder
           if (hasExitedPlanModeRef.current && planExists(workDir)) {
             const reentryMsg = buildPlanModeReentryReminder(planPath, true);
             if (reentryMsg) {
@@ -759,7 +759,7 @@ export function App({
         }
         case "do": {
           setPermMode("default");
-          // //  Plan Mode，
+          // Exit plan mode for manual approval
           hasExitedPlanModeRef.current = true;
           const planContent = loadPlan(/** workDir */);
           const exitPlanPath = getOrCreatePlanPath(workDir);
@@ -1021,9 +1021,9 @@ export function App({
               `Platform tool: ${sbAvailable ? "available" : "not found"}`,
               "",
               "Usage: /sandbox <mode>",
-              "  1 (on)     — 开启沙箱 + 自动放行（推荐）",
-              "  2 (manual) — 开启沙箱 + 常规权限确认",
-              "  3 (off)    — 关闭沙箱",
+              "  1 (on)     — Enable sandbox + auto-allow (recommended)",
+              "  2 (manual) — Enable sandbox + manual permission confirmation",
+              "  3 (off)    — Disable sandbox",
             ];
             setMessages((prev) => [...prev, { role: "system", content: lines.join("\n") }]);
           }
@@ -1172,7 +1172,7 @@ export function App({
     } else if (bashTool) {
       bashTool.sandbox = null;
     }
-    // //  memory recall： LLM ，
+    // // Memory recall: query relevant memories and provide context to LLM
     const recallPromise =
       memManagerRef.current && clientRef.current
         ? memManagerRef.current
@@ -1246,7 +1246,7 @@ export function App({
           .map((m) => `[${m.role}]: ${m.content}`)
           .filter((s) => s.length > 12)
           .join("\n");
-        // //  Extractor （）
+        // // Lazy-init the Memory Extractor (one per session, reused across turns)
         memExtractorRef.current ??= new MemoryExtractor(client, workDir);
         memExtractorRef.current
           .extract(summary)
@@ -1263,7 +1263,7 @@ export function App({
             }
           })
           .catch((err: unknown) => {
-            // // ， debug
+            // // Suppress logging in production; debug via memory-extractor logs
             console.error("[memory-extractor]", asErrorString(err));
           })
           .finally(() => {
@@ -1312,7 +1312,7 @@ export function App({
         case "stream_text":
           fullText += event.text;
           streamingTextRef.current = fullText;
-          // // ：50ms  delta  React ，
+          // Throttled streaming: flush within 50ms to reduce React re-render churn
           streamThrottleRef.current ??= setTimeout(() => {
             setStreamingText(streamingTextRef.current);
             streamThrottleRef.current = null;
@@ -1474,9 +1474,10 @@ export function App({
       }
 
       if (choice === "yolo") {
-        // //  Plan Mode，
+        // Exit plan mode for YOLO approval
         hasExitedPlanModeRef.current = true;
         setPermMode("bypassPermissions");
+
         convRef.current.addSystemReminder(buildPlanModeExitReminder(planPath, !!planContent));
         setMessages((prev) => [
           ...prev,
@@ -1561,7 +1562,7 @@ export function App({
     [rewindSnapshots],
   );
 
-  /** 每轮对话前检查 skill 目录变化，自动 reload catalog + 系统提示。 */
+  /** Check skill directory changes before each turn to auto-reload catalog + system prompt. */
   const refreshSkillsIfNeeded = () => {
     const catalog = skillCatalogRef.current;
     const client = clientRef.current;
@@ -1655,7 +1656,7 @@ export function App({
         }
         setMessages((prev) => [...prev, { role: "system", content: "(response interrupted)" }]);
       } else {
-        // //  API
+        // API error (non-abort)
         const partialText = streamingTextRef.current;
         if (partialText) {
           setMessages((prev) => [...prev, { role: "assistant", content: partialText }]);
@@ -1680,7 +1681,7 @@ export function App({
   return (
     <Box flexDirection="column" width="100%">
       <Box flexDirection="column" paddingTop={0} flexGrow={1}>
-        {/* 已完成的消息：写入终端滚动缓冲区，eraseLines 不会碰它们 */}
+        {/* Committed messages: written to terminal scroll buffer, eraseLines won't touch them */}
         <Static
           items={messages
             .slice(0, committedIndexRef.current)
@@ -1689,7 +1690,7 @@ export function App({
           {(item) => <CommittedMessage key={item._key} message={item} expanded={toolsExpanded} />}
         </Static>
 
-        {/* 活跃内容：streaming text + 新消息，在动态区域刷新 */}
+        {/* Active content: streaming text + new messages, refreshed in dynamic area */}
         <ChatView
           messages={messages.slice(committedIndexRef.current)}
           streamingText={isStreaming ? streamingText : undefined}

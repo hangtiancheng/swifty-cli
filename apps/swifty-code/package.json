@@ -1,15 +1,40 @@
 {
   "name": "@swifty.js/swifty-code",
-  "version": "0.0.1",
-  "description": "SwiftyCode - dual-process local AI agent",
+  "version": "0.0.1-alpha",
+  "description": "SwiftyCode - Dual-process CLI coding agent",
+  "keywords": [
+    "ai",
+    "cli",
+    "coding-agent",
+    "swifty-code",
+    "swifty.js"
+  ],
+  "homepage": "https://github.com/hangtiancheng/swifty-cli",
+  "bugs": {
+    "url": "https://github.com/hangtiancheng/swifty-cli/issues"
+  },
+  "license": "ISC",
+  "author": "https://github.com/hangtiancheng",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/hangtiancheng/swifty-cli.git",
+    "directory": "apps/swifty-code"
+  },
   "bin": {
     "swifty-code": "./dist/cli/main.js"
   },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist"
+  ],
   "type": "module",
   "scripts": {
     "build": "tsup",
-    "typecheck": "tsc --noEmit",
-    "lint": "eslint --fix ./scripts ./src ./tests",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "lint": "eslint ./scripts ./src ./tests",
+    "lint:fix": "eslint --fix ./scripts ./src ./tests",
     "format": "oxfmt --write ./",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -18,7 +43,15 @@
     "dev": "tsx ./src/dev.ts",
     "dev:core": "tsx ./src/core/app.ts",
     "dev:tui": "tsx ./src/tui/bootstrap.ts",
-    "qa": "concurrently --names type,lint,test --prefix-colors blue,red,green \"pnpm typecheck\" \"pnpm lint\" \"pnpm test\" && pnpm format && echo \"Congratulations!\""
+    "prepublishOnly": "pnpm build",
+    "adduser": "npm adduser --registry=https://registry.npmjs.org/",
+    "publish:latest": "npm publish --access public --registry=https://registry.npmjs.org/",
+    "publish:alpha": "npm publish --access public --registry=https://registry.npmjs.org/ --tag alpha",
+    "publish:beta": "npm publish --access public --registry=https://registry.npmjs.org/ --tag beta",
+    "publish:rc": "npm publish --access public --registry=https://registry.npmjs.org/ --tag rc",
+    "publish:canary": "npm publish --access public --registry=https://registry.npmjs.org/ --tag canary",
+    "publish:nightly": "npm publish --access public --registry=https://registry.npmjs.org/ --tag nightly",
+    "publish:dev": "npm publish --access public --registry=https://registry.npmjs.org/ --tag dev"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.104.2",
@@ -35,8 +68,7 @@
     "pino-roll": "^4.0.0",
     "react": "^19.2.7",
     "toml": "^4.1.2",
-    "zod": "^4.4.3",
-    "zod-to-json-schema": "^3.25.2"
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
