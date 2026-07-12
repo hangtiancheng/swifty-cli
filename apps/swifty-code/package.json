@@ -23,13 +23,13 @@
   "bin": {
     "swifty-code": "./dist/cli/main.js"
   },
-  "publishConfig": {
-    "access": "public"
-  },
   "files": [
     "dist"
   ],
   "type": "module",
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsup",
     "typecheck": "tsc --noEmit -p tsconfig.json",

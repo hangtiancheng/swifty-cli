@@ -14,7 +14,7 @@ import { randomCompletionVerb } from "./verbs.js";
 import type { SocketClient } from "../core/transport/socket-client.js";
 import type { SwiftyConfig } from "../core/config.js";
 import { SkillLoader } from "../core/skills/loader.js";
-import { version } from "../index.js";
+import { version } from "../version.js";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 

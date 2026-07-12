@@ -94,7 +94,7 @@ import { COLORS, ICONS } from "./styles.js";
 import { CommandUsageTracker } from "../commands/usage-tracker.js";
 import { randomCompletionVerb } from "./verbs.js";
 import { asErrorString, asRecord, strArg } from "@/utils/index.js";
-import { version } from "./version.js"
+import { version } from "./version.js";
 
 type AppState = "providerSelect" | "chat";
 

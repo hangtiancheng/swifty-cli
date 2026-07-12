@@ -6,9 +6,9 @@ import { defineConfig } from "tsup";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-const pkg = JSON.parse(
-	readFileSync(new URL("./package.json", import.meta.url), "utf-8"),
-) as { version: string };
+const pkg = JSON.parse(readFileSync(new URL("./package.json", import.meta.url), "utf-8")) as {
+  version: string;
+};
 
 export default defineConfig({
   entry: ["src/main.tsx"],
@@ -29,7 +29,7 @@ export default defineConfig({
     ].join("\n"),
   },
   noExternal: [/.*/],
-	define: { __SWIFTY_VERSION__: JSON.stringify(pkg.version) },
+  define: { __SWIFTY_VERSION__: JSON.stringify(pkg.version) },
   tsconfig: "tsconfig.json",
   esbuildPlugins: [
     {

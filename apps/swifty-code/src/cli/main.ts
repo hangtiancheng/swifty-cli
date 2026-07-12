@@ -1,7 +1,7 @@
 // swifty CLI entry: parse subcommands and dispatch execution
 import process from "node:process";
 
-import { version } from "../index.js";
+import { version } from "../version.js";
 import { getConfig } from "../core/config.js";
 import { setupLogging } from "../core/logging.js";
 import { cmdPing } from "../core/commands/ping.js";

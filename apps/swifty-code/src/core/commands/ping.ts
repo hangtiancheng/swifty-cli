@@ -2,7 +2,7 @@
 import net from "node:net";
 import { performance } from "node:perf_hooks";
 
-import { version } from "../../index.js";
+import { version } from "../../version.js";
 import type { SwiftyConfig } from "../config.js";
 import { safeParseAsync } from "zod";
 import { JsonRpcErrorObjectSchema, PongResultSchema } from "../bus/index.js";

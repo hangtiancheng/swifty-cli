@@ -5,7 +5,7 @@ import type net from "node:net";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
 
-import { version } from "../index.js";
+import { version } from "../version.js";
 import { eventsFile } from "./runs.js";
 import {
   AgentRunCommandSchema,
