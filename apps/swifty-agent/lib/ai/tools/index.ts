@@ -7,12 +7,7 @@ import {
   queryInternalDocsSchema,
   prometheusAlertsSchema,
 } from "./schemas";
-import {
-  getCurrentTime,
-  queryPrometheusAlerts,
-  retrieveDocs,
-  execMysqlSql,
-} from "./operations";
+import { getCurrentTime, queryPrometheusAlerts, retrieveDocs, execMysqlSql } from "./operations";
 
 // get_current_time
 export const getCurrentTimeTool = tool({
@@ -28,9 +23,7 @@ export const mysqlCrudTool = tool({
     "Execute SQL against MySQL and return JSON results. Supports query/insert/update/delete. Results are formatted as JSON for easy parsing.",
   inputSchema: mysqlCrudSchema,
   execute: async (input) =>
-    JSON.stringify(
-      await execMysqlSql(input.dsn, input.sql, input.operate_type),
-    ),
+    JSON.stringify(await execMysqlSql(input.dsn, input.sql, input.operate_type)),
 });
 
 // query_internal_docs

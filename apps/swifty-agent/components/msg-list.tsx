@@ -9,10 +9,7 @@ interface MessageListProps {
   isStreaming: boolean;
 }
 
-export default function MessageList({
-  messages,
-  isStreaming,
-}: MessageListProps) {
+export default function MessageList({ messages, isStreaming }: MessageListProps) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (ref.current) ref.current.scrollTop = ref.current.scrollHeight;
@@ -24,22 +21,14 @@ export default function MessageList({
         <MessageItem
           key={i}
           message={m}
-          streaming={
-            isStreaming && i === messages.length - 1 && m.type === "assistant"
-          }
+          streaming={isStreaming && i === messages.length - 1 && m.type === "assistant"}
         />
       ))}
     </div>
   );
 }
 
-function MessageItem({
-  message,
-  streaming,
-}: {
-  message: ChatMessage;
-  streaming: boolean;
-}) {
+function MessageItem({ message, streaming }: { message: ChatMessage; streaming: boolean }) {
   if (message.type === "user") {
     return (
       <div className="mb-6 flex flex-col items-end">
@@ -74,9 +63,7 @@ function MessageItem({
         )}
         <div className="text-sm text-zinc-800">
           <MdRender content={message.content} />
-          {streaming && (
-            <span className="ml-1 animate-pulse text-sky-500">|</span>
-          )}
+          {streaming && <span className="ml-1 animate-pulse text-sky-500">|</span>}
         </div>
       </div>
     </div>

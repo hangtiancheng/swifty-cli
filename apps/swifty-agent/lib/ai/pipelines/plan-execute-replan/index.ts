@@ -5,7 +5,7 @@
 // event-stream pattern.
 import { generateObject, type Tool } from "ai";
 import { z } from "zod/v4";
-import { thinkModel } from "../../models";
+import { thinkModel, providerOptions } from "../../models";
 import { builtinTools } from "../../tools";
 import { getLogMcpTools } from "../../tools/query-log";
 import { executeStep } from "./executor";
@@ -57,6 +57,7 @@ export async function* runPlanExecuteReplan(
       model: thinkModel,
       schema: planSchema,
       prompt: `Break down the following task into concrete steps.\n\nTask:\n${query}`,
+      providerOptions,
     });
     let plan = planResult.object.steps;
     yield { type: "plan_created", steps: plan };
@@ -83,6 +84,7 @@ export async function* runPlanExecuteReplan(
           .join("\n")}\n\nResults so far:\n${detail.join(
           "\n",
         )}\n\nIs the task complete? If not, list remaining steps. If done, provide the final report.`,
+        providerOptions,
       });
       const obj = replanResult.object;
       yield { type: "replan", done: obj.done, remaining: obj.remaining };

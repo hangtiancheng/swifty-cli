@@ -15,16 +15,12 @@ export const mysqlCrudSchema = z.object({
       "MySQL DSN, including username/password/host/port/database name, e.g., root:pass@tcp(host:3306)/db",
     ),
   sql: z.string().describe("SQL statement to execute"),
-  operate_type: z
-    .enum(["query", "insert", "update", "delete"])
-    .describe("SQL operation type"),
+  operate_type: z.enum(["query", "insert", "update", "delete"]).describe("SQL operation type"),
 });
 
 // query_internal_docs: RAG retrieval for internal documents
 export const queryInternalDocsSchema = z.object({
-  query: z
-    .string()
-    .describe("Query string used to retrieve internal documents"),
+  query: z.string().describe("Query string used to retrieve internal documents"),
 });
 
 // query_prometheus_alerts: no input parameters

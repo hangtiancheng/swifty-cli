@@ -16,6 +16,20 @@ export const config = {
       baseURL: process.env.DEEPSEEK_QUICK_BASE_URL ?? "https://ark.cn-beijing.volces.com/api/v3",
     },
   },
+  anthropic: {
+    think: {
+      model: process.env.ANTHROPIC_THINK_MODEL ?? "claude-sonnet-4-20250514",
+      apiKey: process.env.ANTHROPIC_THINK_API_KEY ?? "",
+      baseURL: process.env.ANTHROPIC_THINK_BASE_URL ?? "https://api.anthropic.com",
+    },
+    quick: {
+      model: process.env.ANTHROPIC_QUICK_MODEL ?? "claude-sonnet-4-20250514",
+      apiKey: process.env.ANTHROPIC_QUICK_API_KEY ?? "",
+      baseURL: process.env.ANTHROPIC_QUICK_BASE_URL ?? "https://api.anthropic.com",
+    },
+    thinking: process.env.ANTHROPIC_THINKING !== "false", // default enabled
+    maxOutputTokens: Number.parseInt(process.env.ANTHROPIC_MAX_OUTPUT_TOKENS ?? "8192", 10),
+  },
   // Alibaba Bailian DashScope embedding (OpenAI compatible)
   dashscope: {
     model: process.env.DASHSCOPE_EMBEDDING_MODEL ?? "text-embedding-v4",
@@ -34,6 +48,8 @@ export const config = {
   fileDir: process.env.FILE_DIR ?? "./data/docs",
   // Prometheus
   prometheusBaseUrl: process.env.PROMETHEUS_BASE_URL ?? "http://127.0.0.1:9090",
+  // LLM provider selection: "openai" (default) | "anthropic"
+  provider: (process.env.LLM_PROVIDER ?? "openai") as "openai" | "anthropic",
 } as const;
 
 // Milvus field names (aligned with source project utility/common + indexer fields)

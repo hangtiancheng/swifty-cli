@@ -17,10 +17,7 @@ export async function getLogMcpTools(): Promise<Record<string, Tool>> {
   if (cachedTools) return cachedTools;
 
   const transport = new SSEClientTransport(new URL(config.mcpUrl));
-  const client = new Client(
-    { name: "swifty-agent", version: "1.0.0" },
-    { capabilities: {} },
-  );
+  const client = new Client({ name: "swifty-agent", version: "1.0.0" }, { capabilities: {} });
   await client.connect(transport);
   cachedClient = client;
 

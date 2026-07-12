@@ -1,7 +1,7 @@
 // Corresponds to chat_pipeline (orchestration.go, prompt.go, flow.go).
 // RAG retrieval + system prompt + ReAct agent (streamText/generateText with tools + maxSteps).
 import { streamText, generateText, type Tool, type ModelMessage, isStepCount } from "ai";
-import { quickModel } from "../models";
+import { quickModel, providerOptions } from "../models";
 import { builtinTools } from "../tools";
 import { getLogMcpTools } from "../tools/query-log";
 import { retrieve } from "@/lib/milvus/retriever";
@@ -62,6 +62,7 @@ export async function chat(id: string, question: string): Promise<string> {
     messages: [...history, { role: "user", content: question } satisfies ModelMessage],
     tools,
     stopWhen: isStepCount(25),
+    providerOptions,
   });
 
   const answer = result.text;
@@ -85,6 +86,7 @@ export async function* chatStream(id: string, question: string): AsyncGenerator<
     messages: [...history, { role: "user", content: question } satisfies ModelMessage],
     tools,
     stopWhen: isStepCount(25),
+    providerOptions,
   });
 
   let full = "";

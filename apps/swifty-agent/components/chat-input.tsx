@@ -91,9 +91,7 @@ export default function ChatInput({
                       setShowMode(false);
                     }}
                     className={`block w-40 rounded-lg px-3 py-2 text-left text-sm ${
-                      m === mode
-                        ? "bg-sky-50 text-sky-600"
-                        : "text-zinc-800 hover:bg-zinc-100"
+                      m === mode ? "bg-sky-50 text-sky-600" : "text-zinc-800 hover:bg-zinc-100"
                     }`}
                   >
                     {m === "quick" ? "Quick" : "Stream"}

@@ -1,11 +1,7 @@
 "use client";
 import { useState, useCallback, useEffect, useRef } from "react";
 import { z } from "zod/v4";
-import {
-  chatResponseSchema,
-  aiOpsResponseSchema,
-  uploadResponseSchema,
-} from "@/lib/api-schemas";
+import { chatResponseSchema, aiOpsResponseSchema, uploadResponseSchema } from "@/lib/api-schemas";
 
 export type Mode = "quick" | "stream";
 
@@ -59,9 +55,7 @@ const chatHistorySchema = z.object({
 const chatHistoriesSchema = z.array(chatHistorySchema);
 
 function generateSessionId(): string {
-  return (
-    "session_" + Math.random().toString(36).slice(2, 11) + "_" + Date.now()
-  );
+  return "session_" + Math.random().toString(36).slice(2, 11) + "_" + Date.now();
 }
 
 function loadHistories(): ChatHistory[] {
@@ -102,14 +96,11 @@ export function useChat() {
 
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const showNotification = useCallback(
-    (message: string, type: NotificationType = "info") => {
-      setNotification({ message, type });
-      if (timerRef.current) clearTimeout(timerRef.current);
-      timerRef.current = setTimeout(() => setNotification(null), 3000);
-    },
-    [],
-  );
+  const showNotification = useCallback((message: string, type: NotificationType = "info") => {
+    setNotification({ message, type });
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => setNotification(null), 3000);
+  }, []);
 
   // Persist histories to localStorage whenever they change.
   useEffect(() => {
@@ -137,10 +128,10 @@ export function useChat() {
         };
         return updated;
       }
-      return [
-        { id: sid, title, messages: msgs, createdAt: now, updatedAt: now },
-        ...prev,
-      ].slice(0, MAX_HISTORIES);
+      return [{ id: sid, title, messages: msgs, createdAt: now, updatedAt: now }, ...prev].slice(
+        0,
+        MAX_HISTORIES,
+      );
     });
   }, []);
 
@@ -197,10 +188,7 @@ export function useChat() {
           if (!parsed.success) throw new Error("invalid chat response");
           const answer = parsed.data.data?.answer;
           if (parsed.data.message === "OK" && answer) {
-            setMessages((prev) => [
-              ...prev,
-              { type: "assistant", content: answer },
-            ]);
+            setMessages((prev) => [...prev, { type: "assistant", content: answer }]);
           } else {
             throw new Error(parsed.data.message || "Unknown error");
           }
@@ -249,10 +237,7 @@ export function useChat() {
         }
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
-        setMessages((prev) => [
-          ...prev,
-          { type: "assistant", content: "Error: " + msg },
-        ]);
+        setMessages((prev) => [...prev, { type: "assistant", content: "Error: " + msg }]);
       } finally {
         setIsStreaming(false);
         setMessages((prev) => {
@@ -284,10 +269,7 @@ export function useChat() {
       }
       throw new Error(parsed.data.message || "Unknown error");
     } catch (e) {
-      showNotification(
-        "AI Ops failed: " + (e instanceof Error ? e.message : String(e)),
-        "error",
-      );
+      showNotification("AI Ops failed: " + (e instanceof Error ? e.message : String(e)), "error");
       return null;
     } finally {
       setIsStreaming(false);
@@ -300,10 +282,7 @@ export function useChat() {
       const allowed = [".txt", ".md", ".markdown"];
       const name = file.name.toLowerCase();
       if (!allowed.some((ext) => name.endsWith(ext))) {
-        showNotification(
-          "Only TXT or Markdown (.md) files are supported",
-          "error",
-        );
+        showNotification("Only TXT or Markdown (.md) files are supported", "error");
         return null;
       }
       if (file.size > 50 * 1024 * 1024) {
@@ -323,10 +302,7 @@ export function useChat() {
         }
         throw new Error(parsed.data.message || "Upload failed");
       } catch (e) {
-        showNotification(
-          "Upload failed: " + (e instanceof Error ? e.message : String(e)),
-          "error",
-        );
+        showNotification("Upload failed: " + (e instanceof Error ? e.message : String(e)), "error");
         return null;
       } finally {
         setIsStreaming(false);
