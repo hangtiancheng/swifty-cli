@@ -1,4 +1,4 @@
-# swifty-agent
+# Swifty Agent
 
 AI intelligent OnCall assistant by Next.js 16 App Router + Vercel AI SDK.
 

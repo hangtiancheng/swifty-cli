@@ -36,6 +36,11 @@ export const config = {
     apiKey: process.env.DASHSCOPE_API_KEY ?? "",
     baseURL: process.env.DASHSCOPE_BASE_URL ?? "https://dashscope.aliyuncs.com/compatible-mode/v1",
   },
+  // Ollama local embedding (OpenAI compatible endpoint, v0.1.24+)
+  ollama: {
+    model: process.env.OLLAMA_EMBEDDING_MODEL ?? "nomic-embed-text",
+    baseURL: process.env.OLLAMA_BASE_URL ?? "http://localhost:11434",
+  },
   // Milvus
   milvus: {
     address: process.env.MILVUS_ADDRESS ?? "localhost:19530",
@@ -50,6 +55,8 @@ export const config = {
   prometheusBaseUrl: process.env.PROMETHEUS_BASE_URL ?? "http://127.0.0.1:9090",
   // LLM provider selection: "openai" (default) | "anthropic"
   provider: (process.env.LLM_PROVIDER ?? "openai") as "openai" | "anthropic",
+  // Embedding provider selection: "dashscope" (default) | "ollama"
+  embeddingProvider: (process.env.EMBEDDING_PROVIDER ?? "dashscope") as "dashscope" | "ollama",
 } as const;
 
 // Milvus field names (aligned with source project utility/common + indexer fields)
@@ -60,12 +67,23 @@ export const MILVUS_FIELDS = {
   metadata: "metadata",
 } as const;
 
-// dashscope text-embedding-v4 returns 2048-dimensional float32
-export const EMBEDDING_DIM = 2048;
-// The source project stores the raw bytes of 2048 float32s (2048*4=8192 bytes=65536 bits) as a BinaryVector
-// Hence BinaryVector dim = 65536, bytes = 8192, metric = HAMMING
-export const BINARY_VECTOR_DIM = 65536;
-export const BINARY_VECTOR_BYTES = BINARY_VECTOR_DIM / 8; // 8192
+// Embedding dimension per provider (float32 count).
+// - dashscope text-embedding-v4: 2048
+// - ollama nomic-embed-text: 768
+export const EMBEDDING_DIM_MAP = {
+  dashscope: 2048,
+  ollama: 768,
+} as const;
+
+// Active embedding dimension, derived from the selected embedding provider.
+export const EMBEDDING_DIM = EMBEDDING_DIM_MAP[config.embeddingProvider];
+
+// The source project stores the raw bytes of N float32s (N*4 bytes = N*32 bits) as a BinaryVector,
+// using HAMMING metric. Hence BinaryVector dim = EMBEDDING_DIM * 32, bytes = dim / 8.
+// - dashscope: 2048 * 32 = 65536 bits → 8192 bytes
+// - ollama:     768 * 32 = 24576 bits → 3072 bytes
+export const BINARY_VECTOR_DIM = EMBEDDING_DIM * 32;
+export const BINARY_VECTOR_BYTES = BINARY_VECTOR_DIM / 8;
 
 // Conversation memory window size (aligned with source project utility/mem MaxWindowSize)
 export const MEMORY_WINDOW_SIZE = 6;
