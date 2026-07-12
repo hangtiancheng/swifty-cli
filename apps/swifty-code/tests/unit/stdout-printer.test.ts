@@ -54,11 +54,11 @@ describe("StdoutPrinter", () => {
     expect(writeCalls).toContain("Hello");
   });
 
-  // Feature: tool.call_started prints tool name
-  // Design: Send tool.call_started, verify output with tool_name
+  // Feature: tool.call_started prints tool name and params
+  // Design: Send tool.call_started with params, verify output with tool_name and params JSON dump
   test("handles tool.call_started", () => {
-    printer.handle({ type: "tool.call_started", tool_name: "bash" });
-    expect(logCalls).toContain("[tool] bash");
+    printer.handle({ type: "tool.call_started", tool_name: "bash", params: { command: "ls" } });
+    expect(logCalls).toContain(`[tool] bash ${JSON.stringify({ command: "ls" })}`);
   });
 
   // Feature: tool.call_finished prints tool name and elapsed time

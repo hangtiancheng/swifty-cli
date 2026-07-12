@@ -34,7 +34,9 @@ export class StdoutPrinter {
         break;
       case "tool.call_started":
         this._ensureNewline();
-        console.log(`[tool] ${String(event["tool_name"])}`);
+        console.log(
+          `[tool] ${String(event["tool_name"])} ${JSON.stringify(event["params"] ?? {})}`,
+        );
         break;
       case "tool.call_finished":
         this._ensureNewline();

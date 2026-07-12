@@ -53,7 +53,8 @@ export class ExecutionContext {
 
   // Return the system prompt for the current run; skip base if override is set, inject memory layers directly
   systemPrompt(base: string): string {
-    const parts: string[] = [this.systemPromptOverride ?? base];
+    // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
+    const parts: string[] = [this.systemPromptOverride || base];
 
     if (this._globalContext.trim()) {
       parts.push(`\n\n## Global Context\n${this._globalContext.trim()}`);

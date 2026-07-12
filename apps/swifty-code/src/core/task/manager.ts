@@ -72,10 +72,10 @@ export class TaskManager {
       addBlockedBy?: number[];
       removeBlockedBy?: number[];
     },
-  ): Task | null {
+  ): Task {
     const taskId = String(id);
     const task = this._tasks.get(taskId);
-    if (!task) return null;
+    if (!task) throw new Error(`task ${taskId} not found`);
 
     if (updates.subject !== undefined) task.subject = updates.subject;
     if (updates.description !== undefined) task.description = updates.description;
@@ -131,8 +131,11 @@ export class TaskManager {
   }
 
   // Get a task by ID
-  get(id: string | number): Task | null {
-    return this._tasks.get(String(id)) ?? null;
+  get(id: string | number): Task {
+    const taskId = String(id);
+    const task = this._tasks.get(taskId);
+    if (!task) throw new Error(`task ${taskId} not found`);
+    return task;
   }
 
   // List all tasks

@@ -4,7 +4,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { getConfig } from "../../src/core/config.js";
 
@@ -124,15 +124,22 @@ describe("config priority chain", () => {
     expect(cfg.port).toBe(8000);
   });
 
-  // Feature: Verify error thrown when TOML contains unknown top-level section
-  // Design: Write TOML with unknown section, confirm getConfig throws error containing "Unknown"
-  test("unknown TOML section throws error", () => {
+  // Feature: Verify process.exit when TOML contains unknown top-level section
+  // Design: Write TOML with unknown section, confirm getConfig emits error to stderr and calls process.exit
+  test("unknown TOML section calls process.exit with error message", () => {
     const dir = makeTmpDir();
     const tomlPath = path.join(dir, "bad.toml");
     writeFileSync(tomlPath, '[unknown_section]\nfoo = "bar"\n');
     process.chdir(dir);
     process.env["SWIFTY_CONFIG"] = tomlPath;
 
-    expect(() => getConfig()).toThrow("Unknown top-level config keys");
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {
+      /** noop */
+    });
+    expect(() => getConfig()).toThrow();
+    expect(consoleSpy).toHaveBeenCalledWith(
+      expect.stringContaining("Unknown top-level config keys"),
+    );
+    consoleSpy.mockRestore();
   });
 });

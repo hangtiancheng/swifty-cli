@@ -62,8 +62,9 @@ export class CoreApp {
   private _abortController = new AbortController();
 
   // Handle core.ping request
-  private async _pingHandler(_params: Record<string, unknown>): Promise<unknown> {
+  private async _pingHandler(params: Record<string, unknown>): Promise<unknown> {
     await Promise.resolve();
+    console.debug(`ping from ${String(params["client"])}`);
     const uptimeMs = Math.round(performance.now() - this._startTime);
     return PongResultSchema.parse({
       server_version: version,
@@ -131,9 +132,14 @@ export class CoreApp {
   private async _permissionRespondHandler(params: Record<string, unknown>): Promise<unknown> {
     await Promise.resolve();
     const cmd = PermissionRespondCommandSchema.parse(params);
-    if (this._permissionManager) {
-      this._permissionManager.respond(cmd.tool_use_id, cmd.decision);
+    console.log(
+      `permission.respond received tool_use_id=${cmd.tool_use_id} decision=${cmd.decision}`,
+    );
+    if (!this._permissionManager) {
+      console.error("permission.respond: PermissionManager not initialized");
+      return PermissionRespondResultSchema.parse({ ok: true });
     }
+    this._permissionManager.respond(cmd.tool_use_id, cmd.decision);
     return PermissionRespondResultSchema.parse({ ok: true });
   }
 

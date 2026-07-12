@@ -1,10 +1,16 @@
-// Runtime config: 4-tier priority loading (defaults → ~/.swifty/config.toml → .env → env vars)
+// Runtime config: 5-tier priority loading (defaults → ~/.swifty/config.toml → .swifty/config.toml → .env → env vars)
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 
 import toml from "toml";
 import { config as dotenvConfig } from "dotenv";
+
+// Print config error message to stderr and exit with code 1 (matches Python SystemExit behavior)
+function configExit(msg: string): never {
+  console.error(msg);
+  process.exit(1);
+}
 
 // ---- Defaults ----
 
@@ -134,12 +140,7 @@ export function getConfig(): SwiftyConfig {
         const data = isRecord(parsed) ? parsed : {};
         applyToml(config, data);
       } catch (e) {
-        if (e instanceof Error && e.message.startsWith("Config error")) {
-          throw e;
-        }
-        throw new Error(`Config parse error (${configPath}): ${String(e)}`, {
-          cause: e,
-        });
+        configExit(`Config parse error (${configPath}): ${String(e)}`);
       }
     }
   }
@@ -169,27 +170,27 @@ const VALID_SECTIONS = new Set([
 function applyToml(config: SwiftyConfig, data: Record<string, unknown>): void {
   const unknownKeys = Object.keys(data).filter((k) => !VALID_SECTIONS.has(k));
   if (unknownKeys.length > 0) {
-    throw new Error(`Unknown top-level config keys: ${unknownKeys.sort().join(", ")}`);
+    configExit(`Unknown top-level config keys: ${unknownKeys.sort().join(", ")}`);
   }
 
   if ("core" in data) {
     const core = data["core"];
     if (!isRecord(core)) {
-      throw new Error("Config error: [core] must be a table");
+      configExit("Config error: [core] must be a table");
     }
     const coreObj = core;
     const unknownCore = Object.keys(coreObj).filter((k) => !["host", "port"].includes(k));
     if (unknownCore.length > 0) {
-      throw new Error(`Unknown [core] keys: ${unknownCore.sort().join(", ")}`);
+      configExit(`Unknown [core] keys: ${unknownCore.sort().join(", ")}`);
     }
     if ("host" in coreObj) {
       if (typeof coreObj["host"] !== "string")
-        throw new Error("Config error: core.host must be a string");
+        configExit("Config error: core.host must be a string");
       config.host = coreObj["host"];
     }
     if ("port" in coreObj) {
       if (typeof coreObj["port"] !== "number")
-        throw new Error("Config error: core.port must be an integer");
+        configExit("Config error: core.port must be an integer");
       config.port = coreObj["port"];
     }
   }
@@ -197,17 +198,17 @@ function applyToml(config: SwiftyConfig, data: Record<string, unknown>): void {
   if ("logging" in data) {
     const log = data["logging"];
     if (!isRecord(log)) {
-      throw new Error("Config error: [logging] must be a table");
+      configExit("Config error: [logging] must be a table");
     }
     const logObj = log;
     const unknownLog = Object.keys(logObj).filter((k) => !["level", "file", "format"].includes(k));
     if (unknownLog.length > 0) {
-      throw new Error(`Unknown [logging] keys: ${unknownLog.sort().join(", ")}`);
+      configExit(`Unknown [logging] keys: ${unknownLog.sort().join(", ")}`);
     }
     for (const key of ["level", "file", "format"] as const) {
       if (key in logObj) {
         if (typeof logObj[key] !== "string")
-          throw new Error(`Config error: logging.${key} must be a string`);
+          configExit(`Config error: logging.${key} must be a string`);
         config.logging[key] = logObj[key];
       }
     }
@@ -216,17 +217,17 @@ function applyToml(config: SwiftyConfig, data: Record<string, unknown>): void {
   if ("agent" in data) {
     const agent = data["agent"];
     if (!isRecord(agent)) {
-      throw new Error("Config error: [agent] must be a table");
+      configExit("Config error: [agent] must be a table");
     }
     const agentObj = agent;
     const unknownAgent = Object.keys(agentObj).filter((k) => !["max_steps"].includes(k));
     if (unknownAgent.length > 0) {
-      throw new Error(`Unknown [agent] keys: ${unknownAgent.sort().join(", ")}`);
+      configExit(`Unknown [agent] keys: ${unknownAgent.sort().join(", ")}`);
     }
     if ("max_steps" in agentObj) {
       const val = agentObj["max_steps"];
       if (typeof val !== "number" || val <= 0) {
-        throw new Error("Config error: agent.max_steps must be a positive integer");
+        configExit("Config error: agent.max_steps must be a positive integer");
       }
       config.agent.maxSteps = val;
     }
@@ -235,21 +236,21 @@ function applyToml(config: SwiftyConfig, data: Record<string, unknown>): void {
   if ("llm" in data) {
     const llm = data["llm"];
     if (!isRecord(llm)) {
-      throw new Error("Config error: [llm] must be a table");
+      configExit("Config error: [llm] must be a table");
     }
     const llmObj = llm;
     const unknownLlm = Object.keys(llmObj).filter((k) => !["default_model", "router"].includes(k));
     if (unknownLlm.length > 0) {
-      throw new Error(`Unknown [llm] keys: ${unknownLlm.sort().join(", ")}`);
+      configExit(`Unknown [llm] keys: ${unknownLlm.sort().join(", ")}`);
     }
     if ("default_model" in llmObj) {
       if (typeof llmObj["default_model"] !== "string")
-        throw new Error("Config error: llm.default_model must be a string");
+        configExit("Config error: llm.default_model must be a string");
       config.llm.defaultModel = llmObj["default_model"];
     }
     if ("router" in llmObj) {
       if (typeof llmObj["router"] !== "string")
-        throw new Error("Config error: llm.router must be a string");
+        configExit("Config error: llm.router must be a string");
       config.llm.router = llmObj["router"];
     }
   }
@@ -257,28 +258,28 @@ function applyToml(config: SwiftyConfig, data: Record<string, unknown>): void {
   if ("trace" in data) {
     const trace = data["trace"];
     if (!isRecord(trace)) {
-      throw new Error("Config error: [trace] must be a table");
+      configExit("Config error: [trace] must be a table");
     }
     const traceObj = trace;
     const unknownTrace = Object.keys(traceObj).filter(
       (k) => !["enabled", "file", "include_llm_payload"].includes(k),
     );
     if (unknownTrace.length > 0) {
-      throw new Error(`Unknown [trace] keys: ${unknownTrace.sort().join(", ")}`);
+      configExit(`Unknown [trace] keys: ${unknownTrace.sort().join(", ")}`);
     }
     if ("enabled" in traceObj) {
       if (typeof traceObj["enabled"] !== "boolean")
-        throw new Error("Config error: trace.enabled must be a boolean");
+        configExit("Config error: trace.enabled must be a boolean");
       config.trace.enabled = traceObj["enabled"];
     }
     if ("file" in traceObj) {
       if (typeof traceObj["file"] !== "string")
-        throw new Error("Config error: trace.file must be a string");
+        configExit("Config error: trace.file must be a string");
       config.trace.file = traceObj["file"];
     }
     if ("include_llm_payload" in traceObj) {
       if (typeof traceObj["include_llm_payload"] !== "boolean")
-        throw new Error("Config error: trace.include_llm_payload must be a boolean");
+        configExit("Config error: trace.include_llm_payload must be a boolean");
       config.trace.includeLlmPayload = traceObj["include_llm_payload"];
     }
   }
@@ -286,17 +287,17 @@ function applyToml(config: SwiftyConfig, data: Record<string, unknown>): void {
   if ("permission" in data) {
     const perm = data["permission"];
     if (!isRecord(perm)) {
-      throw new Error("Config error: [permission] must be a table");
+      configExit("Config error: [permission] must be a table");
     }
     const permObj = perm;
     const unknownPerm = Object.keys(permObj).filter((k) => !["timeout_s"].includes(k));
     if (unknownPerm.length > 0) {
-      throw new Error(`Unknown [permission] keys: ${unknownPerm.sort().join(", ")}`);
+      configExit(`Unknown [permission] keys: ${unknownPerm.sort().join(", ")}`);
     }
     if ("timeout_s" in permObj) {
       const val = permObj["timeout_s"];
       if (typeof val !== "number" || val < 0) {
-        throw new Error("Config error: permission.timeout_s must be a non-negative number");
+        configExit("Config error: permission.timeout_s must be a non-negative number");
       }
       config.permission.timeoutS = val;
     }
@@ -305,33 +306,33 @@ function applyToml(config: SwiftyConfig, data: Record<string, unknown>): void {
   if ("compaction" in data) {
     const comp = data["compaction"];
     if (!isRecord(comp)) {
-      throw new Error("Config error: [compaction] must be a table");
+      configExit("Config error: [compaction] must be a table");
     }
     const compObj = comp;
     const unknownComp = Object.keys(compObj).filter(
       (k) => !["auto_threshold", "tool_result_limit", "tool_result_keep"].includes(k),
     );
     if (unknownComp.length > 0) {
-      throw new Error(`Unknown [compaction] keys: ${unknownComp.sort().join(", ")}`);
+      configExit(`Unknown [compaction] keys: ${unknownComp.sort().join(", ")}`);
     }
     if ("auto_threshold" in compObj) {
       const val = compObj["auto_threshold"];
       if (typeof val !== "number" || val < 0 || val > 1) {
-        throw new Error("Config error: compaction.auto_threshold must be between 0 and 1");
+        configExit("Config error: compaction.auto_threshold must be between 0 and 1");
       }
       config.compaction.autoThreshold = val;
     }
     if ("tool_result_limit" in compObj) {
       const val = compObj["tool_result_limit"];
       if (typeof val !== "number" || val <= 0) {
-        throw new Error("Config error: compaction.tool_result_limit must be a positive integer");
+        configExit("Config error: compaction.tool_result_limit must be a positive integer");
       }
       config.compaction.toolResultLimit = val;
     }
     if ("tool_result_keep" in compObj) {
       const val = compObj["tool_result_keep"];
       if (typeof val !== "number" || val <= 0) {
-        throw new Error("Config error: compaction.tool_result_keep must be a positive integer");
+        configExit("Config error: compaction.tool_result_keep must be a positive integer");
       }
       config.compaction.toolResultKeep = val;
     }
@@ -340,33 +341,31 @@ function applyToml(config: SwiftyConfig, data: Record<string, unknown>): void {
   if ("mcp" in data) {
     const mcp = data["mcp"];
     if (!isRecord(mcp)) {
-      throw new Error("Config error: [mcp] must be a table");
+      configExit("Config error: [mcp] must be a table");
     }
     const mcpObj = mcp;
     const unknownMcp = Object.keys(mcpObj).filter((k) => !["servers"].includes(k));
     if (unknownMcp.length > 0) {
-      throw new Error(`Unknown [mcp] keys: ${unknownMcp.sort().join(", ")}`);
+      configExit(`Unknown [mcp] keys: ${unknownMcp.sort().join(", ")}`);
     }
     const serversRaw = mcpObj["servers"] ?? [];
     if (!Array.isArray(serversRaw)) {
-      throw new Error("Config error: mcp.servers must be an array of tables");
+      configExit("Config error: mcp.servers must be an array of tables");
     }
     for (let i = 0; i < serversRaw.length; i++) {
       const srv: unknown = serversRaw[i];
       if (!isRecord(srv)) {
-        throw new Error(`Config error: mcp.servers[${String(i)}] must be a table`);
+        configExit(`Config error: mcp.servers[${String(i)}] must be a table`);
       }
       const srvObj = srv;
       const name = srvObj["name"];
       if (typeof name !== "string" || !name) {
-        throw new Error(`Config error: mcp.servers[${String(i)}].name must be a non-empty string`);
+        configExit(`Config error: mcp.servers[${String(i)}].name must be a non-empty string`);
       }
       const transportRaw = srvObj["transport"];
       const transport = typeof transportRaw === "string" ? transportRaw : "stdio";
       if (transport !== "stdio" && transport !== "tcp") {
-        throw new Error(
-          `Config error: mcp.servers[${String(i)}].transport must be 'stdio' or 'tcp'`,
-        );
+        configExit(`Config error: mcp.servers[${String(i)}].transport must be 'stdio' or 'tcp'`);
       }
       const s: McpServerConfig = {
         name,
@@ -379,30 +378,30 @@ function applyToml(config: SwiftyConfig, data: Record<string, unknown>): void {
       };
       if ("command" in srvObj) {
         if (typeof srvObj["command"] !== "string")
-          throw new Error(`Config error: mcp.servers[${String(i)}].command must be a string`);
+          configExit(`Config error: mcp.servers[${String(i)}].command must be a string`);
         s.command = srvObj["command"];
       }
       if ("args" in srvObj) {
         if (!Array.isArray(srvObj["args"]))
-          throw new Error(`Config error: mcp.servers[${String(i)}].args must be an array`);
+          configExit(`Config error: mcp.servers[${String(i)}].args must be an array`);
         const argsRaw: unknown = srvObj["args"];
         s.args = Array.isArray(argsRaw) ? argsRaw.map(String) : [];
       }
       if ("env" in srvObj) {
         const envVal = srvObj["env"];
         if (!isRecord(envVal)) {
-          throw new Error(`Config error: mcp.servers[${String(i)}].env must be a table`);
+          configExit(`Config error: mcp.servers[${String(i)}].env must be a table`);
         }
         s.env = Object.fromEntries(Object.entries(envVal).map(([k, v]) => [k, String(v)]));
       }
       if ("host" in srvObj) {
         if (typeof srvObj["host"] !== "string")
-          throw new Error(`Config error: mcp.servers[${String(i)}].host must be a string`);
+          configExit(`Config error: mcp.servers[${String(i)}].host must be a string`);
         s.host = srvObj["host"];
       }
       if ("port" in srvObj) {
         if (typeof srvObj["port"] !== "number")
-          throw new Error(`Config error: mcp.servers[${String(i)}].port must be an integer`);
+          configExit(`Config error: mcp.servers[${String(i)}].port must be an integer`);
         s.port = srvObj["port"];
       }
       config.mcp.servers.push(s);
@@ -419,9 +418,7 @@ function applyEnv(config: SwiftyConfig): void {
   if (portStr !== undefined) {
     const port = Number(portStr);
     if (!Number.isInteger(port)) {
-      throw new Error(
-        `Config error: SWIFTY_PORT must be an integer, got: ${JSON.stringify(portStr)}`,
-      );
+      configExit(`Config error: SWIFTY_PORT must be an integer, got: ${JSON.stringify(portStr)}`);
     }
     config.port = port;
   }
@@ -439,7 +436,7 @@ function applyEnv(config: SwiftyConfig): void {
   if (maxStepsStr !== undefined) {
     const val = Number(maxStepsStr);
     if (!Number.isInteger(val) || val <= 0) {
-      throw new Error(
+      configExit(
         `Config error: SWIFTY_MAX_STEPS must be a positive integer, got: ${JSON.stringify(maxStepsStr)}`,
       );
     }
@@ -466,7 +463,7 @@ function applyEnv(config: SwiftyConfig): void {
   if (permTimeout !== undefined) {
     const val = Number(permTimeout);
     if (Number.isNaN(val) || val < 0) {
-      throw new Error(
+      configExit(
         `Config error: SWIFTY_PERMISSION_TIMEOUT_S must be >= 0, got: ${JSON.stringify(permTimeout)}`,
       );
     }
@@ -477,7 +474,7 @@ function applyEnv(config: SwiftyConfig): void {
   if (compactThreshold !== undefined) {
     const val = Number(compactThreshold);
     if (Number.isNaN(val) || val < 0 || val > 1) {
-      throw new Error(
+      configExit(
         `Config error: SWIFTY_COMPACT_THRESHOLD must be between 0 and 1, got: ${JSON.stringify(compactThreshold)}`,
       );
     }
@@ -488,7 +485,7 @@ function applyEnv(config: SwiftyConfig): void {
   if (compactToolLimit !== undefined) {
     const val = Number(compactToolLimit);
     if (!Number.isInteger(val) || val <= 0) {
-      throw new Error(
+      configExit(
         `Config error: SWIFTY_COMPACT_TOOL_LIMIT must be a positive integer, got: ${JSON.stringify(compactToolLimit)}`,
       );
     }
@@ -499,7 +496,7 @@ function applyEnv(config: SwiftyConfig): void {
   if (compactToolKeep !== undefined) {
     const val = Number(compactToolKeep);
     if (!Number.isInteger(val) || val <= 0) {
-      throw new Error(
+      configExit(
         `Config error: SWIFTY_COMPACT_TOOL_KEEP must be a positive integer, got: ${JSON.stringify(compactToolKeep)}`,
       );
     }

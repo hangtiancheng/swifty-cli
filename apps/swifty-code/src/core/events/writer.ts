@@ -34,8 +34,8 @@ export class EventWriter {
     if (!this._opened) return;
     try {
       appendFileSync(this._path, JSON.stringify(event) + "\n", "utf-8");
-    } catch {
-      // Silently skip on write failure
+    } catch (err) {
+      console.error(`EventWriter: failed to write event: ${String(err)}`);
     }
   }
 

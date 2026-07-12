@@ -32,12 +32,13 @@ describe("TaskManager", () => {
 
   // Feature: Verify get returns null for non-existent task
   // Design: Query non-existent ID, confirm null is returned
-  test("get returns null for non-existent task", () => {
+  // Feature: Verify get throws for non-existent task (matches Python ValueError behavior)
+  // Design: Assert manager.get throws Error with "not found" message for unknown ID
+  test("get throws for non-existent task", () => {
     const dir = path.join(tmpdir(), `test-tasks-${String(Date.now())}`);
     mkdirSync(dir, { recursive: true });
     const manager = new TaskManager(dir);
-    const retrieved = manager.get("999");
-    expect(retrieved).toBeNull();
+    expect(() => manager.get("999")).toThrow(/task 999 not found/);
     rmSync(dir, { recursive: true });
   });
 

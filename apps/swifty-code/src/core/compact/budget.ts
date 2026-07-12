@@ -27,6 +27,11 @@ export function truncateToolResults(
   keep = DEFAULT_KEEP,
 ): Anthropic.MessageParam[] {
   return messages.map((msg) => {
+    // Per Anthropic Messages API contract, tool_result blocks only appear in
+    // user-role messages (assistant messages only carry text / thinking / tool_use).
+    // Skipping non-user roles is therefore a correctness filter aligned with the
+    // wire-format, not a redundant guard. Mirrors Python budget.py:17.
+    if (msg.role !== "user") return msg;
     if (typeof msg.content === "string") return msg;
 
     const newContent = msg.content.map((block) => {
