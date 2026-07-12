@@ -1,4 +1,7 @@
-// TUI entry point: renders the main App component with Ink
+// TUI entry point: renders the main App component with Ink.
+// AlternateScreen is NOT used here because it creates a separate buffer
+// that conflicts with <Static> (committed messages get overwritten on redraw).
+// Flicker is eliminated via installSyncOutput() (DEC 2026) + Static/dynamic split.
 import React from "react";
 import { render } from "ink";
 
@@ -15,7 +18,6 @@ export async function launchTUI(): Promise<void> {
       exitOnCtrlC: false,
     });
 
-    // Wait for the app to exit
     await instance.waitUntilExit();
   } catch (error) {
     console.error("Failed to launch TUI:", error);

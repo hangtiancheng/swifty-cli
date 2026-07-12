@@ -371,6 +371,7 @@ function matchTopic(eventType: string, topics: string[]): boolean {
 // Daemon entry point
 async function main(): Promise<void> {
   await new CoreApp().run();
+  process.exit(0);
 }
 
 const isDirectRun = process.argv[1].endsWith("/app.ts") || process.argv[1].endsWith("/app.js");

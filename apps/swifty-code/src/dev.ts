@@ -60,6 +60,29 @@ async function main(): Promise<void> {
 
   // Run TUI in foreground (has raw mode access to terminal)
   let exitCode = 0;
+
+  // Cleanup helper: kill daemon if we started it
+  const killDaemon = (): void => {
+    if (!daemon) return;
+    daemon.kill("SIGTERM");
+    // Force kill after 3s if SIGTERM doesn't work
+    const timer = setTimeout(() => {
+      daemon.kill("SIGKILL");
+    }, 3000);
+    daemon.on("exit", () => {
+      clearTimeout(timer);
+    });
+  };
+
+  // Handle Ctrl+C and SIGTERM: kill daemon before exiting
+  const onSignal = (): void => {
+    killDaemon();
+    process.exit(1);
+  };
+  process.on("SIGINT", onSignal);
+  process.on("SIGTERM", onSignal);
+  process.on("SIGHUP", onSignal);
+
   try {
     await launchTUI();
   } catch (err) {
@@ -68,6 +91,9 @@ async function main(): Promise<void> {
   }
 
   // Cleanup: kill daemon on TUI exit (only if we started it)
+  process.off("SIGINT", onSignal);
+  process.off("SIGTERM", onSignal);
+  process.off("SIGHUP", onSignal);
   if (daemon) {
     daemon.kill("SIGTERM");
     await new Promise<void>((resolve) => {

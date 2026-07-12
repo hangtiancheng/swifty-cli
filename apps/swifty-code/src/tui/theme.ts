@@ -1,57 +1,7 @@
-// TUI color theme — Claude Code-inspired: warm amber accent on deep neutral background
-// Minimal chrome, flowing text, compact inline indicators — no heavy box borders
-export const theme = {
-  // Primary palette — amber accent (Tailwind amber scale)
-  accent: "#d4a017", // muted amber — softer than pure amber-500 for readability
-  accentDim: "#92400e", // amber-800 — for separator lines
-  accentBright: "#fbbf24", // amber-400 — for highlights only
-
-  // Backgrounds (Tailwind neutral scale — true dark)
-  bg: "#0a0a0a", // neutral-950
-  bgPanel: "#141414", // slightly lighter than bg for subtle contrast
-  bgInput: "#1a1a1a", // input area background
-  bgSelected: "#262626", // neutral-800
-
-  // Text hierarchy (Tailwind neutral scale)
-  text: "#d4d4d4", // neutral-300 — primary content, slightly dimmer than pure white
-  textBright: "#f5f5f5", // neutral-100 — only for key emphasis points
-  textDim: "#737373", // neutral-500 — metadata, timestamps, labels
-  textMuted: "#525252", // neutral-600 — decorative elements, progress bars
-
-  // Semantic colors (Tailwind semantic palette)
-  success: "#34d399", // emerald-400 — softer than pure green
-  error: "#fb7185", // rose-400 — softer than pure red
-  warning: "#fbbf24", // amber-400
-  info: "#60a5fa", // blue-400
-
-  // Tool call palette — inline, no borders
-  toolName: "#d4a017", // same as accent for tool name inline
-  toolRunning: "#fbbf24", // bright amber for spinner
-  toolSuccess: "#34d399", // emerald for ✓
-  toolFailed: "#fb7185", // rose for ✗
-
-  // Subagent palette
-  subagentAccent: "#a78bfa", // violet-400 — distinct from main accent
-  subagentDim: "#7c3aed", // violet-600
-
-  // Unicode indicators (Claude Code style — inline, no box borders)
-  indicator: {
-    runStart: ">",
-    runEnd: "◼",
-    step: "─",
-    toolRunning: "●",
-    toolSuccess: "✓",
-    toolFailed: "✗",
-    permission: "!",
-    session: "●",
-    subagent: "↳",
-    compact: "↻",
-    bullet: "•",
-    arrow: "->",
-    xAxis: "-",
-    yAxis: "|",
-  },
-} as const;
+// TUI theme utilities — amber accent palette (preserved from SwiftyCode original)
+// Visual constants (COLORS/ICONS/BORDER_COLORS) live in styles.ts
+export const ACCENT = "#d4a017";
+export const ACCENT_BRIGHT = "#fbbf24";
 
 // Format a duration in milliseconds to a human-readable string
 export function formatDuration(ms: number): string {
@@ -72,8 +22,7 @@ export function truncate(text: string, maxLength: number): string {
 // Context bar width in characters
 const CONTEXT_BAR_WIDTH = 20;
 
-// Render a context usage progress bar with color coding based on fill level
-// Returns the bar string (caller applies color via Text component)
+// Render a context usage progress bar
 export function contextBarFill(pct: number): string {
   const clamped = Math.max(0, Math.min(1, pct));
   const filled = Math.round(clamped * CONTEXT_BAR_WIDTH);
@@ -82,9 +31,9 @@ export function contextBarFill(pct: number): string {
 
 // Determine the color for a context percentage based on threshold
 export function contextBarColor(pct: number): string {
-  if (pct >= 0.85) return theme.error;
-  if (pct >= 0.7) return theme.warning;
-  return theme.textMuted;
+  if (pct >= 0.85) return "#fb7185";
+  if (pct >= 0.7) return "#fbbf24";
+  return "#525252";
 }
 
 // Format an ISO timestamp to a short HH:MM:SS string for inline display
