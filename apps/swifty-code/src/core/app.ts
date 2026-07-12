@@ -330,7 +330,9 @@ export class CoreApp {
       ]);
     }
 
-    await this._mcpManager.stopAll();
+    if (this._mcpManager) {
+      await this._mcpManager.stopAll();
+    }
     await server.stop();
     if (this._trace) await this._trace.stop();
 

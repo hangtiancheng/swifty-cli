@@ -117,7 +117,7 @@ export class AnthropicProvider implements LLMProvider {
     // Build request parameters
     const args: Anthropic.MessageCreateParamsStreaming = {
       model: this._model,
-      max_tokens: 128_000,
+      max_tokens: 8192,
       system: systemBlocks,
       messages,
       stream: true,
