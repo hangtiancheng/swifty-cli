@@ -75,8 +75,15 @@ export const EMBEDDING_DIM_MAP = {
   ollama: 768,
 } as const;
 
-// Active embedding dimension, derived from the selected embedding provider.
-export const EMBEDDING_DIM = EMBEDDING_DIM_MAP[config.embeddingProvider];
+// Active embedding dimension. Derived from the selected provider by default; override via
+// the EMBEDDING_DIM env var when using a non-default model (e.g. ollama bge-m3 = 1024).
+const envEmbeddingDim = process.env.EMBEDDING_DIM
+  ? Number.parseInt(process.env.EMBEDDING_DIM, 10)
+  : undefined;
+export const EMBEDDING_DIM =
+  envEmbeddingDim && envEmbeddingDim > 0
+    ? envEmbeddingDim
+    : EMBEDDING_DIM_MAP[config.embeddingProvider];
 
 // The source project stores the raw bytes of N float32s (N*4 bytes = N*32 bits) as a BinaryVector,
 // using HAMMING metric. Hence BinaryVector dim = EMBEDDING_DIM * 32, bytes = dim / 8.
