@@ -1,6 +1,6 @@
 # swifty-agent
 
-AI intelligent OnCall assistant, migrated from SuperBizAgent (Go + cloudwego/eino) to Next.js 16 App Router + Vercel AI SDK.
+AI intelligent OnCall assistant by Next.js 16 App Router + Vercel AI SDK.
 
 ## Stack
 

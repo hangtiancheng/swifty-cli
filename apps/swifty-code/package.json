@@ -24,7 +24,12 @@
     "swifty-code": "./dist/cli/main.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "README.md",
+    "kill.mjs",
+    "LICENSE",
+    "RUNBOOK.md",
+    "WIRE_PROTOCOL.md"
   ],
   "type": "module",
   "publishConfig": {

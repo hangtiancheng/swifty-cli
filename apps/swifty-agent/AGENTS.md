@@ -8,7 +8,7 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 # swifty-agent
 
-AI intelligent OnCall assistant, migrated from SuperBizAgent (Go + cloudwego/eino). Brand: swifty-agent.
+AI intelligent OnCall assistant.
 
 ## Tech stack
 
