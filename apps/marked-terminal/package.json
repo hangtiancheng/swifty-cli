@@ -50,8 +50,8 @@
     "@rollup/plugin-commonjs": "^29.0.3",
     "@rollup/plugin-node-resolve": "^16.0.3",
     "@rollup/plugin-typescript": "^12.3.0",
-    "@types/node": "^24.13.2",
-    "marked": "^18.0.5",
+    "@types/node": "^24.13.3",
+    "marked": "^18.0.6",
     "rollup": "^4.62.2",
     "tslib": "^2.8.1",
     "typescript": "^5.9.3"
