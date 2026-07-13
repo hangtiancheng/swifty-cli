@@ -41,11 +41,11 @@ export const config = {
     model: process.env.OLLAMA_EMBEDDING_MODEL ?? "nomic-embed-text",
     baseURL: process.env.OLLAMA_BASE_URL ?? "http://localhost:11434",
   },
-  // Milvus
-  milvus: {
-    address: process.env.MILVUS_ADDRESS ?? "localhost:19530",
-    db: process.env.MILVUS_DB ?? "agent",
-    collection: process.env.MILVUS_COLLECTION ?? "biz",
+  // Redis Stack (RediSearch module) — vector database
+  redis: {
+    url: process.env.REDIS_URL ?? "redis://localhost:6379",
+    indexName: process.env.REDIS_INDEX_NAME ?? "idx:biz",
+    keyPrefix: process.env.REDIS_KEY_PREFIX ?? "biz:",
   },
   // MCP (Log tool SSE)
   mcpUrl: process.env.MCP_URL ?? "http://localhost:3000/sse",
@@ -57,14 +57,6 @@ export const config = {
   provider: (process.env.LLM_PROVIDER ?? "openai") as "openai" | "anthropic",
   // Embedding provider selection: "dashscope" (default) | "ollama"
   embeddingProvider: (process.env.EMBEDDING_PROVIDER ?? "dashscope") as "dashscope" | "ollama",
-} as const;
-
-// Milvus field names (aligned with source project utility/common + indexer fields)
-export const MILVUS_FIELDS = {
-  id: "id",
-  vector: "vector",
-  content: "content",
-  metadata: "metadata",
 } as const;
 
 // Embedding dimension per provider (float32 count).
@@ -84,13 +76,6 @@ export const EMBEDDING_DIM =
   envEmbeddingDim && envEmbeddingDim > 0
     ? envEmbeddingDim
     : EMBEDDING_DIM_MAP[config.embeddingProvider];
-
-// The source project stores the raw bytes of N float32s (N*4 bytes = N*32 bits) as a BinaryVector,
-// using HAMMING metric. Hence BinaryVector dim = EMBEDDING_DIM * 32, bytes = dim / 8.
-// - dashscope: 2048 * 32 = 65536 bits → 8192 bytes
-// - ollama:     768 * 32 = 24576 bits → 3072 bytes
-export const BINARY_VECTOR_DIM = EMBEDDING_DIM * 32;
-export const BINARY_VECTOR_BYTES = BINARY_VECTOR_DIM / 8;
 
 // Conversation memory window size (aligned with source project utility/mem MaxWindowSize)
 export const MEMORY_WINDOW_SIZE = 6;

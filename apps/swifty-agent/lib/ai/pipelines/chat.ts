@@ -4,7 +4,7 @@ import { streamText, generateText, type Tool, type ModelMessage, isStepCount } f
 import { quickModel, providerOptions } from "../models";
 import { builtinTools } from "../tools";
 import { getLogMcpTools } from "../tools/query-log";
-import { retrieve } from "@/lib/milvus/retriever";
+import { retrieve } from "@/lib/redis/retriever";
 import { getSimpleMemory } from "@/lib/memory";
 
 // System prompt migrated from chat_pipeline/prompt.go.

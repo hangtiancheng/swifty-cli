@@ -1,8 +1,8 @@
 // Corresponds to knowledge_index_pipeline (orchestration.go, transformer.go).
-// FileLoader → MarkdownHeaderSplitter → MilvusIndexer
+// FileLoader → MarkdownHeaderSplitter → RedisIndexer
 import { randomUUID } from "node:crypto";
 import { loadFile } from "../loader";
-import { indexChunks, deleteBySource, type IndexChunk } from "@/lib/milvus/indexer";
+import { indexChunks, deleteBySource, type IndexChunk } from "@/lib/redis/indexer";
 
 interface MarkdownChunk {
   content: string;

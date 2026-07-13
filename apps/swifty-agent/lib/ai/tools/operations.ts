@@ -1,7 +1,7 @@
 // Pure function implementations for tools, aligned with the source project internal/ai/tools/*
 // get_current_time / query_prometheus_alerts / query_internal_docs / mysql_crud
 import knex from "knex";
-import { retrieve } from "@/lib/milvus/retriever";
+import { retrieve } from "@/lib/redis/retriever";
 import { config } from "@/lib/config";
 import { z } from "zod/v4";
 

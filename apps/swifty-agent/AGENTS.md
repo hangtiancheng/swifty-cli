@@ -16,7 +16,7 @@ AI intelligent OnCall assistant.
 - Vercel AI SDK v7 (`ai`): streamText / generateText / generateObject / tool / embed / embedMany
 - LLM: DeepSeek-v3 (Volcengine Ark, OpenAI compatible) via `@ai-sdk/openai` createOpenAI
 - Embedding: Alibaba DashScope text-embedding-v4 / Ollama nomic-embed-text via `@ai-sdk/openai-compatible`; selected by `EMBEDDING_PROVIDER` ("dashscope" | "ollama"); dim auto-derived per provider, overridable via `EMBEDDING_DIM`
-- Vector DB: Milvus (`@zilliz/milvus2-sdk-node`, db=agent, collection=biz, BinaryVector dim = EMBEDDING_DIM\*32; dashscope→65536, ollama→24576)
+- Vector DB: Redis Stack (`redis`, index=idx:biz, key prefix=biz:, VECTOR FLOAT32 + HNSW + COSINE, dim = EMBEDDING_DIM; dashscope→2048, ollama→768)
 - MySQL: `knex` + `mysql2` (mysql_crud tool uses knex.raw for dynamic SQL)
 - MCP: `@modelcontextprotocol/sdk` (SSE log tools)
 - Frontend: Tailwind v4 atomic classes + react-markdown + highlight.js
@@ -24,7 +24,7 @@ AI intelligent OnCall assistant.
 ## Directory layout
 
 - `app/` — Next.js App Router (page / layout / api route)
-- `lib/` — server-side logic (ai / milvus / memory / config / api-schemas)
+- `lib/` — server-side logic (ai / redis / memory / config / api-schemas)
 - `components/` — React components
 - `hooks/` — React hooks
 

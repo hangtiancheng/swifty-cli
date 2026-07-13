@@ -3,7 +3,7 @@
 //   "dashscope" (default, text-embedding-v4) | "ollama" (local, nomic-embed-text)
 import { embed, embedMany, type EmbeddingModel } from "ai";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import { config, EMBEDDING_DIM, BINARY_VECTOR_BYTES } from "@/lib/config";
+import { config } from "@/lib/config";
 
 // Provider factory — symmetric with resolveThinkModel/resolveQuickModel in models.ts
 function createEmbeddingProvider(): EmbeddingModel {
@@ -42,24 +42,4 @@ export async function embedTexts(texts: string[]): Promise<number[][]> {
     values: texts,
   });
   return embeddings;
-}
-
-/**
- * Float32 array → BinaryVector bytes.
- * Dimension is parameterized via EMBEDDING_DIM (varies with the active embedding provider).
- * Aligned with the source project: stores the raw byte stream of N float32s as a BinaryVector,
- * using HAMMING metric. (N float32 × 4 bytes × 8 bits = N*32 bits)
- */
-export function float32ToBinaryVector(floats: number[]): Buffer {
-  if (floats.length !== EMBEDDING_DIM) {
-    throw new Error(`embedding dim mismatch: expected ${EMBEDDING_DIM}, got ${floats.length}`);
-  }
-  const arr = new Float32Array(floats);
-  const buf = Buffer.from(arr.buffer);
-  if (buf.length !== BINARY_VECTOR_BYTES) {
-    throw new Error(
-      `binary vector bytes mismatch: expected ${BINARY_VECTOR_BYTES}, got ${buf.length}`,
-    );
-  }
-  return buf;
 }

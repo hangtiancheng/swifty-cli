@@ -1,0 +1,4 @@
+scrape_configs:
+  - job_name: "redis"
+    static_configs:
+      - targets: ["redis-stack:9121"]
