@@ -4,11 +4,43 @@ AI intelligent OnCall assistant by Next.js 16 App Router + Vercel AI SDK.
 
 ## setup
 
-### Redis Stack
+### Redis Stack (Vector DB)
+
+Requires Redis Stack (includes the RedisSearch module for vector search).
+
+**Option A: Docker (recommended)**
 
 ```bash
 docker compose up redis -d
 ```
+
+**Option B: Homebrew (macOS)**
+
+```bash
+brew tap redis-stack/redis-stack
+brew trust redis-stack/redis-stack
+brew install --cask redis-stack
+```
+
+Default port: `6379`. RedisInsight UI: `http://localhost:8001`.
+
+### Prometheus & Grafana (monitoring, optional)
+
+**Option A: Docker**
+
+```bash
+docker compose up prometheus grafana -d
+```
+
+**Option B: Homebrew (macOS)**
+
+```bash
+brew install prometheus grafana
+brew services start prometheus
+brew services start grafana
+```
+
+Prometheus default port: `9090`. Grafana default port: `3000` (admin / pass).
 
 ---
 
