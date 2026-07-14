@@ -16,10 +16,23 @@ docker compose up redis -d
 
 **Option B: Homebrew (macOS)**
 
+Install (cask, includes RediSearch module):
+
 ```bash
 brew tap redis-stack/redis-stack
-brew trust redis-stack/redis-stack
 brew install --cask redis-stack
+```
+
+If the plain `redis` formula is running, stop it first (both use port 6379):
+
+```bash
+brew services stop redis
+```
+
+Start Redis Stack in the background (casks are not managed by `brew services`):
+
+```bash
+redis-stack-server --daemonize yes
 ```
 
 Default port: `6379`. RedisInsight UI: `http://localhost:8001`.

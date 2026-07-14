@@ -8,44 +8,33 @@ export const config = {
     think: {
       model: process.env.DEEPSEEK_THINK_MODEL ?? "deepseek-v3-2-251201",
       apiKey: process.env.DEEPSEEK_THINK_API_KEY ?? "",
-      baseURL:
-        process.env.DEEPSEEK_THINK_BASE_URL ??
-        "https://ark.cn-beijing.volces.com/api/v3",
+      baseURL: process.env.DEEPSEEK_THINK_BASE_URL ?? "https://ark.cn-beijing.volces.com/api/v3",
     },
     quick: {
       model: process.env.DEEPSEEK_QUICK_MODEL ?? "deepseek-v3-2-251201",
       apiKey: process.env.DEEPSEEK_QUICK_API_KEY ?? "",
-      baseURL:
-        process.env.DEEPSEEK_QUICK_BASE_URL ??
-        "https://ark.cn-beijing.volces.com/api/v3",
+      baseURL: process.env.DEEPSEEK_QUICK_BASE_URL ?? "https://ark.cn-beijing.volces.com/api/v3",
     },
   },
   anthropic: {
     think: {
       model: process.env.ANTHROPIC_THINK_MODEL ?? "claude-sonnet-4-20250514",
       apiKey: process.env.ANTHROPIC_THINK_API_KEY ?? "",
-      baseURL:
-        process.env.ANTHROPIC_THINK_BASE_URL ?? "https://api.anthropic.com",
+      baseURL: process.env.ANTHROPIC_THINK_BASE_URL ?? "https://api.anthropic.com",
     },
     quick: {
       model: process.env.ANTHROPIC_QUICK_MODEL ?? "claude-sonnet-4-20250514",
       apiKey: process.env.ANTHROPIC_QUICK_API_KEY ?? "",
-      baseURL:
-        process.env.ANTHROPIC_QUICK_BASE_URL ?? "https://api.anthropic.com",
+      baseURL: process.env.ANTHROPIC_QUICK_BASE_URL ?? "https://api.anthropic.com",
     },
     thinking: process.env.ANTHROPIC_THINKING !== "false", // default enabled
-    maxOutputTokens: Number.parseInt(
-      process.env.ANTHROPIC_MAX_OUTPUT_TOKENS ?? "8192",
-      10,
-    ),
+    maxOutputTokens: Number.parseInt(process.env.ANTHROPIC_MAX_OUTPUT_TOKENS ?? "8192", 10),
   },
   // Alibaba Bailian DashScope embedding (OpenAI compatible)
   dashscope: {
     model: process.env.DASHSCOPE_EMBEDDING_MODEL ?? "text-embedding-v4",
     apiKey: process.env.DASHSCOPE_API_KEY ?? "",
-    baseURL:
-      process.env.DASHSCOPE_BASE_URL ??
-      "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    baseURL: process.env.DASHSCOPE_BASE_URL ?? "https://dashscope.aliyuncs.com/compatible-mode/v1",
   },
   // Ollama local embedding (OpenAI compatible endpoint, v0.1.24+)
   ollama: {
@@ -67,9 +56,7 @@ export const config = {
   // LLM provider selection: "openai" (default) | "anthropic"
   provider: (process.env.LLM_PROVIDER ?? "openai") as "openai" | "anthropic",
   // Embedding provider selection: "dashscope" (default) | "ollama"
-  embeddingProvider: (process.env.EMBEDDING_PROVIDER ?? "dashscope") as
-    | "dashscope"
-    | "ollama",
+  embeddingProvider: (process.env.EMBEDDING_PROVIDER ?? "dashscope") as "dashscope" | "ollama",
 } as const;
 
 // Embedding dimension per provider (float32 count).

@@ -16,30 +16,43 @@ const mcpInputSchemaShape = z.record(z.string(), z.unknown());
 export async function getLogMcpTools(): Promise<Record<string, Tool>> {
   if (cachedTools) return cachedTools;
 
-  const transport = new SSEClientTransport(new URL(config.mcpUrl));
-  const client = new Client({ name: "swifty-agent", version: "1.0.0" }, { capabilities: {} });
-  await client.connect(transport);
-  cachedClient = client;
+  try {
+    const transport = new SSEClientTransport(new URL(config.mcpUrl));
+    const client = new Client({ name: "swifty-agent", version: "1.0.0" }, { capabilities: {} });
+    await client.connect(transport);
+    cachedClient = client;
 
-  const { tools } = await client.listTools();
-  const result: Record<string, Tool> = {};
-  for (const t of tools) {
-    const toolName = t.name;
-    const rawSchema = t.inputSchema ?? {};
-    const inputSchema = mcpInputSchemaShape.parse(rawSchema);
-    result[toolName] = tool({
-      description: t.description ?? toolName,
-      inputSchema: jsonSchema(inputSchema),
-      execute: async (input) => {
-        const args = z.record(z.string(), z.unknown()).parse(input);
-        const res = await client.callTool({ name: toolName, arguments: args });
-        return JSON.stringify(res.content);
-      },
-    });
+    const { tools } = await client.listTools();
+    const result: Record<string, Tool> = {};
+    for (const t of tools) {
+      const toolName = t.name;
+      const rawSchema = t.inputSchema ?? {};
+      const inputSchema = mcpInputSchemaShape.parse(rawSchema);
+      result[toolName] = tool({
+        description: t.description ?? toolName,
+        inputSchema: jsonSchema(inputSchema),
+        execute: async (input) => {
+          const args = z.record(z.string(), z.unknown()).parse(input);
+          const res = await client.callTool({
+            name: toolName,
+            arguments: args,
+          });
+          return JSON.stringify(res.content);
+        },
+      });
+    }
+
+    cachedTools = result;
+    return result;
+  } catch (e) {
+    // MCP server unavailable — degrade gracefully (mirrors Go: mcpTools, _ := GetLogMcpTool).
+    console.warn(
+      "[mcp] failed to connect, skipping log tools:",
+      e instanceof Error ? e.message : e,
+    );
+    cachedTools = {};
+    return cachedTools;
   }
-
-  cachedTools = result;
-  return result;
 }
 
 export async function closeLogMcpClient(): Promise<void> {
