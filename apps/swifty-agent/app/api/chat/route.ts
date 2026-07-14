@@ -31,8 +31,31 @@ export async function POST(request: Request) {
     const answer = await chat(id, question);
     return Response.json({ message: "OK", data: { answer } }, { headers: CORS_HEADERS });
   } catch (e) {
+    // The Vercel AI SDK throws APICallError with the real upstream body in
+    // `responseBody`/`statusCode`; `e.message` alone is often empty when a
+    // non-official Anthropic-compatible gateway returns a non-standard error.
+    const err = e as {
+      name?: string;
+      message?: string;
+      statusCode?: number;
+      url?: string;
+      responseBody?: string;
+      responseHeaders?: Record<string, string>;
+      cause?: unknown;
+    };
+    console.error("[/api/chat] error:", err);
     return Response.json(
-      { message: e instanceof Error ? e.message : String(e), data: null },
+      {
+        message: JSON.stringify({
+          name: err?.name,
+          message: err?.message ?? String(e),
+          statusCode: err?.statusCode,
+          url: err?.url,
+          responseBody: err?.responseBody,
+          responseHeaders: err?.responseHeaders,
+        }),
+        data: null,
+      },
       { status: 500, headers: CORS_HEADERS },
     );
   }

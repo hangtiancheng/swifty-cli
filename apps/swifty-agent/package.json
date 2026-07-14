@@ -15,6 +15,7 @@
     "@ai-sdk/openai-compatible": "^3.0.7",
     "@anthropic-ai/sdk": "^0.104.2",
     "@modelcontextprotocol/sdk": "^1.29.0",
+    "@swifty.js/fonts": "file:../../../swifty-fonts",
     "ai": "^7.0.22",
     "dotenv": "^17.4.2",
     "highlight.js": "^11.11.1",

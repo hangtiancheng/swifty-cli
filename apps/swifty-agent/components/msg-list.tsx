@@ -55,7 +55,11 @@ function MessageItem({ message, streaming }: { message: ChatMessage; streaming: 
                   key={idx}
                   className="border-l-2 border-sky-400 bg-white p-2 text-xs text-zinc-700"
                 >
-                  <strong className="text-sky-600">Step {idx + 1}:</strong> {d}
+                  <strong className="text-sky-600">Step {idx + 1}:</strong>
+                  <MdRender
+                    content={d}
+                    className="max-w-none wrap-break-word text-xs leading-relaxed text-zinc-700"
+                  />
                 </div>
               ))}
             </div>

@@ -1,6 +1,11 @@
 @import "tailwindcss";
 @import "highlight.js/styles/github.css";
 
-body {
-  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+@theme {
+  --font-sans:
+    var(--font-swifty), Geist Mono, Menlo, Cascadia Code, Sarasa Gothic SC, PingFang SC,
+    Microsoft YaHei;
+  --font-mono:
+    var(--font-swifty), Geist Mono, Menlo, Cascadia Code, Sarasa Gothic SC, PingFang SC,
+    Microsoft YaHei;
 }

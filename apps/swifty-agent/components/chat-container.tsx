@@ -38,7 +38,7 @@ export default function ChatContainer({
       ) : (
         <MessageList messages={messages} isStreaming={isStreaming} />
       )}
-      <div className="w-full max-w-3xl px-5 pb-5">
+      <div className="w-full px-6 pb-5">
         <ChatInput
           isStreaming={isStreaming}
           mode={mode}

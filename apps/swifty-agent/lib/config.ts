@@ -3,17 +3,17 @@
 import "dotenv/config";
 
 export const config = {
-  // DeepSeek (Volcano engine Ark, OpenAI compatible). 'think' is used for planning/replanning, 'quick' is used for execution/chat.
-  deepseek: {
+  // OpenAI (Volcano engine Ark, OpenAI compatible). 'think' is used for planning/replanning, 'quick' is used for execution/chat.
+  openai: {
     think: {
-      model: process.env.DEEPSEEK_THINK_MODEL ?? "deepseek-v3-2-251201",
-      apiKey: process.env.DEEPSEEK_THINK_API_KEY ?? "",
-      baseURL: process.env.DEEPSEEK_THINK_BASE_URL ?? "https://ark.cn-beijing.volces.com/api/v3",
+      model: process.env.OPENAI_THINK_MODEL ?? "openai-v3-2-251201",
+      apiKey: process.env.OPENAI_THINK_API_KEY ?? "",
+      baseURL: process.env.OPENAI_THINK_BASE_URL ?? "https://ark.cn-beijing.volces.com/api/v3",
     },
     quick: {
-      model: process.env.DEEPSEEK_QUICK_MODEL ?? "deepseek-v3-2-251201",
-      apiKey: process.env.DEEPSEEK_QUICK_API_KEY ?? "",
-      baseURL: process.env.DEEPSEEK_QUICK_BASE_URL ?? "https://ark.cn-beijing.volces.com/api/v3",
+      model: process.env.OPENAI_QUICK_MODEL ?? "openai-v3-2-251201",
+      apiKey: process.env.OPENAI_QUICK_API_KEY ?? "",
+      baseURL: process.env.OPENAI_QUICK_BASE_URL ?? "https://ark.cn-beijing.volces.com/api/v3",
     },
   },
   anthropic: {

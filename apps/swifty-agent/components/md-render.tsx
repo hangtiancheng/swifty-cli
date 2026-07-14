@@ -6,9 +6,10 @@ import hljs from "highlight.js";
 
 interface MdRenderProps {
   content: string;
+  className?: string;
 }
 
-export default function MdRender({ content }: MdRenderProps) {
+export default function MdRender({ content, className }: MdRenderProps) {
   const components = useMemo<Components>(
     () => ({
       pre: ({ children }) => (
@@ -41,7 +42,9 @@ export default function MdRender({ content }: MdRenderProps) {
   );
 
   return (
-    <div className="max-w-none wrap-break-word text-sm leading-relaxed text-zinc-800">
+    <div
+      className={className ?? "max-w-none wrap-break-word text-sm leading-relaxed text-zinc-800"}
+    >
       <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
         {content}
       </ReactMarkdown>
