@@ -73,7 +73,7 @@ export class WriteFileTool implements Tool {
       ctx.fileHistory?.trackEdit(filePath);
       mkdirSync(dirname(filePath), { recursive: true });
       writeFileSync(filePath, content, "utf-8");
-      ctx.fileStateCache?.update(filePath, content);
+      ctx.fileStateCache?.update(filePath);
       const lineCount = content.split("\n").length;
       return Promise.resolve({
         output: `Successfully wrote to ${filePath} (${String(lineCount)} lines)`,

@@ -1,4 +1,4 @@
-// Redis Stack (RedisSearch) client singleton + auto-create vector index.
+// Redis Stack (RediSearch) client singleton + auto-create vector index.
 // Replaces lib/milvus/client.ts. Stores embeddings as native Float32 vectors
 // with HNSW + COSINE (vs. Milvus BinaryVector + HAMMING).
 import { createClient, type RedisClientType } from "redis";
@@ -68,7 +68,7 @@ async function ensureIndex(client: RedisClientType): Promise<void> {
   // If the index exists and dimension matches, nothing to do.
   if (indexExists) return;
 
-  // Create the RedisSearch vector index.
+  // Create the RediSearch vector index.
   await client.ft.create(
     config.redis.indexName,
     {

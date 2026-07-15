@@ -16,7 +16,7 @@ import { RecoveryState } from "../compact/recovery.js";
 import { ContextTooLongError, RateLimitError } from "../llm/errors.js";
 import { getOrCreatePlanPath, planExists } from "../plan-file/plan-file.js";
 import { buildPlanModeReminder } from "../prompt/plan-mode.js";
-import { applyBudget } from "../tool-result/budget.js";
+import { applyBudget, persistLargeResult } from "../tool-result/budget.js";
 import { readFile } from "node:fs/promises";
 import { asRecord, strArg } from "@/utils/index.js";
 import type { ToolSchema } from "@/tools/types.js";
@@ -25,8 +25,6 @@ import type { ToolSchema } from "@/tools/types.js";
 // value, then attempt a bounded number of multi-turn recoveries. Mirrors Go.
 const MAX_TOKENS_CEILING = 64000;
 const MAX_OUTPUT_TOKENS_RECOVERIES = 3;
-// Hard per-result cap on tool output stored back into the conversation. The
-// tool result budget handles spilling separately; this is a final safety cap.
 const MAX_OUTPUT_CHARS = 10000;
 
 export interface AgentConfig {
@@ -413,7 +411,7 @@ export class Agent {
                 toolUseId: r.toolId,
                 content:
                   r.output.length > MAX_OUTPUT_CHARS
-                    ? r.output.slice(0, MAX_OUTPUT_CHARS) + "\n… (output truncated)"
+                    ? persistLargeResult(this.workDir, this.sessionId, r.toolId, r.output)
                     : r.output,
                 isError: r.isError,
               });

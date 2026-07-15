@@ -76,7 +76,7 @@ export async function deleteBySource(source: string): Promise<void> {
   }
 }
 
-// Redis TAG query requires escaping special characters; see RedisSearch docs.
+// Redis TAG query requires escaping special characters; see RediSearch docs.
 function escapeTagValue(value: string): string {
   return value.replace(/[,;<>(){}\[\]!"#$%&'*+/=?@^`|~\\]/g, "\\$&");
 }

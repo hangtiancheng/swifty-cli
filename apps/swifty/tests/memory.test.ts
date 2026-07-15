@@ -9,6 +9,12 @@ import type { StreamEvent } from "../src/llm/events.js";
 
 class MockClient implements LLMClient {
   constructor(private text: string) {}
+  setSystemPrompt(_prompt: string): void {
+    /** noop */
+  }
+  setMaxOutputTokens?(_maxTokens: number): void {
+    /** noop */
+  }
   async *stream(): AsyncGenerator<StreamEvent> {
     yield { type: "text_delta", text: this.text };
     yield {

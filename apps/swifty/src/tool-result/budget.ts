@@ -138,3 +138,13 @@ export function applyBudget(messages: Message[], workDir: string, sessionId: str
     }
   }
 }
+
+export function persistLargeResult(
+  workDir: string,
+  sessionId: string,
+  toolUseId: string,
+  content: string,
+): string {
+  const path = writeSpill(workDir, sessionId, toolUseId, content);
+  return buildSpillPreview(content, path);
+}

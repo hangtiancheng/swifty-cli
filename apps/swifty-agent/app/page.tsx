@@ -1,11 +1,7 @@
 "use client";
 
 import { useCallback } from "react";
-import {
-  useChat,
-  type ChatMessage,
-  type NotificationType,
-} from "@/hooks/use-chat";
+import { useChat, type ChatMessage, type NotificationType } from "@/hooks/use-chat";
 import Sidebar from "@/components/sidebar";
 import ChatContainer from "@/components/chat-container";
 import AIOpsBtn from "@/components/ai-ops-btn";
@@ -43,10 +39,7 @@ export default function Home() {
 
   const handleAIOps = useCallback(async () => {
     if (isStreaming) {
-      showNotification(
-        "Please wait for the current operation to finish",
-        "warning",
-      );
+      showNotification("Please wait for the current operation to finish", "warning");
       return;
     }
     newChat();

@@ -14,12 +14,12 @@ export interface RetrievedDoc {
   score: number;
 }
 
-// Runtime validation of a RedisSearch KNN result document. The SDK returns
+// Runtime validation of a RediSearch KNN result document. The SDK returns
 // fields as unknown, so we parse with zod instead of casting (per AGENTS.md).
 const docValueSchema = z.looseObject({
   content: z.unknown(),
   metadata: z.unknown(),
-  // RedisSearch injects __vector_score (COSINE distance: 0=identical, 2=opposite)
+  // RediSearch injects __vector_score (COSINE distance: 0=identical, 2=opposite)
   __vector_score: z.unknown(),
 });
 

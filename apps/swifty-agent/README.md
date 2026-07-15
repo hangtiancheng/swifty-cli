@@ -6,7 +6,7 @@ AI intelligent OnCall assistant by Next.js 16 App Router + Vercel AI SDK.
 
 ### Redis Stack (Vector DB)
 
-Requires Redis Stack (includes the RedisSearch module for vector search).
+Requires Redis Stack (includes the RediSearch module for vector search).
 
 **Option A: Docker (recommended)**
 
@@ -16,7 +16,7 @@ docker compose up redis -d
 
 **Option B: Homebrew (macOS)**
 
-Install (cask, includes RedisSearch module):
+Install (cask, includes RediSearch module):
 
 ```bash
 brew tap redis-stack/redis-stack

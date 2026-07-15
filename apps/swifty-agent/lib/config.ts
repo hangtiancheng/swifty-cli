@@ -41,7 +41,7 @@ export const config = {
     model: process.env.OLLAMA_EMBEDDING_MODEL ?? "nomic-embed-text",
     baseURL: process.env.OLLAMA_BASE_URL ?? "http://localhost:11434",
   },
-  // Redis Stack (RedisSearch module) — vector database
+  // Redis Stack (RediSearch module) — vector database
   redis: {
     url: process.env.REDIS_URL ?? "redis://localhost:6379",
     indexName: process.env.REDIS_INDEX_NAME ?? "idx:biz",

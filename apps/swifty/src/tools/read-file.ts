@@ -86,7 +86,7 @@ export class ReadFileTool implements Tool {
 
       // Register the file as "read" in the state cache so subsequent
       // EditFile / WriteFile calls are allowed.
-      ctx.fileStateCache?.record(filePath, content, stat.mtimeMs);
+      ctx.fileStateCache?.record(filePath, stat.mtimeMs);
 
       const numbered = slice.map((line, i) => `${String(offset + i + 1)}\t${line}`);
       return Promise.resolve({

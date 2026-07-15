@@ -4,28 +4,20 @@ const log = createChildLogger({ module: "file-state-cache" });
 
 import { statSync } from "fs";
 
-interface CacheEntry {
-  content: string;
-  lastModifiedTimeMs: number;
-}
-
 export class FileStateCache {
-  private cache = new Map<string, CacheEntry>();
+  private cache = new Map<string, number>(); // path -> mtimeMs
 
   /** Called after a successful ReadFile to register the file as "seen". */
-  record(filePath: string, content: string, lastModifiedTimeMs: number) {
-    this.cache.set(filePath, {
-      content,
-      lastModifiedTimeMs,
-    });
+  record(filePath: string, lastModifiedTimeMs: number) {
+    this.cache.set(filePath, lastModifiedTimeMs);
   }
 
   /**
    * Gate check before EditFile / WriteFile
    */
   check(filePath: string): { ok: true } | { ok: false; error: string } {
-    const entry = this.cache.get(filePath);
-    if (!entry) {
+    const mtimeMs = this.cache.get(filePath);
+    if (mtimeMs === undefined) {
       return {
         ok: false,
         error: "Error: file has not been read yet, read it first before editing.",
@@ -43,7 +35,7 @@ export class FileStateCache {
       return { ok: true };
     }
 
-    if (currentModifiedTime > entry.lastModifiedTimeMs) {
+    if (currentModifiedTime > mtimeMs) {
       // Modified!
 
       return {
@@ -58,7 +50,7 @@ export class FileStateCache {
    * Called after a successful edit / write to keep the cache in sync
    * with the new on-disk state
    */
-  update(filePath: string, newContent: string): void {
+  update(filePath: string): void {
     let lastModifiedTimeMs: number;
     try {
       lastModifiedTimeMs = statSync(filePath).mtimeMs;
@@ -71,9 +63,6 @@ export class FileStateCache {
       return;
     }
 
-    this.cache.set(filePath, {
-      content: newContent,
-      lastModifiedTimeMs,
-    });
+    this.cache.set(filePath, lastModifiedTimeMs);
   }
 }
