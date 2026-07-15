@@ -36,7 +36,9 @@ const planSchema = z.object({
 
 const replanSchema = z.object({
   done: z.boolean().describe("Whether the overall task is complete"),
-  remaining: z.array(z.string()).describe("Remaining steps if not done; empty when done"),
+  remaining: z
+    .array(z.string())
+    .describe("Remaining steps if not done; empty when done"),
   summary: z.string().describe("Final report / summary when done"),
 });
 
@@ -79,11 +81,11 @@ export async function* runPlanExecuteReplan(
       const replanResult = await generateObject({
         model: thinkModel,
         schema: replanSchema,
-        prompt: `Task:\n${query}\n\nCompleted steps:\n${plan
+        prompt: `You are a replanning agent reviewing execution progress toward an objective. Analyze the completed steps and their outcomes to decide whether the objective is fully achieved or further action is required.\n\nTask:\n${query}\n\nOriginal Plan:\n${JSON.stringify({ steps: plan })}\n\nCompleted steps:\n${plan
           .map((s, idx) => `${idx + 1}. ${s}`)
           .join("\n")}\n\nResults so far:\n${detail.join(
           "\n",
-        )}\n\nIs the task complete? If not, list remaining steps. If done, provide the final report.`,
+        )}\n\nBased on the progress above, determine whether the task is complete. If it is, provide a comprehensive final report in the summary field. If more work is needed, list only the remaining steps.`,
         providerOptions,
       });
       const obj = replanResult.object;
