@@ -9,8 +9,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "swifty-agent",
-  description: "swifty-agent — AI intelligent OnCall assistant",
+  title: "Swifty Agent",
+  description: "Swifty Agent — AI intelligent OnCall assistant",
 };
 
 export default function RootLayout({

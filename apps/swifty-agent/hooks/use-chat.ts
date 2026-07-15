@@ -34,7 +34,7 @@ interface OverlayState {
 }
 
 const MAX_HISTORIES = 50;
-const STORAGE_KEY = "swifty-agent-chatHistories";
+const STORAGE_KEY = "swifty-agent-chat-histories";
 
 // Zod schemas for validating the localStorage-persisted chat history shape,
 // so JSON.parse results are checked instead of type-asserted.

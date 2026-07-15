@@ -81,7 +81,7 @@ export default function ChatInput({
           }
         }}
         disabled={isStreaming}
-        placeholder="Ask the swifty-agent OnCall assistant"
+        placeholder="Ask the Swifty Agent OnCall assistant"
         className="max-h-40 w-full resize-none bg-transparent text-base text-zinc-900 outline-none placeholder:text-zinc-400"
         rows={1}
       />
