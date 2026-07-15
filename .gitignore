@@ -210,8 +210,6 @@ target
 
 glob-addon/glob-addon.*.node
 !apps/swifty-agent/app/api/upload
-*Claude
-apps/swifty_cli
 
 *.local.yml
 *.local.yaml
@@ -221,5 +219,3 @@ apps/swifty_cli
 
 .omo/
 .swifty/
-this-is-old-project/
-THIS-IS-LEGACY-PROJECT/

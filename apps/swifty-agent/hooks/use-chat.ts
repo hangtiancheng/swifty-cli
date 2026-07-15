@@ -1,7 +1,7 @@
 "use client";
 import { useState, useCallback, useEffect, useMemo } from "react";
 import { z } from "zod/v4";
-import { chatResponseSchema, aiOpsResponseSchema, uploadResponseSchema } from "@/lib/api-schemas";
+import { chatResponseSchema, aiOpsResponseSchema, uploadResponseSchema } from "@/lib/schemas";
 
 export type Mode = "quick" | "stream";
 
