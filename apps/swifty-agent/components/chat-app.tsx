@@ -14,61 +14,81 @@ const NOTIFY_COLORS: Record<NotificationType, string> = {
 };
 
 export default function ChatApp() {
-  const chat = useChat();
+  // P1-6 fix: destructure individual fields so useCallback dependencies can
+  // be granular — handleAIOps only rebuilds when isStreaming changes, not
+  // when messages or other unrelated state changes.
+  const {
+    isStreaming,
+    messages,
+    sessionId,
+    mode,
+    setMode,
+    histories,
+    notification,
+    overlay,
+    showNotification,
+    newChat,
+    loadChatHistory,
+    deleteChatHistory,
+    sendMessage,
+    triggerAIOps,
+    uploadFile,
+    addMessage,
+  } = useChat();
 
   const handleAIOps = useCallback(async () => {
-    if (chat.isStreaming) {
-      chat.showNotification("Please wait for the current operation to finish", "warning");
+    if (isStreaming) {
+      showNotification("Please wait for the current operation to finish", "warning");
       return;
     }
-    chat.newChat();
-    const r = await chat.triggerAIOps();
+    newChat();
+    const r = await triggerAIOps();
     if (r) {
       const msg: ChatMessage = {
         type: "assistant",
         content: r.result,
         detail: r.detail,
       };
-      chat.addMessage(msg);
+      addMessage(msg);
     }
-  }, [chat]);
+  }, [isStreaming, showNotification, newChat, triggerAIOps, addMessage]);
 
   const handleUpload = useCallback(
     async (file: File) => {
-      const msg = await chat.uploadFile(file);
-      if (msg) chat.addMessage({ type: "assistant", content: msg });
+      const msg = await uploadFile(file);
+      if (msg) addMessage({ type: "assistant", content: msg });
     },
-    [chat],
+    [uploadFile, addMessage],
   );
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-white text-zinc-900">
       <Sidebar
-        histories={chat.histories}
-        activeId={chat.sessionId}
-        onNewChat={chat.newChat}
-        onLoad={chat.loadChatHistory}
-        onDelete={chat.deleteChatHistory}
+        histories={histories}
+        activeId={sessionId}
+        onNewChat={newChat}
+        onLoad={loadChatHistory}
+        onDelete={deleteChatHistory}
       />
       <main className="relative flex flex-1 flex-col overflow-hidden bg-white">
-        <AIOpsBtn onClick={handleAIOps} disabled={chat.isStreaming} />
+        <AIOpsBtn onClick={handleAIOps} disabled={isStreaming} />
         <ChatContainer
-          messages={chat.messages}
-          isStreaming={chat.isStreaming}
-          mode={chat.mode}
-          onModeChange={chat.setMode}
-          onSend={chat.sendMessage}
+          messages={messages}
+          isStreaming={isStreaming}
+          mode={mode}
+          onModeChange={setMode}
+          onSend={sendMessage}
           onUpload={handleUpload}
         />
       </main>
-      <LoadingOverlay overlay={chat.overlay} />
-      {chat.notification && (
+      <LoadingOverlay overlay={overlay} />
+      {notification && (
         <div
           className={`fixed right-5 top-5 z-10000 max-w-xs rounded-lg p-4 text-sm font-medium text-white shadow-lg ${
-            NOTIFY_COLORS[chat.notification.type]
+            NOTIFY_COLORS[notification.type]
           }`}
         >
-          {chat.notification.message}
+          {notification.message}
         </div>
       )}
     </div>

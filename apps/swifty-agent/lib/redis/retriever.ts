@@ -3,6 +3,7 @@
 // COSINE distance (vs. Milvus HAMMING over BinaryVector).
 import { z } from "zod/v4";
 import { getRedisClient } from "./client";
+import { float32ToBuffer } from "./utils";
 import { embedText } from "@/lib/ai/embedder";
 import { config } from "@/lib/config";
 
@@ -32,10 +33,6 @@ const searchResultSchema = z.object({
   ),
 });
 
-function float32ToBuffer(floats: number[]): Buffer {
-  return Buffer.from(new Float32Array(floats).buffer);
-}
-
 function parseMetadata(raw: unknown): Record<string, unknown> {
   if (typeof raw !== "string") return {};
   try {
@@ -45,11 +42,12 @@ function parseMetadata(raw: unknown): Record<string, unknown> {
   }
 }
 
-// Convert COSINE distance [0, 2] to similarity score [1, -1] so that higher
-// is better, matching the Milvus-era convention expected by consumers.
+// P2-13 fix: convert COSINE distance [0, 2] to similarity score [0, 1]
+// so that higher is better and the range matches the [0,1] convention
+// expected by downstream consumers.
 function distanceToScore(distance: unknown): number {
   const d = typeof distance === "number" ? distance : 0;
-  return 1 - d;
+  return (2 - d) / 2;
 }
 
 export async function retrieve(query: string, topK = 1): Promise<RetrievedDoc[]> {

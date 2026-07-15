@@ -3,14 +3,28 @@
 import { type ModelMessage } from "ai";
 import { MEMORY_WINDOW_SIZE } from "@/lib/config";
 
+// P2-19 fix: LRU eviction to prevent unbounded memory growth.
+// Map preserves insertion order in JS, so we re-insert on access to move
+// the entry to the "most recently used" position, and evict the oldest
+// entry when the cap is exceeded.
+const MAX_SESSIONS = 100;
 const memoryMap = new Map<string, SimpleMemory>();
 
 export function getSimpleMemory(id: string): SimpleMemory {
-  let mem = memoryMap.get(id);
-  if (!mem) {
-    mem = new SimpleMemory(id);
-    memoryMap.set(id, mem);
+  const existing = memoryMap.get(id);
+  if (existing) {
+    // Move to end (most recently used).
+    memoryMap.delete(id);
+    memoryMap.set(id, existing);
+    return existing;
   }
+  // Evict oldest session if at capacity.
+  if (memoryMap.size >= MAX_SESSIONS) {
+    const oldestKey = memoryMap.keys().next().value;
+    if (oldestKey !== undefined) memoryMap.delete(oldestKey);
+  }
+  const mem = new SimpleMemory(id);
+  memoryMap.set(id, mem);
   return mem;
 }
 

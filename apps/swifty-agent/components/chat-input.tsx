@@ -1,5 +1,5 @@
 "use client";
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { MoreHorizontal, Paperclip, ChevronDown, Send } from "lucide-react";
 import type { Mode } from "@/hooks/use-chat";
 
@@ -24,6 +24,39 @@ export default function ChatInput({
   const [showTools, setShowTools] = useState(false);
   const [showMode, setShowMode] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // P3-9 fix: auto-resize textarea to fit content (up to ~10 lines).
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, [text]);
+
+  // P2-6 fix: close dropdowns on outside click or Escape key.
+  useEffect(() => {
+    if (!showTools && !showMode) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setShowTools(false);
+        setShowMode(false);
+      }
+    };
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setShowTools(false);
+        setShowMode(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("keydown", handleEscape);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, [showTools, showMode]);
 
   const send = () => {
     const t = text.trim();
@@ -33,8 +66,12 @@ export default function ChatInput({
   };
 
   return (
-    <div className="relative rounded-3xl border border-zinc-200 bg-white p-3 shadow-sm">
+    <div
+      ref={containerRef}
+      className="relative rounded-3xl border border-zinc-200 bg-white p-3 shadow-sm"
+    >
       <textarea
+        ref={textareaRef}
         value={text}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={(e) => {
@@ -45,7 +82,7 @@ export default function ChatInput({
         }}
         disabled={isStreaming}
         placeholder="Ask the swifty-agent OnCall assistant"
-        className="w-full resize-none bg-transparent text-base text-zinc-900 outline-none placeholder:text-zinc-400"
+        className="max-h-40 w-full resize-none bg-transparent text-base text-zinc-900 outline-none placeholder:text-zinc-400"
         rows={1}
       />
       <div className="mt-2 flex items-center justify-between">
@@ -54,6 +91,7 @@ export default function ChatInput({
             onClick={() => setShowTools((v) => !v)}
             className="flex h-9 w-9 items-center justify-center rounded-full text-zinc-500 hover:bg-zinc-100"
             aria-label="Tools"
+            aria-expanded={showTools}
           >
             <MoreHorizontal className="h-5 w-5" />
           </button>
@@ -77,6 +115,8 @@ export default function ChatInput({
             <button
               onClick={() => setShowMode((v) => !v)}
               className="flex items-center gap-1 text-sm text-zinc-500 hover:text-zinc-800"
+              aria-expanded={showMode}
+              aria-label="Chat mode"
             >
               <span>{mode === "quick" ? "Quick" : "Stream"}</span>
               <ChevronDown className="h-4 w-4" />

@@ -1,5 +1,5 @@
 "use client";
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
 import { z } from "zod/v4";
 import { chatResponseSchema, aiOpsResponseSchema, uploadResponseSchema } from "@/lib/api-schemas";
 
@@ -54,10 +54,16 @@ const chatHistorySchema = z.object({
 
 const chatHistoriesSchema = z.array(chatHistorySchema);
 
+// P3-14 fix: use crypto.randomUUID() for cryptographically random session IDs
+// (browser-native, available in all modern browsers + Node.js 19+).
 function generateSessionId(): string {
-  return "session_" + Math.random().toString(36).slice(2, 11) + "_" + Date.now();
+  return "session_" + crypto.randomUUID();
 }
 
+// Read persisted chat histories from localStorage.
+// The `typeof localStorage` guard is a secondary server-safety check — if this
+// function is ever called during SSR (it shouldn't be, thanks to the hydration
+// guard above), it returns [] instead of throwing a ReferenceError.
 function loadHistories(): ChatHistory[] {
   if (typeof localStorage === "undefined") return [];
   try {
@@ -83,13 +89,26 @@ export function useChat() {
   const [isStreaming, setIsStreaming] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [histories, setHistories] = useState<ChatHistory[]>([]);
-  const [isFromHistory, setIsFromHistory] = useState(false);
 
-  // Hydrate client-only state after mount to avoid SSR mismatch.
+  // Initialize client-only state (random session ID, localStorage histories)
+  // AFTER hydration completes. useEffect fires after React confirms the
+  // server HTML matches the client's first render, so the initial empty
+  // values (sessionId="", histories=[]) are consistent on both sides and
+  // no hydration mismatch occurs. The subsequent setState triggers a
+  // client-only re-render with the real values.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- mount-once init for client-only state after hydration
     setSessionId(generateSessionId());
     setHistories(loadHistories());
   }, []);
+
+  // AbortController state — when set, the effect cleans it up on unmount or
+  // when replaced (P1-1 fix).
+  const [streamController, setStreamController] = useState<AbortController | null>(null);
+  useEffect(() => {
+    if (!streamController) return;
+    return () => streamController.abort();
+  }, [streamController]);
 
   const [notification, setNotification] = useState<{
     message: string;
@@ -101,12 +120,16 @@ export function useChat() {
     subtext: "",
   });
 
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // P2-9 fix: auto-dismiss notifications after 3s. The timer is created and
+  // cleaned up inside the effect (no ref), so unmount naturally clears it.
+  useEffect(() => {
+    if (!notification) return;
+    const timer = setTimeout(() => setNotification(null), 3000);
+    return () => clearTimeout(timer);
+  }, [notification]);
 
   const showNotification = useCallback((message: string, type: NotificationType = "info") => {
     setNotification({ message, type });
-    if (timerRef.current) clearTimeout(timerRef.current);
-    timerRef.current = setTimeout(() => setNotification(null), 3000);
   }, []);
 
   // Persist histories to localStorage whenever they change.
@@ -152,7 +175,6 @@ export function useChat() {
     }
     setMessages([]);
     setSessionId(generateSessionId());
-    setIsFromHistory(false);
   }, [isStreaming, showNotification]);
 
   const loadChatHistory = useCallback(
@@ -161,7 +183,6 @@ export function useChat() {
       if (!h) return;
       setSessionId(h.id);
       setMessages(h.messages);
-      setIsFromHistory(true);
     },
     [histories],
   );
@@ -172,7 +193,6 @@ export function useChat() {
       if (sessionId === id) {
         setMessages([]);
         setSessionId(generateSessionId());
-        setIsFromHistory(false);
       }
     },
     [sessionId],
@@ -181,8 +201,17 @@ export function useChat() {
   const sendMessage = useCallback(
     async (text: string) => {
       if (!text || isStreaming) return;
-      setMessages((prev) => [...prev, { type: "user", content: text }]);
+
+      // Track messages in a local variable so we can call upsertHistory in
+      // the finally block WITHOUT placing a side effect inside a state
+      // updater function (P1-2 fix).
+      let currentMsgs: ChatMessage[] = [...messages, { type: "user", content: text }];
+      setMessages(currentMsgs);
       setIsStreaming(true);
+
+      // AbortController for cancelling the stream on unmount (P1-1 fix).
+      const controller = new AbortController();
+      setStreamController(controller);
 
       try {
         if (mode === "quick") {
@@ -190,12 +219,14 @@ export function useChat() {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ id: sessionId, question: text }),
+            signal: controller.signal,
           });
           const parsed = chatResponseSchema.safeParse(await resp.json());
           if (!parsed.success) throw new Error("invalid chat response");
           const answer = parsed.data.data?.answer;
           if (parsed.data.message === "OK" && answer) {
-            setMessages((prev) => [...prev, { type: "assistant", content: answer }]);
+            currentMsgs = [...currentMsgs, { type: "assistant", content: answer }];
+            setMessages(currentMsgs);
           } else {
             throw new Error(parsed.data.message || "Unknown error");
           }
@@ -204,22 +235,29 @@ export function useChat() {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ id: sessionId, question: text }),
+            signal: controller.signal,
           });
+          if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
           const reader = resp.body?.getReader();
           if (!reader) throw new Error("no stream body");
           const decoder = new TextDecoder();
           let buffer = "";
           let full = "";
           let currentEvent = "";
-          setMessages((prev) => [...prev, { type: "assistant", content: "" }]);
+          currentMsgs = [...currentMsgs, { type: "assistant", content: "" }];
+          setMessages(currentMsgs);
 
           while (true) {
+            // Check abort before each read so unmount cancels promptly (P1-1 fix).
+            if (controller.signal.aborted) break;
             const { done, value } = await reader.read();
             if (done) break;
             buffer += decoder.decode(value, { stream: true });
             const lines = buffer.split("\n");
             buffer = lines.pop() ?? "";
-            for (const line of lines) {
+            for (const rawLine of lines) {
+              // Strip trailing \r for SSE spec compliance (\r\n line endings).
+              const line = rawLine.endsWith("\r") ? rawLine.slice(0, -1) : rawLine;
               if (line.startsWith("id: ")) continue;
               if (line.startsWith("event: ")) {
                 currentEvent = line.slice(7);
@@ -229,31 +267,39 @@ export function useChat() {
                 const d = line.slice(6);
                 if (currentEvent === "message") {
                   full += d === "" ? "\n" : d;
-                  setMessages((prev) => {
-                    const next = [...prev];
-                    next[next.length - 1] = {
-                      type: "assistant",
-                      content: full,
-                    };
-                    return next;
-                  });
+                  currentMsgs = [
+                    ...currentMsgs.slice(0, -1),
+                    { type: "assistant" as const, content: full },
+                  ];
+                  setMessages(currentMsgs);
+                } else if (currentEvent === "error") {
+                  // P1-3 fix: surface server-side error events instead of
+                  // silently ignoring them.
+                  throw new Error(d || "Stream error");
                 }
+                // "done" event: clean termination — the reader will return
+                // done=true on the next read and the loop will break.
               }
             }
           }
         }
       } catch (e) {
+        // AbortError: user navigated away — suppress the error message.
+        if (e instanceof DOMException && e.name === "AbortError") return;
         const msg = e instanceof Error ? e.message : String(e);
-        setMessages((prev) => [...prev, { type: "assistant", content: "Error: " + msg }]);
+        currentMsgs = [...currentMsgs, { type: "assistant", content: "Error: " + msg }];
+        setMessages(currentMsgs);
       } finally {
+        setStreamController(null);
         setIsStreaming(false);
-        setMessages((prev) => {
-          upsertHistory(sessionId, prev);
-          return prev;
-        });
+        // P1-2 fix: upsertHistory is called with the local messages array,
+        // NOT inside a setMessages state updater.
+        if (!controller.signal.aborted && currentMsgs.length > 0) {
+          upsertHistory(sessionId, currentMsgs);
+        }
       }
     },
-    [isStreaming, mode, sessionId, upsertHistory],
+    [isStreaming, messages, mode, sessionId, upsertHistory],
   );
 
   const triggerAIOps = useCallback(async (): Promise<AIOpsResult | null> => {
@@ -319,23 +365,47 @@ export function useChat() {
     [showNotification],
   );
 
-  return {
-    mode,
-    setMode,
-    sessionId,
-    isStreaming,
-    messages,
-    addMessage: (msg: ChatMessage) => setMessages((prev) => [...prev, msg]),
-    histories,
-    isFromHistory,
-    notification,
-    overlay,
-    showNotification,
-    newChat,
-    loadChatHistory,
-    deleteChatHistory,
-    sendMessage,
-    triggerAIOps,
-    uploadFile,
-  };
+  // P1-6 fix: stabilize addMessage with useCallback so its reference is stable.
+  const addMessage = useCallback((msg: ChatMessage) => setMessages((prev) => [...prev, msg]), []);
+
+  // P1-6 fix: wrap the return object in useMemo so callers that depend on
+  // individual fields (via destructuring) get stable references and their
+  // useCallback dependencies don't invalidate on every render.
+  return useMemo(
+    () => ({
+      mode,
+      setMode,
+      sessionId,
+      isStreaming,
+      messages,
+      addMessage,
+      histories,
+      notification,
+      overlay,
+      showNotification,
+      newChat,
+      loadChatHistory,
+      deleteChatHistory,
+      sendMessage,
+      triggerAIOps,
+      uploadFile,
+    }),
+    [
+      mode,
+      sessionId,
+      isStreaming,
+      messages,
+      addMessage,
+      histories,
+      notification,
+      overlay,
+      showNotification,
+      newChat,
+      loadChatHistory,
+      deleteChatHistory,
+      sendMessage,
+      triggerAIOps,
+      uploadFile,
+    ],
+  );
 }

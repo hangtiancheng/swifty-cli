@@ -219,5 +219,7 @@ apps/swifty_cli
 **/*.local.yaml
 **/doc_build/
 
-
-apps/old
+.omo/
+.swifty/
+this-is-old-project/
+THIS-IS-LEGACY-PROJECT/

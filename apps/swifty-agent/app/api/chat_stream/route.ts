@@ -4,6 +4,18 @@
 import { z } from "zod/v4";
 import { chatStream } from "@/lib/ai/pipelines/chat";
 
+// P2-20 fix: add CORS_HEADERS + OPTIONS handler for preflight requests,
+// matching the pattern used by all other API routes.
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type",
+};
+
+export async function OPTIONS() {
+  return new Response(null, { status: 204, headers: CORS_HEADERS });
+}
+
 const streamRequestSchema = z.object({
   id: z.string().min(1),
   question: z.string().min(1),
@@ -42,7 +54,7 @@ export async function POST(request: Request) {
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache",
       Connection: "keep-alive",
-      "Access-Control-Allow-Origin": "*",
+      ...CORS_HEADERS,
     },
   });
 }

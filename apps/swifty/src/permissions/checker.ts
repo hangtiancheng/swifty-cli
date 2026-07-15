@@ -190,7 +190,10 @@ function loadRulesFile(path: string): Rule[] {
   try {
     data = readFileSync(path, "utf-8");
   } catch (err) {
-    log.error({ err }, "permissions operation failed");
+    // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
+      log.error({ err }, "permissions operation failed");
+    }
     return [];
   }
   const YamlEntrySchema = z.object({

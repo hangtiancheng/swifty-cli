@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef } from "react";
+import { memo, useEffect, useRef } from "react";
 import type { ChatMessage } from "@/hooks/use-chat";
 import MdRender from "./md-render";
 import { Sparkles } from "lucide-react";
@@ -28,7 +28,15 @@ export default function MessageList({ messages, isStreaming }: MessageListProps)
   );
 }
 
-function MessageItem({ message, streaming }: { message: ChatMessage; streaming: boolean }) {
+// P1-6 fix: wrap MessageItem in memo so streaming chunks (which only change
+// the last message) don't re-render every message in the list.
+const MessageItem = memo(function MessageItem({
+  message,
+  streaming,
+}: {
+  message: ChatMessage;
+  streaming: boolean;
+}) {
   if (message.type === "user") {
     return (
       <div className="mb-6 flex flex-col items-end">
@@ -72,4 +80,4 @@ function MessageItem({ message, streaming }: { message: ChatMessage; streaming: 
       </div>
     </div>
   );
-}
+});

@@ -7,6 +7,15 @@ import { getLogMcpTools } from "../tools/query-log";
 import { retrieve } from "@/lib/redis/retriever";
 import { getSimpleMemory } from "@/lib/memory";
 
+// P3-5 fix: read log topic config from env vars instead of hardcoding
+// region/id in the system prompt.
+const LOG_TOPIC_REGION = process.env.LOG_TOPIC_REGION ?? "";
+const LOG_TOPIC_ID = process.env.LOG_TOPIC_ID ?? "";
+const logTopicLine =
+  LOG_TOPIC_REGION && LOG_TOPIC_ID
+    ? `  • Log topic region: ${LOG_TOPIC_REGION}; log topic id: ${LOG_TOPIC_ID}`
+    : "";
+
 // System prompt migrated from chat_pipeline/prompt.go.
 const SYSTEM_PROMPT = `# Role: Conversational Assistant
 ## Core capabilities
@@ -16,7 +25,7 @@ const SYSTEM_PROMPT = `# Role: Conversational Assistant
 - Before replying, ensure you:
   • Fully understand the user's needs and questions; confirm with the user if anything is unclear
   • Consider the most appropriate solution approach
-  • Log topic region: ap-guangzhou; log topic id: 869830db-a055-4479-963b-3c898d27e755
+${logTopicLine}
 - When providing help:
   • Use clear and concise language
   • Provide practical examples when appropriate
@@ -27,7 +36,7 @@ const SYSTEM_PROMPT = `# Role: Conversational Assistant
 - For complex or compound questions, think step by step and avoid giving low-quality answers directly.
 ## Output requirements:
   • Readable and well-structured, with line breaks when needed
-  • Output must not contain markdown syntax; output plain text only
+  • Output markdown only
 ## Context information
 - Current date: {date}
 - Relevant documents: |-

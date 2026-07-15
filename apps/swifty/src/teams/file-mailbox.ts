@@ -132,6 +132,10 @@ export class FileMailbox {
     try {
       return parseInt(readFileSync(this.readStatePath, "utf-8").trim(), 10) || 0;
     } catch (err) {
+      // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+        return 0;
+      }
       log.error({ err }, "teams operation failed");
       return 0;
     }

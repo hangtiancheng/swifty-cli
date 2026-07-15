@@ -16,7 +16,7 @@ docker compose up redis -d
 
 **Option B: Homebrew (macOS)**
 
-Install (cask, includes RediSearch module):
+Install (cask, includes RedisSearch module):
 
 ```bash
 brew tap redis-stack/redis-stack
