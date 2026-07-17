@@ -5,8 +5,8 @@
 //   with tsup noExternal bundling.
 // - Always writes to a file fd, never stdout (Ink owns stdout in TUI mode;
 //   teammate uses stdout for IPC).
-// - Before initLogger(), a Proxy forwards to console.error with a [pre-init]
-//   prefix so early logs are not silently dropped.
+// - Before initLogger(), a Proxy falls back to a silent pino logger so early
+//   log calls are safe no-ops (startup errors should use console.error).
 // - At serialize time, AsyncLocalStorage context (agentName, etc.) is merged.
 
 import pino, { type Logger, type LoggerOptions } from "pino";
@@ -90,9 +90,6 @@ export function initLogger(opts: InitLoggerOptions): Logger {
   currentFd = fd;
   currentDest = pino.destination(fd);
 
-  // V8 defaults stackTraceLimit to 10; deep async stacks get truncated.
-  Error.stackTraceLimit = 50;
-
   const pinoOpts: LoggerOptions = {
     level: resolveLevel(),
     base: { sessionId: opts.sessionId, mode: opts.mode },
@@ -104,9 +101,11 @@ export function initLogger(opts: InitLoggerOptions): Logger {
   // Main-process startup: clean expired logs.
   if (!opts.skipCleanup) {
     const workDir = opts.workDir ?? process.cwd();
-    void import("./cleanup.js").then(({ cleanExpiredLogs }) => {
-      cleanExpiredLogs(workDir);
-    });
+    void import("./cleanup.js")
+      .then(({ cleanExpiredLogs }) => cleanExpiredLogs(workDir))
+      .catch(() => {
+        // Cleanup failure is non-fatal.
+      });
   }
 
   return currentLogger;

@@ -15,20 +15,34 @@ const silentTarget = pino({ level: "silent" });
  *
  * Returns a Proxy that forwards every access to the current root logger's
  * child, so it stays valid across initLogger() calls.
+ *
+ * The child pino instance is cached per (rootLogger, context) pair and only
+ * rebuilt when either changes, avoiding redundant pino.child() allocations
+ * on every log call.
  */
 export function createChildLogger(bindings: Record<string, unknown>): Logger {
+  let cachedChild: Logger | null = null;
+  let cachedLogger: Logger | null = null;
+  let cachedCtxKey = "";
+
   return new Proxy(silentTarget, {
     get(_target, prop, receiver) {
       const current = getLogger();
       if (current) {
-        const child = current.child(mergeContext(bindings));
+        const ctx = mergeContext(bindings);
+        const ctxKey = JSON.stringify(ctx);
+        if (cachedChild === null || cachedLogger !== current || cachedCtxKey !== ctxKey) {
+          cachedChild = current.child(ctx);
+          cachedLogger = current;
+          cachedCtxKey = ctxKey;
+        }
         // Reflect.get returns `any`; annotate unknown so typeof narrows correctly.
-        const value: unknown = Reflect.get(child, prop, receiver);
+        const value: unknown = Reflect.get(cachedChild, prop, receiver);
         if (typeof value === "function") {
           // Function.bind returns `any` in lib.es5; the bound callable is
           // type-safe by construction (pino method signatures are preserved).
           // eslint-disable-next-line @typescript-eslint/no-unsafe-return
-          return value.bind(child);
+          return value.bind(cachedChild);
         }
         return value;
       }
