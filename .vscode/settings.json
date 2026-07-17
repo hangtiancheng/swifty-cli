@@ -44,6 +44,7 @@
     "HNSW",
     "htmx",
     "httpx",
+    "interruptible",
     "iterm",
     "langchain",
     "libuv",

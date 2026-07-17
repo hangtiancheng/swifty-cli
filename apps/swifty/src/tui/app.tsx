@@ -95,6 +95,7 @@ import { CommandUsageTracker } from "../commands/usage-tracker.js";
 import { randomCompletionVerb } from "./verbs.js";
 import { asErrorString, asRecord, strArg } from "@/utils/index.js";
 import { version } from "./version.js";
+import type { ToolSchema } from "@/tools/types.js";
 
 type AppState = "providerSelect" | "chat";
 
@@ -794,7 +795,8 @@ export function App({
               clientRef.current,
               recoveryStateRef.current,
               registryRef.current.listTools().map((t) => t.name),
-              [],
+              // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+              registryRef.current.getAllSchemas() as ToolSchema[],
             )
               .then((result) => {
                 // Persist the boundary so the compacted state survives /resume.

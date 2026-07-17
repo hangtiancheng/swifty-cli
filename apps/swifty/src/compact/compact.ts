@@ -184,27 +184,23 @@ function backUpPastToolUse(messages: Message[], keepStart: number): number {
 // simplification, extended with cache tokens for a more accurate baseline.
 export function currentContextTokens(
   conv: ConversationManager,
-  anchor: UsageAnchor | null,
+  anchor?: UsageAnchor,
   budgetMessages?: Message[],
 ): number {
-  // Budget-trimmed messages better reflect actual send volume: when the caller provides
-  // a budget-applied message list, estimate tokens against it so auto-compact decisions
-  // are based on the reduced (actual) size, not the original size.
+  const a = anchor ?? conv.usageAnchorState();
   if (budgetMessages && budgetMessages.length > 0) {
-    if (!anchor) {
+    if (!a) {
       return estimateMessages(budgetMessages);
     }
-    const start = Math.min(anchor.anchorCount, budgetMessages.length);
-    return anchor.baselineTokens + estimateMessages(budgetMessages.slice(start));
+    const start = Math.min(a.anchorCount, budgetMessages.length);
+    return a.baselineTokens + estimateMessages(budgetMessages.slice(start));
   }
-  if (!anchor) {
+  if (!a) {
     return estimateTokens(conv);
   }
   const messages = conv.getMessages();
-  // Clamp in case the transcript was truncated (e.g. by a compaction) below the
-  // anchor index — then nothing new to add on top of the baseline.
-  const start = Math.min(anchor.anchorCount, messages.length);
-  return anchor.baselineTokens + estimateMessages(messages.slice(start));
+  const start = Math.min(a.anchorCount, messages.length);
+  return a.baselineTokens + estimateMessages(messages.slice(start));
 }
 
 export async function manageContext(
@@ -216,14 +212,13 @@ export async function manageContext(
   recoveryState: RecoveryState | null,
   toolSchemaNames: string[],
   toolSchemas: ToolSchema[],
-  anchor: UsageAnchor | null = null,
   sessionFilePath = "",
   budgetMessages?: Message[],
 ): Promise<CompactResult> {
   // Apply tool-result budget first, then auto-compact, ensuring in-budget results
   // are not mistakenly compressed. When the caller provides a budget-applied message
   // list, estimate tokens against it so compact decisions reflect the reduced size.
-  const tokens = currentContextTokens(conv, anchor, budgetMessages);
+  const tokens = currentContextTokens(conv, undefined, budgetMessages);
   const autoThreshold = computeCompactThreshold(contextWindow, maxOutput);
   const hardBlock = computeCompactThreshold(contextWindow, maxOutput, true);
 

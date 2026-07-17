@@ -30,6 +30,8 @@ export interface Message {
 export class ConversationManager {
   private history: Message[] = [];
   private longTermMemoryInjected = false;
+  private baselineTokens = 0;
+  private _anchorCount = 0;
 
   addUserMessage(content: string): void {
     this.history.push({ role: "user", content });
@@ -149,5 +151,27 @@ export class ConversationManager {
   replaceWithCompacted(summaryContent: string, messagesToKeep: Message[]): void {
     this.history = [{ role: "user", content: summaryContent }, ...messagesToKeep];
     this.longTermMemoryInjected = false;
+    this.clearUsageAnchor();
+  }
+
+  recordUsageAnchor(input: number, output: number, cacheRead: number, cacheCreation: number): void {
+    const baseline = input + cacheRead + cacheCreation + output;
+    if (baseline <= 0) {
+      return;
+    }
+    this.baselineTokens = baseline;
+    this._anchorCount = this.history.length;
+  }
+
+  clearUsageAnchor(): void {
+    this.baselineTokens = 0;
+    this._anchorCount = 0;
+  }
+
+  usageAnchorState(): { baselineTokens: number; anchorCount: number } | null {
+    if (this.baselineTokens <= 0) {
+      return null;
+    }
+    return { baselineTokens: this.baselineTokens, anchorCount: this._anchorCount };
   }
 }

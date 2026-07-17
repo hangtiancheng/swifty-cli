@@ -11,7 +11,6 @@ import type { AgentEvent } from "./events.js";
 import { StreamingExecutor } from "./streaming-executor.js";
 import { manageContext, forceCompact, AutoCompactTrackingState } from "../compact/compact.js";
 import { getSessionFilePath } from "../session/session.js";
-import type { UsageAnchor } from "../compact/compact.js";
 import { RecoveryState } from "../compact/recovery.js";
 import { ContextTooLongError, RateLimitError } from "../llm/errors.js";
 import { getOrCreatePlanPath, planExists } from "../plan-file/plan-file.js";
@@ -20,6 +19,7 @@ import { applyBudget, persistLargeResult } from "../tool-result/budget.js";
 import { readFile } from "node:fs/promises";
 import { asRecord, strArg } from "@/utils/index.js";
 import type { ToolSchema } from "@/tools/types.js";
+import type { UsageInfo } from "@/llm/events.js";
 
 // When the model stops on max_tokens, escalate its output ceiling once to this
 // value, then attempt a bounded number of multi-turn recoveries. Mirrors Go.
@@ -77,11 +77,7 @@ export class Agent {
   private notificationFn?: () => string[];
   private onLoopComplete?: (conversation: ConversationManager) => void;
   private compactTracking = new AutoCompactTrackingState();
-  // Real-token anchor from the last stream's API usage. null until the first
-  // turn completes, so the very first manageContext() call falls back to
-  // whole-transcript char estimation (cold start). Mirrors python
-  // conversation.last_input_tokens, extended with cache tokens + an increment.
-  private usageAnchor: UsageAnchor | null = null;
+
   private onPermissionRequest?: AgentConfig["onPermissionRequest"];
   private toolFilter?: (name: string) => boolean;
   activeSkills: Map<string, string>;
@@ -153,6 +149,8 @@ export class Agent {
         const toolUses: ToolUseBlock[] = [];
         let stopReason = "end_turn";
 
+        let lastUsage: UsageInfo | null = null;
+
         // Plan mode: sync the plan path onto the checker (so the Layer-0 plan-file
         // write exception works however plan mode was entered) and inject a
         // per-turn reminder keeping the model read-only.
@@ -193,23 +191,16 @@ export class Agent {
           this.recoveryState,
           toolSchemaNames,
           toolSchemas as ToolSchema[],
-          this.usageAnchor,
           this.sessionFilePath,
         );
         if (mc.message) {
           yield { type: "compact", message: mc.message, boundary: mc.boundary };
         }
         if (mc.compacted) {
-          this.usageAnchor = null;
-          // Messages changed after compaction, re-apply budget
+          // replaceWithCompacted
           applyBudget(this.conversation.getMessages(), this.workDir, this.sessionId);
           this.conversation.injectLongTermMemory(this.instructions, this.memoryContent);
         }
-
-        // Message count of the live conversation at the moment we send. The API
-        // usage we receive back covers exactly these messages, so this becomes
-        // the anchor index: only messages appended after it are estimated.
-        const sentMessageCount = this.conversation.len();
 
         try {
           // Initiate API call directly with the conversation — no need to rebuild
@@ -265,18 +256,7 @@ export class Agent {
 
               case "stream_end":
                 stopReason = event.stopReason;
-                // Record the real-token anchor: the full context size the API
-                // just reported (input + cache_read + cache_creation + output)
-                // plus the message count it covered. The next manageContext()
-                // trusts this baseline and only char-estimates the tail beyond it.
-                this.usageAnchor = {
-                  baselineTokens:
-                    event.usage.inputTokens +
-                    event.usage.cacheReadInputTokens +
-                    event.usage.cacheCreationInputTokens +
-                    event.usage.outputTokens,
-                  anchorCount: sentMessageCount,
-                };
+                lastUsage = event.usage;
                 yield { type: "usage", usage: event.usage };
                 break;
             }
@@ -300,10 +280,7 @@ export class Agent {
                 toolSchemas as ToolSchema[],
                 this.sessionFilePath,
               );
-              // Transcript was rewritten — the usage anchor is now stale (see the
-              // reset after manageContext above). Drop it so the retry re-estimates
-              // against the compacted transcript.
-              this.usageAnchor = null;
+              this.conversation.clearUsageAnchor();
               this.conversation.injectLongTermMemory(this.instructions, this.memoryContent);
               yield {
                 type: "compact",
@@ -350,11 +327,18 @@ export class Agent {
         // re-prompts the model to resume from where it stopped. Mirrors Go.
         if (stopReason === "max_tokens") {
           if (!maxTokensEscalated) {
-            const setter = this.client;
-            setter.setMaxOutputTokens?.(MAX_TOKENS_CEILING);
+            this.client.setMaxOutputTokens?.(MAX_TOKENS_CEILING);
             maxTokensEscalated = true;
             if (fullText) {
               this.conversation.addAssistantFull(fullText, thinkingBlocks, []);
+              if (lastUsage) {
+                this.conversation.recordUsageAnchor(
+                  lastUsage.inputTokens,
+                  lastUsage.outputTokens,
+                  lastUsage.cacheReadInputTokens,
+                  lastUsage.cacheCreationInputTokens,
+                );
+              }
               this.conversation.addUserMessage(
                 "Output token limit hit. Resume directly from where you stopped. Do not apologize or repeat previous content. Pick up mid-thought if needed.",
               );
@@ -364,6 +348,14 @@ export class Agent {
           } else if (outputRecoveries < MAX_OUTPUT_TOKENS_RECOVERIES) {
             outputRecoveries++;
             this.conversation.addAssistantFull(fullText, thinkingBlocks, []);
+            if (lastUsage) {
+              this.conversation.recordUsageAnchor(
+                lastUsage.inputTokens,
+                lastUsage.outputTokens,
+                lastUsage.cacheReadInputTokens,
+                lastUsage.cacheCreationInputTokens,
+              );
+            }
             this.conversation.addUserMessage(
               "Output token limit hit. Resume directly from where you stopped. Break remaining work into smaller pieces.",
             );
@@ -380,6 +372,14 @@ export class Agent {
         }
 
         this.conversation.addAssistantFull(fullText, thinkingBlocks, toolUses);
+        if (lastUsage) {
+          this.conversation.recordUsageAnchor(
+            lastUsage.inputTokens,
+            lastUsage.outputTokens,
+            lastUsage.cacheReadInputTokens,
+            lastUsage.cacheCreationInputTokens,
+          );
+        }
 
         if (toolUses.length > 0) {
           const results = await this.executeTools(toolUses);
@@ -679,7 +679,7 @@ export class Agent {
 }
 
 // parseRetryAfter converts a Retry-After header (seconds) into milliseconds,
-// defaulting to 5s when absent or unparseable. Mirrors Go parseRetryAfter.
+// defaulting to 5s when absent or unparsable. Mirrors Go parseRetryAfter.
 function parseRetryAfter(header?: string): number {
   if (!header) {
     return 5000;
