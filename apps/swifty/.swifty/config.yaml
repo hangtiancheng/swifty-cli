@@ -2,27 +2,29 @@
 # See src/config/config.ts for schema details.
 
 # Permission mode: "default" | "acceptEdits" | "plan" | "bypassPermissions"
-permission_mode: default
+permission_mode: bypassPermissions
 
 # LLM providers — at least one is required.
 # api_key is intentionally left empty; it falls back to the ANTHROPIC_API_KEY
 # (or OPENAI_API_KEY) environment variable at runtime.
 providers:
-  - name: claude
-    protocol: anthropic
-    base_url: https://api.anthropic.com
-    model: claude-sonnet-4-20250514
-    api_key: ""
-    thinking: false
-    # context_window: 200000   # override the built-in lookup if needed
-    # max_output_tokens: 128000  # override the default (128000, or 200000 with thinking)
+  - name: anthropic
+    base_url: http://localhost:11434/v1
+    model: "Peach-07-17-DogFooding"
+    api_key: "ollama"
+    thinking: true
+    max_output_tokens: 1000000
+    context_window: 1000000 # override the built-in lookup if needed
 
-  # Example OpenAI-compatible provider (uncomment and fill in to use):
-  # - name: deepseek
-  #   protocol: openai-compat
-  #   base_url: https://api.deepseek.com/v1
-  #   model: deepseek-chat
-  #   api_key: ""
+  - name: openai-compat
+    # protocol: anthropic
+    protocol: openai-compat
+    base_url: http://localhost:11434/v1
+    model: "Peach-07-17-DogFooding"
+    api_key: "ollama"
+    thinking: true
+    # max_output_tokens: 1000000 # override the default (8192, or 64000 with thinking)
+    context_window: 1000000 # override the built-in lookup if needed
 
 # MCP servers — optional, empty by default.
 mcp_servers: []
