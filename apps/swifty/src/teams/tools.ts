@@ -5,6 +5,7 @@ const log = createChildLogger({ module: "teams" });
 import { asErrorString, strArg } from "@/utils/index.js";
 import type { Tool, ToolContext, ToolResult, ToolSchema } from "../tools/types.js";
 import type { TeamManager, RunAgent } from "./team.js";
+import { getNameRegistry } from "./registry.js";
 
 export class TeamCreateTool implements Tool {
   name = "TeamCreate";
@@ -107,10 +108,13 @@ export class SpawnTeammateTool implements Tool {
 
 export class SendMessageTool implements Tool {
   name = "SendMessage";
-  description = "Send a message to a teammate's mailbox.";
+  description = "Send a message to a teammate's mailbox. Use to='*' to broadcast to all teammates.";
   category = "read" as const;
   system = true;
-  constructor(private mgr: TeamManager) {}
+  constructor(
+    private mgr: TeamManager,
+    private senderName = "lead",
+  ) {}
   schema(): ToolSchema {
     return {
       name: this.name,
@@ -121,7 +125,7 @@ export class SendMessageTool implements Tool {
           team: { type: "string" },
           to: {
             type: "string",
-            description: "Teammate name",
+            description: "Teammate name, or '*' to broadcast",
           },
           message: { type: "string" },
         },
@@ -141,8 +145,26 @@ export class SendMessageTool implements Tool {
         isError: true,
       };
     }
+    // Broadcast: send to all members in the team except the sender
+    if (to === "*") {
+      let count = 0;
+      for (const member of t.listMembers()) {
+        if (member.name === this.senderName) {
+          continue;
+        }
+        await t.sendMessage(this.senderName, member.name, message);
+        count++;
+      }
+      return {
+        output: `Message broadcast to ${String(count)} teammate(s).`,
+        isError: false,
+      };
+    }
+
+    // Resolve the recipient name to a delivery identifier via the global name registry; fall back to the original name if unresolved
+    const recipient = getNameRegistry().resolve(to) ?? to;
     try {
-      await t.sendMessage("lead", to, message);
+      await t.sendMessage(this.senderName, recipient, message);
     } catch (err) {
       log.error({ err }, "teams operation failed");
       return {

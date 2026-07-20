@@ -82,6 +82,12 @@ export function intArg(args: Record<string, unknown>, key: string, fallback: num
 
   return fallback;
 }
+export function strList(raw: unknown): string[] {
+  if (Array.isArray(raw)) {
+    return raw.filter((v): v is string => typeof v === "string");
+  }
+  return [];
+}
 
 export function strArg(args: Record<string, unknown>, key: string, fallback?: string): string {
   const v = args[key];

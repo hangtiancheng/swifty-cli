@@ -18,25 +18,50 @@ import type { TeamMode } from "./team.js";
  * They communicate via the same file-based mailbox as external teammates.
  */
 export function detectBackend(): TeamMode {
-  return "in-process";
+  if (process.platform === "win32") {
+    return "in-process";
+  }
+  return detectBackendFromEnv();
 }
 
 /**
  * Detect available pane backend (for explicit tmux mode).
  * Used when the user overrides teammateMode to "tmux".
  */
-export function detectPaneBackend(): TeamMode {
+export function detectBackendFromEnv(): TeamMode {
   if (process.env.TMUX) {
     return "tmux";
   }
-  try {
-    execSync("which tmux", { stdio: ["pipe", "pipe", "pipe"] });
-    return "tmux";
-  } catch (err) {
-    log.error({ err }, "teams operation failed");
-    // tmux not found
+  // try {
+  //   execSync("which tmux", { stdio: ["pipe", "pipe", "pipe"] });
+  //   return "tmux";
+  // } catch (err) {
+  //   log.error({ err }, "teams operation failed");
+  //   // tmux not found
+  // }
+  if (process.env.ITERM_SESSION_ID) {
+    return "iterm";
   }
   return "in-process";
+}
+
+/**
+ * Wraps the argument in single quotes and escapes embedded single quotes,
+ * ensuring arguments containing spaces or special characters (e.g. multi-word
+ * tasks like `--task find the bug`) are parsed as a single token by the shell.
+ * Arguments consisting solely of alphanumerics and a small set of safe symbols
+ * are left unquoted for readability.
+ */
+function shellQuote(arg: string): string {
+  if (/^[A-Za-z0-9_/.:=-]+$/.test(arg)) {
+    return arg;
+  }
+  return `'${arg.replace(/'/g, `'\\''`)}'`;
+}
+
+/** Joins the command and its arguments into a single shell-executable string, applying safe escaping to each token. */
+function buildShellCommand(config: SpawnConfig): string {
+  return [config.command, ...config.args].map(shellQuote).join(" ");
 }
 
 export interface SpawnConfig {
@@ -65,7 +90,7 @@ export function spawnTeammate(config: SpawnConfig): {
 
     case "tmux": {
       const sessionName = `swifty-${Date.now().toString(36)}`;
-      const cmd = [config.command, ...config.args].join(" ");
+      const cmd = buildShellCommand(config);
       try {
         execSync(`tmux new-window -t "${sessionName}" -n teammate "${cmd}"`, {
           cwd: config.cwd,
@@ -75,7 +100,8 @@ export function spawnTeammate(config: SpawnConfig): {
       } catch (err) {
         log.error({ err }, "teams operation failed");
 
-        // Create new session if window fails
+        // Create a new detached session to host the teammate window when the target session does not exist
+
         execSync(`tmux new-session -d -s "${sessionName}" -n teammate "${cmd}"`, {
           cwd: config.cwd,
           encoding: "utf-8",
@@ -91,15 +117,42 @@ export function spawnTeammate(config: SpawnConfig): {
           } catch (err) {
             log.error({ err }, "teams operation failed");
 
-            // session may already be dead
+            // Session may have already exited; ignore
           }
         },
         paneId: sessionName,
       };
     }
 
-    case "iterm":
-      throw new Error("iTerm backend not supported on this platform");
+    case "iterm": {
+      // iTerm2 (macOS): use osascript to drive AppleScript, opening a new tab to run the teammate command.
+      // cd into the working directory first, then execute the teammate startup command — mirroring the tmux new-window behavior.
+      const cmd = buildShellCommand(config);
+      const writeText = `cd ${shellQuote(config.cwd)} && ${cmd}`;
+      // Escape backslashes and double quotes for the AppleScript string literal
+      const escaped = writeText.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+      const lines = [
+        'tell application "iTerm2"',
+        "  tell current window",
+        "    create tab with default profile",
+        `    tell current session to write text "${escaped}"`,
+        "  end tell",
+        "end tell",
+      ];
+      // Pass each line via -e wrapped in single quotes to prevent the shell from interpreting special characters in the AppleScript
+      const eArgs = lines.map((l) => `-e '${l.replace(/'/g, `'\\''`)}'`).join(" ");
+      execSync(`osascript ${eArgs}`, {
+        cwd: config.cwd,
+        encoding: "utf-8",
+        stdio: ["pipe", "pipe", "pipe"],
+      });
+      // iTerm2 tabs are closed by the user; there is no programmatic session handle to force-kill, so cancellation is delegated to the mailbox shutdown flow
+      return {
+        cancel: () => {
+          /* no-op: external iTerm tabs have no programmatic handle; shutdown is delivered via the mailbox */
+        },
+      };
+    }
 
     default:
       throw new Error(`Unknown team mode: ${String(config.mode)}`);

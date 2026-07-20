@@ -477,6 +477,20 @@ export function App({
             undefined,
             onEvent,
           );
+        // Teammate-scoped registry factory: injects shared task-board tools, then runs the teammate agent main loop
+        const teamRunAgentFactory =
+          (registry: ToolRegistry): RunAgent =>
+          (task, onEvent) =>
+            spawnSubagent(
+              BUILTIN_AGENTS[0],
+              task,
+              client,
+              registry,
+              provider,
+              workDir,
+              undefined,
+              onEvent,
+            );
         registryRef.current.register(new TeamCreateTool(teamManagerRef.current));
         registryRef.current.register(new SpawnTeammateTool(teamManagerRef.current, teamRunAgent));
         registryRef.current.register(new SendMessageTool(teamManagerRef.current));
@@ -498,8 +512,10 @@ export function App({
         wireSkillsToRegistry(catalog, cmdRegistryRef.current, skillHostRef.current);
 
         // Register AgentTool with real spawn + live progress reporting.
-        registryRef.current.register(
-          new AgentTool(workDir, registryRef.current, async (def, prompt, _bg, modelOverride?) => {
+        const agentTool = new AgentTool(
+          workDir,
+          registryRef.current,
+          async (def, prompt, _bg, modelOverride?) => {
             const id = ++subagentIdRef.current;
             setSubagents((prev) => [...prev, { id, label: def.name, turn: 0 }]);
             const onProgress = (p: { turn?: number; lastTool?: string }) => {
@@ -520,8 +536,11 @@ export function App({
             } finally {
               setSubagents((prev) => prev.filter((s) => s.id !== id));
             }
-          }),
+          },
         );
+        // Wire the team manager into AgentTool to enable the team_name teammate path (teammates receive shared task-board tools)
+        agentTool.setTeamManager(teamManagerRef.current, teamRunAgentFactory);
+        registryRef.current.register(agentTool);
 
         // Connect MCP servers in background
         if (mcpServers.length > 0) {
