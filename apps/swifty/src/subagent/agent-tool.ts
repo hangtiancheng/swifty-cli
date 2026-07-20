@@ -5,10 +5,12 @@ const log = createChildLogger({ module: "subagent" });
 import type { Tool, ToolResult, ToolContext, ToolSchema } from "../tools/types.js";
 import type { AgentDefinition } from "./definition.js";
 import { loadAgentDefinitions } from "./loader.js";
-import type { ToolRegistry } from "../tools/registry.js";
+import { ToolRegistry } from "../tools/registry.js";
 import type { ConversationManager } from "../conversation/conversation.js";
 import type { TeamManager, RunAgent } from "../teams/team.js";
 import { asErrorString, boolArg, strArg } from "@/utils/index.js";
+import { TaskCreateTool, TaskGetTool, TaskListTool, TaskUpdateTool } from "../teams/task-tools.js";
+import { SendMessageTool } from "../teams/tools.js";
 
 // Leading marker for forked child Agents — used for nested fork detection
 const FORK_BOILERPLATE_TAG = "<fork_boilerplate>";
@@ -41,8 +43,12 @@ export class AgentTool implements Tool {
 
   /** Optional: Team manager, enables the team_name parameter. */
   private teamManager?: TeamManager;
-  /** Optional: RunAgent callback used to spawn teammates. */
-  private teamRunAgent?: RunAgent;
+  /**
+   * Optional: factory that produces a per-teammate RunAgent. Receives a
+   * teammate-scoped tool registry (with shared task-board tools injected)
+   * and returns the callback that runs the teammate agent's main loop.
+   */
+  private teamRunAgentFactory?: (registry: ToolRegistry) => RunAgent;
 
   private spawnHandler: (
     definition: AgentDefinition,
@@ -86,9 +92,9 @@ export class AgentTool implements Tool {
    * Sets the team manager and teammate run callback, enabling the team_name parameter.
    * Once configured, the Agent tool can spawn teammates directly without requiring a separate SpawnTeammate tool.
    */
-  setTeamManager(mgr: TeamManager, runAgent: RunAgent): void {
+  setTeamManager(mgr: TeamManager, runAgentFactory: (registry: ToolRegistry) => RunAgent): void {
     this.teamManager = mgr;
-    this.teamRunAgent = runAgent;
+    this.teamRunAgentFactory = runAgentFactory;
   }
 
   schema(): ToolSchema {
@@ -180,7 +186,7 @@ When tasks are independent, launch multiple subagents in parallel by making mult
 
     // Team-member path: team_name takes precedence over fork/subagent. Runs the agent as a
     // persistent teammate and notifies the lead via SendMessage / mailbox upon completion.
-    if (teamName && this.teamManager && this.teamRunAgent) {
+    if (teamName && this.teamManager && this.teamRunAgentFactory) {
       return this.runAsTeammate(teamName, description, prompt);
     }
 
@@ -236,8 +242,23 @@ When tasks are independent, launch multiple subagents in parallel by making mult
       memberName = `${base}-${String(suffix++)}`;
     }
 
-    if (this.teamRunAgent) {
-      team.spawnTeammate(memberName, prompt, this.teamRunAgent);
+    // Build a teammate-scoped tool registry: clone the parent registry, then
+    // inject team-level task tools and a named SendMessage (overriding the
+    // inherited personal version so teammates share the same task list).
+    const teammateRegistry = new ToolRegistry();
+    for (const tool of this.registry.listTools()) {
+      teammateRegistry.register(tool);
+    }
+    if (this.teamManager) {
+      teammateRegistry.register(new SendMessageTool(this.teamManager, memberName));
+      teammateRegistry.register(new TaskCreateTool(this.teamManager, teamName, memberName));
+      teammateRegistry.register(new TaskGetTool(this.teamManager, teamName));
+      teammateRegistry.register(new TaskListTool(this.teamManager, teamName));
+      teammateRegistry.register(new TaskUpdateTool(this.teamManager, teamName));
+    }
+    const runAgent = this.teamRunAgentFactory?.(teammateRegistry);
+    if (runAgent) {
+      team.spawnTeammate(memberName, prompt, runAgent);
     }
 
     return {

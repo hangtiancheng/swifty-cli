@@ -56,7 +56,7 @@ import { TaskStore } from "../todo/store.js";
 import { AgentTool } from "../subagent/agent-tool.js";
 import { spawnSubagent } from "../subagent/spawn.js";
 import { TeamCreateTool, SendMessageTool, TeamDeleteTool } from "../teams/tools.js";
-import { TeamManager } from "../teams/team.js";
+import { TeamManager, type RunAgent } from "../teams/team.js";
 import { HookEngine, validate as validateHooks } from "../hooks/hooks.js";
 import { forceCompact } from "../compact/compact.js";
 import { RecoveryState } from "../compact/recovery.js";
@@ -73,6 +73,7 @@ import {
 } from "../session/session.js";
 import { createChildLogger } from "../logger/index.js";
 import { strArg } from "@/utils/index.js";
+import { BUILTIN_AGENTS } from "@/subagent/definition.js";
 
 const log = createChildLogger({ module: "remote" });
 
@@ -320,7 +321,7 @@ interface CreateRemoteAgentOptions {
 export async function createRemoteAgent(
   opts: CreateRemoteAgentOptions,
 ): Promise<RemoteAgentHandle> {
-  const { provider, workDir, hooks: hookCfgs, mcpServers: mcpConfigs, askUser } = opts;
+  const { provider, workDir, hooks: hookConfigs, mcpServers: mcpConfigs, askUser } = opts;
 
   // 1. Create session and file history
   const sessionId = newSessionId();
@@ -366,11 +367,11 @@ export async function createRemoteAgent(
   );
 
   // 9. Initialize hooks
-  const hookErr = validateHooks(hookCfgs ?? []);
+  const hookErr = validateHooks(hookConfigs ?? []);
   if (hookErr) {
     log.warn({ message: hookErr.message }, "hook validation warning");
   }
-  const hookEngine = new HookEngine(hookCfgs ?? []);
+  const hookEngine = new HookEngine(hookConfigs ?? []);
 
   // 10. Load skills
   const catalog = new SkillCatalog();
@@ -390,6 +391,22 @@ export async function createRemoteAgent(
   // 13. Register AskUserQuestion tool (uses the injected askUser callback)
   registry.register(new AskUserQuestionTool(askUser));
 
+  // Register team-related tools. teamRunAgentFactory receives a teammate-scoped
+  // registry (with shared task-board tools injected) and returns the callback
+  // that runs the teammate agent's main loop.
+  const teamRunAgentFactory =
+    (registry: ToolRegistry): RunAgent =>
+    (task, onEvent) =>
+      spawnSubagent(
+        BUILTIN_AGENTS[0],
+        task,
+        client,
+        registry,
+        provider,
+        workDir,
+        undefined,
+        onEvent,
+      );
   // 14. Register Team tools
   const teamManager = new TeamManager(workDir);
   registry.register(new TeamCreateTool(teamManager));
@@ -397,64 +414,65 @@ export async function createRemoteAgent(
   registry.register(new TeamDeleteTool(teamManager));
 
   // 15. Register AgentTool (with both spawn and fork paths)
-  registry.register(
-    new AgentTool(
-      workDir,
-      registry,
-      async (def, prompt, _bg, modelOverride?) => {
-        return spawnSubagent(
-          def,
-          prompt,
-          client,
-          registry,
-          provider,
-          workDir,
-          undefined,
-          undefined,
-          modelOverride,
-        );
-      },
-      undefined,
-      async (prompt, forkConv, forkRegistry, modelOverride?) => {
-        // Fork path: create an isolated agent on the forked conversation
-        const resolvedModel = modelOverride ? resolveModelId(modelOverride) : provider.model;
-        const forkEnv = detectEnvironment(workDir);
-        forkEnv.model = resolvedModel;
-        const forkSystemPrompt = buildSystemPrompt(forkEnv);
-        const forkClient = modelOverride
-          ? await createClient({ ...provider, model: resolvedModel }, forkSystemPrompt)
-          : client;
+  const agentTool = new AgentTool(
+    workDir,
+    registry,
+    async (def, prompt, _bg, modelOverride?) => {
+      return spawnSubagent(
+        def,
+        prompt,
+        client,
+        registry,
+        provider,
+        workDir,
+        undefined,
+        undefined,
+        modelOverride,
+      );
+    },
+    undefined,
+    async (prompt, forkConv, forkRegistry, modelOverride?) => {
+      // Fork path: create an isolated agent on the forked conversation
+      const resolvedModel = modelOverride ? resolveModelId(modelOverride) : provider.model;
+      const forkEnv = detectEnvironment(workDir);
+      forkEnv.model = resolvedModel;
+      const forkSystemPrompt = buildSystemPrompt(forkEnv);
+      const forkClient = modelOverride
+        ? await createClient({ ...provider, model: resolvedModel }, forkSystemPrompt)
+        : client;
 
-        const checker = new PermissionChecker(workDir, "acceptEdits");
-        forkConv.addUserMessage(prompt);
+      const checker = new PermissionChecker(workDir, "acceptEdits");
+      forkConv.addUserMessage(prompt);
 
-        const agent = new Agent({
-          client: forkClient,
-          registry: forkRegistry,
-          checker,
-          conversation: forkConv,
-          workDir,
-          maxIterations: 200,
-        });
+      const agent = new Agent({
+        client: forkClient,
+        registry: forkRegistry,
+        checker,
+        conversation: forkConv,
+        workDir,
+        maxIterations: 200,
+      });
 
-        let output = "";
-        for await (const event of agent.run()) {
-          switch (event.type) {
-            case "stream_text":
-              output += event.text;
-              break;
-            case "loop_complete":
-              return output || "[No output]";
-            case "error":
-              return output
-                ? `${output}\n\n[Error: ${event.error.message}]`
-                : `Error: ${event.error.message}`;
-          }
+      let output = "";
+      for await (const event of agent.run()) {
+        switch (event.type) {
+          case "stream_text":
+            output += event.text;
+            break;
+          case "loop_complete":
+            return output || "[No output]";
+          case "error":
+            return output
+              ? `${output}\n\n[Error: ${event.error.message}]`
+              : `Error: ${event.error.message}`;
         }
-        return output || "[No output]";
-      },
-    ),
+      }
+      return output || "[No output]";
+    },
   );
+
+  agentTool.setTeamManager(teamManager, teamRunAgentFactory);
+  registry.register(agentTool);
 
   // 16. Load user-defined slash commands
   const cmdRegistry = createCommandRegistry();
