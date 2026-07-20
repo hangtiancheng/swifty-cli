@@ -345,7 +345,7 @@ export class TeamManager {
   private teamDir(name: string): string {
     return join(this.workDir, ".swifty", "teams", name);
   }
-  
+
   create(name: string, mode: TeamMode = detectBackend()): Team {
     const team = new Team(name, mode, this.workDir);
     this.teams.set(name, team);
