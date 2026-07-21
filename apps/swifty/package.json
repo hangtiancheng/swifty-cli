@@ -33,12 +33,10 @@
     "access": "public"
   },
   "scripts": {
-    "fe:dev": "cd src/remote/fe && rsbuild --open",
-    "fe:build": "cd src/remote/fe && rsbuild build",
-    "fe:preview": "cd src/remote/fe && rsbuild preview",
-    "fe:format": "cd src/remote/fe && biome format --write",
-    "fe:check": "cd src/remote/fe && biome check --write",
-    "prebuild": "pnpm --filter @swifty.js/glob-wasm asbuild:release && pnpm --filter @swifty.js/glob-addon build",
+    "fe:dev": "",
+    "fe:build": "",
+    "fe:preview": "",
+    "prebuild": "pnpm --filter @swifty.js/glob-addon build && pnpm --filter @swifty.js/glob-wasm asbuild:release",
     "dev": "tsx ./src/main.tsx",
     "build": "tsup",
     "lint": "eslint ./src",
