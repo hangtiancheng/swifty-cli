@@ -299,10 +299,7 @@ export class AgentRunner {
           // "cancelled"); only mark if the context is still running
           if (!context.isDone()) context.markFailed("cancelled");
         } else {
-          getLogger().error(
-            { run_id: runId, step: context.step, err: exc },
-            "agent run failed",
-          );
+          getLogger().error({ run_id: runId, step: context.step, err: exc }, "agent run failed");
           if (!context.isDone()) context.markFailed("llm_error");
         }
       }

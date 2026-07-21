@@ -113,7 +113,7 @@ describe("Builtin Tools", () => {
       const tool = new BashTool();
       // Emit ~1 MB of 'a' characters
       const result = await tool.invoke({
-        command: 'yes aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 2>/dev/null | head -c 1048576; exit 0',
+        command: "yes aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 2>/dev/null | head -c 1048576; exit 0",
       });
       expect(result.isError).toBe(false);
       expect(result.content).toContain("[truncated]");

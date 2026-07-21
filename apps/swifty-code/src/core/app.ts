@@ -284,7 +284,9 @@ export class CoreApp {
           `swifty-core: port ${String(config.port)} already in use (${config.host}:${String(config.port)})`,
         );
       } else {
-        console.error(`swifty-core: failed to start on ${config.host}:${String(config.port)}: ${msg}`);
+        console.error(
+          `swifty-core: failed to start on ${config.host}:${String(config.port)}: ${msg}`,
+        );
       }
       process.exit(1);
     }

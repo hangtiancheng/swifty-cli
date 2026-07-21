@@ -51,7 +51,10 @@ describe("logging", () => {
   let dir: string;
 
   beforeEach(() => {
-    dir = path.join(tmpdir(), `test-logging-${String(Date.now())}-${String(process.hrtime.bigint())}`);
+    dir = path.join(
+      tmpdir(),
+      `test-logging-${String(Date.now())}-${String(process.hrtime.bigint())}`,
+    );
     mkdirSync(dir, { recursive: true });
     // Silence the always-on stderr channel so tests don't flood the output
     vi.spyOn(process.stderr, "write").mockImplementation(() => true);
@@ -166,7 +169,9 @@ describe("logging", () => {
     const formatted = formatTextLine(
       '{"level":30,"time":"2026-01-01T00:00:00.000Z","pid":1,"hostname":"h","runId":"r1","msg":"go"}\n',
     );
-    expect(formatted).toBe('level=INFO ts=2026-01-01T00:00:00.000Z source=swifty-core msg="go" runId="r1"\n');
+    expect(formatted).toBe(
+      'level=INFO ts=2026-01-01T00:00:00.000Z source=swifty-core msg="go" runId="r1"\n',
+    );
 
     expect(formatTextLine("not json\n")).toBe("not json\n");
   });

@@ -55,12 +55,7 @@ function waitForDaemon(host: string, port: number, timeoutMs = 10_000): Promise<
           sock.destroy();
           try {
             const msg: unknown = JSON.parse(line);
-            if (
-              typeof msg === "object" &&
-              msg !== null &&
-              "id" in msg &&
-              msg.id === "dev-ping"
-            ) {
+            if (typeof msg === "object" && msg !== null && "id" in msg && msg.id === "dev-ping") {
               resolve();
               return;
             }

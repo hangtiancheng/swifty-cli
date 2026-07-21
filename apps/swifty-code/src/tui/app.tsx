@@ -271,7 +271,10 @@ export function App({ _config, client }: AppProps): React.JSX.Element {
 
         case "step.started": {
           const step = num(event, "step");
-          setMessages((prev) => [...prev, { role: "system", content: `── step ${String(step)} ──` }]);
+          setMessages((prev) => [
+            ...prev,
+            { role: "system", content: `── step ${String(step)} ──` },
+          ]);
           break;
         }
 
@@ -332,9 +335,7 @@ export function App({ _config, client }: AppProps): React.JSX.Element {
           const elapsedMs = num(event, "elapsed_ms");
           setActiveTools((prev) =>
             prev.map((t) =>
-              t.toolUseId === toolUseId
-                ? { ...t, output, elapsed: elapsedMs, loading: false }
-                : t,
+              t.toolUseId === toolUseId ? { ...t, output, elapsed: elapsedMs, loading: false } : t,
             ),
           );
           // Tool completed: drop any stale pending permission request for it

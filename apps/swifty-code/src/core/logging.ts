@@ -81,7 +81,9 @@ function toPinoLevel(raw: string): PinoLevel {
   if (mapped !== undefined) return mapped;
   if (!warnedUnknownLevels.has(lower)) {
     warnedUnknownLevels.add(lower);
-    process.stderr.write(`swifty: unknown log level ${JSON.stringify(raw)}, falling back to "info"\n`);
+    process.stderr.write(
+      `swifty: unknown log level ${JSON.stringify(raw)}, falling back to "info"\n`,
+    );
   }
   return "info";
 }
@@ -168,7 +170,11 @@ export class RotatingFileDestination implements pino.DestinationStream {
   private fd: number | undefined;
   private size = 0;
 
-  constructor(filePath: string, maxSize: number = MAX_LOG_SIZE_BYTES, maxBackups: number = MAX_BACKUPS) {
+  constructor(
+    filePath: string,
+    maxSize: number = MAX_LOG_SIZE_BYTES,
+    maxBackups: number = MAX_BACKUPS,
+  ) {
     this.filePath = filePath;
     this.maxSize = maxSize;
     this.maxBackups = maxBackups;
