@@ -10,7 +10,7 @@ interface SlashMenuProps {
 export function SlashMenu({ commands, cursor, onSelect, onHover }: SlashMenuProps) {
   if (commands.length === 0) return null;
   return (
-    <div className="absolute inset-x-0 bottom-full mb-1 max-h-[240px] overflow-y-auto rounded-md border border-border bg-surface shadow-[0_-4px_12px_rgba(0,0,0,0.3)]">
+    <div className="absolute inset-x-0 bottom-full mb-1 max-h-60 overflow-y-auto rounded-md border border-border bg-surface shadow-[0_-4px_12px_rgba(0,0,0,0.3)]">
       {commands.map((cmd, i) => (
         <button
           key={cmd.name}

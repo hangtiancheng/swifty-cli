@@ -18,7 +18,7 @@ export function Collapsible({ header, children, defaultOpen = false }: Collapsib
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="flex w-full cursor-pointer select-none items-center gap-2 px-3 py-2 text-left text-[13px] hover:bg-white/[0.03]"
+        className="flex w-full cursor-pointer select-none items-center gap-2 px-3 py-2 text-left text-[13px] hover:bg-white/3"
       >
         <span
           className={`text-xs text-dim transition-transform duration-200 ${open ? "rotate-90" : ""}`}
@@ -28,7 +28,7 @@ export function Collapsible({ header, children, defaultOpen = false }: Collapsib
         {header}
       </button>
       {open && (
-        <div className="max-h-[300px] overflow-y-auto border-t border-border px-3 py-2 text-xs whitespace-pre-wrap text-dim">
+        <div className="max-h-75 overflow-y-auto border-t border-border px-3 py-2 text-xs whitespace-pre-wrap text-dim">
           {children}
         </div>
       )}

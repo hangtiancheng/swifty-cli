@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls /Users/hangtiancheng/github/swifty-cli/apps/swifty/src/remote/fe/src /Users/hangtiancheng/github/swifty-cli/apps/swifty/src/remote/fe/dist; cat /Users/hangtiancheng/github/swifty-cli/apps/swifty/src/remote/fe/index.html 2>/dev/null | head -30)"
+    ]
+  }
+}

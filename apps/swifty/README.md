@@ -51,7 +51,7 @@ Beyond interactive use, Swifty supports a non-interactive print mode for scripti
 ### Remote Mode
 
 - Koa HTTP server with WebSocket bridge for browser-based access
-- React frontend (built with Rsbuild and Tailwind CSS) served at a configurable address
+- React frontend served at a configurable address
 - Bidirectional message streaming between browser and agent
 
 ## Installation
