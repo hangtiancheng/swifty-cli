@@ -13,7 +13,7 @@
   "bugs": {
     "url": "https://github.com/hangtiancheng/swifty-cli/issues"
   },
-  "license": "ISC",
+  "license": "MIT",
   "author": "https://github.com/hangtiancheng",
   "repository": {
     "type": "git",

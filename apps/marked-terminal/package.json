@@ -32,7 +32,7 @@
     "markdown"
   ],
   "author": "",
-  "license": "ISC",
+  "license": "MIT",
   "packageManager": "pnpm@10.33.1",
   "peerDependencies": {
     "marked": ">17 <=18"
