@@ -20,9 +20,9 @@
  * SOFTWARE.
  */
 
-import { createChildLogger } from "../logger/index.js";
+// import { createChildLogger } from "../logger/index.js";
 
-const log = createChildLogger({ module: "commands" });
+// const log = createChildLogger({ module: "commands" });
 
 import { readdirSync, readFileSync, statSync, existsSync } from "node:fs";
 import { join } from "node:path";
@@ -52,8 +52,8 @@ function walkDir(base: string, dir: string): Command[] {
   let entries: string[];
   try {
     entries = readdirSync(dir);
-  } catch (err) {
-    log.error({ err }, "commands operation failed");
+  } catch {
+    // log.error({ err }, "commands operation failed");
 
     return [];
   }
@@ -63,8 +63,8 @@ function walkDir(base: string, dir: string): Command[] {
     let st;
     try {
       st = statSync(full);
-    } catch (err) {
-      log.error({ err }, "commands operation failed");
+    } catch {
+      // log.error({ err }, "commands operation failed");
 
       continue;
     }
@@ -98,8 +98,8 @@ function parseCommandFile(base: string, full: string): Command | null {
   let raw: string;
   try {
     raw = readFileSync(full, "utf-8");
-  } catch (err) {
-    log.error({ err }, "commands operation failed");
+  } catch {
+    // log.error({ err }, "commands operation failed");
 
     return null;
   }
@@ -120,8 +120,8 @@ function parseCommandFile(base: string, full: string): Command | null {
         description = data.description ?? "";
         argumentHint = data["argument-hint"] ?? "";
         aliases = data.aliases ?? [];
-      } catch (err) {
-        log.error({ err }, "commands operation failed");
+      } catch {
+        // log.error({ err }, "commands operation failed");
         // ignore frontmatter parse errors; treat whole file as body
       }
     }

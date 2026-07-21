@@ -89,9 +89,8 @@ export class CommandUsageTracker {
           this.usage.set(name, data);
         }
       }
-    } catch (err) {
-      log.error({ err }, "commands operation failed");
-
+    } catch {
+      // log.error({ err }, "commands operation failed");
       // file doesn't exist yet
     }
   }
