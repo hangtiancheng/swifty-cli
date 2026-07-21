@@ -70,51 +70,87 @@ export class BashTool implements BaseTool {
         stdio: ["ignore", "pipe", "pipe"],
       });
 
-      let output = "";
+      const chunks: Buffer[] = [];
+      let collectedBytes = 0;
+      let truncated = false;
       let killed = false;
+      let settled = false;
 
       const timer = setTimeout(() => {
         killed = true;
         proc.kill("SIGKILL");
       }, timeout * 1000);
 
+      const settle = (result: ToolResult): void => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(result);
+      };
+
       const collectOutput = (chunk: Buffer): void => {
-        output += chunk.toString("utf-8");
+        // Stop accumulating once the cap is reached to avoid unbounded memory growth
+        if (truncated) return;
+        chunks.push(chunk);
+        collectedBytes += chunk.length;
+        if (collectedBytes > MAX_OUTPUT_BYTES) {
+          truncated = true;
+        }
+      };
+
+      // Concatenate collected output with the 64 KB cap (shared by the normal
+      // and timeout paths)
+      const buildOutput = (): string => {
+        const buf = Buffer.concat(chunks);
+        if (truncated || buf.length > MAX_OUTPUT_BYTES) {
+          return buf.subarray(0, MAX_OUTPUT_BYTES).toString("utf-8") + "\n[truncated]";
+        }
+        return buf.toString("utf-8");
+      };
+
+      // Return whatever output was collected before the kill, with a trailing
+      // timeout marker, so partial output is not lost
+      const settleTimeout = (): void => {
+        const output = buildOutput();
+        const marker = `[timeout after ${String(timeout)}s]`;
+        settle(toolError(output === "" ? marker : `${output}\n${marker}`, "timeout"));
       };
 
       proc.stdout.on("data", collectOutput);
       proc.stderr.on("data", collectOutput);
 
       proc.on("error", (err: Error) => {
-        clearTimeout(timer);
-        resolve(toolError(String(err), "runtime_error"));
+        settle(toolError(String(err), "runtime_error"));
+      });
+
+      // On timeout the shell is SIGKILLed, but orphaned grandchildren may keep
+      // the stdio pipes open indefinitely, so "close" may never fire. Settle
+      // from "exit" instead, after a short grace period that lets already
+      // buffered "data" events flush.
+      proc.on("exit", () => {
+        if (!killed) return;
+        setTimeout(settleTimeout, 50);
       });
 
       proc.on("close", (code) => {
-        clearTimeout(timer);
-
         if (killed) {
-          resolve(toolError(`[timeout after ${String(timeout)}s]`, "timeout"));
+          settleTimeout();
           return;
         }
 
-        // Truncate output if needed
-        if (Buffer.byteLength(output, "utf-8") > MAX_OUTPUT_BYTES) {
-          const buf = Buffer.from(output, "utf-8");
-          output = buf.subarray(0, MAX_OUTPUT_BYTES).toString("utf-8") + "\n[truncated]";
-        }
+        const output = buildOutput();
 
         if (code !== 0) {
-          resolve(toolError(`[exit ${String(code)}]\n${output}`, "runtime_error"));
+          settle(toolError(`[exit ${String(code)}]\n${output}`, "runtime_error"));
           return;
         }
 
         if (output === "") {
-          resolve(toolSuccess("[no output]"));
+          settle(toolSuccess("[no output]"));
           return;
         }
 
-        resolve(toolSuccess(output));
+        settle(toolSuccess(output));
       });
     });
   }

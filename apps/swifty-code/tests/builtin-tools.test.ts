@@ -74,6 +74,52 @@ describe("Builtin Tools", () => {
       expect(result.errorType).toBe("timeout");
       expect(result.content).toContain("timeout");
     });
+
+    // Feature (B-7): timeout returns partial output collected before the kill
+    // Design: Emit output then hang; confirm partial output is preserved with
+    //         a trailing timeout marker and errorType stays "timeout"
+    test("returns partial output on timeout", async () => {
+      const tool = new BashTool();
+      const result = await tool.invoke({
+        command: "echo partial-line-1; echo partial-line-2; sleep 100",
+        timeout: 1,
+      });
+      expect(result.isError).toBe(true);
+      expect(result.errorType).toBe("timeout");
+      expect(result.content).toContain("partial-line-1");
+      expect(result.content).toContain("partial-line-2");
+      expect(result.content.endsWith("[timeout after 1s]")).toBe(true);
+    }, 10_000);
+
+    // Feature (B-7): partial output on timeout still respects the 64 KB cap
+    // Design: Emit ~1 MB then hang; confirm truncation marker + timeout marker
+    test("truncates partial output on timeout at 64 KB", async () => {
+      const tool = new BashTool();
+      const result = await tool.invoke({
+        command: "yes aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 2>/dev/null | head -c 1048576; sleep 100",
+        timeout: 1,
+      });
+      expect(result.isError).toBe(true);
+      expect(result.errorType).toBe("timeout");
+      expect(result.content).toContain("[truncated]");
+      expect(result.content.endsWith("[timeout after 1s]")).toBe(true);
+      // 64 KB cap + truncation and timeout markers (small slack)
+      expect(result.content.length).toBeLessThanOrEqual(64 * 1024 + 64);
+    }, 10_000);
+
+    // Feature: Verify BashTool caps accumulated output at 64 KB
+    // Design: Emit ~1 MB of output, confirm result is truncated with marker
+    test("truncates output at 64 KB", async () => {
+      const tool = new BashTool();
+      // Emit ~1 MB of 'a' characters
+      const result = await tool.invoke({
+        command: 'yes aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 2>/dev/null | head -c 1048576; exit 0',
+      });
+      expect(result.isError).toBe(false);
+      expect(result.content).toContain("[truncated]");
+      // 64 KB cap + truncation marker (small slack for the marker line)
+      expect(result.content.length).toBeLessThanOrEqual(64 * 1024 + 32);
+    });
   });
 
   describe("ReadFileTool", () => {
@@ -168,6 +214,43 @@ describe("Builtin Tools", () => {
       expect(result.isError).toBe(false);
       expect(result.content).toContain("nested");
       rmSync(dir, { recursive: true });
+    });
+
+    // Feature: Verify ListDirTool returns clear error for non-existent directory
+    // Design: List a missing path, expect "no such directory" with the original input path
+    test("returns error for non-existent directory", async () => {
+      const missing = path.join(tmpdir(), `test-list-missing-${String(Date.now())}`);
+      const tool = new ListDirTool();
+      const result = await tool.invoke({ path: missing });
+      expect(result.isError).toBe(true);
+      expect(result.errorType).toBe("runtime_error");
+      expect(result.content).toBe(`no such directory: ${missing}`);
+    });
+
+    // Feature: Verify ListDirTool returns clear error when path is a file
+    // Design: List a file path, expect "not a directory" with the original input path
+    test("returns error when path is not a directory", async () => {
+      const dir = path.join(tmpdir(), `test-list-file-${String(Date.now())}`);
+      mkdirSync(dir, { recursive: true });
+      const filePath = path.join(dir, "file.txt");
+      writeFileSync(filePath, "content", "utf-8");
+
+      const tool = new ListDirTool();
+      const result = await tool.invoke({ path: filePath });
+      expect(result.isError).toBe(true);
+      expect(result.errorType).toBe("runtime_error");
+      expect(result.content).toBe(`not a directory: ${filePath}`);
+      rmSync(dir, { recursive: true });
+    });
+
+    // Feature: Verify ListDirTool rejects path traversal with a toolError
+    // Design: Pass a path containing "..", expect runtime_error result (not a throw)
+    test("returns error for path traversal", async () => {
+      const tool = new ListDirTool();
+      const result = await tool.invoke({ path: "../outside" });
+      expect(result.isError).toBe(true);
+      expect(result.errorType).toBe("runtime_error");
+      expect(result.content).toContain("path traversal not allowed");
     });
   });
 });

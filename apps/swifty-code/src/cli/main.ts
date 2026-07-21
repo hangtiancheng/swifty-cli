@@ -64,6 +64,24 @@ Examples:
   swifty trace --layer llm`);
 }
 
+// Valid values for trace --layer
+const VALID_TRACE_LAYERS = ["ipc", "event", "llm"];
+
+// Read the value following a flag (e.g. --layer ipc).
+// Exits with code 1 if the flag is present but the value is missing or looks
+// like another flag (starts with "-").
+function readFlagValue(args: string[], flag: string): string | undefined {
+  const idx = args.indexOf(flag);
+  if (idx < 0) return undefined;
+  const value = args[idx + 1];
+  if (value === undefined || value.startsWith("-")) {
+    console.error(`Error: ${flag} requires a value`);
+    printHelp();
+    process.exit(1);
+  }
+  return value;
+}
+
 // Parse command-line arguments and dispatch to corresponding subcommand
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
@@ -131,13 +149,20 @@ async function main(): Promise<void> {
       break;
 
     case "trace": {
-      const runId = args[1] ?? null;
-      const layerIdx = args.indexOf("--layer");
-      const directionIdx = args.indexOf("--direction");
+      // First positional (non-flag) argument after "trace" is the run_id
+      const runIdArg = args[1];
+      const runId = runIdArg !== undefined && !runIdArg.startsWith("-") ? runIdArg : null;
       const raw = args.includes("--raw");
       const follow = args.includes("--follow") || args.includes("-f");
-      const layer = layerIdx >= 0 ? args[layerIdx + 1] : undefined;
-      const direction = directionIdx >= 0 ? args[directionIdx + 1] : undefined;
+      const layer = readFlagValue(args, "--layer");
+      const direction = readFlagValue(args, "--direction");
+      if (layer !== undefined && !VALID_TRACE_LAYERS.includes(layer)) {
+        console.error(
+          `Error: invalid --layer "${layer}" (must be one of: ${VALID_TRACE_LAYERS.join(", ")})`,
+        );
+        printHelp();
+        process.exit(1);
+      }
       const options: {
         layer?: string;
         direction?: string;

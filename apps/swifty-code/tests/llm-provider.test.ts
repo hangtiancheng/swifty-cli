@@ -21,6 +21,7 @@
  */
 
 import { describe, expect, test } from "vitest";
+import { APIError } from "@anthropic-ai/sdk";
 import { AnthropicProvider } from "../src/core/llm/provider.js";
 import { EventBus } from "../src/core/events/bus.js";
 import type Anthropic from "@anthropic-ai/sdk";
@@ -61,6 +62,7 @@ function makeMockStream(opts: {
   stopReason?: string;
   toolUses?: { id: string; name: string; input: Record<string, unknown> }[];
   thinkingBlocks?: { thinking: string }[];
+  redactedThinkingBlocks?: { data: string }[];
   usage?: {
     input_tokens: number;
     output_tokens: number;
@@ -73,6 +75,7 @@ function makeMockStream(opts: {
   const stopReason = opts.stopReason ?? "end_turn";
   const toolUses = opts.toolUses ?? [];
   const thinkingBlocks = opts.thinkingBlocks ?? [];
+  const redactedThinkingBlocks = opts.redactedThinkingBlocks ?? [];
   const usage = opts.usage ?? {
     input_tokens: 10,
     output_tokens: 20,
@@ -106,6 +109,9 @@ function makeMockStream(opts: {
       }
       for (const tb of thinkingBlocks) {
         content.push({ type: "thinking", ...tb });
+      }
+      for (const rb of redactedThinkingBlocks) {
+        content.push({ type: "redacted_thinking", ...rb });
       }
 
       return {
@@ -228,6 +234,47 @@ describe("AnthropicProvider", () => {
     expect(asRecord(usage)["cache_creation_input_tokens"]).toBe(10);
   });
 
+  // Feature (B-1): context_percent must include cached input tokens
+  // Design: 100 uncached + 50k cache-read + 10k cache-creation on a 200k window
+  //         => 60100/200000; counting only input_tokens would report 100/200000
+  test("context_percent includes cache read and creation tokens", async () => {
+    const provider = makeProvider("claude-sonnet-4-6", () =>
+      makeMockStream({
+        textChunks: ["ok"],
+        usage: {
+          input_tokens: 100,
+          output_tokens: 50,
+          cache_read_input_tokens: 50_000,
+          cache_creation_input_tokens: 10_000,
+        },
+      }),
+    );
+    const bus = new EventBus();
+    const events = collectEvents(bus);
+
+    const response = await provider.chat([], [], bus, "run-1");
+
+    const expected = (100 + 50_000 + 10_000) / 200_000;
+    expect(response.usage?.contextPercent).toBeCloseTo(expected, 10);
+    const usageEvent = events.find((e: unknown) => asRecord(e)["type"] === "llm.usage");
+    expect(asRecord(usageEvent)["context_percent"]).toBeCloseTo(expected, 10);
+  });
+
+  // Feature (B-1): missing cache fields are treated as 0
+  // Design: usage without cache fields => context_percent falls back to input_tokens only
+  test("context_percent treats missing cache fields as zero", async () => {
+    const provider = makeProvider("claude-sonnet-4-6", () =>
+      makeMockStream({
+        textChunks: ["ok"],
+        usage: { input_tokens: 2_000, output_tokens: 10 },
+      }),
+    );
+    const bus = new EventBus();
+
+    const response = await provider.chat([], [], bus, "run-1");
+    expect(response.usage?.contextPercent).toBeCloseTo(2_000 / 200_000, 10);
+  });
+
   // --- chat() response parsing ---
 
   test("chat returns correct stopReason", async () => {
@@ -281,7 +328,31 @@ describe("AnthropicProvider", () => {
 
     const response = await provider.chat([], [], bus, "run-1");
     expect(response.thinkingBlocks).toHaveLength(1);
-    expect(response.thinkingBlocks[0].thinking).toBe("Let me think about this...");
+    const block = response.thinkingBlocks[0];
+    expect(block.type).toBe("thinking");
+    expect(block.type === "thinking" ? block.thinking : "").toBe("Let me think about this...");
+  });
+
+  // Feature (B-5): redacted_thinking blocks are collected instead of silently dropped
+  // Design: Mock stream returns thinking + redacted_thinking blocks; both must be
+  //         preserved in order so they can be passed back verbatim to the API
+  test("chat preserves redacted_thinking blocks", async () => {
+    const provider = makeProvider("claude-sonnet-4-6", () =>
+      makeMockStream({
+        textChunks: ["answer"],
+        thinkingBlocks: [{ thinking: "visible reasoning" }],
+        redactedThinkingBlocks: [{ data: "opaque-encrypted-payload" }],
+      }),
+    );
+    const bus = new EventBus();
+
+    const response = await provider.chat([], [], bus, "run-1");
+    expect(response.thinkingBlocks).toHaveLength(2);
+    const redacted = response.thinkingBlocks.find((b) => b.type === "redacted_thinking");
+    expect(redacted).toBeDefined();
+    expect(redacted?.type === "redacted_thinking" ? redacted.data : "").toBe(
+      "opaque-encrypted-payload",
+    );
   });
 
   test("chat returns empty text for no tokens", async () => {
@@ -395,5 +466,119 @@ describe("AnthropicProvider", () => {
     const bus = new EventBus();
 
     await expect(provider.chat([], [], bus, "run-1")).rejects.toThrow("ECONNRESET");
+  });
+
+  // --- API business error retry (B-2) ---
+
+  // Build a real SDK APIError subclass for a given HTTP status
+  function makeApiError(status: number, message: string): Error {
+    return APIError.generate(status, { error: { message } }, message, new Headers());
+  }
+
+  test.each([429, 500, 502, 503, 529])(
+    "API error with status %i triggers retry",
+    async (status) => {
+      let callCount = 0;
+      const mockClient = {
+        messages: {
+          stream: () => {
+            callCount++;
+            if (callCount === 1) {
+              return makeMockStream({
+                throwError: makeApiError(status, `transient ${String(status)}`),
+              });
+            }
+            return makeMockStream({ textChunks: ["recovered"] });
+          },
+        },
+      };
+      if (!isAnthropic(mockClient)) {
+        throw new Error("Mock client failed Anthropic type guard");
+      }
+      const provider = new AnthropicProvider("claude-sonnet-4-6", mockClient);
+      const bus = new EventBus();
+
+      const response = await provider.chat([], [], bus, "run-1");
+      expect(response.text).toBe("recovered");
+      expect(callCount).toBe(2); // Retried once
+    },
+    10_000,
+  );
+
+  test.each([400, 401, 403, 404, 422])(
+    "API error with status %i is not retried",
+    async (status) => {
+      let callCount = 0;
+      const mockClient = {
+        messages: {
+          stream: () => {
+            callCount++;
+            return makeMockStream({
+              throwError: makeApiError(status, `business error ${String(status)}`),
+            });
+          },
+        },
+      };
+      if (!isAnthropic(mockClient)) {
+        throw new Error("Mock client failed Anthropic type guard");
+      }
+      const provider = new AnthropicProvider("claude-sonnet-4-6", mockClient);
+      const bus = new EventBus();
+
+      await expect(provider.chat([], [], bus, "run-1")).rejects.toThrow(
+        `business error ${String(status)}`,
+      );
+      expect(callCount).toBe(1); // No retry on deterministic 4xx
+    },
+  );
+
+  // --- AbortSignal pass-through (mid-LLM cancellation) ---
+
+  test("forwards AbortSignal to SDK request options", async () => {
+    const controller = new AbortController();
+    let capturedOptions: unknown;
+    const mockClient = {
+      messages: {
+        stream: (_args: unknown, options?: unknown) => {
+          capturedOptions = options;
+          return makeMockStream({ textChunks: ["ok"] });
+        },
+      },
+    };
+    if (!isAnthropic(mockClient)) {
+      throw new Error("Mock client failed Anthropic type guard");
+    }
+    const provider = new AnthropicProvider("claude-sonnet-4-6", mockClient);
+    const bus = new EventBus();
+
+    await provider.chat([], [], bus, "run-1", { signal: controller.signal });
+
+    expect(asRecord(capturedOptions)["signal"]).toBe(controller.signal);
+  });
+
+  test("abort error is not retried as a network error", async () => {
+    let callCount = 0;
+    const mockClient = {
+      messages: {
+        stream: () => {
+          callCount++;
+          // SDK abort errors carry name "AbortError" / APIUserAbortError and
+          // may contain "connection reset"-like messages depending on runtime;
+          // classification must go by abort identity, never by message
+          const abortErr = Object.assign(new Error("Request was aborted."), {
+            name: "AbortError",
+          });
+          return makeMockStream({ throwError: abortErr });
+        },
+      },
+    };
+    if (!isAnthropic(mockClient)) {
+      throw new Error("Mock client failed Anthropic type guard");
+    }
+    const provider = new AnthropicProvider("claude-sonnet-4-6", mockClient);
+    const bus = new EventBus();
+
+    await expect(provider.chat([], [], bus, "run-1")).rejects.toThrow("Request was aborted.");
+    expect(callCount).toBe(1); // No retry on abort
   });
 });

@@ -21,6 +21,7 @@
  */
 
 // PermissionManager: policy evaluation, user approval gating, caching, and timeout
+import { getLogger } from "../logging.js";
 import {
   DEFAULT_POLICIES,
   type PermissionDecision,
@@ -37,18 +38,40 @@ interface PendingRequest {
   toolName: string;
 }
 
-// Timeout utility for promises
+// Raised when a pending permission request exceeds its timeout
+export class PermissionTimeoutError extends Error {
+  constructor(ms: number) {
+    super(`permission request timed out after ${String(ms)}ms`);
+    this.name = "PermissionTimeoutError";
+  }
+}
+
+// Session cache key: NUL separator cannot appear in session ids or tool names,
+// so `${a}\u0000${b}` cannot collide across different (sessionId, toolName) pairs
+function sessionCacheKey(sessionId: string, toolName: string): string {
+  return `${sessionId}\u0000${toolName}`;
+}
+
+// Timeout utility for promises; guarantees the timer is cleared and no
+// resolve/reject handler fires after the returned promise has settled
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   return new Promise<T>((resolve, reject) => {
+    let settled = false;
     const timer = setTimeout(() => {
-      reject(new Error("timeout"));
+      if (settled) return;
+      settled = true;
+      reject(new PermissionTimeoutError(ms));
     }, ms);
     promise
       .then((v) => {
+        if (settled) return;
+        settled = true;
         clearTimeout(timer);
         resolve(v);
       })
       .catch((e: unknown) => {
+        if (settled) return;
+        settled = true;
         clearTimeout(timer);
         reject(e instanceof Error ? e : new Error(String(e)));
       });
@@ -78,7 +101,8 @@ export class PermissionManager {
 
   // Evaluate tool name + params through 4-tier static policy; does not suspend
   evaluate(toolName: string, params: Record<string, unknown>): PermissionDecision {
-    const policy = this._policies[toolName];
+    // B-9: tool names are matched case-insensitively (defensive normalization)
+    const policy = this._policies[toolName.toLowerCase()];
     return evaluate(toolName, params, policy);
   }
 
@@ -90,10 +114,14 @@ export class PermissionManager {
     sessionId: string,
     eventEmitter: (event: Record<string, unknown>) => Promise<void>,
   ): Promise<[boolean, string]> {
+    // B-9: tool names are matched case-insensitively — normalize once and use
+    // the lowercased name for policy lookups and all cache keys (registered
+    // tools are all-lowercase already; this is defensive normalization)
+    const tool = toolName.toLowerCase();
     const commandRaw = params["command"];
-    const command = toolName === "bash" && typeof commandRaw === "string" ? commandRaw : "";
-    const hasPolicy = toolName in this._policies;
-    const policy = this._policies[toolName];
+    const command = tool === "bash" && typeof commandRaw === "string" ? commandRaw : "";
+    const hasPolicy = tool in this._policies;
+    const policy = this._policies[tool];
 
     // Tier 1: deny_patterns (only if policy exists)
     if (command && hasPolicy) {
@@ -109,15 +137,15 @@ export class PermissionManager {
 
     if (!outsideCwd) {
       // Tier 3: session-level always cache
-      const sessionKey = `${sessionId}:${toolName}`;
+      const sessionKey = sessionCacheKey(sessionId, tool);
       const sessionCached = this._sessionAlways.get(sessionKey);
       if (sessionCached !== undefined) {
         return [sessionCached === "allow", `auto_${sessionCached}`];
       }
 
       // Tier 4: persistent always
-      if (toolName in this._persistentAlways) {
-        const cached = this._persistentAlways[toolName];
+      if (tool in this._persistentAlways) {
+        const cached = this._persistentAlways[tool];
         return [cached === "allow", `auto_${cached}`];
       }
 
@@ -139,7 +167,8 @@ export class PermissionManager {
 
     // ASK path
     const { promise, resolve } = Promise.withResolvers<string>();
-    this._pending.set(toolUseId, { resolve, sessionId, toolName });
+    // Store the normalized tool name so cache writes on respond use the same key
+    this._pending.set(toolUseId, { resolve, sessionId, toolName: tool });
 
     await eventEmitter({
       type: "permission.requested",
@@ -158,19 +187,25 @@ export class PermissionManager {
       } else {
         raw = await promise;
       }
-    } catch {
+    } catch (e) {
       this._pending.delete(toolUseId);
-      return [false, "timeout"];
+      if (e instanceof PermissionTimeoutError) {
+        return [false, "timeout"];
+      }
+      throw e;
     }
 
-    const allowed = this._applyResponse(raw, sessionId, toolName);
+    const allowed = this._applyResponse(raw, sessionId, tool);
     return [allowed, raw];
   }
 
   // Handle client approval decision and resolve the pending promise
   respond(toolUseId: string, decision: string): void {
     const req = this._pending.get(toolUseId);
-    if (!req) return;
+    if (!req) {
+      getLogger().warn(`permission.respond: unknown tool_use_id=${toolUseId}`);
+      return;
+    }
     this._pending.delete(toolUseId);
     req.resolve(decision);
   }
@@ -180,36 +215,49 @@ export class PermissionManager {
     const allow = decision === "allow_once" || decision === "always_allow";
 
     if (decision === "always_allow") {
-      this._sessionAlways.set(`${sessionId}:${toolName}`, "allow");
+      this._sessionAlways.set(sessionCacheKey(sessionId, toolName), "allow");
       this._persistentAlways[toolName] = "allow";
-      if (this._policyFile) {
-        try {
-          savePolicyFile(this._persistentAlways, this._policyFile);
-        } catch {
-          // Persistence failure is non-blocking
-        }
-      }
+      this._savePersistent();
     } else if (decision === "always_deny") {
-      this._sessionAlways.set(`${sessionId}:${toolName}`, "deny");
+      this._sessionAlways.set(sessionCacheKey(sessionId, toolName), "deny");
       this._persistentAlways[toolName] = "deny";
-      if (this._policyFile) {
-        try {
-          savePolicyFile(this._persistentAlways, this._policyFile);
-        } catch {
-          // Persistence failure is non-blocking
-        }
-      }
+      this._savePersistent();
     }
     return allow;
   }
 
-  // Reject all pending requests for a session when the client disconnects
-  cancelSession(sessionId: string, _reason = "client_disconnected"): void {
+  // Persist the always cache to the policy file; failure is logged but non-blocking
+  private _savePersistent(): void {
+    if (!this._policyFile) return;
+    try {
+      savePolicyFile(this._persistentAlways, this._policyFile);
+    } catch (e) {
+      getLogger().warn(
+        `permission: failed to persist policy file ${this._policyFile}: ${e instanceof Error ? e.message : String(e)}`,
+      );
+    }
+  }
+
+  // Reject all pending requests for a session. Reserved for per-session
+  // cancellation; the disconnect path currently uses cancelAll instead.
+  cancelSession(sessionId: string, reason = "client_disconnected"): void {
     for (const [uid, req] of this._pending) {
       if (req.sessionId === sessionId) {
+        getLogger().debug(`permission: cancel pending tool_use_id=${uid} reason=${reason}`);
         this._pending.delete(uid);
         req.resolve("deny_once");
       }
+    }
+  }
+
+  // B-3: reject ALL pending requests regardless of session — used when the
+  // last subscribed client disconnects and nobody is left to answer, so the
+  // agent does not sit frozen until the permission timeout expires
+  cancelAll(reason: string): void {
+    for (const [uid, req] of this._pending) {
+      getLogger().debug(`permission: cancel pending tool_use_id=${uid} reason=${reason}`);
+      this._pending.delete(uid);
+      req.resolve("deny_once");
     }
   }
 }

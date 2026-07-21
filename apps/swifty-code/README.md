@@ -287,7 +287,7 @@ apps/swifty-code/
 | Testing         | Vitest 4 with v8 coverage                            |
 | Linting         | ESLint 9 (flat config) + typescript-eslint + unicorn |
 | Formatting      | oxfmt                                                |
-| Logging         | Pino 10 + pino-roll                                  |
+| Logging         | Pino 10 + built-in size-based rotation (10MB x 5)    |
 | Validation      | Zod 4                                                |
 | Config          | TOML + dotenv                                        |
 | Fuzzy search    | fuse.js                                              |

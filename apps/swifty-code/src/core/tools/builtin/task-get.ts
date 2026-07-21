@@ -21,9 +21,16 @@
  */
 
 // TaskGetTool: retrieve full task details by ID
+import { z } from "zod";
+
 import type { BaseTool, ToolResult } from "../base.js";
 import { toolError, toolSuccess } from "../base.js";
 import type { TaskManager } from "../../task/manager.js";
+import { TaskIdSchema, normalizeTaskId } from "./task-create.js";
+
+export const TaskGetParamsSchema = z.object({
+  task_id: TaskIdSchema.describe("ID of the task to retrieve."),
+});
 
 export class TaskGetTool implements BaseTool {
   readonly name = "task_get";
@@ -31,10 +38,14 @@ export class TaskGetTool implements BaseTool {
   readonly inputSchema = {
     type: "object" as const,
     properties: {
-      task_id: { type: "integer", description: "ID of the task to retrieve." },
+      task_id: {
+        type: ["integer", "string"],
+        description: "ID of the task to retrieve.",
+      },
     },
     required: ["task_id"],
   };
+  readonly paramsModel = TaskGetParamsSchema;
 
   private _manager: TaskManager;
 
@@ -44,7 +55,12 @@ export class TaskGetTool implements BaseTool {
 
   invoke(params: Record<string, unknown>): Promise<ToolResult> {
     try {
-      const taskId = Number(String(params["task_id"]));
+      const taskId = normalizeTaskId(params["task_id"]);
+      if (taskId === null) {
+        return Promise.resolve(
+          toolError(`invalid task_id: ${String(params["task_id"])}`, "schema_error"),
+        );
+      }
       const task = this._manager.get(taskId);
       return Promise.resolve(toolSuccess(JSON.stringify(task)));
     } catch (e) {

@@ -36,6 +36,8 @@ export interface LLMProvider {
     options?: {
       step?: number;
       system?: string | null;
+      // Aborts the in-flight LLM request (forwarded to the SDK as a request option)
+      signal?: AbortSignal;
     },
   ): Promise<LlmResponse>;
 }

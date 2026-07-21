@@ -77,15 +77,35 @@ class ChatPrinter {
   }
 }
 
-function readlinePrompt(prompt: string): Promise<string> {
+// Prompt for one line of input.
+// Resolves to the entered line, or null when the user requests exit:
+// - Ctrl+D / EOF closes the readline interface ("close" event)
+// - Ctrl+C is delivered as the readline "SIGINT" event
+function readlinePrompt(prompt: string): Promise<string | null> {
   return new Promise((resolve) => {
     const rl = readline.createInterface({
       input: process.stdin,
       output: process.stdout,
     });
-    rl.question(prompt, (answer) => {
+
+    let settled = false;
+    const finish = (value: string | null): void => {
+      if (settled) return;
+      settled = true;
       rl.close();
-      resolve(answer);
+      resolve(value);
+    };
+
+    rl.on("SIGINT", () => {
+      process.stdout.write("\n");
+      finish(null);
+    });
+    rl.on("close", () => {
+      // Ctrl+D / EOF (also fires after finish(); the settled guard makes it a no-op)
+      finish(null);
+    });
+    rl.question(prompt, (answer) => {
+      finish(answer);
     });
   });
 }
@@ -119,6 +139,10 @@ export async function cmdChat(config: SwiftyConfig): Promise<void> {
   try {
     for (;;) {
       const line = await readlinePrompt("> ");
+      // Sentinel: Ctrl+C / Ctrl+D — break to normal cleanup, exit code 0.
+      // Breaking (not looping) also avoids a busy loop after EOF, where
+      // readline would resolve immediately forever.
+      if (line === null) break;
       const trimmed = line.trim();
       if (!trimmed) continue;
 
@@ -129,11 +153,14 @@ export async function cmdChat(config: SwiftyConfig): Promise<void> {
           console.log("Invalid decision. Use: y, a, n, d");
           continue;
         }
+        // Clear the pending id before sending so a failed send does not leave
+        // a stale id that would swallow the next chat message.
+        const toolUseId = printer.pendingPermissionId;
+        printer.pendingPermissionId = null;
         await client.sendCommand("permission.respond", {
-          tool_use_id: printer.pendingPermissionId,
+          tool_use_id: toolUseId,
           decision,
         });
-        printer.pendingPermissionId = null;
         continue;
       }
 
@@ -143,15 +170,15 @@ export async function cmdChat(config: SwiftyConfig): Promise<void> {
         content: trimmed,
       });
     }
-  } catch (error) {
-    if (error instanceof Error && error.message.includes("readline")) {
-      // User sent EOF (Ctrl+D) - normal exit
-    } else {
-      throw error;
-    }
   } finally {
-    // Close session
-    await client.sendCommand("session.close", { session_id: sessionId });
+    // Close session (best effort — the daemon may already be gone)
+    try {
+      await client.sendCommand("session.close", { session_id: sessionId });
+    } catch {
+      // Ignore failures during cleanup
+    }
     client.close();
   }
+
+  process.exit(0);
 }

@@ -27,14 +27,15 @@ import { COLORS, ICONS } from "./styles.js";
 
 export type PermissionAction = "allow_once" | "always_allow" | "deny_once" | "always_deny";
 
-const PERMISSION_OPTIONS: { label: string; action: PermissionAction }[] = [
-  { label: "Yes", action: "allow_once" },
+const PERMISSION_OPTIONS: { label: string; action: PermissionAction; shortcut: string }[] = [
+  { label: "Allow once", action: "allow_once", shortcut: "y" },
   {
-    label: "Yes, and don't ask again for this pattern",
+    label: "Allow always (don't ask again for this pattern)",
     action: "always_allow",
+    shortcut: "a",
   },
-  { label: "No", action: "deny_once" },
-  { label: "No, and always deny this pattern", action: "always_deny" },
+  { label: "Deny once", action: "deny_once", shortcut: "n" },
+  { label: "Deny always (always deny this pattern)", action: "always_deny", shortcut: "d" },
 ];
 
 interface PermissionDialogProps {
@@ -50,15 +51,36 @@ export function PermissionDialog(props: PermissionDialogProps): React.JSX.Elemen
   useInput((input, key) => {
     if (key.upArrow) {
       setCursor((c) => (c > 0 ? c - 1 : PERMISSION_OPTIONS.length - 1));
-    } else if (key.downArrow) {
+      return;
+    }
+    if (key.downArrow) {
       setCursor((c) => (c < PERMISSION_OPTIONS.length - 1 ? c + 1 : 0));
-    } else if (key.return) {
+      return;
+    }
+    if (key.return) {
       const selected = PERMISSION_OPTIONS[cursor];
       if (selected) {
         onComplete(selected.action);
       }
-    } else if (key.escape) {
+      return;
+    }
+    if (key.escape) {
       onComplete("deny_once");
+      return;
+    }
+    // Single-key shortcuts: y/a/n/d and 1-4 (aligned with the old Python TUI)
+    const lower = input.toLowerCase();
+    const byShortcut = PERMISSION_OPTIONS.find((o) => o.shortcut === lower);
+    if (byShortcut) {
+      onComplete(byShortcut.action);
+      return;
+    }
+    const digit = Number.parseInt(input, 10);
+    if (digit >= 1 && digit <= PERMISSION_OPTIONS.length) {
+      const selected = PERMISSION_OPTIONS[digit - 1];
+      if (selected) {
+        onComplete(selected.action);
+      }
     }
   });
 
@@ -79,12 +101,13 @@ export function PermissionDialog(props: PermissionDialogProps): React.JSX.Elemen
         <Text key={opt.label}>
           {i === cursor ? COLORS.tool(` ${ICONS.prompt} `) : "   "}
           {i === cursor ? (
-            <Text color="cyan">{`${String(i + 1)}. ${opt.label}`}</Text>
+            <Text color="cyan">{`${String(i + 1)}. [${opt.shortcut}] ${opt.label}`}</Text>
           ) : (
-            <Text dimColor>{`${String(i + 1)}. ${opt.label}`}</Text>
+            <Text dimColor>{`${String(i + 1)}. [${opt.shortcut}] ${opt.label}`}</Text>
           )}
         </Text>
       ))}
+      <Text dimColor> y/a/n/d or 1-4 · ↑/↓ + enter · esc = deny once</Text>
     </Box>
   );
 }

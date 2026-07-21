@@ -143,9 +143,11 @@ export class SessionManager {
       let toolWhitelist: string[] | null = null;
 
       if (content.startsWith("/")) {
-        const parts = content.slice(1).split(/\s+/);
-        const skillName = parts[0] ?? "";
-        const arguments_ = parts.slice(1).join(" ");
+        // Split only at the first whitespace run so argument-internal
+        // whitespace is preserved (matches Python's split(None, 1))
+        const m = /^(\S+)(?:\s+([\s\S]*))?$/.exec(content.slice(1));
+        const skillName = m?.[1] ?? "";
+        const arguments_ = m?.[2] ?? "";
         const skill = this._skillLoader.resolve(skillName);
         if (skill) {
           goal = this._skillLoader.renderPrompt(skill, arguments_);
@@ -194,7 +196,8 @@ export class SessionManager {
     }
   }
 
-  // Close the specified session (no mutex needed — just a quick metadata update)
+  // Close the specified session (acquires the session mutex via tryAcquire;
+  // rejects with SESSION_BUSY if a run is in progress)
   async close(sid: string): Promise<void> {
     const session = this._getSession(sid);
     const mutex = this._mutexes.get(sid);
@@ -247,8 +250,6 @@ export class SessionManager {
           content: "Understood, I'll continue from this summary.",
         },
       ]);
-
-      await Promise.resolve();
 
       return {
         summaryTokens: result.summaryTokens,

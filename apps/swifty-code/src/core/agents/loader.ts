@@ -38,7 +38,7 @@ export interface AgentProfile {
   model: string;
 }
 
-// Search and parse agent profile configs by two-tier priority (project local > user global > builtin)
+// Search and parse agent profile configs by three-tier priority (project local > user global > builtin)
 export class AgentProfileLoader {
   private _builtinDir: string;
 

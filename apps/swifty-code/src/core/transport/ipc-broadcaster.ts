@@ -29,6 +29,7 @@ import picomatch from "picomatch";
 import type { Event } from "../bus/events.js";
 import type { TraceWriter } from "../trace/writer.js";
 import { makePushTrace } from "../trace/record.js";
+import { getLogger } from "../logging.js";
 
 interface Subscription {
   subId: string;
@@ -36,6 +37,10 @@ interface Subscription {
   topics: string[];
   scope: string;
   matchers: picomatch.Matcher[];
+  // B-10: per-socket serial write queue (promise chain). Events for this
+  // socket are delivered in order, but a slow socket (backpressure) never
+  // blocks the event bus or other subscribers.
+  writeQueue: Promise<void>;
 }
 
 // Write a JSON line to a socket
@@ -63,7 +68,14 @@ export class IpcEventBroadcaster {
   subscribe(socket: net.Socket, topics: string[], scope = "global"): string {
     const subId = `sub-${randomUUID().slice(0, 8)}`;
     const matchers = topics.map((t) => picomatch(t));
-    const sub: Subscription = { subId, socket, topics, scope, matchers };
+    const sub: Subscription = {
+      subId,
+      socket,
+      topics,
+      scope,
+      matchers,
+      writeQueue: Promise.resolve(),
+    };
     this._subscriptions.push(sub);
     return subId;
   }
@@ -73,42 +85,83 @@ export class IpcEventBroadcaster {
     this._subscriptions = this._subscriptions.filter((s) => s.socket !== socket);
   }
 
-  // Push event to all matching subscribers; clean up dead connections on write failure
+  // Number of live subscriptions (B-3: used to detect "no client left to
+  // answer permission requests" after a disconnect)
+  subscriptionCount(): number {
+    return this._subscriptions.length;
+  }
+
+  // Push event to all matching subscribers.
+  // B-10: each matching subscription gets the write enqueued on its own serial
+  // queue and handle() returns without waiting for the writes, so a slow
+  // socket (backpressure) never blocks the event bus or other subscribers.
+  // Per-socket event order is preserved by the promise chain; a failed write
+  // still triggers the dead-socket cleanup (unsubscribe).
   async handle(event: Event): Promise<void> {
     const eventType = event.type;
     const runId = "run_id" in event ? event.run_id : undefined;
-
-    const dead: net.Socket[] = [];
 
     for (const sub of [...this._subscriptions]) {
       if (!this._matchesTopic(eventType, sub.matchers)) continue;
       if (!this._matchesScope(runId, sub.scope)) continue;
 
-      try {
-        const envelope = { kind: "event" as const, event };
-        const ok = writeLine(sub.socket, envelope);
-        if (!ok) {
-          // Backpressure: wait for drain
-          await new Promise<void>((resolve) => sub.socket.once("drain", resolve));
-        }
-        // Trace: CORE->CLIENT push
-        if (this._trace) {
-          this._trace.emit(
-            makePushTrace(
-              peerAddress(sub.socket),
-              typeof runId === "string" ? runId : null,
-              sub.subId,
-              eventType,
-            ),
-          );
-        }
-      } catch {
-        dead.push(sub.socket);
-      }
+      sub.writeQueue = sub.writeQueue
+        .then(() => this._deliver(sub, event, eventType, runId))
+        .catch((err: unknown) => {
+          // Write failed: drop the dead subscriber; later events skip it
+          getLogger().debug(`broadcaster: dropping dead subscriber: ${String(err)}`);
+          this.unsubscribe(sub.socket);
+        });
     }
+    await Promise.resolve();
+  }
 
-    for (const socket of dead) {
-      this.unsubscribe(socket);
+  // Write one event envelope to a subscriber; awaits drain under backpressure
+  // but bails out (rejects) if the socket errors/closes so the queue never
+  // stalls forever on a dead connection
+  private async _deliver(
+    sub: Subscription,
+    event: Event,
+    eventType: string,
+    runId: string | undefined,
+  ): Promise<void> {
+    const envelope = { kind: "event" as const, event };
+    const ok = writeLine(sub.socket, envelope);
+    if (!ok) {
+      // Backpressure: wait for drain
+      await new Promise<void>((resolve, reject) => {
+        const cleanup = (): void => {
+          sub.socket.off("drain", onDrain);
+          sub.socket.off("error", onError);
+          sub.socket.off("close", onClose);
+        };
+        const onDrain = (): void => {
+          cleanup();
+          resolve();
+        };
+        const onError = (err: Error): void => {
+          cleanup();
+          reject(err);
+        };
+        const onClose = (): void => {
+          cleanup();
+          reject(new Error("socket closed while awaiting drain"));
+        };
+        sub.socket.once("drain", onDrain);
+        sub.socket.once("error", onError);
+        sub.socket.once("close", onClose);
+      });
+    }
+    // Trace: CORE->CLIENT push
+    if (this._trace) {
+      this._trace.emit(
+        makePushTrace(
+          peerAddress(sub.socket),
+          typeof runId === "string" ? runId : null,
+          sub.subId,
+          eventType,
+        ),
+      );
     }
   }
 

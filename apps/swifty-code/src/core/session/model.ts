@@ -62,19 +62,24 @@ export function sessionToDict(s: Session): Record<string, unknown> {
   };
 }
 
-// Restore Session from meta.json object
+// Restore Session from meta.json object.
+// Throws on invalid mode/status so corrupted persisted data is surfaced
+// instead of being silently coerced to defaults.
 export function sessionFromDict(data: Record<string, unknown>): Session {
   const modeRaw = data["mode"];
   const statusRaw = data["status"];
   const titleRaw = data["title"];
   const runIdsRaw = data["run_ids"];
+  if (modeRaw !== "one_shot" && modeRaw !== "chat") {
+    throw new Error(`Invalid session mode: ${String(modeRaw)}`);
+  }
+  if (statusRaw !== "active" && statusRaw !== "waiting_for_input" && statusRaw !== "closed") {
+    throw new Error(`Invalid session status: ${String(statusRaw)}`);
+  }
   return {
     id: String(data["id"]),
-    mode: modeRaw === "one_shot" || modeRaw === "chat" ? modeRaw : "chat",
-    status:
-      statusRaw === "active" || statusRaw === "waiting_for_input" || statusRaw === "closed"
-        ? statusRaw
-        : "active",
+    mode: modeRaw,
+    status: statusRaw,
     title: typeof titleRaw === "string" ? titleRaw : "",
     createdAt: String(data["created_at"]),
     updatedAt: String(data["updated_at"]),

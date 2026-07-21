@@ -71,7 +71,8 @@ describe("truncateToolResults", () => {
       const block = firstMsg.content[0];
       if (block.type === "tool_result" && typeof block.content === "string") {
         expect(block.content.length).toBeLessThan(200);
-        expect(block.content).toContain("[truncated");
+        // Marker matches old budget.py semantics: omitted char count + pointer to run events
+        expect(block.content).toContain("[... 150 chars omitted. Full output in run events.]");
       }
     }
   });

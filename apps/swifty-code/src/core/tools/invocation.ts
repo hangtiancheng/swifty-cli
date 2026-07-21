@@ -45,19 +45,34 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// Raised when a tool invocation exceeds its timeout
+export class ToolTimeoutError extends Error {
+  constructor(message = "tool invocation timed out") {
+    super(message);
+    this.name = "ToolTimeoutError";
+  }
+}
+
 // Promise with timeout wrapper
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => {
-      reject(new Error("timeout"));
+    let timer: NodeJS.Timeout | null = setTimeout(() => {
+      timer = null;
+      reject(new ToolTimeoutError());
     }, ms);
+    const clear = (): void => {
+      if (timer !== null) {
+        clearTimeout(timer);
+        timer = null;
+      }
+    };
     promise
       .then((v) => {
-        clearTimeout(timer);
+        clear();
         resolve(v);
       })
       .catch((e: unknown) => {
-        clearTimeout(timer);
+        clear();
         reject(e instanceof Error ? e : new Error(String(e)));
       });
   });
@@ -215,7 +230,7 @@ export async function invokeTool(
       if (exc instanceof RateLimitedError) {
         errorClass = "rate_limited";
         errorMessage = String(exc);
-      } else if (exc instanceof Error && exc.message === "timeout") {
+      } else if (exc instanceof ToolTimeoutError) {
         return fail(
           bus,
           runId,

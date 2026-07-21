@@ -127,9 +127,14 @@ export class SpawnAgentTool implements BaseTool {
   async invoke(params: Record<string, unknown>): Promise<ToolResult> {
     const p = SpawnAgentParamsSchema.parse(params);
 
+    // Depth 0 = root agent, depth 1 = subagent. Only the root agent may
+    // spawn subagents; a subagent (depth >= 1 tool instance, guarded here at
+    // the depth-2 instance it would create) cannot spawn further subagents.
     if (this._depth >= 2) {
       return {
-        content: "Subagent nesting limit (2) reached; cannot spawn further subagents.",
+        content:
+          "Subagent nesting limit reached: subagents cannot spawn further subagents. " +
+          "Only the root agent may spawn one level of subagents.",
         isError: true,
         errorType: "runtime_error",
       };
@@ -153,10 +158,35 @@ export class SpawnAgentTool implements BaseTool {
     });
 
     const childRegistry = this._buildChildRegistry(childBus, childRunId, profile);
+
+    // Background runs get their own AbortController so registry.cancel() can
+    // actually interrupt the child loop. If a parent signal exists, link it:
+    // aborting the parent also aborts the background child.
+    let backgroundController: AbortController | null = null;
+    let childSignal = this._signal;
+    if (p.run_in_background) {
+      const controller = new AbortController();
+      backgroundController = controller;
+      if (this._signal) {
+        if (this._signal.aborted) {
+          controller.abort();
+        } else {
+          this._signal.addEventListener(
+            "abort",
+            () => {
+              controller.abort();
+            },
+            { once: true },
+          );
+        }
+      }
+      childSignal = controller.signal;
+    }
+
     const childLoop = new AgentLoop(this._provider, childRegistry, childBus, {
       ...(this._permissionManager ? { permissionManager: this._permissionManager } : {}),
       sessionId: this._sessionId,
-      ...(this._signal ? { signal: this._signal } : {}),
+      ...(childSignal ? { signal: childSignal } : {}),
     });
 
     await this._parentBus.publish({
@@ -178,7 +208,7 @@ export class SpawnAgentTool implements BaseTool {
         childRunPath,
         childRunId,
       );
-      this._taskRegistry.register(childRunId, promise, childContext);
+      this._taskRegistry.register(childRunId, promise, childContext, backgroundController);
       return {
         content: `Subagent started in background. run_id=${childRunId}. Use agent_result(run_id='${childRunId}') to retrieve result.`,
         isError: false,
@@ -273,6 +303,9 @@ export class SpawnAgentTool implements BaseTool {
       }
     }
 
+    // Only the root agent (depth 0) hands spawn_agent to its child; the
+    // child's subagents (depth 1) get no spawn_agent tool, so nesting stops
+    // at root agent + 1 level of subagents.
     if (this._depth < 1) {
       const nested = new SpawnAgentTool(
         this._provider,

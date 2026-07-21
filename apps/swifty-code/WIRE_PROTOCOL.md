@@ -14,10 +14,10 @@ All commands are sent as JSON-RPC 2.0 requests. The `type` field inside `params`
 
 ### PingCommand
 
-| Field    | Type     | Required |
-| -------- | -------- | -------- |
-| `type`   | `string` | yes      |
-| `client` | `string` | yes      |
+| Field | Type | Required |
+|---|---|---|
+| `type` | `string` | yes |
+| `client` | `string` | yes |
 
 ```json
 {
@@ -33,7 +33,10 @@ All commands are sent as JSON-RPC 2.0 requests. The `type` field inside `params`
       "type": "string"
     }
   },
-  "required": ["type", "client"],
+  "required": [
+    "type",
+    "client"
+  ],
   "additionalProperties": false
 }
 ```
@@ -53,11 +56,11 @@ All commands are sent as JSON-RPC 2.0 requests. The `type` field inside `params`
 
 ### PongResult
 
-| Field            | Type      | Required |
-| ---------------- | --------- | -------- |
-| `server_version` | `string`  | yes      |
-| `uptime_ms`      | `integer` | yes      |
-| `received_at`    | `string`  | yes      |
+| Field | Type | Required |
+|---|---|---|
+| `server_version` | `string` | yes |
+| `uptime_ms` | `integer` | yes |
+| `received_at` | `string` | yes |
 
 ```json
 {
@@ -76,7 +79,11 @@ All commands are sent as JSON-RPC 2.0 requests. The `type` field inside `params`
       "type": "string"
     }
   },
-  "required": ["server_version", "uptime_ms", "received_at"],
+  "required": [
+    "server_version",
+    "uptime_ms",
+    "received_at"
+  ],
   "additionalProperties": false
 }
 ```
@@ -97,10 +104,10 @@ All commands are sent as JSON-RPC 2.0 requests. The `type` field inside `params`
 
 ### AgentRunCommand
 
-| Field  | Type     | Required |
-| ------ | -------- | -------- |
-| `type` | `string` | yes      |
-| `goal` | `string` | yes      |
+| Field | Type | Required |
+|---|---|---|
+| `type` | `string` | yes |
+| `goal` | `string` | yes |
 
 ```json
 {
@@ -116,7 +123,10 @@ All commands are sent as JSON-RPC 2.0 requests. The `type` field inside `params`
       "type": "string"
     }
   },
-  "required": ["type", "goal"],
+  "required": [
+    "type",
+    "goal"
+  ],
   "additionalProperties": false
 }
 ```
@@ -136,9 +146,9 @@ All commands are sent as JSON-RPC 2.0 requests. The `type` field inside `params`
 
 ### AgentRunResult
 
-| Field    | Type     | Required |
-| -------- | -------- | -------- |
-| `run_id` | `string` | yes      |
+| Field | Type | Required |
+|---|---|---|
+| `run_id` | `string` | yes |
 
 ```json
 {
@@ -149,7 +159,9 @@ All commands are sent as JSON-RPC 2.0 requests. The `type` field inside `params`
       "type": "string"
     }
   },
-  "required": ["run_id"],
+  "required": [
+    "run_id"
+  ],
   "additionalProperties": false
 }
 ```
@@ -168,12 +180,12 @@ All commands are sent as JSON-RPC 2.0 requests. The `type` field inside `params`
 
 ### EventSubscribeCommand
 
-| Field             | Type     | Required |
-| ----------------- | -------- | -------- | --- |
-| `type`            | `string` | yes      |
-| `topics`          | `array`  | yes      |
-| `scope`           | `string` | yes      |
-| `replay_from_run` | `string  | null`    | yes |
+| Field | Type | Required |
+|---|---|---|
+| `type` | `string` | yes |
+| `topics` | `array` | yes |
+| `scope` | `string` | yes |
+| `replay_from_run` | `string | null` | yes |
 
 ```json
 {
@@ -207,7 +219,12 @@ All commands are sent as JSON-RPC 2.0 requests. The `type` field inside `params`
       ]
     }
   },
-  "required": ["type", "topics", "scope", "replay_from_run"],
+  "required": [
+    "type",
+    "topics",
+    "scope",
+    "replay_from_run"
+  ],
   "additionalProperties": false
 }
 ```
@@ -220,7 +237,12 @@ All commands are sent as JSON-RPC 2.0 requests. The `type` field inside `params`
   "id": "example-3",
   "method": "event.subscribe",
   "params": {
-    "topics": ["run.*", "step.*", "tool.*", "llm.token"],
+    "topics": [
+      "run.*",
+      "step.*",
+      "tool.*",
+      "llm.token"
+    ],
     "scope": "global",
     "replay_from_run": null
   }
@@ -229,10 +251,10 @@ All commands are sent as JSON-RPC 2.0 requests. The `type` field inside `params`
 
 ### EventSubscribeResult
 
-| Field             | Type      | Required |
-| ----------------- | --------- | -------- |
-| `subscription_id` | `string`  | yes      |
-| `replayed_count`  | `integer` | yes      |
+| Field | Type | Required |
+|---|---|---|
+| `subscription_id` | `string` | yes |
+| `replayed_count` | `integer` | yes |
 
 ```json
 {
@@ -249,7 +271,10 @@ All commands are sent as JSON-RPC 2.0 requests. The `type` field inside `params`
       "maximum": 9007199254740991
     }
   },
-  "required": ["subscription_id", "replayed_count"],
+  "required": [
+    "subscription_id",
+    "replayed_count"
+  ],
   "additionalProperties": false
 }
 ```
@@ -269,11 +294,11 @@ All commands are sent as JSON-RPC 2.0 requests. The `type` field inside `params`
 
 ### SessionCreateCommand
 
-| Field   | Type     | Required |
-| ------- | -------- | -------- |
-| `type`  | `string` | yes      |
-| `mode`  | `string` | yes      |
-| `title` | `string` | yes      |
+| Field | Type | Required |
+|---|---|---|
+| `type` | `string` | yes |
+| `mode` | `string` | yes |
+| `title` | `string` | yes |
 
 ```json
 {
@@ -288,14 +313,21 @@ All commands are sent as JSON-RPC 2.0 requests. The `type` field inside `params`
     "mode": {
       "default": "chat",
       "type": "string",
-      "enum": ["one_shot", "chat"]
+      "enum": [
+        "one_shot",
+        "chat"
+      ]
     },
     "title": {
       "default": "",
       "type": "string"
     }
   },
-  "required": ["type", "mode", "title"],
+  "required": [
+    "type",
+    "mode",
+    "title"
+  ],
   "additionalProperties": false
 }
 ```
@@ -316,10 +348,10 @@ All commands are sent as JSON-RPC 2.0 requests. The `type` field inside `params`
 
 ### SessionCreateResult
 
-| Field        | Type     | Required |
-| ------------ | -------- | -------- |
-| `session_id` | `string` | yes      |
-| `status`     | `string` | yes      |
+| Field | Type | Required |
+|---|---|---|
+| `session_id` | `string` | yes |
+| `status` | `string` | yes |
 
 ```json
 {
@@ -331,10 +363,17 @@ All commands are sent as JSON-RPC 2.0 requests. The `type` field inside `params`
     },
     "status": {
       "type": "string",
-      "enum": ["active", "waiting_for_input", "closed"]
+      "enum": [
+        "active",
+        "waiting_for_input",
+        "closed"
+      ]
     }
   },
-  "required": ["session_id", "status"],
+  "required": [
+    "session_id",
+    "status"
+  ],
   "additionalProperties": false
 }
 ```
@@ -354,11 +393,11 @@ All commands are sent as JSON-RPC 2.0 requests. The `type` field inside `params`
 
 ### SessionSendMessageCommand
 
-| Field        | Type     | Required |
-| ------------ | -------- | -------- |
-| `type`       | `string` | yes      |
-| `session_id` | `string` | yes      |
-| `content`    | `string` | yes      |
+| Field | Type | Required |
+|---|---|---|
+| `type` | `string` | yes |
+| `session_id` | `string` | yes |
+| `content` | `string` | yes |
 
 ```json
 {
@@ -377,7 +416,11 @@ All commands are sent as JSON-RPC 2.0 requests. The `type` field inside `params`
       "type": "string"
     }
   },
-  "required": ["type", "session_id", "content"],
+  "required": [
+    "type",
+    "session_id",
+    "content"
+  ],
   "additionalProperties": false
 }
 ```
@@ -398,9 +441,9 @@ All commands are sent as JSON-RPC 2.0 requests. The `type` field inside `params`
 
 ### SessionSendMessageResult
 
-| Field    | Type     | Required |
-| -------- | -------- | -------- |
-| `run_id` | `string` | yes      |
+| Field | Type | Required |
+|---|---|---|
+| `run_id` | `string` | yes |
 
 ```json
 {
@@ -411,7 +454,9 @@ All commands are sent as JSON-RPC 2.0 requests. The `type` field inside `params`
       "type": "string"
     }
   },
-  "required": ["run_id"],
+  "required": [
+    "run_id"
+  ],
   "additionalProperties": false
 }
 ```
@@ -430,10 +475,10 @@ All commands are sent as JSON-RPC 2.0 requests. The `type` field inside `params`
 
 ### SessionGetHistoryCommand
 
-| Field        | Type     | Required |
-| ------------ | -------- | -------- |
-| `type`       | `string` | yes      |
-| `session_id` | `string` | yes      |
+| Field | Type | Required |
+|---|---|---|
+| `type` | `string` | yes |
+| `session_id` | `string` | yes |
 
 ```json
 {
@@ -449,16 +494,19 @@ All commands are sent as JSON-RPC 2.0 requests. The `type` field inside `params`
       "type": "string"
     }
   },
-  "required": ["type", "session_id"],
+  "required": [
+    "type",
+    "session_id"
+  ],
   "additionalProperties": false
 }
 ```
 
 ### SessionGetHistoryResult
 
-| Field      | Type    | Required |
-| ---------- | ------- | -------- |
-| `messages` | `array` | yes      |
+| Field | Type | Required |
+|---|---|---|
+| `messages` | `array` | yes |
 
 ```json
 {
@@ -476,17 +524,19 @@ All commands are sent as JSON-RPC 2.0 requests. The `type` field inside `params`
       }
     }
   },
-  "required": ["messages"],
+  "required": [
+    "messages"
+  ],
   "additionalProperties": false
 }
 ```
 
 ### SessionCloseCommand
 
-| Field        | Type     | Required |
-| ------------ | -------- | -------- |
-| `type`       | `string` | yes      |
-| `session_id` | `string` | yes      |
+| Field | Type | Required |
+|---|---|---|
+| `type` | `string` | yes |
+| `session_id` | `string` | yes |
 
 ```json
 {
@@ -502,16 +552,19 @@ All commands are sent as JSON-RPC 2.0 requests. The `type` field inside `params`
       "type": "string"
     }
   },
-  "required": ["type", "session_id"],
+  "required": [
+    "type",
+    "session_id"
+  ],
   "additionalProperties": false
 }
 ```
 
 ### SessionCloseResult
 
-| Field    | Type     | Required |
-| -------- | -------- | -------- |
-| `status` | `string` | yes      |
+| Field | Type | Required |
+|---|---|---|
+| `status` | `string` | yes |
 
 ```json
 {
@@ -520,10 +573,16 @@ All commands are sent as JSON-RPC 2.0 requests. The `type` field inside `params`
   "properties": {
     "status": {
       "type": "string",
-      "enum": ["active", "waiting_for_input", "closed"]
+      "enum": [
+        "active",
+        "waiting_for_input",
+        "closed"
+      ]
     }
   },
-  "required": ["status"],
+  "required": [
+    "status"
+  ],
   "additionalProperties": false
 }
 ```
@@ -534,10 +593,10 @@ Events pushed from daemon to subscribed clients over the same TCP connection.
 
 ### EventPushEnvelope
 
-| Field   | Type     | Required |
-| ------- | -------- | -------- |
-| `kind`  | `string` | yes      |
-| `event` | `object` | yes      |
+| Field | Type | Required |
+|---|---|---|
+| `kind` | `string` | yes |
+| `event` | `object` | yes |
 
 ```json
 {
@@ -557,7 +616,10 @@ Events pushed from daemon to subscribed clients over the same TCP connection.
       "additionalProperties": {}
     }
   },
-  "required": ["kind", "event"],
+  "required": [
+    "kind",
+    "event"
+  ],
   "additionalProperties": false
 }
 ```
@@ -582,11 +644,11 @@ Events sent over the IPC socket (daemon → client).
 
 ### CoreStartedEvent
 
-| Field         | Type     | Required |
-| ------------- | -------- | -------- |
-| `type`        | `string` | yes      |
-| `listen_addr` | `string` | yes      |
-| `version`     | `string` | yes      |
+| Field | Type | Required |
+|---|---|---|
+| `type` | `string` | yes |
+| `listen_addr` | `string` | yes |
+| `version` | `string` | yes |
 
 ```json
 {
@@ -605,7 +667,11 @@ Events sent over the IPC socket (daemon → client).
       "type": "string"
     }
   },
-  "required": ["type", "listen_addr", "version"],
+  "required": [
+    "type",
+    "listen_addr",
+    "version"
+  ],
   "additionalProperties": false
 }
 ```
@@ -616,12 +682,12 @@ Events written to `runs/<run_id>/events.jsonl` and forwarded over IPC to subscri
 
 ### RunStartedEvent
 
-| Field       | Type     | Required |
-| ----------- | -------- | -------- |
-| `type`      | `string` | yes      |
-| `run_id`    | `string` | yes      |
-| `goal`      | `string` | yes      |
-| `timestamp` | `string` | yes      |
+| Field | Type | Required |
+|---|---|---|
+| `type` | `string` | yes |
+| `run_id` | `string` | yes |
+| `goal` | `string` | yes |
+| `timestamp` | `string` | yes |
 
 ```json
 {
@@ -643,7 +709,12 @@ Events written to `runs/<run_id>/events.jsonl` and forwarded over IPC to subscri
       "type": "string"
     }
   },
-  "required": ["type", "run_id", "goal", "timestamp"],
+  "required": [
+    "type",
+    "run_id",
+    "goal",
+    "timestamp"
+  ],
   "additionalProperties": false
 }
 ```
@@ -661,14 +732,14 @@ Events written to `runs/<run_id>/events.jsonl` and forwarded over IPC to subscri
 
 ### RunFinishedEvent
 
-| Field       | Type      | Required |
-| ----------- | --------- | -------- | --- |
-| `type`      | `string`  | yes      |
-| `run_id`    | `string`  | yes      |
-| `status`    | `string`  | yes      |
-| `reason`    | `string   | null`    | yes |
-| `steps`     | `integer` | yes      |
-| `timestamp` | `string`  | yes      |
+| Field | Type | Required |
+|---|---|---|
+| `type` | `string` | yes |
+| `run_id` | `string` | yes |
+| `status` | `string` | yes |
+| `reason` | `string | null` | yes |
+| `steps` | `integer` | yes |
+| `timestamp` | `string` | yes |
 
 ```json
 {
@@ -706,7 +777,14 @@ Events written to `runs/<run_id>/events.jsonl` and forwarded over IPC to subscri
       "type": "string"
     }
   },
-  "required": ["type", "run_id", "status", "reason", "steps", "timestamp"],
+  "required": [
+    "type",
+    "run_id",
+    "status",
+    "reason",
+    "steps",
+    "timestamp"
+  ],
   "additionalProperties": false
 }
 ```
@@ -726,12 +804,12 @@ Events written to `runs/<run_id>/events.jsonl` and forwarded over IPC to subscri
 
 ### StepStartedEvent
 
-| Field       | Type      | Required |
-| ----------- | --------- | -------- |
-| `type`      | `string`  | yes      |
-| `run_id`    | `string`  | yes      |
-| `step`      | `integer` | yes      |
-| `timestamp` | `string`  | yes      |
+| Field | Type | Required |
+|---|---|---|
+| `type` | `string` | yes |
+| `run_id` | `string` | yes |
+| `step` | `integer` | yes |
+| `timestamp` | `string` | yes |
 
 ```json
 {
@@ -755,7 +833,12 @@ Events written to `runs/<run_id>/events.jsonl` and forwarded over IPC to subscri
       "type": "string"
     }
   },
-  "required": ["type", "run_id", "step", "timestamp"],
+  "required": [
+    "type",
+    "run_id",
+    "step",
+    "timestamp"
+  ],
   "additionalProperties": false
 }
 ```
@@ -773,12 +856,12 @@ Events written to `runs/<run_id>/events.jsonl` and forwarded over IPC to subscri
 
 ### StepFinishedEvent
 
-| Field       | Type      | Required |
-| ----------- | --------- | -------- |
-| `type`      | `string`  | yes      |
-| `run_id`    | `string`  | yes      |
-| `step`      | `integer` | yes      |
-| `timestamp` | `string`  | yes      |
+| Field | Type | Required |
+|---|---|---|
+| `type` | `string` | yes |
+| `run_id` | `string` | yes |
+| `step` | `integer` | yes |
+| `timestamp` | `string` | yes |
 
 ```json
 {
@@ -802,7 +885,12 @@ Events written to `runs/<run_id>/events.jsonl` and forwarded over IPC to subscri
       "type": "string"
     }
   },
-  "required": ["type", "run_id", "step", "timestamp"],
+  "required": [
+    "type",
+    "run_id",
+    "step",
+    "timestamp"
+  ],
   "additionalProperties": false
 }
 ```
@@ -820,14 +908,14 @@ Events written to `runs/<run_id>/events.jsonl` and forwarded over IPC to subscri
 
 ### ToolUseStartedEvent
 
-| Field         | Type     | Required |
-| ------------- | -------- | -------- |
-| `type`        | `string` | yes      |
-| `run_id`      | `string` | yes      |
-| `tool_use_id` | `string` | yes      |
-| `tool_name`   | `string` | yes      |
-| `params`      | `object` | yes      |
-| `timestamp`   | `string` | yes      |
+| Field | Type | Required |
+|---|---|---|
+| `type` | `string` | yes |
+| `run_id` | `string` | yes |
+| `tool_use_id` | `string` | yes |
+| `tool_name` | `string` | yes |
+| `params` | `object` | yes |
+| `timestamp` | `string` | yes |
 
 ```json
 {
@@ -859,7 +947,14 @@ Events written to `runs/<run_id>/events.jsonl` and forwarded over IPC to subscri
       "type": "string"
     }
   },
-  "required": ["type", "run_id", "tool_use_id", "tool_name", "params", "timestamp"],
+  "required": [
+    "type",
+    "run_id",
+    "tool_use_id",
+    "tool_name",
+    "params",
+    "timestamp"
+  ],
   "additionalProperties": false
 }
 ```
@@ -881,15 +976,15 @@ Events written to `runs/<run_id>/events.jsonl` and forwarded over IPC to subscri
 
 ### ToolUseFinishedEvent
 
-| Field         | Type      | Required |
-| ------------- | --------- | -------- |
-| `type`        | `string`  | yes      |
-| `run_id`      | `string`  | yes      |
-| `tool_use_id` | `string`  | yes      |
-| `tool_name`   | `string`  | yes      |
-| `elapsed_ms`  | `integer` | yes      |
-| `output`      | `string`  | yes      |
-| `timestamp`   | `string`  | yes      |
+| Field | Type | Required |
+|---|---|---|
+| `type` | `string` | yes |
+| `run_id` | `string` | yes |
+| `tool_use_id` | `string` | yes |
+| `tool_name` | `string` | yes |
+| `elapsed_ms` | `integer` | yes |
+| `output` | `string` | yes |
+| `timestamp` | `string` | yes |
 
 ```json
 {
@@ -923,7 +1018,15 @@ Events written to `runs/<run_id>/events.jsonl` and forwarded over IPC to subscri
       "type": "string"
     }
   },
-  "required": ["type", "run_id", "tool_use_id", "tool_name", "elapsed_ms", "output", "timestamp"],
+  "required": [
+    "type",
+    "run_id",
+    "tool_use_id",
+    "tool_name",
+    "elapsed_ms",
+    "output",
+    "timestamp"
+  ],
   "additionalProperties": false
 }
 ```
@@ -943,17 +1046,17 @@ Events written to `runs/<run_id>/events.jsonl` and forwarded over IPC to subscri
 
 ### ToolUseFailedEvent
 
-| Field           | Type      | Required |
-| --------------- | --------- | -------- |
-| `type`          | `string`  | yes      |
-| `run_id`        | `string`  | yes      |
-| `tool_use_id`   | `string`  | yes      |
-| `tool_name`     | `string`  | yes      |
-| `error_class`   | `string`  | yes      |
-| `error_message` | `string`  | yes      |
-| `elapsed_ms`    | `integer` | yes      |
-| `attempt`       | `integer` | yes      |
-| `timestamp`     | `string`  | yes      |
+| Field | Type | Required |
+|---|---|---|
+| `type` | `string` | yes |
+| `run_id` | `string` | yes |
+| `tool_use_id` | `string` | yes |
+| `tool_name` | `string` | yes |
+| `error_class` | `string` | yes |
+| `error_message` | `string` | yes |
+| `elapsed_ms` | `integer` | yes |
+| `attempt` | `integer` | yes |
+| `timestamp` | `string` | yes |
 
 ```json
 {
@@ -1028,13 +1131,13 @@ Events written to `runs/<run_id>/events.jsonl` and forwarded over IPC to subscri
 
 ### LlmModelSelectedEvent
 
-| Field       | Type     | Required |
-| ----------- | -------- | -------- |
-| `type`      | `string` | yes      |
-| `run_id`    | `string` | yes      |
-| `model`     | `string` | yes      |
-| `strategy`  | `string` | yes      |
-| `timestamp` | `string` | yes      |
+| Field | Type | Required |
+|---|---|---|
+| `type` | `string` | yes |
+| `run_id` | `string` | yes |
+| `model` | `string` | yes |
+| `strategy` | `string` | yes |
+| `timestamp` | `string` | yes |
 
 ```json
 {
@@ -1059,7 +1162,13 @@ Events written to `runs/<run_id>/events.jsonl` and forwarded over IPC to subscri
       "type": "string"
     }
   },
-  "required": ["type", "run_id", "model", "strategy", "timestamp"],
+  "required": [
+    "type",
+    "run_id",
+    "model",
+    "strategy",
+    "timestamp"
+  ],
   "additionalProperties": false
 }
 ```
@@ -1078,12 +1187,12 @@ Events written to `runs/<run_id>/events.jsonl` and forwarded over IPC to subscri
 
 ### LlmTokenEvent
 
-| Field       | Type     | Required |
-| ----------- | -------- | -------- |
-| `type`      | `string` | yes      |
-| `run_id`    | `string` | yes      |
-| `token`     | `string` | yes      |
-| `timestamp` | `string` | yes      |
+| Field | Type | Required |
+|---|---|---|
+| `type` | `string` | yes |
+| `run_id` | `string` | yes |
+| `token` | `string` | yes |
+| `timestamp` | `string` | yes |
 
 ```json
 {
@@ -1105,7 +1214,12 @@ Events written to `runs/<run_id>/events.jsonl` and forwarded over IPC to subscri
       "type": "string"
     }
   },
-  "required": ["type", "run_id", "token", "timestamp"],
+  "required": [
+    "type",
+    "run_id",
+    "token",
+    "timestamp"
+  ],
   "additionalProperties": false
 }
 ```
@@ -1123,16 +1237,16 @@ Events written to `runs/<run_id>/events.jsonl` and forwarded over IPC to subscri
 
 ### LlmUsageEvent
 
-| Field                         | Type      | Required |
-| ----------------------------- | --------- | -------- |
-| `type`                        | `string`  | yes      |
-| `run_id`                      | `string`  | yes      |
-| `input_tokens`                | `integer` | yes      |
-| `output_tokens`               | `integer` | yes      |
-| `cache_read_input_tokens`     | `integer` | yes      |
-| `cache_creation_input_tokens` | `integer` | yes      |
-| `context_percent`             | `number`  | yes      |
-| `timestamp`                   | `string`  | yes      |
+| Field | Type | Required |
+|---|---|---|
+| `type` | `string` | yes |
+| `run_id` | `string` | yes |
+| `input_tokens` | `integer` | yes |
+| `output_tokens` | `integer` | yes |
+| `cache_read_input_tokens` | `integer` | yes |
+| `cache_creation_input_tokens` | `integer` | yes |
+| `context_percent` | `number` | yes |
+| `timestamp` | `string` | yes |
 
 ```json
 {
@@ -1205,14 +1319,14 @@ Events written to `runs/<run_id>/events.jsonl` and forwarded over IPC to subscri
 
 ### LogLineEvent
 
-| Field       | Type     | Required |
-| ----------- | -------- | -------- |
-| `type`      | `string` | yes      |
-| `run_id`    | `string` | yes      |
-| `level`     | `string` | yes      |
-| `source`    | `string` | yes      |
-| `message`   | `string` | yes      |
-| `timestamp` | `string` | yes      |
+| Field | Type | Required |
+|---|---|---|
+| `type` | `string` | yes |
+| `run_id` | `string` | yes |
+| `level` | `string` | yes |
+| `source` | `string` | yes |
+| `message` | `string` | yes |
+| `timestamp` | `string` | yes |
 
 ```json
 {
@@ -1240,7 +1354,14 @@ Events written to `runs/<run_id>/events.jsonl` and forwarded over IPC to subscri
       "type": "string"
     }
   },
-  "required": ["type", "run_id", "level", "source", "message", "timestamp"],
+  "required": [
+    "type",
+    "run_id",
+    "level",
+    "source",
+    "message",
+    "timestamp"
+  ],
   "additionalProperties": false
 }
 ```
@@ -1262,12 +1383,12 @@ Events written to `runs/<run_id>/events.jsonl` and forwarded over IPC to subscri
 
 ### SessionCreatedEvent
 
-| Field        | Type     | Required |
-| ------------ | -------- | -------- |
-| `type`       | `string` | yes      |
-| `session_id` | `string` | yes      |
-| `mode`       | `string` | yes      |
-| `timestamp`  | `string` | yes      |
+| Field | Type | Required |
+|---|---|---|
+| `type` | `string` | yes |
+| `session_id` | `string` | yes |
+| `mode` | `string` | yes |
+| `timestamp` | `string` | yes |
 
 ```json
 {
@@ -1289,7 +1410,12 @@ Events written to `runs/<run_id>/events.jsonl` and forwarded over IPC to subscri
       "type": "string"
     }
   },
-  "required": ["type", "session_id", "mode", "timestamp"],
+  "required": [
+    "type",
+    "session_id",
+    "mode",
+    "timestamp"
+  ],
   "additionalProperties": false
 }
 ```
@@ -1307,12 +1433,12 @@ Events written to `runs/<run_id>/events.jsonl` and forwarded over IPC to subscri
 
 ### SessionMessageReceivedEvent
 
-| Field        | Type     | Required |
-| ------------ | -------- | -------- |
-| `type`       | `string` | yes      |
-| `session_id` | `string` | yes      |
-| `content`    | `string` | yes      |
-| `timestamp`  | `string` | yes      |
+| Field | Type | Required |
+|---|---|---|
+| `type` | `string` | yes |
+| `session_id` | `string` | yes |
+| `content` | `string` | yes |
+| `timestamp` | `string` | yes |
 
 ```json
 {
@@ -1334,7 +1460,12 @@ Events written to `runs/<run_id>/events.jsonl` and forwarded over IPC to subscri
       "type": "string"
     }
   },
-  "required": ["type", "session_id", "content", "timestamp"],
+  "required": [
+    "type",
+    "session_id",
+    "content",
+    "timestamp"
+  ],
   "additionalProperties": false
 }
 ```
@@ -1352,12 +1483,12 @@ Events written to `runs/<run_id>/events.jsonl` and forwarded over IPC to subscri
 
 ### SessionWaitingForInputEvent
 
-| Field         | Type     | Required |
-| ------------- | -------- | -------- |
-| `type`        | `string` | yes      |
-| `session_id`  | `string` | yes      |
-| `last_run_id` | `string` | yes      |
-| `timestamp`   | `string` | yes      |
+| Field | Type | Required |
+|---|---|---|
+| `type` | `string` | yes |
+| `session_id` | `string` | yes |
+| `last_run_id` | `string` | yes |
+| `timestamp` | `string` | yes |
 
 ```json
 {
@@ -1379,7 +1510,12 @@ Events written to `runs/<run_id>/events.jsonl` and forwarded over IPC to subscri
       "type": "string"
     }
   },
-  "required": ["type", "session_id", "last_run_id", "timestamp"],
+  "required": [
+    "type",
+    "session_id",
+    "last_run_id",
+    "timestamp"
+  ],
   "additionalProperties": false
 }
 ```
@@ -1397,11 +1533,11 @@ Events written to `runs/<run_id>/events.jsonl` and forwarded over IPC to subscri
 
 ### SessionResumedEvent
 
-| Field        | Type     | Required |
-| ------------ | -------- | -------- |
-| `type`       | `string` | yes      |
-| `session_id` | `string` | yes      |
-| `timestamp`  | `string` | yes      |
+| Field | Type | Required |
+|---|---|---|
+| `type` | `string` | yes |
+| `session_id` | `string` | yes |
+| `timestamp` | `string` | yes |
 
 ```json
 {
@@ -1420,7 +1556,11 @@ Events written to `runs/<run_id>/events.jsonl` and forwarded over IPC to subscri
       "type": "string"
     }
   },
-  "required": ["type", "session_id", "timestamp"],
+  "required": [
+    "type",
+    "session_id",
+    "timestamp"
+  ],
   "additionalProperties": false
 }
 ```
@@ -1437,11 +1577,11 @@ Events written to `runs/<run_id>/events.jsonl` and forwarded over IPC to subscri
 
 ### SessionClosedEvent
 
-| Field        | Type     | Required |
-| ------------ | -------- | -------- |
-| `type`       | `string` | yes      |
-| `session_id` | `string` | yes      |
-| `timestamp`  | `string` | yes      |
+| Field | Type | Required |
+|---|---|---|
+| `type` | `string` | yes |
+| `session_id` | `string` | yes |
+| `timestamp` | `string` | yes |
 
 ```json
 {
@@ -1460,7 +1600,11 @@ Events written to `runs/<run_id>/events.jsonl` and forwarded over IPC to subscri
       "type": "string"
     }
   },
-  "required": ["type", "session_id", "timestamp"],
+  "required": [
+    "type",
+    "session_id",
+    "timestamp"
+  ],
   "additionalProperties": false
 }
 ```
@@ -1477,11 +1621,11 @@ Events written to `runs/<run_id>/events.jsonl` and forwarded over IPC to subscri
 
 ## Error Codes
 
-| Code   | Name              | Meaning                               |
-| ------ | ----------------- | ------------------------------------- |
-| -32700 | Parse Error       | Invalid JSON received                 |
-| -32600 | Invalid Request   | Missing required JSON-RPC fields      |
-| -32601 | Method Not Found  | Unknown method                        |
-| -32602 | Invalid Params    | Parameter validation failed           |
-| -32603 | Internal Error    | Handler raised an unhandled exception |
-| -32000 | Application Error | e.g. another run already in progress  |
+| Code | Name | Meaning |
+|------|------|---------|
+| -32700 | Parse Error | Invalid JSON received |
+| -32600 | Invalid Request | Missing required JSON-RPC fields |
+| -32601 | Method Not Found | Unknown method |
+| -32602 | Invalid Params | Parameter validation failed |
+| -32603 | Internal Error | Handler raised an unhandled exception |
+| -32000 | Application Error | e.g. another run already in progress |

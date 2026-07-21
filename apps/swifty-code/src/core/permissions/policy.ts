@@ -79,7 +79,8 @@ const PREVIEW_MAX = 60;
 
 // Generate a human-readable param summary for permission approval events
 export function paramPreview(toolName: string, params: Record<string, unknown>): string {
-  const key = PREVIEW_KEY[toolName];
+  // B-9: tool names are matched case-insensitively (defensive normalization)
+  const key = PREVIEW_KEY[toolName.toLowerCase()];
   if (key && key in params) {
     const raw = params[key];
     let val = typeof raw === "string" ? raw : String(raw);
@@ -96,11 +97,14 @@ export function evaluate(
   params: Record<string, unknown>,
   toolPolicy?: ToolPolicy,
 ): PermissionDecision {
-  const pol = toolPolicy ?? (toolName in DEFAULT_POLICIES ? DEFAULT_POLICIES[toolName] : undefined);
+  // B-9: tool names are matched case-insensitively (registered tools are
+  // all-lowercase already; this is defensive normalization)
+  const tool = toolName.toLowerCase();
+  const pol = toolPolicy ?? (tool in DEFAULT_POLICIES ? DEFAULT_POLICIES[tool] : undefined);
   if (!pol) return PermissionDecision.ASK;
 
   const commandRaw = params["command"];
-  const command = toolName === "bash" && typeof commandRaw === "string" ? commandRaw : "";
+  const command = tool === "bash" && typeof commandRaw === "string" ? commandRaw : "";
 
   // Tier 1: deny_patterns (bash only)
   if (command) {

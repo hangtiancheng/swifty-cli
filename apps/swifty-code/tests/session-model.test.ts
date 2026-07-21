@@ -84,9 +84,9 @@ describe("Session Model", () => {
     expect(session.runIds).toEqual(["r1", "r2"]);
   });
 
-  // Feature: sessionFromDict handles invalid mode gracefully
-  // Design: Pass invalid mode, verify fallback to chat
-  test("sessionFromDict falls back to chat for invalid mode", () => {
+  // Feature: sessionFromDict rejects invalid mode
+  // Design: Pass invalid mode, verify it throws (corrupted data is surfaced)
+  test("sessionFromDict throws for invalid mode", () => {
     const dict = {
       id: "s1",
       mode: "invalid_mode",
@@ -97,13 +97,12 @@ describe("Session Model", () => {
       run_ids: [],
     };
 
-    const session = sessionFromDict(dict);
-    expect(session.mode).toBe("chat");
+    expect(() => sessionFromDict(dict)).toThrow("Invalid session mode: invalid_mode");
   });
 
-  // Feature: sessionFromDict handles invalid status gracefully
-  // Design: Pass invalid status, verify fallback to active
-  test("sessionFromDict falls back to active for invalid status", () => {
+  // Feature: sessionFromDict rejects invalid status
+  // Design: Pass invalid status, verify it throws (corrupted data is surfaced)
+  test("sessionFromDict throws for invalid status", () => {
     const dict = {
       id: "s1",
       mode: "one_shot",
@@ -114,8 +113,7 @@ describe("Session Model", () => {
       run_ids: [],
     };
 
-    const session = sessionFromDict(dict);
-    expect(session.status).toBe("active");
+    expect(() => sessionFromDict(dict)).toThrow("Invalid session status: unknown_status");
   });
 
   // Feature: roundtrip serialization preserves data

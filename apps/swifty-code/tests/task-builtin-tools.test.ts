@@ -223,4 +223,89 @@ describe("Task Builtin Tools", () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  // Feature: TaskUpdateTool rejects invalid status instead of silently ignoring it
+  // Design: Update with bogus status, expect runtime_error result and unchanged task
+  test("task_update returns error for invalid status", async () => {
+    const dir = tmpDir();
+    try {
+      const mgr = new TaskManager(path.join(dir, "tasks"));
+      const createTool = new TaskCreateTool(mgr);
+      const updateTool = new TaskUpdateTool(mgr);
+      const getTool = new TaskGetTool(mgr);
+
+      const created = await createTool.invoke({ subject: "Work" });
+      const task = parseJson(created.content);
+
+      const result = await updateTool.invoke({
+        task_id: Number(str(task, "id")),
+        status: "done",
+      });
+      expect(result.isError).toBe(true);
+      expect(result.errorType).toBe("runtime_error");
+      expect(result.content).toContain("invalid status: done");
+
+      // Task remains unchanged
+      const after = await getTool.invoke({ task_id: Number(str(task, "id")) });
+      expect(str(parseJson(after.content), "status")).toBe("pending");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  // Feature: Task tools accept string task IDs (schema declares integer|string)
+  // Design: Pass IDs as digit strings to get/update/create, verify normalization
+  test("task tools accept string task IDs", async () => {
+    const dir = tmpDir();
+    try {
+      const mgr = new TaskManager(path.join(dir, "tasks"));
+      const createTool = new TaskCreateTool(mgr);
+      const getTool = new TaskGetTool(mgr);
+      const updateTool = new TaskUpdateTool(mgr);
+
+      const created = await createTool.invoke({ subject: "First" });
+      const t1 = parseJson(created.content);
+      const id = str(t1, "id");
+
+      const got = await getTool.invoke({ task_id: id });
+      expect(got.isError).toBe(false);
+      expect(str(parseJson(got.content), "id")).toBe(id);
+
+      const updated = await updateTool.invoke({ task_id: id, status: "in_progress" });
+      expect(updated.isError).toBe(false);
+      expect(str(parseJson(updated.content), "status")).toBe("in_progress");
+
+      const second = await createTool.invoke({ subject: "Second", blocked_by: [id] });
+      expect(second.isError).toBe(false);
+      expect(strArr(parseJson(second.content), "blockedBy")).toContain(id);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  // Feature: Task tools reject non-integer task IDs with schema_error
+  // Design: Pass non-integer IDs, expect schema_error results
+  test("task tools reject non-integer task IDs", async () => {
+    const dir = tmpDir();
+    try {
+      const mgr = new TaskManager(path.join(dir, "tasks"));
+      const createTool = new TaskCreateTool(mgr);
+      const getTool = new TaskGetTool(mgr);
+      const updateTool = new TaskUpdateTool(mgr);
+
+      const r1 = await getTool.invoke({ task_id: "abc" });
+      expect(r1.isError).toBe(true);
+      expect(r1.errorType).toBe("schema_error");
+
+      const r2 = await updateTool.invoke({ task_id: 1.5, status: "pending" });
+      expect(r2.isError).toBe(true);
+      expect(r2.errorType).toBe("schema_error");
+
+      const r3 = await createTool.invoke({ subject: "X", blocked_by: ["not-a-number"] });
+      expect(r3.isError).toBe(true);
+      expect(r3.errorType).toBe("schema_error");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });

@@ -129,7 +129,7 @@ function createDefaultConfig(): SwiftyConfig {
 }
 
 // Replace ~ with user home directory
-function expandUser(p: string): string {
+export function expandUser(p: string): string {
   if (p.startsWith("~/")) {
     return path.join(homedir(), p.slice(2));
   }

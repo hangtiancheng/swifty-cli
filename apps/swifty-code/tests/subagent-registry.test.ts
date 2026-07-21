@@ -135,4 +135,35 @@ describe("BackgroundTaskRegistry", () => {
       expect(entry.context).toBe(c2);
     }
   });
+
+  // Feature: cancel aborts the associated AbortController for pending tasks
+  // Design: Register a never-settling promise with a controller, cancel,
+  // verify status flips to cancelled and the controller's signal is aborted
+  test("cancel aborts the associated controller", () => {
+    const registry = new BackgroundTaskRegistry();
+    const controller = new AbortController();
+    const never = new Promise<void>(() => undefined);
+
+    registry.register("bg-1", never, makeCtx("bg-1"), controller);
+    registry.cancel("bg-1");
+
+    expect(controller.signal.aborted).toBe(true);
+    expect(registry.get("bg-1")?.status).toBe("cancelled");
+  });
+
+  // Feature: cancel does not abort controllers of settled tasks
+  // Design: Register a resolved promise, wait for settlement, cancel,
+  // verify controller is not aborted and status stays fulfilled
+  test("cancel is a no-op after the task settled", async () => {
+    const registry = new BackgroundTaskRegistry();
+    const controller = new AbortController();
+
+    registry.register("bg-2", Promise.resolve(), makeCtx("bg-2"), controller);
+    // Let the settlement callback run so status becomes fulfilled
+    await Promise.resolve();
+    registry.cancel("bg-2");
+
+    expect(controller.signal.aborted).toBe(false);
+    expect(registry.get("bg-2")?.status).toBe("fulfilled");
+  });
 });

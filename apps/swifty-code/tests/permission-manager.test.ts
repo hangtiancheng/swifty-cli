@@ -285,6 +285,108 @@ describe("PermissionManager", () => {
     expect(r2[1]).toBe("allow_once"); // responded normally
   });
 
+  // --- cancelAll (B-3) ---
+
+  test("cancelAll resolves all pending requests across sessions as deny_once", async () => {
+    const mgr = makeManager({ timeoutS: 10 });
+    const emitter = makeEmitter();
+
+    const pending1 = mgr.checkAndWait(
+      "tool-use-all-1",
+      "bash",
+      { command: "echo s1" },
+      "session-1",
+      emitter.emit,
+    );
+    const pending2 = mgr.checkAndWait(
+      "tool-use-all-2",
+      "bash",
+      { command: "echo s2" },
+      "session-2",
+      emitter.emit,
+    );
+
+    setTimeout(() => {
+      mgr.cancelAll("client_disconnected");
+    }, 20);
+
+    const [r1, r2] = await Promise.all([pending1, pending2]);
+    expect(r1).toEqual([false, "deny_once"]);
+    expect(r2).toEqual([false, "deny_once"]);
+  });
+
+  test("respond after cancelAll is a no-op", async () => {
+    const mgr = makeManager({ timeoutS: 10 });
+    const emitter = makeEmitter();
+
+    const pending = mgr.checkAndWait(
+      "tool-use-all-3",
+      "bash",
+      { command: "echo test" },
+      "session-1",
+      emitter.emit,
+    );
+    setTimeout(() => {
+      mgr.cancelAll("client_disconnected");
+    }, 20);
+
+    const [, decision] = await pending;
+    expect(decision).toBe("deny_once");
+    // Late respond should not throw
+    mgr.respond("tool-use-all-3", "allow_once");
+  });
+
+  // --- Case-insensitive tool names (B-9) ---
+
+  test("evaluate matches tool names case-insensitively", () => {
+    const mgr = makeManager();
+    expect(mgr.evaluate("READ_FILE", { path: "test.txt" })).toBe("allow");
+    expect(mgr.evaluate("Bash", { command: "echo hello" })).toBe("ask");
+  });
+
+  test("checkAndWait auto_allow for mixed-case tool with default allow", async () => {
+    const mgr = makeManager();
+    const emitter = makeEmitter();
+    const [allowed, decision] = await mgr.checkAndWait(
+      "tool-use-ci-1",
+      "Read_File",
+      { path: "test.txt" },
+      "session-1",
+      emitter.emit,
+    );
+    expect(allowed).toBe(true);
+    expect(decision).toBe("auto_allow");
+  });
+
+  test("always cache is shared across tool name casings", async () => {
+    const mgr = makeManager({ timeoutS: 5 });
+    const emitter = makeEmitter();
+
+    // Respond always_allow for mixed-case "BASH"
+    setTimeout(() => {
+      mgr.respond("tool-use-ci-2", "always_allow");
+    }, 20);
+    await mgr.checkAndWait(
+      "tool-use-ci-2",
+      "BASH",
+      { command: "echo hello" },
+      "session-1",
+      emitter.emit,
+    );
+
+    // Lowercase "bash" should hit the same cache entry, no new ask event
+    const [allowed, decision] = await mgr.checkAndWait(
+      "tool-use-ci-3",
+      "bash",
+      { command: "echo world" },
+      "session-1",
+      emitter.emit,
+    );
+    expect(allowed).toBe(true);
+    expect(decision).toBe("auto_allow");
+    expect(emitter.events).toHaveLength(1); // Only first call emitted event
+  });
+
   // --- Timeout ---
 
   test("checkAndWait returns false with timeout decision", async () => {

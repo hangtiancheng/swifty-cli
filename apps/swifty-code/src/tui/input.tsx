@@ -52,6 +52,25 @@ const MODEL_DISPLAY: Record<string, { name: string; color: string }> = {
 
 const MODEL_CYCLE = ["default", "acceptEdits", "plan", "bypassPermissions"];
 
+// ---- Code-point-safe string helpers ----
+// cursorCol is measured in Unicode code points (not UTF-16 code units), so
+// surrogate pairs (emoji etc.) are never split by cursor movement, backspace,
+// or slicing. NOTE: full display-width alignment is intentionally NOT handled
+// here — CJK characters occupy 2 terminal columns and ZWJ emoji sequences
+// render as a single glyph spanning multiple code points; only code-point
+// safety (never breaking a surrogate pair) is guaranteed.
+function toChars(s: string): string[] {
+  return Array.from(s);
+}
+
+function charLen(s: string): number {
+  return toChars(s).length;
+}
+
+function sliceChars(s: string, start: number, end?: number): string {
+  return toChars(s).slice(start, end).join("");
+}
+
 interface InputBoxProps {
   onSubmit: (text: string) => void;
   disabled?: boolean;
@@ -197,7 +216,7 @@ export function InputBox(props: InputBoxProps): React.JSX.Element {
       u[cursorLine] = (u[cursorLine] ?? "").replace(/@([^\s]*)$/, `@${path} `);
       return u;
     });
-    setCursorCol((lines[cursorLine] ?? "").replace(/@([^\s]*)$/, `@${path} `).length);
+    setCursorCol(charLen((lines[cursorLine] ?? "").replace(/@([^\s]*)$/, `@${path} `)));
     setDropdownIndex(0);
   };
 
@@ -230,16 +249,41 @@ export function InputBox(props: InputBoxProps): React.JSX.Element {
       return;
     }
 
-    const hasReturn = key.return || input.includes("\r") || input.includes("\n");
-    const cleanInput = input.replace(/[\r\n]/g, "");
+    const isPlainReturn = key.return || input === "\r" || input === "\n";
+    const hasNewline = /[\r\n]/.test(input);
+
+    // Multi-character input containing newlines = pasted block. Ink delivers
+    // pasted text as one input string; a real Enter key press arrives as a
+    // single "\r" (key.return). Insert the paste as multi-line content
+    // instead of stripping the newlines.
+    if (hasNewline && input.length > 1 && !key.ctrl && !key.meta) {
+      const parts = input.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
+      const line = lines[cursorLine] ?? "";
+      const before = sliceChars(line, 0, cursorCol);
+      const after = sliceChars(line, cursorCol);
+      const inserted = [before + (parts[0] ?? ""), ...parts.slice(1)];
+      const lastIdx = inserted.length - 1;
+      const endCol = charLen(inserted[lastIdx] ?? "");
+      inserted[lastIdx] = (inserted[lastIdx] ?? "") + after;
+      setLines((prev) => {
+        const updated = [...prev];
+        updated.splice(cursorLine, 1, ...inserted);
+        return updated;
+      });
+      setCursorLine(cursorLine + lastIdx);
+      setCursorCol(endCol);
+      setDropdownIndex(0);
+      setDropdownDismissed(false);
+      return;
+    }
 
     // Shift+Enter or Ctrl+J -> newline
-    if (hasReturn && (key.shift || (key.ctrl && input === "\n"))) {
+    if (isPlainReturn && (key.shift || (key.ctrl && input === "\n"))) {
       const line = lines[cursorLine] ?? "";
       setLines((prev) => {
         const updated = [...prev];
-        updated[cursorLine] = line.slice(0, cursorCol);
-        updated.splice(cursorLine + 1, 0, line.slice(cursorCol));
+        updated[cursorLine] = sliceChars(line, 0, cursorCol);
+        updated.splice(cursorLine + 1, 0, sliceChars(line, cursorCol));
         return updated;
       });
       setCursorLine(cursorLine + 1);
@@ -247,7 +291,7 @@ export function InputBox(props: InputBoxProps): React.JSX.Element {
       return;
     }
 
-    if (hasReturn) {
+    if (isPlainReturn) {
       if (showAtDropdown && filteredFiles[dropdownIndex]) {
         completeAt(filteredFiles[dropdownIndex]);
         return;
@@ -258,19 +302,13 @@ export function InputBox(props: InputBoxProps): React.JSX.Element {
           const newLine = "/" + selected.name + " ";
           setLines([newLine]);
           setCursorLine(0);
-          setCursorCol(newLine.length);
+          setCursorCol(charLen(newLine));
           setDropdownIndex(0);
           return;
         }
       }
 
-      const line = lines[cursorLine] ?? "";
-      const finalLine = cleanInput
-        ? line.slice(0, cursorCol) + cleanInput + line.slice(cursorCol)
-        : line;
-      const updated = [...lines];
-      updated[cursorLine] = finalLine;
-      const finalValue = updated.join("\n").trim();
+      const finalValue = lines.join("\n").trim();
       if (finalValue) {
         onSubmit(finalValue);
         setLines([""]);
@@ -302,7 +340,7 @@ export function InputBox(props: InputBoxProps): React.JSX.Element {
         const newLine = "/" + selected.name + " ";
         setLines([newLine]);
         setCursorLine(0);
-        setCursorCol(newLine.length);
+        setCursorCol(charLen(newLine));
         setDropdownIndex(0);
       }
       return;
@@ -313,7 +351,7 @@ export function InputBox(props: InputBoxProps): React.JSX.Element {
       return;
     }
     if (key.ctrl && input === "e") {
-      setCursorCol((lines[cursorLine] ?? "").length);
+      setCursorCol(charLen(lines[cursorLine] ?? ""));
       return;
     }
 
@@ -322,13 +360,13 @@ export function InputBox(props: InputBoxProps): React.JSX.Element {
         setCursorCol(cursorCol - 1);
       } else if (isMultiline && cursorLine > 0) {
         setCursorLine(cursorLine - 1);
-        setCursorCol((lines[cursorLine - 1] ?? "").length);
+        setCursorCol(charLen(lines[cursorLine - 1] ?? ""));
       }
       return;
     }
 
     if (key.rightArrow) {
-      const lineLen = (lines[cursorLine] ?? "").length;
+      const lineLen = charLen(lines[cursorLine] ?? "");
       if (cursorCol < lineLen) {
         setCursorCol(cursorCol + 1);
       } else if (isMultiline && cursorLine < lines.length - 1) {
@@ -343,13 +381,14 @@ export function InputBox(props: InputBoxProps): React.JSX.Element {
         const col = cursorCol;
         setLines((prev) => {
           const updated = [...prev];
-          const l = updated[cursorLine] ?? "";
-          updated[cursorLine] = l.slice(0, col - 1) + l.slice(col);
+          const chars = toChars(updated[cursorLine] ?? "");
+          // Remove one full code point (never splits a surrogate pair)
+          updated[cursorLine] = [...chars.slice(0, col - 1), ...chars.slice(col)].join("");
           return updated;
         });
         setCursorCol(col - 1);
       } else if (cursorLine > 0) {
-        const prevLen = (lines[cursorLine - 1] ?? "").length;
+        const prevLen = charLen(lines[cursorLine - 1] ?? "");
         const cl = cursorLine;
         setLines((prev) => {
           const updated = [...prev];
@@ -375,7 +414,7 @@ export function InputBox(props: InputBoxProps): React.JSX.Element {
       if (isMultiline && cursorLine > 0) {
         const targetLine = lines[cursorLine - 1] ?? "";
         setCursorLine(cursorLine - 1);
-        setCursorCol(Math.min(cursorCol, targetLine.length));
+        setCursorCol(Math.min(cursorCol, charLen(targetLine)));
         return;
       }
       if (!isMultiline && history.length > 0) {
@@ -385,7 +424,7 @@ export function InputBox(props: InputBoxProps): React.JSX.Element {
         const entryLines = entry.split("\n");
         setLines(entryLines);
         setCursorLine(0);
-        setCursorCol((entryLines[0] ?? "").length);
+        setCursorCol(charLen(entryLines[0] ?? ""));
         return;
       }
       return;
@@ -403,7 +442,7 @@ export function InputBox(props: InputBoxProps): React.JSX.Element {
       if (isMultiline && cursorLine < lines.length - 1) {
         const targetLine = lines[cursorLine + 1] ?? "";
         setCursorLine(cursorLine + 1);
-        setCursorCol(Math.min(cursorCol, targetLine.length));
+        setCursorCol(Math.min(cursorCol, charLen(targetLine)));
         return;
       }
       if (!isMultiline) {
@@ -414,7 +453,7 @@ export function InputBox(props: InputBoxProps): React.JSX.Element {
           const entryLines = entry.split("\n");
           setLines(entryLines);
           setCursorLine(0);
-          setCursorCol((entryLines[0] ?? "").length);
+          setCursorCol(charLen(entryLines[0] ?? ""));
         } else if (historyIndex === 0) {
           setHistoryIndex(-1);
           setLines([""]);
@@ -425,15 +464,16 @@ export function InputBox(props: InputBoxProps): React.JSX.Element {
       return;
     }
 
+    const cleanInput = input.replace(/[\r\n]/g, "");
     if (cleanInput && !key.ctrl && !key.meta) {
       const col = cursorCol;
       setLines((prev) => {
         const updated = [...prev];
         const line = updated[cursorLine] ?? "";
-        updated[cursorLine] = line.slice(0, col) + cleanInput + line.slice(col);
+        updated[cursorLine] = sliceChars(line, 0, col) + cleanInput + sliceChars(line, col);
         return updated;
       });
-      setCursorCol(col + cleanInput.length);
+      setCursorCol(col + charLen(cleanInput));
       setDropdownIndex(0);
       setDropdownDismissed(false);
     }
@@ -472,11 +512,12 @@ export function InputBox(props: InputBoxProps): React.JSX.Element {
               {lines.map((line, i) => {
                 const prefix = i > 0 ? "\n  " : "";
                 if (i === cursorLine) {
-                  const col = Math.min(cursorCol, line.length);
-                  const before = line.slice(0, col);
-                  const atChar = col < line.length ? line[col] : " ";
-                  const after = col < line.length ? line.slice(col + 1) : "";
-                  const atEnd = col >= line.length;
+                  const chars = toChars(line);
+                  const col = Math.min(cursorCol, chars.length);
+                  const before = chars.slice(0, col).join("");
+                  const atChar = col < chars.length ? chars[col] : " ";
+                  const after = col < chars.length ? chars.slice(col + 1).join("") : "";
+                  const atEnd = col >= chars.length;
                   return (
                     <Text key={String(i)}>
                       {prefix}

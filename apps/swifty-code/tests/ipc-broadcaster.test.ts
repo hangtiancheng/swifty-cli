@@ -50,6 +50,35 @@ function makeMockSocket(): net.Socket {
   return socket;
 }
 
+// Create a mock socket that always reports backpressure (write returns false).
+// Deliveries stay queued until the test emits "drain" on the socket.
+function makeBackpressureSocket(): net.Socket {
+  const socket = new net.Socket();
+  const tracker: WriteTracker = { data: [] };
+  socket.write = (chunk: string | Uint8Array): boolean => {
+    tracker.data.push(typeof chunk === "string" ? chunk : Buffer.from(chunk).toString());
+    return false;
+  };
+  trackerRegistry.set(socket, tracker);
+  return socket;
+}
+
+// Create a mock socket whose write always throws (dead connection)
+function makeThrowingSocket(): net.Socket {
+  const socket = new net.Socket();
+  const tracker: WriteTracker = { data: [] };
+  socket.write = (): boolean => {
+    throw new Error("broken pipe");
+  };
+  trackerRegistry.set(socket, tracker);
+  return socket;
+}
+
+// Let queued microtasks/macrotasks settle (per-socket write queues run async)
+async function flushTasks(): Promise<void> {
+  await new Promise<void>((resolve) => setImmediate(resolve));
+}
+
 // Create RunStartedEvent for testing
 function makeRunStarted(runId = "r1"): Event {
   return {
@@ -101,6 +130,7 @@ describe("IpcEventBroadcaster", () => {
     broadcaster.subscribe(socket, ["run.*"]);
 
     await broadcaster.handle(makeRunStarted());
+    await flushTasks(); // B-10: deliveries are queued per socket
 
     expect(getWriteCallCount(socket)).toBe(1);
     const data = getWriteCallData(socket);
@@ -130,6 +160,7 @@ describe("IpcEventBroadcaster", () => {
 
     await broadcaster.handle(makeStepStarted());
     await broadcaster.handle(makeRunStarted());
+    await flushTasks(); // B-10: deliveries are queued per socket
 
     expect(getWriteCallCount(socket)).toBe(1);
   });
@@ -143,6 +174,7 @@ describe("IpcEventBroadcaster", () => {
 
     await broadcaster.handle(makeRunStarted("r1"));
     await broadcaster.handle(makeRunStarted("r2"));
+    await flushTasks(); // B-10: deliveries are queued per socket
 
     expect(getWriteCallCount(socket)).toBe(2);
   });
@@ -156,6 +188,7 @@ describe("IpcEventBroadcaster", () => {
 
     await broadcaster.handle(makeRunStarted("abc"));
     await broadcaster.handle(makeRunStarted("xyz"));
+    await flushTasks(); // B-10: deliveries are queued per socket
 
     expect(getWriteCallCount(socket)).toBe(1);
   });
@@ -169,7 +202,93 @@ describe("IpcEventBroadcaster", () => {
     broadcaster.unsubscribe(socket);
 
     await broadcaster.handle(makeRunStarted());
+    await flushTasks(); // B-10: deliveries are queued per socket
 
     expect(getWriteCallCount(socket)).toBe(0);
+  });
+
+  // Feature (B-3): subscriptionCount reflects subscribe/unsubscribe
+  // Design: Subscribe two sockets, unsubscribe one, verify count at each step
+  test("subscriptionCount tracks subscribe and unsubscribe", () => {
+    const broadcaster = new IpcEventBroadcaster();
+    const a = makeMockSocket();
+    const b = makeMockSocket();
+    expect(broadcaster.subscriptionCount()).toBe(0);
+    broadcaster.subscribe(a, ["run.*"]);
+    broadcaster.subscribe(b, ["run.*"]);
+    expect(broadcaster.subscriptionCount()).toBe(2);
+    broadcaster.unsubscribe(a);
+    expect(broadcaster.subscriptionCount()).toBe(1);
+    broadcaster.unsubscribe(b);
+    expect(broadcaster.subscriptionCount()).toBe(0);
+  });
+
+  // Feature (B-10): a slow subscriber (backpressure, drain pending) must not
+  // block handle() nor delivery to other subscribers
+  // Design: slow socket's write returns false and drain never fires during the
+  // test; with the old sequential-await handle() this test would hang forever.
+  test("slow subscriber does not block handle or other subscribers", async () => {
+    const broadcaster = new IpcEventBroadcaster();
+    const slow = makeBackpressureSocket();
+    const fast = makeMockSocket();
+    broadcaster.subscribe(slow, ["run.*"]);
+    broadcaster.subscribe(fast, ["run.*"]);
+
+    // Would deadlock pre-B-10: handle awaited slow socket's drain inline
+    await broadcaster.handle(makeRunStarted("r1"));
+    await broadcaster.handle(makeRunStarted("r2"));
+    await flushTasks();
+
+    // Fast socket got both events even though slow socket is still draining
+    expect(getWriteCallCount(fast)).toBe(2);
+    // Slow socket has the first write buffered, second queued behind drain
+    expect(getWriteCallCount(slow)).toBe(1);
+  });
+
+  // Feature (B-10): per-socket event order is preserved by the write queue
+  // Design: enqueue two events against a backpressured socket, release drain
+  // step by step, then assert both events arrived in publish order
+  test("per-socket order preserved under backpressure", async () => {
+    const broadcaster = new IpcEventBroadcaster();
+    const slow = makeBackpressureSocket();
+    broadcaster.subscribe(slow, ["run.*"]);
+
+    await broadcaster.handle(makeRunStarted("first"));
+    await broadcaster.handle(makeRunStarted("second"));
+    await flushTasks();
+    expect(getWriteCallCount(slow)).toBe(1);
+
+    // Release the first delivery; the queued second delivery follows
+    slow.emit("drain");
+    await flushTasks();
+    expect(getWriteCallCount(slow)).toBe(2);
+
+    const tracker = getTracker(slow);
+    const runIds = tracker.data.map((raw) => {
+      const parsed: unknown = JSON.parse(raw.trim());
+      if (!isRecord(parsed)) return "";
+      const event = parsed["event"];
+      return isRecord(event) && typeof event["run_id"] === "string" ? event["run_id"] : "";
+    });
+    expect(runIds).toEqual(["first", "second"]);
+  });
+
+  // Feature (B-10): write failure still triggers dead-socket cleanup
+  // Design: throwing socket is unsubscribed after a failed queued delivery,
+  // while a healthy subscriber keeps receiving events
+  test("write failure removes dead subscriber and keeps others", async () => {
+    const broadcaster = new IpcEventBroadcaster();
+    const dead = makeThrowingSocket();
+    const alive = makeMockSocket();
+    broadcaster.subscribe(dead, ["run.*"]);
+    broadcaster.subscribe(alive, ["run.*"]);
+
+    await broadcaster.handle(makeRunStarted("r1"));
+    await flushTasks();
+
+    expect(broadcaster.subscriptionCount()).toBe(1);
+    await broadcaster.handle(makeRunStarted("r2"));
+    await flushTasks();
+    expect(getWriteCallCount(alive)).toBe(2);
   });
 });

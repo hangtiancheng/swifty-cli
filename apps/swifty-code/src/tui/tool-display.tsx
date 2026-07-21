@@ -28,6 +28,7 @@ import { isDiffTool } from "./is-diff-tool.js";
 
 export interface ToolBlockInfo {
   toolName: string;
+  toolUseId?: string;
   args: Record<string, unknown>;
   output?: string;
   isError?: boolean;

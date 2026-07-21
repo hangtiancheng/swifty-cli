@@ -21,9 +21,25 @@
  */
 
 // TaskUpdateTool: update task status or dependencies
+import { z } from "zod";
+
 import type { BaseTool, ToolResult } from "../base.js";
 import { toolError, toolSuccess } from "../base.js";
 import type { TaskManager } from "../../task/manager.js";
+import { TaskIdSchema, normalizeTaskId } from "./task-create.js";
+
+export const TaskUpdateParamsSchema = z.object({
+  task_id: TaskIdSchema.describe("ID of the task to update."),
+  status: z
+    .enum(["pending", "in_progress", "completed"])
+    .optional()
+    .describe("New status for the task."),
+  add_blocked_by: z.array(TaskIdSchema).optional().describe("Task IDs to add to blocked_by."),
+  remove_blocked_by: z
+    .array(TaskIdSchema)
+    .optional()
+    .describe("Task IDs to remove from blocked_by."),
+});
 
 export class TaskUpdateTool implements BaseTool {
   readonly name = "task_update";
@@ -36,7 +52,7 @@ export class TaskUpdateTool implements BaseTool {
     type: "object" as const,
     properties: {
       task_id: {
-        type: "integer",
+        type: ["integer", "string"],
         description: "ID of the task to update.",
       },
       status: {
@@ -46,17 +62,18 @@ export class TaskUpdateTool implements BaseTool {
       },
       add_blocked_by: {
         type: "array",
-        items: { type: "integer" },
+        items: { type: ["integer", "string"] },
         description: "Task IDs to add to blocked_by.",
       },
       remove_blocked_by: {
         type: "array",
-        items: { type: "integer" },
+        items: { type: ["integer", "string"] },
         description: "Task IDs to remove from blocked_by.",
       },
     },
     required: ["task_id"],
   };
+  readonly paramsModel = TaskUpdateParamsSchema;
 
   private _manager: TaskManager;
 
@@ -66,20 +83,37 @@ export class TaskUpdateTool implements BaseTool {
 
   invoke(params: Record<string, unknown>): Promise<ToolResult> {
     try {
-      const taskId = Number(String(params["task_id"]));
+      const taskId = normalizeTaskId(params["task_id"]);
+      if (taskId === null) {
+        return Promise.resolve(
+          toolError(`invalid task_id: ${String(params["task_id"])}`, "schema_error"),
+        );
+      }
+
       const statusRaw = params["status"];
-      const status =
-        statusRaw === "pending" || statusRaw === "in_progress" || statusRaw === "completed"
-          ? statusRaw
-          : undefined;
+      const status = typeof statusRaw === "string" ? statusRaw : undefined;
 
-      const addRaw = params["add_blocked_by"];
-      const addBlocked = Array.isArray(addRaw) ? addRaw.map((x) => Number(String(x))) : undefined;
+      const normalizeIdList = (raw: unknown, field: string): string[] | ToolResult | undefined => {
+        if (!Array.isArray(raw)) return undefined;
+        const ids: string[] = [];
+        for (const x of raw) {
+          const id = normalizeTaskId(x);
+          if (id === null) {
+            return toolError(`invalid task id in ${field}: ${String(x)}`, "schema_error");
+          }
+          ids.push(id);
+        }
+        return ids;
+      };
 
-      const removeRaw = params["remove_blocked_by"];
-      const removeBlocked = Array.isArray(removeRaw)
-        ? removeRaw.map((x) => Number(String(x)))
-        : undefined;
+      const addBlocked = normalizeIdList(params["add_blocked_by"], "add_blocked_by");
+      if (addBlocked !== undefined && !Array.isArray(addBlocked)) {
+        return Promise.resolve(addBlocked);
+      }
+      const removeBlocked = normalizeIdList(params["remove_blocked_by"], "remove_blocked_by");
+      if (removeBlocked !== undefined && !Array.isArray(removeBlocked)) {
+        return Promise.resolve(removeBlocked);
+      }
 
       const task = this._manager.update(taskId, {
         ...(status !== undefined ? { status } : {}),

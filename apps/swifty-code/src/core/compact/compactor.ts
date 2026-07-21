@@ -25,6 +25,7 @@ import type Anthropic from "@anthropic-ai/sdk";
 
 import { EventBus } from "../events/bus.js";
 import type { LLMProvider } from "../llm/base.js";
+import { getLogger } from "../logging.js";
 import type { ExecutionContext } from "../context.js";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -96,6 +97,16 @@ export class Compactor {
       summary_tokens: result.summaryTokens,
       timestamp: new Date().toISOString(),
     });
+    // Mirrors Python compactor.py post-compaction stats log
+    getLogger().info(
+      {
+        session_id: this._sessionId,
+        run_id: context.runId,
+        original_tokens: result.originalTokenEstimate,
+        summary_tokens: result.summaryTokens,
+      },
+      `context compacted session=${this._sessionId} run=${context.runId} original≈${String(result.originalTokenEstimate)} summary=${String(result.summaryTokens)} tokens`,
+    );
     return result;
   }
 
@@ -130,6 +141,8 @@ export class Compactor {
 
       const summaryText = response.text.trim();
       if (!summaryText) {
+        // Mirrors Python compactor.py empty-summary warning
+        getLogger().warn("compactor: LLM returned empty summary, skipping compaction");
         return null;
       }
 
@@ -141,7 +154,7 @@ export class Compactor {
         summaryTokens,
       };
     } catch (error) {
-      console.error("compactor: LLM call failed, skipping compaction", error);
+      getLogger().error({ err: error }, "compactor: LLM call failed, skipping compaction");
       return null;
     }
   }
@@ -198,7 +211,7 @@ export class Compactor {
       const summaryPath = path.join(this._sessionDir, `summary_${timestamp}.md`);
       writeFileSync(summaryPath, text, "utf-8");
     } catch (error) {
-      console.error("compactor: failed to write summary file", error);
+      getLogger().error({ err: error }, "compactor: failed to write summary file");
     }
   }
 }

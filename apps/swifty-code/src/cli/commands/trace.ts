@@ -22,10 +22,9 @@
 
 // CLI trace command: display daemon trace log with filtering and color output
 import { readFileSync, statSync, createReadStream } from "node:fs";
-import { homedir } from "node:os";
 import readline from "node:readline";
 
-import type { SwiftyConfig } from "../../core/config.js";
+import { expandUser, type SwiftyConfig } from "../../core/config.js";
 import { isRecord } from "../../core/bus/envelope.js";
 
 const COLORS: Record<string, string> = {
@@ -182,7 +181,7 @@ export function cmdTrace(
     follow?: boolean;
   },
 ): void {
-  const tracePath = config.trace.file.replace(/^~/, homedir());
+  const tracePath = expandUser(config.trace.file);
 
   let exists = false;
   try {

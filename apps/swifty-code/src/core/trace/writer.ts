@@ -45,10 +45,12 @@ export class TraceWriter {
     this._stopped = false;
   }
 
-  // Flush any remaining records and stop
+  // Stop accepting new records. Writes are synchronous (appendFileSync in
+  // emit()), so there is no pending queue to flush — stop() only sets the
+  // stopped flag. The async signature is kept for call-site compatibility.
+  // eslint-disable-next-line @typescript-eslint/require-await
   async stop(): Promise<void> {
     this._stopped = true;
-    await Promise.resolve();
   }
 
   // Synchronously write a single trace record to file

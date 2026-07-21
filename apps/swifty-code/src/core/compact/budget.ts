@@ -36,9 +36,13 @@ function truncateToolResultBlock(
   const content = block.content;
   if (typeof content !== "string") return block;
   if (content.length <= limit) return block;
+  const omitted = content.length - keep;
   return {
     ...block,
-    content: content.slice(0, keep) + `\n[truncated ${String(content.length - keep)} chars]`,
+    // Marker tells the LLM where to find the full output (mirrors Python budget.py)
+    content:
+      content.slice(0, keep) +
+      `\n[... ${String(omitted)} chars omitted. Full output in run events.]`,
   };
 }
 

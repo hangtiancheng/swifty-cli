@@ -28,7 +28,9 @@ import path from "node:path";
 import { getConfig } from "./core/config.js";
 import { launchTUI } from "./tui/index.js";
 
-// Wait for daemon to be ready by polling TCP connection
+// Wait for daemon to be ready: poll TCP connection, then verify the JSON-RPC
+// protocol is actually up with a core.ping round-trip (a listening socket
+// alone does not mean the daemon can serve requests yet).
 function waitForDaemon(host: string, port: number, timeoutMs = 10_000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   return new Promise<void>((resolve, reject) => {
@@ -37,11 +39,45 @@ function waitForDaemon(host: string, port: number, timeoutMs = 10_000): Promise<
         reject(new Error(`daemon not ready after ${String(timeoutMs)}ms`));
         return;
       }
+      let settled = false;
       const sock = createConnection({ host, port }, () => {
-        sock.end();
-        resolve();
+        // TCP is up; now confirm protocol readiness with core.ping
+        let buffer = "";
+        sock.setEncoding("utf-8");
+        sock.on("data", (chunk: string) => {
+          buffer += chunk;
+          const newlineIdx = buffer.indexOf("\n");
+          if (newlineIdx < 0) {
+            return;
+          }
+          const line = buffer.slice(0, newlineIdx);
+          settled = true;
+          sock.destroy();
+          try {
+            const msg: unknown = JSON.parse(line);
+            if (
+              typeof msg === "object" &&
+              msg !== null &&
+              "id" in msg &&
+              msg.id === "dev-ping"
+            ) {
+              resolve();
+              return;
+            }
+          } catch {
+            // fall through to retry
+          }
+          setTimeout(tryConnect, 200);
+        });
+        sock.write(
+          '{"jsonrpc":"2.0","id":"dev-ping","method":"core.ping","params":{"client":"dev"}}\n',
+          "utf-8",
+        );
       });
       sock.on("error", () => {
+        if (settled) return;
+        settled = true;
+        sock.destroy();
         setTimeout(tryConnect, 200);
       });
     };
@@ -64,7 +100,8 @@ async function main(): Promise<void> {
     const daemonPath = path.resolve("src/core/app.ts");
     daemon = fork(daemonPath, [], {
       detached: true, // Detach so it survives parent exit
-      stdio: "ignore",
+      // Inherit stderr so daemon startup errors are visible during dev
+      stdio: ["ignore", "ignore", "inherit", "ipc"],
       execArgv: ["--import", "tsx"],
     });
 

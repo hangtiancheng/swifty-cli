@@ -21,9 +21,11 @@
  */
 
 // policy.toml persistence: load and save [always] section
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
+import process from "node:process";
+import { randomBytes } from "node:crypto";
 
 const DEFAULT_POLICY_PATH = path.join(homedir(), ".swifty", "policy.toml");
 
@@ -54,7 +56,9 @@ export function loadPolicyFile(filePath?: string): Record<string, string> {
         v = v.slice(1, -1);
       }
       if (v === "allow" || v === "deny") {
-        result[k] = v;
+        // B-9: tool names are matched case-insensitively; normalize keys read
+        // from disk so pre-existing mixed-case entries still hit the cache
+        result[k.toLowerCase()] = v;
       }
     }
   }
@@ -72,9 +76,19 @@ export function savePolicyFile(always: Record<string, string>, filePath?: string
     "",
     "[always]",
   ];
-  for (const tool of Object.keys(always).sort()) {
-    const val = always[tool] ?? "";
+  // B-9: normalize tool names to lowercase (defensive; registered tools are
+  // already all-lowercase). Sort after normalization for stable output.
+  const normalized: Record<string, string> = {};
+  for (const [tool, val] of Object.entries(always)) {
+    normalized[tool.toLowerCase()] = val;
+  }
+  for (const tool of Object.keys(normalized).sort()) {
+    const val = normalized[tool] ?? "";
     lines.push(`${tool} = "${val}"`);
   }
-  writeFileSync(p, lines.join("\n") + "\n", "utf-8");
+  // B-8: atomic write — write a temp file in the same directory then rename
+  // over the target, so a mid-write crash never truncates policy.toml
+  const tmp = `${p}.${String(process.pid)}-${randomBytes(4).toString("hex")}.tmp`;
+  writeFileSync(tmp, lines.join("\n") + "\n", "utf-8");
+  renameSync(tmp, p);
 }

@@ -27,6 +27,8 @@ import type net from "node:net";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
 
+import picomatch from "picomatch";
+
 import { version } from "../version.js";
 import { eventsFile } from "./runs.js";
 import {
@@ -47,7 +49,7 @@ import {
   SessionSendMessageCommandSchema,
   SessionSendMessageResultSchema,
 } from "./bus/commands.js";
-import { getConfig } from "./config.js";
+import { getConfig, expandUser } from "./config.js";
 import type { Event } from "./bus/events.js";
 import { EventBus } from "./events/bus.js";
 import { setupLogging } from "./logging.js";
@@ -177,84 +179,13 @@ export class CoreApp {
   }
 
   // event.subscribe handler
-  // Replay matching events from events.jsonl then subscribe to live stream
-  private async _subscribeHandler(params: Record<string, unknown>): Promise<unknown> {
-    await Promise.resolve();
+  // B-11: snapshot replay lines synchronously, subscribe synchronously (no
+  // await gap), then write the snapshot out — see handleEventSubscribe
+  private _subscribeHandler(params: Record<string, unknown>): Promise<unknown> {
     const cmd = EventSubscribeCommandSchema.parse(params);
     const writer = getConnectionWriter();
     if (!this._broadcaster) throw new Error("broadcaster not initialized");
-
-    let replayedCount = 0;
-    if (cmd.replay_from_run !== null) {
-      replayedCount = await this._replayEvents(cmd.replay_from_run, writer, cmd.topics);
-    }
-
-    const subId = this._broadcaster.subscribe(writer, cmd.topics, cmd.scope);
-    return EventSubscribeResultSchema.parse({
-      subscription_id: subId,
-      replayed_count: replayedCount,
-    });
-  }
-
-  // Replay matching events from events.jsonl history file
-  private async _replayEvents(
-    runId: string,
-    socket: net.Socket,
-    topics: string[],
-  ): Promise<number> {
-    let eventsPath = eventsFilePath(runId);
-
-    // Fallback: search under ~/.swifty/sessions/*/runs/{runId}/events.jsonl
-    if (!existsSync(eventsPath)) {
-      const sessionsDir = path.join(homedir(), ".swifty", "sessions");
-      if (existsSync(sessionsDir)) {
-        try {
-          const sessionIds = readdirSync(sessionsDir);
-          for (const sessionId of sessionIds) {
-            const candidate = path.join(sessionsDir, sessionId, "runs", runId, "events.jsonl");
-            if (existsSync(candidate)) {
-              eventsPath = candidate;
-              break;
-            }
-          }
-        } catch {
-          // Ignore errors reading sessions directory
-        }
-      }
-    }
-
-    if (!existsSync(eventsPath)) return 0;
-
-    try {
-      const content = readFileSync(eventsPath, "utf-8");
-      const lines = content.split("\n");
-      let count = 0;
-      for (const line of lines) {
-        if (!line.trim()) continue;
-        try {
-          const parsed: unknown = JSON.parse(line);
-          if (!isRecord(parsed)) continue;
-          const event = parsed;
-          const eventType = typeof event["type"] === "string" ? event["type"] : "";
-          if (!matchTopic(eventType, topics)) continue;
-          const envelope =
-            JSON.stringify({
-              kind: "event",
-              event,
-            }) + "\n";
-          socket.write(envelope);
-          count++;
-        } catch {
-          // Skip malformed JSON lines
-        }
-      }
-      if (count > 0) {
-        await new Promise<void>((resolve) => socket.once("drain", resolve));
-      }
-      return count;
-    } catch {
-      return 0;
-    }
+    return handleEventSubscribe(this._broadcaster, writer, cmd);
   }
 
   // Start the daemon
@@ -265,7 +196,7 @@ export class CoreApp {
 
     // Trace
     if (config.trace.enabled) {
-      const tracePath = config.trace.file.replace(/^~/, homedir());
+      const tracePath = expandUser(config.trace.file);
       this._trace = new TraceWriter(tracePath);
       this._trace.start();
       this._bus.subscribe((e) => this._traceEventHandler(e));
@@ -316,6 +247,21 @@ export class CoreApp {
     // Server
     const server = new SocketServer(config.host, config.port, {
       ...(this._trace ? { trace: this._trace } : {}),
+      // Clean up broadcaster subscriptions when a client disconnects,
+      // otherwise dead sockets accumulate in the subscription list.
+      onDisconnect: (socket) => {
+        // Order matters: unsubscribe first so subscriptionCount() reflects
+        // the post-disconnect state before we decide whether to cancel.
+        this._broadcaster?.unsubscribe(socket);
+        // B-3: if the last subscriber is gone, nobody is left to answer
+        // pending permission requests — cancel them all instead of letting
+        // the agent freeze until the permission timeout. With multiple
+        // clients (e.g. a TUI plus a CLI) remaining subscribers can still
+        // answer, so we keep the requests pending.
+        if (this._broadcaster?.subscriptionCount() === 0) {
+          this._permissionManager?.cancelAll("client_disconnected");
+        }
+      },
     });
     server.register("core.ping", (p) => this._pingHandler(p));
     server.register("agent.run", (p) => this._agentRunHandler(p));
@@ -327,7 +273,21 @@ export class CoreApp {
     server.register("permission.respond", (p) => this._permissionRespondHandler(p));
     server.register("session.compact", (p) => this._sessionCompactHandler(p));
 
-    const addr = await server.start();
+    let addr: string;
+    try {
+      addr = await server.start();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      const code = isRecord(e) && typeof e["code"] === "string" ? e["code"] : "";
+      if (code === "EADDRINUSE" || msg.includes("already running")) {
+        console.error(
+          `swifty-core: port ${String(config.port)} already in use (${config.host}:${String(config.port)})`,
+        );
+      } else {
+        console.error(`swifty-core: failed to start on ${config.host}:${String(config.port)}: ${msg}`);
+      }
+      process.exit(1);
+    }
     logger.info(`swifty-core ${version} listening addr=${addr}`);
 
     // Wait for SIGINT/SIGTERM
@@ -377,17 +337,105 @@ function eventsFilePath(runId: string): string {
 }
 
 // Check whether an event type matches any of the subscribed topic patterns
-// Supports wildcard suffix: "run.*" matches "run.started", "run.finished", etc.
-function matchTopic(eventType: string, topics: string[]): boolean {
-  for (const topic of topics) {
-    if (topic.endsWith("*")) {
-      const prefix = topic.slice(0, -1);
-      if (eventType.startsWith(prefix)) return true;
-    } else {
-      if (eventType === topic) return true;
+// Uses picomatch with the same semantics as IpcEventBroadcaster so replayed
+// events and live subscriptions match identically (e.g. "run.*", "*", "tool.call_*")
+function matchTopic(eventType: string, matchers: picomatch.Matcher[]): boolean {
+  return matchers.some((m) => m(eventType));
+}
+
+// Synchronously snapshot matching replay lines (event envelopes, one JSON line
+// each, "\n"-terminated) from the run's events.jsonl history file.
+// Fully synchronous so callers can subscribe immediately after snapshotting
+// without an await gap (B-11).
+export function snapshotReplayLines(runId: string, topics: string[]): string[] {
+  let eventsPath = eventsFilePath(runId);
+
+  // Fallback: search under ~/.swifty/sessions/*/runs/{runId}/events.jsonl
+  if (!existsSync(eventsPath)) {
+    const sessionsDir = path.join(homedir(), ".swifty", "sessions");
+    if (existsSync(sessionsDir)) {
+      try {
+        const sessionIds = readdirSync(sessionsDir);
+        for (const sessionId of sessionIds) {
+          const candidate = path.join(sessionsDir, sessionId, "runs", runId, "events.jsonl");
+          if (existsSync(candidate)) {
+            eventsPath = candidate;
+            break;
+          }
+        }
+      } catch {
+        // Ignore errors reading sessions directory
+      }
     }
   }
-  return false;
+
+  return snapshotReplayLinesFromFile(eventsPath, topics);
+}
+
+// Synchronously read an events.jsonl file and return the topic-matching
+// event envelope lines ("\n"-terminated); empty array on any read error
+export function snapshotReplayLinesFromFile(eventsPath: string, topics: string[]): string[] {
+  if (!existsSync(eventsPath)) return [];
+
+  // Compile topic matchers once (same picomatch semantics as IpcEventBroadcaster)
+  const matchers = topics.map((t) => picomatch(t));
+
+  const out: string[] = [];
+  try {
+    const content = readFileSync(eventsPath, "utf-8");
+    for (const line of content.split("\n")) {
+      if (!line.trim()) continue;
+      try {
+        const parsed: unknown = JSON.parse(line);
+        if (!isRecord(parsed)) continue;
+        const event = parsed;
+        const eventType = typeof event["type"] === "string" ? event["type"] : "";
+        if (!matchTopic(eventType, matchers)) continue;
+        out.push(JSON.stringify({ kind: "event", event }) + "\n");
+      } catch {
+        // Skip malformed JSON lines
+      }
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
+
+// event.subscribe implementation, extracted for testability.
+// B-11: take a synchronous snapshot of the replay lines first, then subscribe
+// synchronously (no await gap between snapshot and subscribe), and only then
+// write the snapshot to the socket. Events published after the subscription is
+// registered are therefore never lost. Note: live events arriving while the
+// snapshot is being written out may interleave with replay lines — acceptable
+// for a personal tool.
+export async function handleEventSubscribe(
+  broadcaster: IpcEventBroadcaster,
+  writer: net.Socket,
+  cmd: { topics: string[]; scope: string; replay_from_run: string | null },
+  snapshotFn: (runId: string, topics: string[]) => string[] = snapshotReplayLines,
+): Promise<unknown> {
+  // 1. Synchronous snapshot of history
+  let replayLines: string[] = [];
+  if (cmd.replay_from_run !== null) {
+    replayLines = snapshotFn(cmd.replay_from_run, cmd.topics);
+  }
+
+  // 2. Synchronous subscribe — live events from here on are delivered
+  const subId = broadcaster.subscribe(writer, cmd.topics, cmd.scope);
+
+  // 3. Write the snapshot out (may await drain under backpressure)
+  for (const line of replayLines) {
+    writer.write(line);
+  }
+  if (replayLines.length > 0 && writer.writableNeedDrain) {
+    await new Promise<void>((resolve) => writer.once("drain", resolve));
+  }
+
+  return EventSubscribeResultSchema.parse({
+    subscription_id: subId,
+    replayed_count: replayLines.length,
+  });
 }
 
 // Daemon entry point

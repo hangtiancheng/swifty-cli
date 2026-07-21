@@ -22,6 +22,7 @@
 
 import { describe, expect, test } from "vitest";
 import { AgentRunner } from "../src/core/runner.js";
+import { RunCancelledError } from "../src/core/errors.js";
 import { EventBus } from "../src/core/events/bus.js";
 import type { LLMProvider } from "../src/core/llm/base.js";
 import { mkdirSync, rmSync } from "node:fs";
@@ -362,6 +363,74 @@ describe("AgentRunner", () => {
     expect(asRecord(started)["run_id"]).toBeDefined();
     expect(asRecord(finished)["run_id"]).toBeDefined();
     expect(asRecord(started)["run_id"]).toBe(asRecord(finished)["run_id"]);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  // Feature: Verify mid-LLM signal abort results in cancelled status, not llm_error
+  // Design: Provider aborts the controller and rejects with an AbortError mid-call;
+  //         runAndCapture must throw RunCancelledError and run.finished must carry
+  //         reason "cancelled" (never overwritten to "llm_error")
+  test("mid-LLM abort marks run cancelled, not llm_error", async () => {
+    const dir = path.join(tmpdir(), `test-runner-cancel-${String(Date.now())}`);
+    mkdirSync(dir, { recursive: true });
+    const bus = new EventBus();
+    const events: unknown[] = [];
+    bus.subscribe((e) => {
+      events.push(e);
+      return Promise.resolve();
+    });
+
+    const controller = new AbortController();
+    const provider: LLMProvider = {
+      chat: () => {
+        // Simulate user cancelling while the LLM request is in flight:
+        // the SDK rejects with an abort-shaped error
+        controller.abort();
+        const err = new Error("Request was aborted.");
+        err.name = "AbortError";
+        return Promise.reject(err);
+      },
+    };
+
+    const runner = new AgentRunner(mockConfig(), {
+      provider,
+      bus,
+      runsDir: dir,
+      signal: controller.signal,
+    });
+
+    await expect(runner.runAndCapture("test goal")).rejects.toBeInstanceOf(RunCancelledError);
+
+    const finished = events.find((e: unknown) => asRecord(e)["type"] === "run.finished");
+    expect(finished).toBeDefined();
+    if (!finished) {
+      throw new Error("Expected finished event to be defined");
+    }
+    expect(asRecord(finished)["status"]).toBe("failed");
+    expect(asRecord(finished)["reason"]).toBe("cancelled");
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  // Feature: Verify non-abort LLM failures are still classified as llm_error
+  // Design: Provider rejects with a plain error, confirm reason stays llm_error
+  test("plain LLM failure still classified as llm_error", async () => {
+    const dir = path.join(tmpdir(), `test-runner-llmerr-${String(Date.now())}`);
+    mkdirSync(dir, { recursive: true });
+    const bus = new EventBus();
+
+    const provider: LLMProvider = {
+      chat: () => Promise.reject(new Error("API failure")),
+    };
+
+    const runner = new AgentRunner(mockConfig(), {
+      provider,
+      bus,
+      runsDir: dir,
+    });
+
+    const outcome = await runner.runAndCapture("test goal");
+    expect(outcome.status).toBe("failed");
+    expect(outcome.reason).toBe("llm_error");
     rmSync(dir, { recursive: true, force: true });
   });
 });

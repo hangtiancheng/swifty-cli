@@ -20,18 +20,14 @@
  * SOFTWARE.
  */
 
-// TaskManager: file-based task CRUD with dependency tracking
+// TaskManager: file-based task CRUD with dependency tracking.
+// All operations read from / write to disk on demand (no in-memory cache),
+// so external modifications to the task directory are always visible.
 import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 
 import type { Task } from "./model.js";
 import { isRecord } from "../bus/envelope.js";
-
-let _nextId = 1;
-
-function generateId(): string {
-  return String(_nextId++);
-}
 
 function now(): string {
   return new Date().toISOString();
@@ -39,24 +35,25 @@ function now(): string {
 
 export class TaskManager {
   private _dir: string;
-  private _tasks = new Map<string, Task>();
 
   constructor(dir: string) {
     this._dir = dir;
     mkdirSync(this._dir, { recursive: true });
-    this._loadAll();
   }
 
   // Create a new task with optional blocked_by dependencies
-  create(subject: string, description = "", blockedBy: number[] = []): Task {
-    const id = generateId();
+  create(subject: string, description = "", blockedBy: (string | number)[] = []): Task {
+    const id = this._nextId();
     const ts = now();
 
-    // Validate blocked_by references
+    // Validate blocked_by references against disk
+    const deps: Task[] = [];
     for (const depId of blockedBy) {
-      if (!this._tasks.has(String(depId))) {
+      const dep = this._load(String(depId));
+      if (!dep) {
         throw new Error(`blocked_by task ${String(depId)} does not exist`);
       }
+      deps.push(dep);
     }
 
     const task: Task = {
@@ -69,12 +66,10 @@ export class TaskManager {
       createdAt: ts,
       updatedAt: ts,
     };
-    this._tasks.set(id, task);
 
     // Update reverse links: each dependency now blocks this task
-    for (const depId of blockedBy) {
-      const dep = this._tasks.get(String(depId));
-      if (dep) {
+    for (const dep of deps) {
+      if (!dep.blocks.includes(id)) {
         dep.blocks.push(id);
         this._save(dep);
       }
@@ -91,12 +86,12 @@ export class TaskManager {
       subject?: string;
       description?: string;
       status?: string;
-      addBlockedBy?: number[];
-      removeBlockedBy?: number[];
+      addBlockedBy?: (string | number)[];
+      removeBlockedBy?: (string | number)[];
     },
   ): Task {
     const taskId = String(id);
-    const task = this._tasks.get(taskId);
+    const task = this._load(taskId);
     if (!task) throw new Error(`task ${taskId} not found`);
 
     if (updates.subject !== undefined) task.subject = updates.subject;
@@ -105,6 +100,8 @@ export class TaskManager {
       const s = updates.status;
       if (s === "pending" || s === "in_progress" || s === "completed") {
         task.status = s;
+      } else {
+        throw new Error(`invalid status: ${s}`);
       }
     }
 
@@ -112,9 +109,13 @@ export class TaskManager {
     if (updates.addBlockedBy) {
       for (const depId of updates.addBlockedBy) {
         const depStr = String(depId);
+        // A task blocking itself would create an unresolvable dependency
+        if (depStr === taskId) {
+          throw new Error("task cannot block itself");
+        }
         if (!task.blockedBy.includes(depStr)) {
           task.blockedBy.push(depStr);
-          const dep = this._tasks.get(depStr);
+          const dep = this._load(depStr);
           if (dep && !dep.blocks.includes(taskId)) {
             dep.blocks.push(taskId);
             this._save(dep);
@@ -128,7 +129,7 @@ export class TaskManager {
       const removeSet = new Set(updates.removeBlockedBy.map(String));
       task.blockedBy = task.blockedBy.filter((b) => !removeSet.has(b));
       for (const depId of updates.removeBlockedBy) {
-        const dep = this._tasks.get(String(depId));
+        const dep = this._load(String(depId));
         if (dep) {
           dep.blocks = dep.blocks.filter((b) => b !== taskId);
           this._save(dep);
@@ -138,7 +139,8 @@ export class TaskManager {
 
     // When completing, auto-clear this task from other tasks' blocked_by
     if (updates.status === "completed") {
-      for (const other of this._tasks.values()) {
+      for (const other of this.list()) {
+        if (other.id === taskId) continue;
         if (other.blockedBy.includes(taskId)) {
           other.blockedBy = other.blockedBy.filter((b) => b !== taskId);
           this._save(other);
@@ -155,14 +157,23 @@ export class TaskManager {
   // Get a task by ID
   get(id: string | number): Task {
     const taskId = String(id);
-    const task = this._tasks.get(taskId);
+    const task = this._load(taskId);
     if (!task) throw new Error(`task ${taskId} not found`);
     return task;
   }
 
-  // List all tasks
+  // List all tasks (scans the task directory)
   list(): Task[] {
-    return Array.from(this._tasks.values());
+    if (!existsSync(this._dir)) return [];
+    const tasks: Task[] = [];
+    for (const file of readdirSync(this._dir)) {
+      if (!file.startsWith("task_") || !file.endsWith(".json")) continue;
+      const id = file.slice("task_".length, -".json".length);
+      const task = this._load(id);
+      if (task) tasks.push(task);
+    }
+    tasks.sort((a, b) => Number(a.id) - Number(b.id));
+    return tasks;
   }
 
   // Format all tasks as a human-readable summary string
@@ -181,47 +192,73 @@ export class TaskManager {
     return lines.join("\n");
   }
 
-  private _save(task: Task): void {
-    const filePath = path.join(this._dir, `task_${task.id}.json`);
-    writeFileSync(filePath, JSON.stringify(task, null, 2) + "\n", "utf-8");
+  // Scan the task directory and return the next available integer ID as string
+  private _nextId(): string {
+    let maxId = 0;
+    if (existsSync(this._dir)) {
+      for (const file of readdirSync(this._dir)) {
+        if (!file.startsWith("task_") || !file.endsWith(".json")) continue;
+        const numId = Number(file.slice("task_".length, -".json".length));
+        if (Number.isInteger(numId) && numId > maxId) maxId = numId;
+      }
+    }
+    return String(maxId + 1);
   }
 
-  private _loadAll(): void {
-    if (!existsSync(this._dir)) return;
-    for (const file of readdirSync(this._dir)) {
-      if (!file.startsWith("task_") || !file.endsWith(".json")) continue;
-      try {
-        const parsed: unknown = JSON.parse(readFileSync(path.join(this._dir, file), "utf-8"));
-        if (!isRecord(parsed)) continue;
-        const data = parsed;
-        const id = typeof data["id"] === "string" ? data["id"] : "";
-        if (!id) continue;
-        const subject = typeof data["subject"] === "string" ? data["subject"] : "";
-        const description = typeof data["description"] === "string" ? data["description"] : "";
-        const statusRaw = data["status"];
-        const status =
-          statusRaw === "pending" || statusRaw === "in_progress" || statusRaw === "completed"
-            ? statusRaw
-            : "pending";
-        const createdAt = typeof data["createdAt"] === "string" ? data["createdAt"] : "";
-        const updatedAt = typeof data["updatedAt"] === "string" ? data["updatedAt"] : "";
-        const blockedByRaw = data["blockedBy"];
-        const blocksRaw = data["blocks"];
-        this._tasks.set(id, {
-          id,
-          subject,
-          description,
-          status,
-          blockedBy: Array.isArray(blockedByRaw) ? blockedByRaw.map(String) : [],
-          blocks: Array.isArray(blocksRaw) ? blocksRaw.map(String) : [],
-          createdAt,
-          updatedAt,
-        });
-        const numId = Number(id);
-        if (numId >= _nextId) _nextId = numId + 1;
-      } catch {
-        continue;
-      }
+  private _filePath(id: string): string {
+    return path.join(this._dir, `task_${id}.json`);
+  }
+
+  private _save(task: Task): void {
+    writeFileSync(this._filePath(task.id), JSON.stringify(task, null, 2) + "\n", "utf-8");
+  }
+
+  // Read a single task file from disk; returns null if missing or unparseable.
+  // Falls back to legacy snake_case fields (blocked_by/created_at/updated_at, numeric id).
+  private _load(id: string): Task | null {
+    const filePath = this._filePath(id);
+    if (!existsSync(filePath)) return null;
+    try {
+      const parsed: unknown = JSON.parse(readFileSync(filePath, "utf-8"));
+      if (!isRecord(parsed)) return null;
+      const data = parsed;
+
+      const idRaw = data["id"];
+      const taskId =
+        typeof idRaw === "string" && idRaw !== ""
+          ? idRaw
+          : typeof idRaw === "number"
+            ? String(idRaw)
+            : id;
+
+      const subject = typeof data["subject"] === "string" ? data["subject"] : "";
+      const description = typeof data["description"] === "string" ? data["description"] : "";
+      const statusRaw = data["status"];
+      const status =
+        statusRaw === "pending" || statusRaw === "in_progress" || statusRaw === "completed"
+          ? statusRaw
+          : "pending";
+
+      const createdAtRaw = data["createdAt"] ?? data["created_at"];
+      const updatedAtRaw = data["updatedAt"] ?? data["updated_at"];
+      const createdAt = typeof createdAtRaw === "string" ? createdAtRaw : "";
+      const updatedAt = typeof updatedAtRaw === "string" ? updatedAtRaw : "";
+
+      const blockedByRaw = data["blockedBy"] ?? data["blocked_by"];
+      const blocksRaw = data["blocks"];
+
+      return {
+        id: taskId,
+        subject,
+        description,
+        status,
+        blockedBy: Array.isArray(blockedByRaw) ? blockedByRaw.map(String) : [],
+        blocks: Array.isArray(blocksRaw) ? blocksRaw.map(String) : [],
+        createdAt,
+        updatedAt,
+      };
+    } catch {
+      return null;
     }
   }
 }

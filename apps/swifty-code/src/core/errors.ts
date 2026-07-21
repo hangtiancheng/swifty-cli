@@ -20,26 +20,23 @@
  * SOFTWARE.
  */
 
-// LLM related value types
-import type Anthropic from "@anthropic-ai/sdk";
+// Shared core error types
+import { APIUserAbortError } from "@anthropic-ai/sdk";
 
-export interface UsageStats {
-  inputTokens: number;
-  outputTokens: number;
-  cacheReadInputTokens: number;
-  cacheCreationInputTokens: number;
-  contextPercent: number;
+// Thrown when a run is cancelled via AbortSignal. Message stays "cancelled"
+// for backwards compatibility with callers that match on the message string.
+export class RunCancelledError extends Error {
+  constructor() {
+    super("cancelled");
+    this.name = "RunCancelledError";
+  }
 }
 
-// Use SDK's ToolUseBlock directly to avoid custom types
-export type ToolUseBlock = Anthropic.ToolUseBlock;
-
-export interface LlmResponse {
-  stopReason: string; // "end_turn" | "tool_use" | "max_tokens"
-  toolUses: ToolUseBlock[];
-  text: string;
-  usage: UsageStats | null;
-  // thinking blocks — use SDK's ThinkingBlock/RedactedThinkingBlock types;
-  // redacted_thinking blocks are passed through verbatim
-  thinkingBlocks: (Anthropic.ThinkingBlock | Anthropic.RedactedThinkingBlock)[];
+// True if the error represents a user/system abort (never a real LLM failure):
+// our own RunCancelledError, the Anthropic SDK's APIUserAbortError (thrown when
+// a request-level AbortSignal fires mid-stream), or a generic DOM AbortError.
+export function isAbortError(exc: unknown): boolean {
+  if (exc instanceof RunCancelledError) return true;
+  if (exc instanceof APIUserAbortError) return true;
+  return exc instanceof Error && exc.name === "AbortError";
 }

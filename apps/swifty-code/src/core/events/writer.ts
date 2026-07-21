@@ -63,9 +63,9 @@ export class EventWriter {
 
   // Register handle as a bus subscriber
   subscribe(bus: EventBus): void {
-    bus.subscribe(async (event) => {
-      await Promise.resolve();
+    bus.subscribe((event) => {
       this.handle(event);
+      return Promise.resolve();
     });
   }
 }

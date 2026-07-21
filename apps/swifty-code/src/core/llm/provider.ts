@@ -23,9 +23,11 @@
 // Anthropic LLM provider: streaming calls with prompt caching and retry logic
 import process from "node:process";
 
-import Anthropic from "@anthropic-ai/sdk";
+import Anthropic, { APIError } from "@anthropic-ai/sdk";
 
 import type { EventBus } from "../events/bus.js";
+import { isAbortError } from "../errors.js";
+import { getLogger } from "../logging.js";
 import type { LLMProvider } from "./base.js";
 import type { LlmResponse, ToolUseBlock, UsageStats } from "./types.js";
 import type { TextBlockParam, ToolUnion } from "@anthropic-ai/sdk/resources";
@@ -60,9 +62,24 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// Check if an error is a transient network failure worth retrying
+// HTTP statuses worth retrying: rate limit (429), transient server errors
+// (500/502/503) and Anthropic "overloaded" (529). Other 4xx (400/401/403/404/422)
+// are deterministic business errors and must not be retried.
+const RETRYABLE_API_STATUSES = new Set([429, 500, 502, 503, 529]);
+
+// Check if an error is a transient failure worth retrying: either a retryable
+// API business error (429/5xx/529) or a socket-level network failure.
+// Abort errors (user cancellation) are never retryable.
 function isRetryableError(exc: unknown): boolean {
   if (!(exc instanceof Error)) return false;
+  if (isAbortError(exc)) return false;
+  // Anthropic SDK API errors carry an HTTP status (RateLimitError = 429,
+  // InternalServerError = 5xx, ...). Retry only the transient statuses.
+  // APIError instances without a numeric status (e.g. APIConnectionError)
+  // fall through to the socket-level checks below.
+  if (exc instanceof APIError && typeof exc.status === "number") {
+    return RETRYABLE_API_STATUSES.has(exc.status);
+  }
   const code = "code" in exc && typeof exc.code === "string" ? exc.code : undefined;
   if (
     code === "ECONNRESET" ||
@@ -105,10 +122,11 @@ export class AnthropicProvider implements LLMProvider {
     toolSchemas: ToolUnion[],
     bus: EventBus,
     runId: string,
-    options?: { step?: number; system?: string | null },
+    options?: { step?: number; system?: string | null; signal?: AbortSignal },
   ): Promise<LlmResponse> {
     const step = options?.step ?? 0;
     const system = options?.system ?? null;
+    const signal = options?.signal;
 
     await bus.publish({
       type: "llm.model_selected",
@@ -154,7 +172,9 @@ export class AnthropicProvider implements LLMProvider {
     for (let attempt = 1; attempt <= MAX_STREAM_RETRIES; attempt++) {
       textParts = [];
       try {
-        const stream = this._client.messages.stream(args);
+        // Forward the AbortSignal as a request option so cancellation
+        // interrupts the in-flight stream (SDK throws APIUserAbortError)
+        const stream = this._client.messages.stream(args, { signal: signal ?? null });
 
         // Collect tokens via text event (MessageStream has no textStream property)
         // Only publish token events on the first attempt to avoid TUI duplicates
@@ -178,15 +198,16 @@ export class AnthropicProvider implements LLMProvider {
           throw exc;
         }
         if (attempt === MAX_STREAM_RETRIES) {
-          console.error(
-            `stream failed after ${String(MAX_STREAM_RETRIES)} attempts run_id=${runId} step=${String(step)}:`,
-            exc,
+          getLogger().error(
+            { run_id: runId, step, err: exc },
+            `stream failed after ${String(MAX_STREAM_RETRIES)} attempts`,
           );
           throw exc;
         }
         const delay = RETRY_BACKOFF_MS[attempt - 1] ?? 0;
-        console.warn(
-          `stream dropped (attempt ${String(attempt)}/${String(MAX_STREAM_RETRIES)}) run_id=${runId} step=${String(step)}: ${String(exc)} — retrying in ${String(delay)}ms`,
+        getLogger().warn(
+          { run_id: runId, step },
+          `stream dropped (attempt ${String(attempt)}/${String(MAX_STREAM_RETRIES)}): ${String(exc)} — retrying in ${String(delay)}ms`,
         );
         await sleep(delay);
       }
@@ -199,7 +220,12 @@ export class AnthropicProvider implements LLMProvider {
     const usage = finalMessage.usage;
     const cacheReadInputTokens = usage.cache_read_input_tokens ?? 0;
     const cacheCreationInputTokens = usage.cache_creation_input_tokens ?? 0;
-    const contextPercent = usage.input_tokens / contextWindow(this._model);
+    // Context usage must include cached input tokens: on cache hits the API
+    // reports most of the prompt under cache_read/cache_creation, so counting
+    // only input_tokens would systematically under-estimate auto-compact triggers
+    const contextPercent =
+      (usage.input_tokens + cacheReadInputTokens + cacheCreationInputTokens) /
+      contextWindow(this._model);
 
     await bus.publish({
       type: "llm.usage",
@@ -213,12 +239,14 @@ export class AnthropicProvider implements LLMProvider {
     });
 
     const toolUses: ToolUseBlock[] = [];
-    const thinkingBlocks: Anthropic.ThinkingBlock[] = [];
+    const thinkingBlocks: (Anthropic.ThinkingBlock | Anthropic.RedactedThinkingBlock)[] = [];
 
     for (const block of finalMessage.content) {
       if (block.type === "tool_use") {
         toolUses.push(block);
-      } else if (block.type === "thinking") {
+      } else if (block.type === "thinking" || block.type === "redacted_thinking") {
+        // redacted_thinking blocks must be preserved and passed back verbatim,
+        // otherwise multi-turn extended thinking conversations break
         thinkingBlocks.push(block);
       }
     }

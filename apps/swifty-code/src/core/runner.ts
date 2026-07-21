@@ -29,11 +29,13 @@ import type Anthropic from "@anthropic-ai/sdk";
 
 import type { SwiftyConfig } from "./config.js";
 import { ExecutionContext } from "./context.js";
+import { RunCancelledError } from "./errors.js";
 import { EventBus, type EventHandler } from "./events/bus.js";
 import { EventWriter } from "./events/writer.js";
 import { AgentLoop } from "./loop.js";
 import type { LLMProvider } from "./llm/base.js";
 import { AnthropicProvider } from "./llm/provider.js";
+import { getLogger } from "./logging.js";
 import { loadContextFile } from "./memory/loader.js";
 import type { PermissionManager } from "./permissions/manager.js";
 import { newRunId } from "./runs.js";
@@ -291,11 +293,16 @@ export class AgentRunner {
         });
         await loop.run(context);
       } catch (exc) {
-        if (exc instanceof Error && exc.message === "cancelled") {
+        if (exc instanceof RunCancelledError || this._signal?.aborted) {
           cancelled = true;
+          // Never overwrite an existing terminal status (loop already marked
+          // "cancelled"); only mark if the context is still running
           if (!context.isDone()) context.markFailed("cancelled");
         } else {
-          console.error("agent run failed run_id=%s step=%d", runId, String(context.step), exc);
+          getLogger().error(
+            { run_id: runId, step: context.step, err: exc },
+            "agent run failed",
+          );
           if (!context.isDone()) context.markFailed("llm_error");
         }
       }
@@ -317,7 +324,7 @@ export class AgentRunner {
     }
 
     if (cancelled) {
-      throw new Error("cancelled");
+      throw new RunCancelledError();
     }
 
     return {

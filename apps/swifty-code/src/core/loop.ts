@@ -24,7 +24,9 @@
 import type { ContentBlockParam } from "@anthropic-ai/sdk/resources";
 
 import type { EventBus } from "./events/bus.js";
+import { RunCancelledError, isAbortError } from "./errors.js";
 import type { LLMProvider } from "./llm/base.js";
+import { getLogger } from "./logging.js";
 import { invokeTool } from "./tools/invocation.js";
 import type { ToolRegistry } from "./tools/registry.js";
 import type { ExecutionContext } from "./context.js";
@@ -78,7 +80,7 @@ export class AgentLoop {
       // Cooperative cancellation check
       if (this._signal?.aborted) {
         context.markFailed("cancelled");
-        throw new Error("cancelled");
+        throw new RunCancelledError();
       }
 
       context.step++;
@@ -97,24 +99,37 @@ export class AgentLoop {
           this._registry.toolSchemas(),
           this._bus,
           context.runId,
-          { step: context.step, system: context.systemPrompt(SYSTEM_PROMPT) },
+          {
+            step: context.step,
+            system: context.systemPrompt(SYSTEM_PROMPT),
+            ...(this._signal ? { signal: this._signal } : {}),
+          },
         );
       } catch (exc) {
-        if (this._signal?.aborted) {
+        // Mid-LLM cancellation: classify aborts as cancelled, not llm_error.
+        // A step.started was already published for this step, so emit the
+        // matching step.finished before throwing to keep step events paired.
+        if (this._signal?.aborted || isAbortError(exc)) {
           context.markFailed("cancelled");
-          throw exc;
+          await this._bus.publish({
+            type: "step.finished",
+            run_id: context.runId,
+            step: context.step,
+            timestamp: now(),
+          });
+          throw new RunCancelledError();
         }
-        console.error(
-          "LLM call failed run_id=%s step=%d",
-          context.runId,
-          String(context.step),
-          exc,
+        getLogger().error(
+          { run_id: context.runId, step: context.step, err: exc },
+          "LLM call failed",
         );
         context.markFailed("llm_error");
         break;
       }
 
       // [observe] append assistant content blocks
+      // thinking and redacted_thinking blocks are passed through verbatim
+      // (both are valid assistant content block params)
       const blocks: ContentBlockParam[] = [...response.thinkingBlocks];
       if (response.text) {
         blocks.push({ type: "text", text: response.text });

@@ -49,7 +49,7 @@ export class TracingProvider implements LLMProvider {
     toolSchemas: Anthropic.ToolUnion[],
     bus: EventBus,
     runId: string,
-    options?: { step?: number; system?: string | null },
+    options?: { step?: number; system?: string | null; signal?: AbortSignal },
   ): Promise<LlmResponse> {
     const step = options?.step ?? 0;
     const system = options?.system ?? null;
@@ -64,20 +64,33 @@ export class TracingProvider implements LLMProvider {
     const result = await this._inner.chat(messages, toolSchemas, bus, runId, {
       step,
       system,
+      ...(options?.signal ? { signal: options.signal } : {}),
     });
     const latencyMs = Math.round(performance.now() - t0);
+
+    // Explicitly map usage to snake_case so trace records stay uniformly
+    // snake_case (the internal UsageStats object is camelCase)
+    const usage: Record<string, unknown> = result.usage
+      ? {
+          input_tokens: result.usage.inputTokens,
+          output_tokens: result.usage.outputTokens,
+          cache_read_input_tokens: result.usage.cacheReadInputTokens,
+          cache_creation_input_tokens: result.usage.cacheCreationInputTokens,
+          context_percent: result.usage.contextPercent,
+        }
+      : {};
 
     const respData: Record<string, unknown> = this._includePayload
       ? {
           stop_reason: result.stopReason,
           text: result.text,
           tool_calls: result.toolUses,
-          usage: result.usage ?? {},
+          usage,
           latency_ms: latencyMs,
         }
       : {
           stop_reason: result.stopReason,
-          usage: result.usage ?? {},
+          usage,
           latency_ms: latencyMs,
         };
 

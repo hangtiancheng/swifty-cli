@@ -97,6 +97,7 @@ export async function cmdRun(goal: string, config: SwiftyConfig): Promise<void> 
 
   const printer = new StdoutPrinter();
   let exitCode = 0;
+  let runFinished = false;
 
   const finished = new Promise<void>((resolve) => {
     client.onEvent((event) => {
@@ -104,6 +105,7 @@ export async function cmdRun(goal: string, config: SwiftyConfig): Promise<void> 
       const eventType = event["type"];
       if (eventType === "run.finished") {
         if (event["status"] !== "success") exitCode = 1;
+        runFinished = true;
         resolve();
       }
       return Promise.resolve();
@@ -113,17 +115,30 @@ export async function cmdRun(goal: string, config: SwiftyConfig): Promise<void> 
   // Start event loop
   void client.runEventLoop();
 
-  // Subscribe to relevant events
-  await client.sendCommand("event.subscribe", {
-    topics: ["run.*", "step.*", "tool.*", "llm.token", "llm.usage"],
-    scope: "global",
-  });
+  try {
+    // Subscribe to relevant events
+    await client.sendCommand("event.subscribe", {
+      topics: ["run.*", "step.*", "tool.*", "llm.token", "llm.usage"],
+      scope: "global",
+    });
 
-  // Start agent run
-  await client.sendCommand("agent.run", { goal });
+    // Start agent run
+    await client.sendCommand("agent.run", { goal });
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    console.error(`error: ${msg}`);
+    client.close();
+    process.exit(1);
+  }
 
-  // Wait for completion
-  await finished;
+  // Wait for completion — bail out if the daemon dies mid-run instead of hanging forever
+  await Promise.race([finished, client.waitForDisconnect()]);
+
+  if (!runFinished) {
+    console.error("error: disconnected from core before run finished");
+    client.close();
+    process.exit(1);
+  }
 
   client.close();
   process.exit(exitCode);

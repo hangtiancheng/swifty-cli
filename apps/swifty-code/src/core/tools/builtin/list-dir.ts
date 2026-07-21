@@ -27,7 +27,7 @@ import path from "node:path";
 import { z } from "zod";
 
 import type { BaseTool, ToolResult } from "../base.js";
-import { toolSuccess } from "../base.js";
+import { toolError, toolSuccess } from "../base.js";
 
 const MAX_DEPTH = 4;
 const MAX_ENTRIES = 200;
@@ -78,13 +78,18 @@ export class ListDirTool implements BaseTool {
 
     // Path traversal check: reject raw ".." components on both POSIX and Windows
     if (rootPath.split(/[/\\]/).includes("..")) {
-      throw new Error(`path traversal not allowed: ${rootPath}`);
+      return Promise.resolve(toolError(`path traversal not allowed: ${rootPath}`, "runtime_error"));
     }
 
     const root = path.resolve(rootPath);
-    const rootStat = statSync(root);
+    let rootStat;
+    try {
+      rootStat = statSync(root);
+    } catch {
+      return Promise.resolve(toolError(`no such directory: ${rootPath}`, "runtime_error"));
+    }
     if (!rootStat.isDirectory()) {
-      throw new Error(`not a directory: ${rootPath}`);
+      return Promise.resolve(toolError(`not a directory: ${rootPath}`, "runtime_error"));
     }
 
     const lines: string[] = [root + "/"];
@@ -95,21 +100,16 @@ export class ListDirTool implements BaseTool {
 
       let entries: DirEntry[];
       try {
-        const raw = readdirSync(dir);
-        entries = raw
-          .map((name) => {
-            try {
-              const st = statSync(path.join(dir, name));
-              return { name, isDir: st.isDirectory() };
-            } catch {
-              return { name, isDir: false };
-            }
-          })
+        entries = readdirSync(dir, { withFileTypes: true })
+          .map((dirent) => ({ name: dirent.name, isDir: dirent.isDirectory() }))
           .sort((a, b) => {
             if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
             return a.name.localeCompare(b.name);
           });
       } catch {
+        // Don't silently drop the subtree: mark this directory as unreadable.
+        // The directory's own line is the last one pushed before recursion.
+        lines[lines.length - 1] += " (unreadable)";
         return;
       }
 

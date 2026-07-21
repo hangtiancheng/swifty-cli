@@ -21,7 +21,7 @@
  */
 
 import { describe, expect, test } from "vitest";
-import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -150,6 +150,60 @@ describe("Permission Storage", () => {
       const bashIdx = content.indexOf("bash");
       const writeIdx = content.indexOf("write_file");
       expect(bashIdx).toBeLessThan(writeIdx);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  // Feature (B-8): savePolicyFile writes atomically via temp file + rename
+  // Design: Save twice (create + overwrite), verify content is complete and
+  // no leftover .tmp files remain in the directory
+  test("savePolicyFile is atomic and leaves no temp files", () => {
+    const dir = tmpDir();
+    try {
+      const filePath = path.join(dir, "policy.toml");
+      savePolicyFile({ bash: "allow" }, filePath);
+      savePolicyFile({ bash: "deny", write_file: "allow" }, filePath);
+
+      const loaded = loadPolicyFile(filePath);
+      expect(loaded).toEqual({ bash: "deny", write_file: "allow" });
+
+      const leftovers = readdirSync(dir).filter((f) => f !== "policy.toml");
+      expect(leftovers).toEqual([]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  // Feature (B-9): loadPolicyFile normalizes keys to lowercase
+  // Design: Write mixed-case keys manually, verify they load lowercased
+  test("loadPolicyFile normalizes keys to lowercase", () => {
+    const dir = tmpDir();
+    try {
+      const filePath = path.join(dir, "policy.toml");
+      const content = ["[always]", 'Bash = "allow"', 'WRITE_FILE = "deny"'].join("\n");
+      writeFileSync(filePath, content, "utf-8");
+
+      const loaded = loadPolicyFile(filePath);
+      expect(loaded["bash"]).toBe("allow");
+      expect(loaded["write_file"]).toBe("deny");
+      expect(Object.keys(loaded)).toEqual(["bash", "write_file"]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  // Feature (B-9): savePolicyFile normalizes keys to lowercase
+  // Design: Save mixed-case keys, verify file contains lowercase entries
+  test("savePolicyFile normalizes keys to lowercase", () => {
+    const dir = tmpDir();
+    try {
+      const filePath = path.join(dir, "policy.toml");
+      savePolicyFile({ BASH: "allow" }, filePath);
+
+      const content = readFileSync(filePath, "utf-8");
+      expect(content).toContain('bash = "allow"');
+      expect(content).not.toContain("BASH");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

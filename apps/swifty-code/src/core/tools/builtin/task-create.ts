@@ -21,9 +21,33 @@
  */
 
 // TaskCreateTool: create a new tracked task
+import { z } from "zod";
+
 import type { BaseTool, ToolResult } from "../base.js";
 import { toolError, toolSuccess } from "../base.js";
 import type { TaskManager } from "../../task/manager.js";
+
+// Task IDs are integers (stored internally as integer strings); accept both forms
+export const TaskIdSchema = z.union([z.number().int(), z.string().regex(/^\d+$/)]);
+
+export const TaskCreateParamsSchema = z.object({
+  subject: z.string().describe("Short title for the task."),
+  description: z
+    .string()
+    .optional()
+    .describe("Optional longer description of what needs to be done."),
+  blocked_by: z
+    .array(TaskIdSchema)
+    .optional()
+    .describe("IDs of tasks that must be completed before this one."),
+});
+
+// Normalize a task ID value to an integer string; returns null for non-integer input
+export function normalizeTaskId(v: unknown): string | null {
+  const n = typeof v === "number" ? v : typeof v === "string" && v.trim() !== "" ? Number(v) : NaN;
+  if (!Number.isInteger(n)) return null;
+  return String(Math.trunc(n));
+}
 
 export class TaskCreateTool implements BaseTool {
   readonly name = "task_create";
@@ -41,12 +65,13 @@ export class TaskCreateTool implements BaseTool {
       },
       blocked_by: {
         type: "array",
-        items: { type: "integer" },
+        items: { type: ["integer", "string"] },
         description: "IDs of tasks that must be completed before this one.",
       },
     },
     required: ["subject"],
   };
+  readonly paramsModel = TaskCreateParamsSchema;
 
   private _manager: TaskManager;
 
@@ -60,9 +85,18 @@ export class TaskCreateTool implements BaseTool {
       const descRaw = params["description"];
       const description = typeof descRaw === "string" ? descRaw : "";
       const blockedByRaw = params["blocked_by"];
-      const blockedBy = Array.isArray(blockedByRaw)
-        ? blockedByRaw.map((x) => Number(String(x)))
-        : [];
+      const blockedBy: string[] = [];
+      if (Array.isArray(blockedByRaw)) {
+        for (const x of blockedByRaw) {
+          const id = normalizeTaskId(x);
+          if (id === null) {
+            return Promise.resolve(
+              toolError(`invalid task id in blocked_by: ${String(x)}`, "schema_error"),
+            );
+          }
+          blockedBy.push(id);
+        }
+      }
 
       const task = this._manager.create(subject, description, blockedBy);
       return Promise.resolve(toolSuccess(JSON.stringify(task)));

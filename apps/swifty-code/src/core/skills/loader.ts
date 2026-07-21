@@ -26,6 +26,8 @@ import { homedir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { getLogger } from "../logging.js";
+
 export interface Skill {
   name: string;
   description: string;
@@ -105,7 +107,9 @@ export class SkillLoader {
       if (existsSync(p)) {
         try {
           return parseSkillFile(p);
-        } catch {
+        } catch (exc) {
+          // Non-fatal: log and treat the skill as unavailable
+          getLogger().warn({ skill: name, file: p, err: exc }, "failed to parse skill file");
           return null;
         }
       }
@@ -151,8 +155,9 @@ export class SkillLoader {
             }
           }
         }
-      } catch {
-        // Directory read failure is non-fatal
+      } catch (exc) {
+        // Directory read failure is non-fatal; log and continue with other tiers
+        getLogger().warn({ dir: d, err: exc }, "failed to list skills directory");
       }
     }
     return [...seen.keys()];
@@ -176,8 +181,9 @@ export class SkillLoader {
             try {
               const skill = parseSkillFile(fullPath);
               seen.set(skill.name, skill);
-            } catch {
-              // Parse failure is non-fatal
+            } catch (exc) {
+              // Parse failure is non-fatal; log and skip this skill
+              getLogger().warn({ file: fullPath, err: exc }, "failed to parse skill file");
             }
           } else if (st.isDirectory()) {
             const skillFile = path.join(fullPath, "SKILL.md");
@@ -185,14 +191,16 @@ export class SkillLoader {
               try {
                 const skill = parseSkillFile(skillFile);
                 seen.set(skill.name, skill);
-              } catch {
-                // Parse failure is non-fatal
+              } catch (exc) {
+                // Parse failure is non-fatal; log and skip this skill
+                getLogger().warn({ file: skillFile, err: exc }, "failed to parse skill file");
               }
             }
           }
         }
-      } catch {
-        // Directory read failure is non-fatal
+      } catch (exc) {
+        // Directory read failure is non-fatal; log and continue with other tiers
+        getLogger().warn({ dir: d, err: exc }, "failed to list skills directory");
       }
     }
     return [...seen.values()];

@@ -205,4 +205,92 @@ describe("TracingProvider", () => {
     expect(content).not.toContain("secret message"); // Payload excluded
     rmSync(dir, { recursive: true });
   });
+
+  // Feature: Verify trace usage fields are serialized as snake_case
+  // Design: Mock provider returns camelCase UsageStats, confirm the trace
+  //         record contains snake_case keys and no camelCase leakage
+  test("serializes usage as snake_case in trace records", async () => {
+    const dir = path.join(tmpdir(), `test-trace-${String(Date.now())}`);
+    mkdirSync(dir, { recursive: true });
+    const tracePath = path.join(dir, "trace.jsonl");
+    const writer = new TraceWriter(tracePath);
+    writer.start();
+
+    const mockProvider: LLMProvider = {
+      chat: () =>
+        Promise.resolve({
+          stopReason: "end_turn",
+          toolUses: [],
+          text: "response",
+          usage: {
+            inputTokens: 100,
+            outputTokens: 50,
+            cacheReadInputTokens: 30,
+            cacheCreationInputTokens: 10,
+            contextPercent: 0.05,
+          },
+          thinkingBlocks: [],
+        }),
+    };
+
+    const tracer = new TracingProvider(mockProvider, writer, true);
+    const bus = new EventBus();
+
+    await tracer.chat([{ role: "user", content: "test" }], [], bus, "r1", { step: 1 });
+    void writer.stop();
+
+    const content = readFileSync(tracePath, "utf-8");
+    const respLine = content
+      .split("\n")
+      .filter(Boolean)
+      .map((line: string): unknown => JSON.parse(line))
+      .find((rec: unknown) => JSON.stringify(rec).includes("LLM→CORE"));
+    expect(respLine).toBeDefined();
+    const usage = asRecord(asRecord(asRecord(respLine)["data"])["usage"]);
+    expect(usage["input_tokens"]).toBe(100);
+    expect(usage["output_tokens"]).toBe(50);
+    expect(usage["cache_read_input_tokens"]).toBe(30);
+    expect(usage["cache_creation_input_tokens"]).toBe(10);
+    expect(usage["context_percent"]).toBe(0.05);
+    // No camelCase leakage
+    expect(content).not.toContain("inputTokens");
+    expect(content).not.toContain("cacheReadInputTokens");
+    rmSync(dir, { recursive: true });
+  });
+
+  // Feature: Verify TracingProvider forwards AbortSignal to inner provider
+  // Design: Pass signal via options, confirm inner chat receives the same signal
+  test("forwards signal to inner provider", async () => {
+    const dir = path.join(tmpdir(), `test-trace-${String(Date.now())}`);
+    mkdirSync(dir, { recursive: true });
+    const tracePath = path.join(dir, "trace.jsonl");
+    const writer = new TraceWriter(tracePath);
+    writer.start();
+
+    const controller = new AbortController();
+    let capturedSignal: AbortSignal | undefined;
+    const mockProvider: LLMProvider = {
+      chat: (_messages, _tools, _bus, _runId, options) => {
+        capturedSignal = options?.signal;
+        return Promise.resolve({
+          stopReason: "end_turn",
+          toolUses: [],
+          text: "response",
+          usage: null,
+          thinkingBlocks: [],
+        });
+      },
+    };
+
+    const tracer = new TracingProvider(mockProvider, writer, false);
+    const bus = new EventBus();
+
+    await tracer.chat([{ role: "user", content: "test" }], [], bus, "r1", {
+      signal: controller.signal,
+    });
+
+    expect(capturedSignal).toBe(controller.signal);
+    void writer.stop();
+    rmSync(dir, { recursive: true });
+  });
 });

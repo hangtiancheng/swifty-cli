@@ -22,7 +22,7 @@
 
 import { describe, expect, test } from "vitest";
 import { TaskManager } from "../src/core/task/manager.js";
-import { mkdirSync, rmSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -116,6 +116,116 @@ describe("TaskManager", () => {
       addBlockedBy: [Number(task1.id)],
     });
     expect(updated?.blockedBy).toContain(task1.id);
+    rmSync(dir, { recursive: true });
+  });
+
+  // Feature (B-13): addBlockedBy rejects self-reference
+  // Design: Update a task to be blocked by its own id, expect error and
+  //         unchanged blockedBy on disk
+  test("addBlockedBy rejects self-reference", () => {
+    const dir = path.join(tmpdir(), `test-tasks-self-${String(Date.now())}`);
+    mkdirSync(dir, { recursive: true });
+    const manager = new TaskManager(dir);
+    const task = manager.create("Task", "Description");
+    expect(() => manager.update(task.id, { addBlockedBy: [task.id] })).toThrow(
+      "task cannot block itself",
+    );
+    // Numeric self-id form is rejected too
+    expect(() => manager.update(task.id, { addBlockedBy: [Number(task.id)] })).toThrow(
+      "task cannot block itself",
+    );
+    // Task on disk is unchanged
+    expect(manager.get(task.id).blockedBy).toEqual([]);
+    rmSync(dir, { recursive: true });
+  });
+
+  // Feature: Verify update throws for invalid status (matches Python ValueError behavior)
+  // Design: Create task, update with bogus status, expect Error and unchanged task on disk
+  test("update throws for invalid status", () => {
+    const dir = path.join(tmpdir(), `test-tasks-invalid-status-${String(Date.now())}`);
+    mkdirSync(dir, { recursive: true });
+    const manager = new TaskManager(dir);
+    const task = manager.create("Task", "Description");
+    expect(() => manager.update(task.id, { status: "done" })).toThrow(/invalid status: done/);
+    // Task on disk is unchanged
+    expect(manager.get(task.id).status).toBe("pending");
+    rmSync(dir, { recursive: true });
+  });
+
+  // Feature: Verify ID sequences are per-directory, not shared across manager instances
+  // Design: Two managers on two fresh dirs both start their IDs at 1
+  test("ID sequence is not shared across TaskManager instances", () => {
+    const dirA = path.join(tmpdir(), `test-tasks-a-${String(Date.now())}`);
+    const dirB = path.join(tmpdir(), `test-tasks-b-${String(Date.now())}`);
+    mkdirSync(dirA, { recursive: true });
+    mkdirSync(dirB, { recursive: true });
+    const managerA = new TaskManager(dirA);
+    managerA.create("A1");
+    managerA.create("A2");
+    const managerB = new TaskManager(dirB);
+    const b1 = managerB.create("B1");
+    expect(b1.id).toBe("1");
+    rmSync(dirA, { recursive: true });
+    rmSync(dirB, { recursive: true });
+  });
+
+  // Feature: Verify operations read from disk on demand (external changes are visible)
+  // Design: Write a task file directly to disk after manager construction; get/list see it
+  test("external disk modifications are visible", () => {
+    const dir = path.join(tmpdir(), `test-tasks-external-${String(Date.now())}`);
+    mkdirSync(dir, { recursive: true });
+    const manager = new TaskManager(dir);
+    manager.create("Existing");
+
+    writeFileSync(
+      path.join(dir, "task_7.json"),
+      JSON.stringify({
+        id: "7",
+        subject: "External",
+        description: "",
+        status: "in_progress",
+        blockedBy: [],
+        blocks: [],
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      }),
+      "utf-8",
+    );
+
+    expect(manager.get("7").subject).toBe("External");
+    expect(manager.list().map((t) => t.id)).toContain("7");
+    // Next created ID continues after the externally added max ID
+    expect(manager.create("Next").id).toBe("8");
+    rmSync(dir, { recursive: true });
+  });
+
+  // Feature: Verify legacy snake_case task files are readable (Python compatibility)
+  // Design: Write file with blocked_by/created_at/updated_at and numeric id; confirm load
+  test("loads legacy snake_case task files", () => {
+    const dir = path.join(tmpdir(), `test-tasks-legacy-${String(Date.now())}`);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      path.join(dir, "task_3.json"),
+      JSON.stringify({
+        id: 3,
+        subject: "Legacy",
+        description: "old format",
+        status: "in_progress",
+        blocked_by: [1, 2],
+        blocks: [],
+        created_at: "2025-01-01T00:00:00.000Z",
+        updated_at: "2025-01-02T00:00:00.000Z",
+      }),
+      "utf-8",
+    );
+    const manager = new TaskManager(dir);
+    const task = manager.get(3);
+    expect(task.id).toBe("3");
+    expect(task.subject).toBe("Legacy");
+    expect(task.status).toBe("in_progress");
+    expect(task.blockedBy).toEqual(["1", "2"]);
+    expect(task.createdAt).toBe("2025-01-01T00:00:00.000Z");
+    expect(task.updatedAt).toBe("2025-01-02T00:00:00.000Z");
     rmSync(dir, { recursive: true });
   });
 });

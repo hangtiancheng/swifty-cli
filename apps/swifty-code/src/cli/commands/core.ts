@@ -21,7 +21,7 @@
  */
 
 // CLI core command: daemon lifecycle management (start/stop/status)
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
@@ -29,9 +29,25 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 
 import type { SwiftyConfig } from "../../core/config.js";
-import { cmdPing } from "../../core/commands/ping.js";
+import { pingDaemon } from "../../core/commands/ping.js";
 
 const PID_FILE = path.join(homedir(), ".swifty", "swifty-core.pid");
+
+// B-12: guard against PID reuse — before killing, verify the process command
+// line looks like our daemon ("swifty" or "node"). Uses `ps` (darwin/linux);
+// any failure (ps missing, pid gone, unexpected output) counts as no-match.
+function pidLooksLikeSwifty(pid: number): boolean {
+  try {
+    const out = execFileSync("ps", ["-p", String(pid), "-o", "command="], {
+      encoding: "utf-8",
+    })
+      .trim()
+      .toLowerCase();
+    return out.includes("swifty") || out.includes("node");
+  } catch {
+    return false;
+  }
+}
 
 function runningPid(): number | null {
   if (!existsSync(PID_FILE)) return null;
@@ -51,11 +67,13 @@ function runningPid(): number | null {
   }
 }
 
+// Print daemon status; matches legacy behavior: prints "not running" without
+// a non-zero exit code when the daemon is unreachable (informational command).
 export async function cmdCoreStatus(config: SwiftyConfig): Promise<void> {
-  try {
-    await cmdPing(config);
+  const outcome = await pingDaemon(config);
+  if (outcome.ok) {
     console.log(`running  (${config.host}:${String(config.port)})`);
-  } catch {
+  } else {
     console.log("not running");
   }
 }
@@ -93,6 +111,16 @@ export function cmdCoreStop(_config: SwiftyConfig): void {
   const pid = runningPid();
   if (!pid) {
     console.log("not running");
+    return;
+  }
+
+  // B-12: PID files can go stale and the OS may reuse the PID for an
+  // unrelated process — never kill a process that doesn't look like ours.
+  if (!pidLooksLikeSwifty(pid)) {
+    console.warn(
+      `warning: pid=${String(pid)} does not look like swifty-core (PID reuse?); removing stale PID file without killing`,
+    );
+    if (existsSync(PID_FILE)) unlinkSync(PID_FILE);
     return;
   }
 

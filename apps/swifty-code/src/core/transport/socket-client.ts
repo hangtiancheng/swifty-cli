@@ -53,7 +53,7 @@ export class SocketClient {
     }
   >();
   private _eventHandlers: EventHandler[] = [];
-  private _disconnectResolve: (() => void) | null = null;
+  private _disconnectResolvers: (() => void)[] = [];
 
   constructor(host: string, port: number) {
     this._host = host;
@@ -77,6 +77,7 @@ export class SocketClient {
 
   // Returns a promise that resolves when the connection drops
   // Used by the auto-reconnect loop to detect mid-session disconnections
+  // Supports multiple concurrent waiters (e.g. runEventLoop + Promise.race guards)
   waitForDisconnect(): Promise<void> {
     // If socket is already null or destroyed, resolve immediately
     if (!this._socket || this._socket.destroyed) {
@@ -84,7 +85,7 @@ export class SocketClient {
     }
 
     return new Promise<void>((resolve) => {
-      this._disconnectResolve = resolve;
+      this._disconnectResolvers.push(resolve);
     });
   }
 
@@ -96,9 +97,10 @@ export class SocketClient {
 
   // Signal that the connection has been lost
   private _signalDisconnect(): void {
-    if (this._disconnectResolve) {
-      this._disconnectResolve();
-      this._disconnectResolve = null;
+    const resolvers = this._disconnectResolvers;
+    this._disconnectResolvers = [];
+    for (const resolve of resolvers) {
+      resolve();
     }
   }
 
@@ -137,6 +139,8 @@ export class SocketClient {
       this._socket.destroy();
       this._socket = null;
     }
+    // Resolve any waitForDisconnect() waiters deterministically
+    this._signalDisconnect();
   }
 
   // Register callback for server-pushed events (persists across reconnections)

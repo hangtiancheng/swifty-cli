@@ -24,6 +24,7 @@
 import type { BaseTool, ToolResult } from "../tools/base.js";
 import { toolSuccess, toolError } from "../tools/base.js";
 import type { McpClient, McpToolDef } from "./client.js";
+import { McpServerUnavailableError, McpToolError } from "./client.js";
 
 // Wrap an MCP tool as a BaseTool so ToolRegistry can call it transparently
 // Tool name is prefixed with serverName__ to prevent naming conflicts between servers
@@ -54,13 +55,13 @@ export class McpTool implements BaseTool {
       const content = await this._client.callTool(this._rawName, params);
       return toolSuccess(content);
     } catch (exc: unknown) {
-      if (exc instanceof Error && exc.name === "McpServerUnavailableError") {
+      if (exc instanceof McpServerUnavailableError) {
         return toolError(
           `mcp server '${this._serverName}' unavailable: ${exc.message}`,
           "runtime_error",
         );
       }
-      if (exc instanceof Error && exc.name === "McpToolError") {
+      if (exc instanceof McpToolError) {
         return toolError(`mcp tool '${this.name}' error: ${exc.message}`, "runtime_error");
       }
       const msg = exc instanceof Error ? exc.message : String(exc);

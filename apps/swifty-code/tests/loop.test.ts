@@ -22,6 +22,7 @@
 
 import { describe, expect, test } from "vitest";
 import { AgentLoop } from "../src/core/loop.js";
+import { RunCancelledError } from "../src/core/errors.js";
 import { ExecutionContext } from "../src/core/context.js";
 import { ToolRegistry } from "../src/core/tools/registry.js";
 import { EventBus } from "../src/core/events/bus.js";
@@ -329,6 +330,174 @@ describe("AgentLoop", () => {
     expect(ctx.isDone()).toBe(true);
     expect(ctx.status).toBe("failed");
     expect(ctx.reason).toBe("cancelled");
+  });
+
+  // Feature: Verify mid-LLM abort is classified as cancelled, not llm_error
+  // Design: Provider rejects with an AbortError while signal is aborted,
+  //         confirm RunCancelledError is thrown and reason is "cancelled"
+  test("mid-LLM abort classified as cancelled", async () => {
+    const controller = new AbortController();
+    const mockProvider: LLMProvider = {
+      chat: () => {
+        controller.abort();
+        const err = new Error("Request was aborted.");
+        err.name = "AbortError";
+        return Promise.reject(err);
+      },
+    };
+
+    const ctx = new ExecutionContext({
+      runId: "r1",
+      goal: "test",
+      maxSteps: 5,
+    });
+    const registry = new ToolRegistry();
+    const bus = new EventBus();
+    const loop = new AgentLoop(mockProvider, registry, bus, {
+      signal: controller.signal,
+    });
+
+    await expect(loop.run(ctx)).rejects.toBeInstanceOf(RunCancelledError);
+    expect(ctx.isDone()).toBe(true);
+    expect(ctx.status).toBe("failed");
+    expect(ctx.reason).toBe("cancelled");
+  });
+
+  // Feature: Verify abort-shaped errors are treated as cancellation even
+  //          without checking signal state (e.g. SDK APIUserAbortError path)
+  // Design: Provider rejects with err.name === "AbortError", no aborted signal,
+  //         confirm classification is still cancelled
+  test("AbortError from provider classified as cancelled without aborted signal", async () => {
+    const mockProvider: LLMProvider = {
+      chat: () => {
+        const err = new Error("Request was aborted.");
+        err.name = "AbortError";
+        return Promise.reject(err);
+      },
+    };
+
+    const ctx = new ExecutionContext({
+      runId: "r1",
+      goal: "test",
+      maxSteps: 5,
+    });
+    const registry = new ToolRegistry();
+    const bus = new EventBus();
+    const loop = new AgentLoop(mockProvider, registry, bus);
+
+    await expect(loop.run(ctx)).rejects.toBeInstanceOf(RunCancelledError);
+    expect(ctx.status).toBe("failed");
+    expect(ctx.reason).toBe("cancelled");
+  });
+
+  // Feature (B-14): step.started/step.finished stay paired on mid-LLM cancellation
+  // Design: Provider rejects with AbortError after step.started was published;
+  //         confirm a matching step.finished is emitted before RunCancelledError
+  test("pairs step events when cancelled mid-LLM", async () => {
+    const controller = new AbortController();
+    const mockProvider: LLMProvider = {
+      chat: () => {
+        controller.abort();
+        const err = new Error("Request was aborted.");
+        err.name = "AbortError";
+        return Promise.reject(err);
+      },
+    };
+
+    const ctx = new ExecutionContext({
+      runId: "r1",
+      goal: "test",
+      maxSteps: 5,
+    });
+    const registry = new ToolRegistry();
+    const bus = new EventBus();
+    const events: { type: string; step: unknown }[] = [];
+    bus.subscribe((event) => {
+      events.push({ type: event.type, step: asRecord(event)["step"] });
+      return Promise.resolve();
+    });
+    const loop = new AgentLoop(mockProvider, registry, bus, {
+      signal: controller.signal,
+    });
+
+    await expect(loop.run(ctx)).rejects.toBeInstanceOf(RunCancelledError);
+
+    const started = events.filter((e) => e.type === "step.started");
+    const finished = events.filter((e) => e.type === "step.finished");
+    expect(started).toHaveLength(1);
+    expect(finished).toHaveLength(1);
+    expect(finished[0].step).toBe(started[0].step);
+  });
+
+  // Feature (B-14): pre-step cancellation (before step.started) emits no
+  //                 unpaired step events
+  // Design: Signal already aborted at loop entry; confirm no step events at all
+  test("no step events when cancelled before step starts", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const mockProvider: LLMProvider = {
+      chat: () =>
+        Promise.resolve({
+          stopReason: "end_turn",
+          toolUses: [],
+          text: "unreachable",
+          usage: null,
+          thinkingBlocks: [],
+        }),
+    };
+
+    const ctx = new ExecutionContext({
+      runId: "r1",
+      goal: "test",
+      maxSteps: 5,
+    });
+    const registry = new ToolRegistry();
+    const bus = new EventBus();
+    const events: string[] = [];
+    bus.subscribe((event) => {
+      events.push(event.type);
+      return Promise.resolve();
+    });
+    const loop = new AgentLoop(mockProvider, registry, bus, {
+      signal: controller.signal,
+    });
+
+    await expect(loop.run(ctx)).rejects.toBeInstanceOf(RunCancelledError);
+    expect(events.filter((t) => t === "step.started")).toHaveLength(0);
+    expect(events.filter((t) => t === "step.finished")).toHaveLength(0);
+  });
+
+  // Feature: Verify AgentLoop forwards its AbortSignal to provider.chat
+  // Design: Capture options passed to chat, confirm signal is present
+  test("passes signal to provider.chat", async () => {
+    const controller = new AbortController();
+    let capturedSignal: AbortSignal | undefined;
+    const mockProvider: LLMProvider = {
+      chat: (_messages, _tools, _bus, _runId, options) => {
+        capturedSignal = options?.signal;
+        return Promise.resolve({
+          stopReason: "end_turn",
+          toolUses: [],
+          text: "Done",
+          usage: null,
+          thinkingBlocks: [],
+        });
+      },
+    };
+
+    const ctx = new ExecutionContext({
+      runId: "r1",
+      goal: "test",
+      maxSteps: 5,
+    });
+    const registry = new ToolRegistry();
+    const bus = new EventBus();
+    const loop = new AgentLoop(mockProvider, registry, bus, {
+      signal: controller.signal,
+    });
+
+    await loop.run(ctx);
+    expect(capturedSignal).toBe(controller.signal);
   });
 
   // Feature: Verify AgentLoop propagates is_error flag

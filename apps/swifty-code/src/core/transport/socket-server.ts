@@ -87,11 +87,17 @@ export class SocketServer {
   private _server: net.Server | null = null;
   private _activeSockets = new Set<net.Socket>();
   private _trace: TraceWriter | undefined;
+  private _onDisconnect: ((socket: net.Socket) => void) | undefined;
 
-  constructor(host: string, port: number, options?: { trace?: TraceWriter }) {
+  constructor(
+    host: string,
+    port: number,
+    options?: { trace?: TraceWriter; onDisconnect?: (socket: net.Socket) => void },
+  ) {
     this._host = host;
     this._port = port;
     this._trace = options?.trace;
+    this._onDisconnect = options?.onDisconnect;
   }
 
   // Register a command handler for a given method name
@@ -158,6 +164,17 @@ export class SocketServer {
   private _handleConnection(socket: net.Socket): void {
     this._activeSockets.add(socket);
 
+    // Idempotent per-connection cleanup: remove from active set and notify
+    // onDisconnect exactly once so subscribers (e.g. broadcaster) can release
+    // any state keyed on this socket.
+    let cleaned = false;
+    const cleanup = (): void => {
+      if (cleaned) return;
+      cleaned = true;
+      this._activeSockets.delete(socket);
+      this._onDisconnect?.(socket);
+    };
+
     const rl = createInterface({
       input: socket,
       terminal: false,
@@ -177,12 +194,12 @@ export class SocketServer {
     });
 
     rl.on("close", () => {
-      this._activeSockets.delete(socket);
+      cleanup();
       socket.destroy();
     });
 
     socket.on("error", () => {
-      this._activeSockets.delete(socket);
+      cleanup();
       rl.close();
     });
   }

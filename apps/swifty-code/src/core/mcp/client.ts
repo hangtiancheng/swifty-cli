@@ -54,7 +54,7 @@ const READ_TIMEOUT_MS = 30_000; // 30 seconds per line read
 
 // Type guard: narrow unknown to Record<string, unknown>
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 // Safely convert an unknown value to a display string
@@ -222,12 +222,17 @@ export class McpClient {
     const reqIdStr = String(reqId);
 
     return new Promise<Record<string, unknown>>((resolve, reject) => {
-      const timeout = setTimeout(() => {
+      // Inactivity timeout: reset on every received line so slow servers that
+      // keep streaming lines are not cut off (matches Python's per-line 30s).
+      const onTimeout = (): void => {
         cleanup();
         reject(new McpServerUnavailableError("MCP server read timeout"));
-      }, READ_TIMEOUT_MS);
+      };
+      let timeout = setTimeout(onTimeout, READ_TIMEOUT_MS);
 
       const onLine = (line: string): void => {
+        clearTimeout(timeout);
+        timeout = setTimeout(onTimeout, READ_TIMEOUT_MS);
         if (!line.trim()) return;
         try {
           const parsed: unknown = JSON.parse(line);
@@ -299,17 +304,27 @@ export class McpClient {
     if (this._transport === "tcp" && this._tcpSocket) {
       const socket = this._tcpSocket;
       return new Promise<void>((resolve, reject) => {
+        // The write callback and the drain listener can both fire; guard with
+        // a settled flag so we resolve/reject exactly once, and remove the
+        // drain listener once settled to avoid leaking listeners.
+        let settled = false;
+        const onDrain = (): void => {
+          if (settled) return;
+          settled = true;
+          resolve();
+        };
         const ok = socket.write(data, (err) => {
+          if (settled) return;
+          settled = true;
+          socket.off("drain", onDrain);
           if (err) {
             reject(new McpServerUnavailableError(err.message));
           } else {
             resolve();
           }
         });
-        if (!ok) {
-          socket.once("drain", () => {
-            resolve();
-          });
+        if (!ok && !settled) {
+          socket.once("drain", onDrain);
         }
       });
     }
