@@ -123,6 +123,7 @@ type AppState = "providerSelect" | "chat";
 
 interface Props {
   providers: ProviderConfig[];
+  permissionMode?: string;
   mcpServers: MCPServerConfig[];
   hooks: HookConfig[];
   sandboxConfig?: SandboxYamlConfig;
@@ -218,6 +219,7 @@ function buildSkillSection(catalog: SkillCatalog, workDir: string): string {
 
 export function App({
   providers,
+  permissionMode,
   mcpServers,
   hooks,
   sandboxConfig: sandboxYaml,
@@ -240,9 +242,17 @@ export function App({
   const [activeTools, setActiveTools] = useState<ToolBlockInfo[]>([]);
   const [inputTokens, setInputTokens] = useState(0);
   const [outputTokens, setOutputTokens] = useState(0);
-  const [permMode, setPermMode] = useState<PermissionMode>(
-    process.env.SWIFTY_BYPASS_PERMISSIONS === "1" ? "bypassPermissions" : "default",
-  );
+  const [permMode, setPermMode] = useState<PermissionMode>(() => {
+    if (process.env.SWIFTY_BYPASS_PERMISSIONS === "1") {
+      return "bypassPermissions";
+    }
+    const isPermissionMode = (mode: string): mode is PermissionMode =>
+      ["default", "acceptEdits", "plan", "bypassPermissions"].includes(mode);
+    if (permissionMode && isPermissionMode(permissionMode)) {
+      return permissionMode;
+    }
+    return "default";
+  });
   const [error, setError] = useState<string | null>(null);
   const [planApprovalActive, setPlanApprovalActive] = useState(false);
   const [prePlanMode, setPrePlanMode] = useState<PermissionMode>("default");

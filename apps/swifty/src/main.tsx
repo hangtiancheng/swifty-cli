@@ -102,6 +102,7 @@ async function main() {
   const instance = render(
     <App
       providers={cfg.providers}
+      permissionMode={cfg.permission_mode}
       mcpServers={cfg.mcp_servers}
       hooks={cfg.hooks}
       sandboxConfig={cfg.sandbox}
