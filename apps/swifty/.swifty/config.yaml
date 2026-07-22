@@ -19,8 +19,6 @@
 # SOFTWARE.
 
 # Swifty project-level configuration
-# See src/config/config.ts for schema details.
-
 # Permission mode: "default" | "acceptEdits" | "plan" | "bypassPermissions"
 permission_mode: bypassPermissions
 
@@ -29,19 +27,19 @@ permission_mode: bypassPermissions
 # (or OPENAI_API_KEY) environment variable at runtime.
 providers:
   - name: anthropic
-    base_url: http://localhost:11434/v1
-    model: "Peach-07-17-DogFooding"
-    api_key: "ollama"
+    base_url: https://api.deepseek.com/anthropic
+    model: "deepseek-v4-flash"
+    api_key: "<your_api_key>"
     thinking: true
-    max_output_tokens: 1000000
+    # max_output_tokens: 1000000
     context_window: 1000000 # override the built-in lookup if needed
 
   - name: openai-compat
     # protocol: anthropic
     protocol: openai-compat
-    base_url: http://localhost:11434/v1
+    base_url: https://api.deepseek.com
     model: "Peach-07-17-DogFooding"
-    api_key: "ollama"
+    api_key: "<your_api_key>"
     thinking: true
     # max_output_tokens: 1000000 # override the default (8192, or 64000 with thinking)
     context_window: 1000000 # override the built-in lookup if needed
