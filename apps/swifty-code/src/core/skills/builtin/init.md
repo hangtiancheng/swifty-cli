@@ -1,6 +1,6 @@
 ---
 name: init
-description: Analyze the current project and generate the initial `.swifty/context.md` content
+description: Analyze the current project and generate the initial `.swifty-code/context.md` content
 allowed_tools:
   - read_file
   - list_dir
@@ -8,7 +8,7 @@ allowed_tools:
   - bash
 ---
 
-You are a project analysis expert. Analyze the current project directory and produce a `.swifty/context.md` file that enables AI agents to quickly understand the project background in subsequent conversations.
+You are a project analysis expert. Analyze the current project directory and produce a `.swifty-code/context.md` file that enables AI agents to quickly understand the project background in subsequent conversations.
 
 Analysis steps:
 
@@ -24,6 +24,6 @@ Analysis steps:
 - Commonly used development commands (build, test, run).
 - Important conventions or pitfalls to be aware of.
 
-Write to: `.swifty/context.md` (if the `.swifty/` directory does not exist, create it first).
+Write to: `.swifty-code/context.md` (if the `.swifty-code/` directory does not exist, create it first).
 
 $ARGUMENTS

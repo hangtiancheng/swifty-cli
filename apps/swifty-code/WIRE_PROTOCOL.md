@@ -4,7 +4,7 @@
 
 ## Transport
 
-- TCP loopback `127.0.0.1:7437` (override via `SWIFTY_HOST` / `SWIFTY_PORT`)
+- TCP loopback `127.0.0.1:5520` (override via `SWIFTY_HOST` / `SWIFTY_PORT`)
 - Each message is one `\n`-terminated JSON line (NDJSON)
 - Commands use JSON-RPC 2.0 (client → server); Events use `kind=event` envelope (server → client)
 
@@ -859,7 +859,14 @@ Events written to `runs/<run_id>/events.jsonl` and forwarded over IPC to subscri
       "type": "string"
     }
   },
-  "required": ["type", "run_id", "tool_use_id", "tool_name", "params", "timestamp"],
+  "required": [
+    "type",
+    "run_id",
+    "tool_use_id",
+    "tool_name",
+    "params",
+    "timestamp"
+  ],
   "additionalProperties": false
 }
 ```
@@ -923,7 +930,15 @@ Events written to `runs/<run_id>/events.jsonl` and forwarded over IPC to subscri
       "type": "string"
     }
   },
-  "required": ["type", "run_id", "tool_use_id", "tool_name", "elapsed_ms", "output", "timestamp"],
+  "required": [
+    "type",
+    "run_id",
+    "tool_use_id",
+    "tool_name",
+    "elapsed_ms",
+    "output",
+    "timestamp"
+  ],
   "additionalProperties": false
 }
 ```

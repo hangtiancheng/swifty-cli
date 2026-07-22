@@ -45,15 +45,18 @@ describe("AgentProfileLoader", () => {
 
   // Feature: Load all three builtin roles
   // Design: Parameterized test for planner, executor, reviewer
-  test.each(["planner", "executor", "reviewer"])("loads builtin %s profile", (role) => {
-    const loader = new AgentProfileLoader();
-    const profile = loader.load(role);
-    expect(profile).not.toBeNull();
-    if (profile) {
-      expect(profile.name).toBe(role);
-      expect(profile.allowedTools.length).toBeGreaterThan(0);
-    }
-  });
+  test.each(["planner", "executor", "reviewer"])(
+    "loads builtin %s profile",
+    (role) => {
+      const loader = new AgentProfileLoader();
+      const profile = loader.load(role);
+      expect(profile).not.toBeNull();
+      if (profile) {
+        expect(profile.name).toBe(role);
+        expect(profile.allowedTools.length).toBeGreaterThan(0);
+      }
+    },
+  );
 
   // Feature: Return null for unknown role
   // Design: Load a non-existent role name, assert it returns null instead of throwing
@@ -68,7 +71,7 @@ describe("AgentProfileLoader", () => {
   test("parses TOML profile correctly", () => {
     const tempDir = path.join(tmpdir(), `swifty-test-${randomUUID()}`);
     mkdirSync(tempDir, { recursive: true });
-    const localAgentsDir = path.join(tempDir, ".swifty", "agents");
+    const localAgentsDir = path.join(tempDir, ".swifty-code", "agents");
     mkdirSync(localAgentsDir, { recursive: true });
 
     try {
@@ -107,12 +110,12 @@ model = "claude-sonnet-4-6"
   });
 
   // Feature: Project local profile overrides builtin
-  // Design: Create a .swifty/agents/ directory in temp, write a planner.toml that overrides builtin,
+  // Design: Create a .swifty-code/agents/ directory in temp, write a planner.toml that overrides builtin,
   //         change cwd to temp dir, verify the local version is loaded
   test("project local profile overrides builtin", () => {
     const tempDir = path.join(tmpdir(), `swifty-test-${randomUUID()}`);
     mkdirSync(tempDir, { recursive: true });
-    const localAgentsDir = path.join(tempDir, ".swifty", "agents");
+    const localAgentsDir = path.join(tempDir, ".swifty-code", "agents");
     mkdirSync(localAgentsDir, { recursive: true });
 
     try {

@@ -22,7 +22,13 @@
 
 // End-to-end integration test for the agent pipeline.
 // Uses a mock LLM provider to avoid requiring a real ANTHROPIC_API_KEY.
-import { mkdtempSync, rmSync, readFileSync, writeFileSync, readdirSync } from "node:fs";
+import {
+  mkdtempSync,
+  rmSync,
+  readFileSync,
+  writeFileSync,
+  readdirSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -38,7 +44,7 @@ import type { EventBus } from "../src/core/events/bus.js";
 function makeConfig(overrides?: Partial<SwiftyConfig>): SwiftyConfig {
   return {
     host: "127.0.0.1",
-    port: 7437,
+    port: 5520,
     logging: { level: "INFO", file: "/dev/null", format: "text" },
     agent: { maxSteps: 5 },
     llm: { defaultModel: "claude-sonnet-4-6", router: "static" },
@@ -210,7 +216,9 @@ describe("run e2e integration", () => {
       expect(finished["status"]).toBe("success");
 
       // read_file was actually invoked
-      const toolStarts = events.filter((e) => e["type"] === "tool.call_started");
+      const toolStarts = events.filter(
+        (e) => e["type"] === "tool.call_started",
+      );
       expect(toolStarts.some((e) => e["tool_name"] === "read_file")).toBe(true);
 
       // run_id is consistent across the event stream

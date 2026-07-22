@@ -30,77 +30,6 @@
 #
 # Supports: --uninstall, --version vX.Y.Z, --alpha, --beta, --rc, --canary, --nightly, --tag=NAME
 
-mkdir -p "$HOME/.swifty"
-touch "$HOME/.swifty/config.yaml"
-
-cat > "$HOME/.swifty/config.yaml" <<'EOF'
-# Copyright (c) 2026 hangtiancheng
-#
-# Permission is hereby granted, free of charge, to any person obtaining a copy
-# of this software and associated documentation files (the "Software"), to deal
-# in the Software without restriction, including without limitation the rights
-# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-# copies of the Software, and to permit persons to whom the Software is
-# furnished to do so, subject to the following conditions:
-#
-# The above copyright notice and this permission notice shall be included in
-# all copies or substantial portions of the Software.
-#
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-# SOFTWARE.
-
-# Swifty project-level configuration
-# Permission mode: "default" | "acceptEdits" | "plan" | "bypassPermissions"
-permission_mode: bypassPermissions
-
-# LLM providers — at least one is required.
-# api_key is intentionally left empty; it falls back to the ANTHROPIC_API_KEY
-# (or OPENAI_API_KEY) environment variable at runtime.
-providers:
-  - name: anthropic
-    base_url: https://api.deepseek.com/anthropic
-    model: "deepseek-v4-flash"
-    api_key: "sk-"
-    thinking: true
-    # max_output_tokens: 1000000
-    context_window: 1000000 # override the built-in lookup if needed
-
-  - name: openai-compat
-    # protocol: anthropic
-    protocol: openai-compat
-    base_url: https://api.deepseek.com
-    model: "Peach-07-17-DogFooding"
-    api_key: "sk-"
-    thinking: true
-    # max_output_tokens: 1000000 # override the default (8192, or 64000 with thinking)
-    context_window: 1000000 # override the built-in lookup if needed
-
-# MCP servers — optional, empty by default.
-mcp_servers: []
-  # Example: filesystem MCP server
-  # - name: filesystem
-  #   command: npx
-  #   args: ["-y", "@modelcontextprotocol/server-filesystem", "."]
-
-# Hooks — optional, empty by default.
-hooks: []
-  # Example: lint after EditFile
-  # - id: lint-on-edit
-  #   event: post_tool_use
-  #   condition: 'tool == "EditFile"'
-  #   action:
-  #     type: command
-  #     command: npx eslint --fix "$SWIFTY_FILE_PATH"
-  #   on_error: ignore
-EOF
-
-echo 'curl -fsSL https://raw.githubusercontent.com/hangtiancheng/swifty-cli/main/install.sh | bash -s -- --alpha'
-
 echo "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣀⣀⣠⠤⠤⠤⠤⣄⣀⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
 ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣠⠶⠋⠉⠀⠀⠀⠀⠀⠀⠀⠀⠉⠙⠢⣄⠀⠀⠀⠀⠀⠀⠀
 ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⡴⠋⠁⠀⠀⠀⠀⢀⣀⡐⢄⠀⠀⠀⠀⠀⠀⠈⠳⣄⠀⠀⠀⠀⠀
@@ -128,8 +57,6 @@ echo "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀�
 ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠳⢄⡀⠀⠀⠀⠀⠀⠀⢀⠞⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠙⣄⠀⠀⠀⠀⢀⣠⠴⠋⠀⠀⠀⠀⠀⠀⠀⠀⠀
 ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢇⣀⡤⠖⢄⠀⣰⠋⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠳⠒⠒⠋⠉⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
 ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠀⠀⠀⠈⠙⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀"
-
-curl -fsSL https://raw.githubusercontent.com/hangtiancheng/swifty-cli/main/install.sh | bash -s -- --alpha
 
 set -euo pipefail
 
@@ -163,7 +90,7 @@ for arg in "$@"; do
 Usage: install.sh [OPTIONS]
 
   (default)    Install the latest stable swifty from npm
-  --uninstall  Remove swifty globally
+  --uninstall  Uninstall swifty
   --version=   Install a specific version (e.g. --version=0.1.0)
   --alpha      Install from the 'alpha' dist-tag
   --beta       Install from the 'beta' dist-tag
@@ -197,6 +124,62 @@ if [ "$ACTION" = "uninstall" ]; then
 	exit 0
 fi
 
+# ── Write default config (skip if it already exists) ─────────────────
+CONFIG_DIR="$HOME/.swifty"
+CONFIG_FILE="$CONFIG_DIR/config.yaml"
+if [ -f "$CONFIG_FILE" ]; then
+	info "Config already exists at $CONFIG_FILE, leaving it untouched."
+else
+	mkdir -p "$CONFIG_DIR"
+	cat > "$CONFIG_FILE" <<'EOF'
+# Swifty global configuration (~/.swifty/config.yaml)
+# Permission mode: "default" | "acceptEdits" | "plan" | "bypassPermissions"
+permission_mode: bypassPermissions
+
+# LLM providers — at least one is required.
+# api_key is intentionally left empty; it falls back to the ANTHROPIC_API_KEY
+# (or OPENAI_API_KEY) environment variable at runtime.
+providers:
+  - name: anthropic
+    protocol: anthropic
+    base_url: https://api.deepseek.com/anthropic
+    model: "deepseek-v4-flash"
+    api_key: "sk-"
+    thinking: true
+    # max_output_tokens: 1000000
+    context_window: 1000000 # override the built-in lookup if needed
+
+  - name: openai-compat
+    # protocol: anthropic
+    protocol: openai-compat
+    base_url: https://api.deepseek.com
+    model: "deepseek-v4-flash"
+    api_key: "sk-"
+    thinking: true
+    # max_output_tokens: 1000000 # override the default (8192, or 64000 with thinking)
+    context_window: 1000000 # override the built-in lookup if needed
+
+# MCP servers — optional, empty by default.
+mcp_servers: []
+  # Example: filesystem MCP server
+  # - name: filesystem
+  #   command: npx
+  #   args: ["-y", "@modelcontextprotocol/server-filesystem", "."]
+
+# Hooks — optional, empty by default.
+hooks: []
+  # Example: lint after EditFile
+  # - id: lint-on-edit
+  #   event: post_tool_use
+  #   condition: 'tool == "EditFile"'
+  #   action:
+  #     type: command
+  #     command: npx eslint --fix "$SWIFTY_FILE_PATH"
+  #   on_error: ignore
+EOF
+	ok "Wrote default config to $CONFIG_FILE"
+fi
+
 # ── Check Node.js ─────────────────────────────────────────────────────
 if ! command -v node >/dev/null 2>&1; then
 	err "Node.js not found. Install Node.js >= $NODE_MAJOR_MIN first:"
@@ -219,28 +202,27 @@ fi
 if [ -n "$VERSION" ]; then
 	# Strip leading 'v' if user passed v0.1.0
 	VERSION="${VERSION#v}"
-	INSTALL_SPEC="$PACKAGE@$VERSION"
+	PKG_VERSION="$PACKAGE@$VERSION"
 elif [ -n "$TAG" ]; then
-	INSTALL_SPEC="$PACKAGE@$TAG"
+	PKG_VERSION="$PACKAGE@$TAG"
 else
-	INSTALL_SPEC="$PACKAGE@latest"
+	PKG_VERSION="$PACKAGE@latest"
 fi
 
-info "Installing $INSTALL_SPEC globally..."
-npm install -g "$INSTALL_SPEC"
+info "Installing $PKG_VERSION globally..."
+npm install -g "$PKG_VERSION"
 
 # ── Verify ────────────────────────────────────────────────────────────
 # npm global bin should be on PATH. If not, print the prefix/bin hint.
 NPM_BIN="$(npm config get prefix 2>/dev/null)/bin"
 if command -v swifty >/dev/null 2>&1; then
 	ok "Swifty installed successfully"
-	info "Version: $(swifty --version 2>/dev/null || echo 'unknown')"
-	echo
-	info "Run 'swifty' to get started."
+	SWIFTY_VERSION="$(swifty --version 2>/dev/null || true)"
+	[ -n "$SWIFTY_VERSION" ] && info "Version: $SWIFTY_VERSION"
 else
 	warn "Installation completed but 'swifty' is not on your PATH."
 	warn "Add npm's global bin to your shell profile (~/.bashrc / ~/.zshrc):"
 	warn "  export PATH=\"$NPM_BIN:\$PATH\""
 fi
 
-echo 'Love & Peace, Enjoy!!!'
+ok 'Love & Peace, Enjoy Swifty!!!'

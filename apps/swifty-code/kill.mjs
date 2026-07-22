@@ -36,10 +36,14 @@ let killed = 0;
 
 for (const { pattern, label } of TARGETS) {
   try {
-    const pids = execSync(`pgrep -f "${pattern}"`, { encoding: "utf-8" }).trim();
+    const pids = execSync(`pgrep -f "${pattern}"`, {
+      encoding: "utf-8",
+    }).trim();
     if (!pids) continue;
     const pidList = pids.split("\n");
-    console.log(`[kill] found ${pidList.length} ${label} process(es): ${pidList.join(", ")}`);
+    console.log(
+      `[kill] found ${pidList.length} ${label} process(es): ${pidList.join(", ")}`,
+    );
     execSync(`kill -TERM ${pids}`);
     killed += pidList.length;
   } catch {
@@ -57,20 +61,26 @@ await new Promise((r) => setTimeout(r, 1000));
 
 for (const { pattern, label } of TARGETS) {
   try {
-    const pids = execSync(`pgrep -f "${pattern}"`, { encoding: "utf-8" }).trim();
+    const pids = execSync(`pgrep -f "${pattern}"`, {
+      encoding: "utf-8",
+    }).trim();
     if (!pids) continue;
-    console.log(`[kill] ${label} still alive (${pids.replace(/\n/g, ", ")}), sending SIGKILL`);
+    console.log(
+      `[kill] ${label} still alive (${pids.replace(/\n/g, ", ")}), sending SIGKILL`,
+    );
     execSync(`kill -KILL ${pids}`);
   } catch {
     // No survivors
   }
 }
 
-// Also free port 7437 if anything is still holding it
+// Also free port 5520 if anything is still holding it
 try {
-  const portPids = execSync("lsof -ti :7437", { encoding: "utf-8" }).trim();
+  const portPids = execSync("lsof -ti :5520", { encoding: "utf-8" }).trim();
   if (portPids) {
-    console.log(`[kill] port 7437 still held by: ${portPids.replace(/\n/g, ", ")}, SIGKILL`);
+    console.log(
+      `[kill] port 5520 still held by: ${portPids.replace(/\n/g, ", ")}, SIGKILL`,
+    );
     execSync(`kill -KILL ${portPids}`);
   }
 } catch {

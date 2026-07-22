@@ -1,6 +1,6 @@
 {
   "name": "@swifty.js/swifty",
-  "version": "0.0.1",
+  "version": "0.0.2-alpha",
   "description": "Swifty — CLI coding agent",
   "keywords": [
     "ai",
@@ -25,7 +25,8 @@
   },
   "files": [
     "dist",
-    "docs"
+    "docs",
+    "README.md"
   ],
   "type": "module",
   "main": "dist/main.js",

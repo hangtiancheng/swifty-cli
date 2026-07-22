@@ -30,7 +30,10 @@ import { ChatView, CommittedMessage, type ChatMessage } from "./chat.js";
 import { ToolDisplay, type ToolBlockInfo } from "./tool-display.js";
 import Spinner from "./spinner.js";
 import { InputBox, type Cmd } from "./input.js";
-import { PermissionDialog, type PermissionAction } from "./permission-dialog.js";
+import {
+  PermissionDialog,
+  type PermissionAction,
+} from "./permission-dialog.js";
 import { randomCompletionVerb } from "./verbs.js";
 
 import type { SocketClient } from "../core/transport/socket-client.js";
@@ -63,7 +66,7 @@ function buildCommands(): Cmd[] {
 }
 
 // History persistence (local file, no core dependency)
-const HISTORY_FILE = `${process.env["HOME"] ?? ""}/.swifty/tui-history.json`;
+const HISTORY_FILE = `${process.env["HOME"] ?? ""}/.swifty-code/tui-history.json`;
 
 function loadHistory(): string[] {
   try {
@@ -147,7 +150,9 @@ export function App({ _config, client }: AppProps): React.JSX.Element {
   const subagentStartTimes = useRef<Map<string, number>>(new Map());
   // tool_use_id -> {toolName, preview} recorded at permission.requested so the
   // granted/denied history line can include tool name + param preview.
-  const permissionInfoRef = useRef<Map<string, { toolName: string; preview: string }>>(new Map());
+  const permissionInfoRef = useRef<
+    Map<string, { toolName: string; preview: string }>
+  >(new Map());
 
   const commandsRef = useRef<Cmd[]>(buildCommands());
 
@@ -219,7 +224,10 @@ export function App({ _config, client }: AppProps): React.JSX.Element {
         const fullText = streamingTextRef.current;
         if (fullText) {
           setMessages((prev) => {
-            const next = [...prev, { role: "assistant" as const, content: fullText }];
+            const next = [
+              ...prev,
+              { role: "assistant" as const, content: fullText },
+            ];
             committedIndexRef.current = next.length;
             return next;
           });
@@ -248,7 +256,10 @@ export function App({ _config, client }: AppProps): React.JSX.Element {
           const goal = str(event, "goal");
           if (goal) {
             const preview = goal.length > 80 ? goal.slice(0, 80) + "…" : goal;
-            setMessages((prev) => [...prev, { role: "system", content: `goal: ${preview}` }]);
+            setMessages((prev) => [
+              ...prev,
+              { role: "system", content: `goal: ${preview}` },
+            ]);
           }
           break;
         }
@@ -290,7 +301,10 @@ export function App({ _config, client }: AppProps): React.JSX.Element {
 
         case "llm.model_selected": {
           const model = str(event, "model");
-          setMessages((prev) => [...prev, { role: "system", content: `model: ${model}` }]);
+          setMessages((prev) => [
+            ...prev,
+            { role: "system", content: `model: ${model}` },
+          ]);
           break;
         }
 
@@ -324,7 +338,10 @@ export function App({ _config, client }: AppProps): React.JSX.Element {
           const toolUseId = str(event, "tool_use_id");
           const paramsRaw = event["params"];
           const params = isRecord(paramsRaw) ? paramsRaw : {};
-          setActiveTools((prev) => [...prev, { toolName, toolUseId, args: params, loading: true }]);
+          setActiveTools((prev) => [
+            ...prev,
+            { toolName, toolUseId, args: params, loading: true },
+          ]);
           break;
         }
 
@@ -335,11 +352,15 @@ export function App({ _config, client }: AppProps): React.JSX.Element {
           const elapsedMs = num(event, "elapsed_ms");
           setActiveTools((prev) =>
             prev.map((t) =>
-              t.toolUseId === toolUseId ? { ...t, output, elapsed: elapsedMs, loading: false } : t,
+              t.toolUseId === toolUseId
+                ? { ...t, output, elapsed: elapsedMs, loading: false }
+                : t,
             ),
           );
           // Tool completed: drop any stale pending permission request for it
-          setPermissionQueue((prev) => prev.filter((r) => r.toolUseId !== toolUseId));
+          setPermissionQueue((prev) =>
+            prev.filter((r) => r.toolUseId !== toolUseId),
+          );
           permissionInfoRef.current.delete(toolUseId);
           // Also commit as a tool_result message
           setMessages((prev) => [
@@ -373,7 +394,9 @@ export function App({ _config, client }: AppProps): React.JSX.Element {
             ),
           );
           // Tool failed (possibly permission timeout): drop stale pending request
-          setPermissionQueue((prev) => prev.filter((r) => r.toolUseId !== toolUseId));
+          setPermissionQueue((prev) =>
+            prev.filter((r) => r.toolUseId !== toolUseId),
+          );
           permissionInfoRef.current.delete(toolUseId);
           setMessages((prev) => [
             ...prev,
@@ -392,7 +415,10 @@ export function App({ _config, client }: AppProps): React.JSX.Element {
           const toolName = str(event, "tool_name");
           const paramsPreview = str(event, "param_preview");
           const toolUseId = str(event, "tool_use_id");
-          permissionInfoRef.current.set(toolUseId, { toolName, preview: paramsPreview });
+          permissionInfoRef.current.set(toolUseId, {
+            toolName,
+            preview: paramsPreview,
+          });
           setPermissionQueue((prev) =>
             prev.some((r) => r.toolUseId === toolUseId)
               ? prev
@@ -407,7 +433,9 @@ export function App({ _config, client }: AppProps): React.JSX.Element {
           const toolUseId = str(event, "tool_use_id");
           const granted = eventType === "permission.granted";
           // Remove from queue (covers daemon-side timeouts / external responses)
-          setPermissionQueue((prev) => prev.filter((r) => r.toolUseId !== toolUseId));
+          setPermissionQueue((prev) =>
+            prev.filter((r) => r.toolUseId !== toolUseId),
+          );
           const info = permissionInfoRef.current.get(toolUseId);
           permissionInfoRef.current.delete(toolUseId);
           const preview = info?.preview
@@ -415,7 +443,9 @@ export function App({ _config, client }: AppProps): React.JSX.Element {
               ? info.preview.slice(0, 80) + "…"
               : info.preview
             : "";
-          const context = info ? ` ${info.toolName}${preview ? ` \`${preview}\`` : ""}` : "";
+          const context = info
+            ? ` ${info.toolName}${preview ? ` \`${preview}\`` : ""}`
+            : "";
           setMessages((prev) => [
             ...prev,
             {
@@ -462,7 +492,10 @@ export function App({ _config, client }: AppProps): React.JSX.Element {
           const runId = str(event, "run_id");
           const ts = Date.parse(str(event, "timestamp"));
           if (runId) {
-            subagentStartTimes.current.set(runId, Number.isNaN(ts) ? Date.now() : ts);
+            subagentStartTimes.current.set(
+              runId,
+              Number.isNaN(ts) ? Date.now() : ts,
+            );
           }
           const description = str(event, "description");
           const shortId = runId ? ` [${runId.slice(0, 8)}]` : "";
@@ -481,14 +514,18 @@ export function App({ _config, client }: AppProps): React.JSX.Element {
           if (startTime !== undefined) {
             subagentStartTimes.current.delete(runId);
             const endTs = Date.parse(str(event, "timestamp"));
-            const elapsedMs = (Number.isNaN(endTs) ? Date.now() : endTs) - startTime;
+            const elapsedMs =
+              (Number.isNaN(endTs) ? Date.now() : endTs) - startTime;
             if (elapsedMs >= 0) {
               durationStr = ` (${(elapsedMs / 1000).toFixed(1)}s)`;
             }
           }
           setMessages((prev) => [
             ...prev,
-            { role: "system", content: `↳ subagent done: ${status}${durationStr}` },
+            {
+              role: "system",
+              content: `↳ subagent done: ${status}${durationStr}`,
+            },
           ]);
           break;
         }
@@ -509,7 +546,10 @@ export function App({ _config, client }: AppProps): React.JSX.Element {
           // DEBUG stays dropped for noise reduction; INFO and above are
           // rendered (system role renders dim, matching the old TUI).
           if (level !== "DEBUG") {
-            setMessages((prev) => [...prev, { role: "system", content: `[${level}] ${message}` }]);
+            setMessages((prev) => [
+              ...prev,
+              { role: "system", content: `[${level}] ${message}` },
+            ]);
           }
           break;
         }
@@ -581,7 +621,10 @@ export function App({ _config, client }: AppProps): React.JSX.Element {
           const pendingText = streamingTextRef.current;
           if (pendingText) {
             setMessages((prev) => {
-              const next = [...prev, { role: "assistant" as const, content: pendingText }];
+              const next = [
+                ...prev,
+                { role: "assistant" as const, content: pendingText },
+              ];
               committedIndexRef.current = next.length;
               return next;
             });
@@ -594,7 +637,8 @@ export function App({ _config, client }: AppProps): React.JSX.Element {
           setIsRunning(false);
           client.close();
         } catch (error) {
-          const errorMsg = error instanceof Error ? error.message : String(error);
+          const errorMsg =
+            error instanceof Error ? error.message : String(error);
           setConnected(false);
           setConnectionError(errorMsg);
           client.close();
@@ -629,7 +673,9 @@ export function App({ _config, client }: AppProps): React.JSX.Element {
     const p = COLORS.primary;
     const d = COLORS.dim;
     console.log(`\n${p(" /\\_/\\    ")}${d("SwiftyCode v" + version)}`);
-    console.log(`${p("( o.o )   ")}${d(_config.host + ":" + String(_config.port))}`);
+    console.log(
+      `${p("( o.o )   ")}${d(_config.host + ":" + String(_config.port))}`,
+    );
     console.log(`${p(" > ^ <    ")}${d(process.cwd())}\n`);
   }, [connected, _config]);
 
@@ -652,7 +698,9 @@ export function App({ _config, client }: AppProps): React.JSX.Element {
       if (trimmed === "/compact" || trimmed.startsWith("/compact ")) {
         setIsRunning(true);
         try {
-          const focus = trimmed.startsWith("/compact ") ? trimmed.slice(8).trim() : "";
+          const focus = trimmed.startsWith("/compact ")
+            ? trimmed.slice(8).trim()
+            : "";
           const result = await client.sendCommand("session.compact", {
             session_id: sessionIdRef.current,
             focus,
@@ -713,7 +761,9 @@ export function App({ _config, client }: AppProps): React.JSX.Element {
       const current = permissionQueue[0];
       if (!current) return;
       // Dequeue: the next pending request (if any) becomes visible
-      setPermissionQueue((prev) => prev.filter((r) => r.toolUseId !== current.toolUseId));
+      setPermissionQueue((prev) =>
+        prev.filter((r) => r.toolUseId !== current.toolUseId),
+      );
       try {
         await client.sendCommand("permission.respond", {
           tool_use_id: current.toolUseId,
@@ -742,7 +792,11 @@ export function App({ _config, client }: AppProps): React.JSX.Element {
             .map((msg, i) => ({ ...msg, _key: i }))}
         >
           {(item) => (
-            <CommittedMessage key={String(item._key)} message={item} expanded={toolsExpanded} />
+            <CommittedMessage
+              key={String(item._key)}
+              message={item}
+              expanded={toolsExpanded}
+            />
           )}
         </Static>
 
@@ -754,7 +808,9 @@ export function App({ _config, client }: AppProps): React.JSX.Element {
         />
 
         {/* Real-time tool blocks */}
-        {activeTools.length > 0 && !permissionRequest ? <ToolDisplay tools={activeTools} /> : null}
+        {activeTools.length > 0 && !permissionRequest ? (
+          <ToolDisplay tools={activeTools} />
+        ) : null}
 
         {/* Spinner while running */}
         {isRunning && !permissionRequest ? (
@@ -767,7 +823,10 @@ export function App({ _config, client }: AppProps): React.JSX.Element {
         {contextPercent > 0 ? (
           <Box paddingLeft={1}>
             <Text dimColor>context </Text>
-            <Text color={contextBarColor(contextPercent)} bold={contextPercent >= 0.85}>
+            <Text
+              color={contextBarColor(contextPercent)}
+              bold={contextPercent >= 0.85}
+            >
               {contextBarFill(contextPercent)}
             </Text>
             <Text dimColor> {(contextPercent * 100).toFixed(1)}%</Text>
@@ -791,8 +850,11 @@ export function App({ _config, client }: AppProps): React.JSX.Element {
         {/* Session info line */}
         <Box paddingLeft={1}>
           <Text dimColor>
-            {ICONS.dot} {connected ? "connected" : "disconnected"} {ICONS.dot} {sessionLabel}
-            {totalTokens > 0 ? ` ${ICONS.dot} ${String(totalTokens)} tokens` : ""}
+            {ICONS.dot} {connected ? "connected" : "disconnected"} {ICONS.dot}{" "}
+            {sessionLabel}
+            {totalTokens > 0
+              ? ` ${ICONS.dot} ${String(totalTokens)} tokens`
+              : ""}
           </Text>
         </Box>
 
@@ -831,7 +893,11 @@ export function App({ _config, client }: AppProps): React.JSX.Element {
         history={promptHistory}
         commands={commandsRef.current}
         inputState={
-          connectionError ? "error" : isRunning || permissionRequest !== null ? "idle" : "focused"
+          connectionError
+            ? "error"
+            : isRunning || permissionRequest !== null
+              ? "idle"
+              : "focused"
         }
         permMode={permMode}
         onModeChange={(mode) => {

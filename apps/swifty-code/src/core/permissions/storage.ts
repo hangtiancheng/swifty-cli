@@ -21,13 +21,19 @@
  */
 
 // policy.toml persistence: load and save [always] section
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  writeFileSync,
+} from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { randomBytes } from "node:crypto";
 
-const DEFAULT_POLICY_PATH = path.join(homedir(), ".swifty", "policy.toml");
+const DEFAULT_POLICY_PATH = path.join(homedir(), ".swifty-code", "policy.toml");
 
 // Load [always] section from policy.toml; returns {tool_name: "allow"/"deny"}; empty dict if file missing
 export function loadPolicyFile(filePath?: string): Record<string, string> {
@@ -52,7 +58,10 @@ export function loadPolicyFile(filePath?: string): Record<string, string> {
       const k = stripped.slice(0, eqIdx).trim();
       let v = stripped.slice(eqIdx + 1).trim();
       // Strip quotes
-      if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) {
+      if (
+        (v.startsWith('"') && v.endsWith('"')) ||
+        (v.startsWith("'") && v.endsWith("'"))
+      ) {
         v = v.slice(1, -1);
       }
       if (v === "allow" || v === "deny") {
@@ -66,12 +75,15 @@ export function loadPolicyFile(filePath?: string): Record<string, string> {
 }
 
 // Write {tool_name: "allow"/"deny"} to policy.toml, overwriting [always] section
-export function savePolicyFile(always: Record<string, string>, filePath?: string): void {
+export function savePolicyFile(
+  always: Record<string, string>,
+  filePath?: string,
+): void {
   const p = filePath ?? DEFAULT_POLICY_PATH;
   mkdirSync(path.dirname(p), { recursive: true });
 
   const lines = [
-    "# ~/.swifty/policy.toml",
+    "# ~/.swifty-code/policy.toml",
     "# Managed by swifty-core; manual edits are preserved if format is correct",
     "",
     "[always]",

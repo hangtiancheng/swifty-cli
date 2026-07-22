@@ -25,14 +25,18 @@ import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { formatTextLine, RotatingFileDestination, setupLogging } from "../src/core/logging.js";
+import {
+  formatTextLine,
+  RotatingFileDestination,
+  setupLogging,
+} from "../src/core/logging.js";
 import type { SwiftyConfig } from "../src/core/config.js";
 
 // Build a minimal SwiftyConfig for logging tests
 function loggingConfig(format: string, file: string): SwiftyConfig {
   return {
     host: "127.0.0.1",
-    port: 7437,
+    port: 5520,
     logging: { level: "info", file, format },
     agent: { maxSteps: 5 },
     llm: { defaultModel: "claude-3", router: "static" },

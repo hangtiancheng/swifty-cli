@@ -64,8 +64,13 @@ export class AgentProfileLoader {
   // Return [project local, user global, builtin] paths; load() returns the first existing one
   private _searchPaths(name: string): string[] {
     const builtin = path.join(this._builtinDir, `${name}.toml`);
-    const globalDir = path.join(homedir(), ".swifty", "agents", `${name}.toml`);
-    const local = path.join(".swifty", "agents", `${name}.toml`);
+    const globalDir = path.join(
+      homedir(),
+      ".swifty-code",
+      "agents",
+      `${name}.toml`,
+    );
+    const local = path.join(".swifty-code", "agents", `${name}.toml`);
     return [local, globalDir, builtin];
   }
 
@@ -81,8 +86,12 @@ export class AgentProfileLoader {
     const allowedRaw = agent["allowed_tools"];
     return {
       name,
-      description: typeof agent["description"] === "string" ? agent["description"] : "",
-      systemPrompt: typeof agent["system_prompt"] === "string" ? agent["system_prompt"].trim() : "",
+      description:
+        typeof agent["description"] === "string" ? agent["description"] : "",
+      systemPrompt:
+        typeof agent["system_prompt"] === "string"
+          ? agent["system_prompt"].trim()
+          : "",
       allowedTools: Array.isArray(allowedRaw) ? allowedRaw.map(String) : [],
       model: typeof agent["model"] === "string" ? agent["model"] : "",
     };

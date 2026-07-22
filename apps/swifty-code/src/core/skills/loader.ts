@@ -67,7 +67,8 @@ function parseSkillFile(filePath: string): Skill {
           i++;
           while (
             i < lines.length &&
-            ((lines[i] ?? "").startsWith(" ") || (lines[i] ?? "").startsWith("\t"))
+            ((lines[i] ?? "").startsWith(" ") ||
+              (lines[i] ?? "").startsWith("\t"))
           ) {
             parts.push((lines[i] ?? "").trim());
             i++;
@@ -109,7 +110,10 @@ export class SkillLoader {
           return parseSkillFile(p);
         } catch (exc) {
           // Non-fatal: log and treat the skill as unavailable
-          getLogger().warn({ skill: name, file: p, err: exc }, "failed to parse skill file");
+          getLogger().warn(
+            { skill: name, file: p, err: exc },
+            "failed to parse skill file",
+          );
           return null;
         }
       }
@@ -120,8 +124,8 @@ export class SkillLoader {
   // Return candidate paths: supports both flat (name.md) and directory (name/SKILL.md) formats
   private _searchPaths(name: string): string[] {
     const dirs = [
-      path.join(".swifty", "skills"),
-      path.join(homedir(), ".swifty", "skills"),
+      path.join(".swifty-code", "skills"),
+      path.join(homedir(), ".swifty-code", "skills"),
       this._builtinDir,
     ];
     const paths: string[] = [];
@@ -137,8 +141,8 @@ export class SkillLoader {
     const seen = new Map<string, true>();
     const dirs = [
       this._builtinDir,
-      path.join(homedir(), ".swifty", "skills"),
-      path.join(".swifty", "skills"),
+      path.join(homedir(), ".swifty-code", "skills"),
+      path.join(".swifty-code", "skills"),
     ];
     for (const d of dirs) {
       if (!existsSync(d)) continue;
@@ -157,7 +161,10 @@ export class SkillLoader {
         }
       } catch (exc) {
         // Directory read failure is non-fatal; log and continue with other tiers
-        getLogger().warn({ dir: d, err: exc }, "failed to list skills directory");
+        getLogger().warn(
+          { dir: d, err: exc },
+          "failed to list skills directory",
+        );
       }
     }
     return [...seen.keys()];
@@ -168,8 +175,8 @@ export class SkillLoader {
     const seen = new Map<string, Skill>();
     const dirs = [
       this._builtinDir,
-      path.join(homedir(), ".swifty", "skills"),
-      path.join(".swifty", "skills"),
+      path.join(homedir(), ".swifty-code", "skills"),
+      path.join(".swifty-code", "skills"),
     ];
     for (const d of dirs) {
       if (!existsSync(d)) continue;
@@ -183,7 +190,10 @@ export class SkillLoader {
               seen.set(skill.name, skill);
             } catch (exc) {
               // Parse failure is non-fatal; log and skip this skill
-              getLogger().warn({ file: fullPath, err: exc }, "failed to parse skill file");
+              getLogger().warn(
+                { file: fullPath, err: exc },
+                "failed to parse skill file",
+              );
             }
           } else if (st.isDirectory()) {
             const skillFile = path.join(fullPath, "SKILL.md");
@@ -193,14 +203,20 @@ export class SkillLoader {
                 seen.set(skill.name, skill);
               } catch (exc) {
                 // Parse failure is non-fatal; log and skip this skill
-                getLogger().warn({ file: skillFile, err: exc }, "failed to parse skill file");
+                getLogger().warn(
+                  { file: skillFile, err: exc },
+                  "failed to parse skill file",
+                );
               }
             }
           }
         }
       } catch (exc) {
         // Directory read failure is non-fatal; log and continue with other tiers
-        getLogger().warn({ dir: d, err: exc }, "failed to list skills directory");
+        getLogger().warn(
+          { dir: d, err: exc },
+          "failed to list skills directory",
+        );
       }
     }
     return [...seen.values()];

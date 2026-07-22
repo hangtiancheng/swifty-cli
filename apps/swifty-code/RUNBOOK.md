@@ -13,7 +13,7 @@ swifty core start          # Start in background
 pnpm dev:core              # Start in foreground (development)
 ```
 
-The daemon listens on `127.0.0.1:7437` by default. It creates a PID file at `~/.swifty/swifty-core.pid`.
+The daemon listens on `127.0.0.1:5520` by default. It creates a PID file at `~/.swifty-code/swifty-core.pid`.
 
 ### Check Daemon Status
 
@@ -27,7 +27,7 @@ swifty ping
 
 ```bash
 swifty core stop           # Graceful shutdown (SIGTERM)
-kill "$(cat ~/.swifty/swifty-core.pid)"   # Manual fallback
+kill "$(cat ~/.swifty-code/swifty-core.pid)"   # Manual fallback
 ```
 
 On shutdown, the daemon:
@@ -42,7 +42,7 @@ On shutdown, the daemon:
 
 ```bash
 # Check what's using the port
-lsof -i :7437
+lsof -i :5520
 
 # Use a different port
 SWIFTY_PORT=8000 swifty core start
@@ -55,8 +55,8 @@ SWIFTY_PORT=8000 swifty core start
 ### 5-Tier Priority Chain (later tiers override earlier ones)
 
 1. **Built-in defaults** (hardcoded)
-2. **Global TOML** (`~/.swifty/config.toml`)
-3. **Project-local TOML** (`.swifty/config.toml`)
+2. **Global TOML** (`~/.swifty-code/config.toml`)
+3. **Project-local TOML** (`.swifty-code/config.toml`)
 4. **dotenv** (`.env` file in current directory)
 5. **Environment variables** (`SWIFTY_*` prefix)
 
@@ -72,25 +72,25 @@ Config error: compaction.auto_threshold must be between 0 and 1
 
 ### Environment Variables
 
-| Variable                           | Default                         | Description                                           |
-| ---------------------------------- | ------------------------------- | ----------------------------------------------------- |
-| `ANTHROPIC_API_KEY`                | (required)                      | Anthropic API key                                     |
-| `ANTHROPIC_BASE_URL`               | (SDK default)                   | Override API base URL                                 |
-| `SWIFTY_CONFIG`                    | `~/.swifty/config.toml`         | Path to TOML config file                              |
-| `SWIFTY_HOST`                      | `127.0.0.1`                     | Daemon bind host                                      |
-| `SWIFTY_PORT`                      | `7437`                          | Daemon bind port                                      |
-| `SWIFTY_LOG_LEVEL`                 | `INFO`                          | Log level (DEBUG / INFO / WARN / ERROR)               |
-| `SWIFTY_LOG_FILE`                  | `~/.swifty/logs/core.log`       | Log file path                                         |
-| `SWIFTY_LOG_FORMAT`                | `text`                          | Log format (text / json)                              |
-| `SWIFTY_MAX_STEPS`                 | `20`                            | Maximum agent loop steps                              |
-| `SWIFTY_LLM_DEFAULT_MODEL`         | `claude-sonnet-4-6`             | Default LLM model                                     |
-| `SWIFTY_TRACE_ENABLED`             | `true`                          | Enable/disable tracing                                |
-| `SWIFTY_TRACE_FILE`                | `~/.swifty/traces/daemon.jsonl` | Trace file path                                       |
-| `SWIFTY_TRACE_INCLUDE_LLM_PAYLOAD` | `true`                          | Include full LLM payloads in traces                   |
-| `SWIFTY_PERMISSION_TIMEOUT_S`      | `60`                            | Permission prompt timeout (seconds)                   |
-| `SWIFTY_COMPACT_THRESHOLD`         | `0.0`                           | Auto-compaction threshold (0.0 = disabled, 0.8 = 80%) |
-| `SWIFTY_COMPACT_TOOL_LIMIT`        | `8000`                          | Tool result truncation limit (chars)                  |
-| `SWIFTY_COMPACT_TOOL_KEEP`         | `4000`                          | Tool result keep size (chars)                         |
+| Variable                           | Default                              | Description                                           |
+| ---------------------------------- | ------------------------------------ | ----------------------------------------------------- |
+| `ANTHROPIC_API_KEY`                | (required)                           | Anthropic API key                                     |
+| `ANTHROPIC_BASE_URL`               | (SDK default)                        | Override API base URL                                 |
+| `SWIFTY_CONFIG`                    | `~/.swifty-code/config.toml`         | Path to TOML config file                              |
+| `SWIFTY_HOST`                      | `127.0.0.1`                          | Daemon bind host                                      |
+| `SWIFTY_PORT`                      | `5520`                               | Daemon bind port                                      |
+| `SWIFTY_LOG_LEVEL`                 | `INFO`                               | Log level (DEBUG / INFO / WARN / ERROR)               |
+| `SWIFTY_LOG_FILE`                  | `~/.swifty-code/logs/core.log`       | Log file path                                         |
+| `SWIFTY_LOG_FORMAT`                | `text`                               | Log format (text / json)                              |
+| `SWIFTY_MAX_STEPS`                 | `20`                                 | Maximum agent loop steps                              |
+| `SWIFTY_LLM_DEFAULT_MODEL`         | `claude-sonnet-4-6`                  | Default LLM model                                     |
+| `SWIFTY_TRACE_ENABLED`             | `true`                               | Enable/disable tracing                                |
+| `SWIFTY_TRACE_FILE`                | `~/.swifty-code/traces/daemon.jsonl` | Trace file path                                       |
+| `SWIFTY_TRACE_INCLUDE_LLM_PAYLOAD` | `true`                               | Include full LLM payloads in traces                   |
+| `SWIFTY_PERMISSION_TIMEOUT_S`      | `60`                                 | Permission prompt timeout (seconds)                   |
+| `SWIFTY_COMPACT_THRESHOLD`         | `0.0`                                | Auto-compaction threshold (0.0 = disabled, 0.8 = 80%) |
+| `SWIFTY_COMPACT_TOOL_LIMIT`        | `8000`                               | Tool result truncation limit (chars)                  |
+| `SWIFTY_COMPACT_TOOL_KEEP`         | `4000`                               | Tool result keep size (chars)                         |
 
 ---
 
@@ -123,7 +123,7 @@ Config error: compaction.auto_threshold must be between 0 and 1
 ### Connection Refused
 
 ```
-error: core not running (127.0.0.1:7437)
+error: core not running (127.0.0.1:5520)
 ```
 
 The daemon is not running. Start it with `swifty core start` or `pnpm dev:core`.
@@ -174,7 +174,7 @@ Common causes:
 
 ## Tracing
 
-The trace log is written to `~/.swifty/traces/daemon.jsonl` in NDJSON format.
+The trace log is written to `~/.swifty-code/traces/daemon.jsonl` in NDJSON format.
 
 ### Trace Directions
 
@@ -254,18 +254,18 @@ The TUI status bar shows the current context percentage. The color changes based
 
 ## Data Directories
 
-| Path                                     | Purpose                                                               |
-| ---------------------------------------- | --------------------------------------------------------------------- |
-| `~/.swifty/config.toml`                  | Global configuration                                                  |
-| `~/.swifty/policy.toml`                  | Persistent permission policies                                        |
-| `~/.swifty/sessions/`                    | Session data: `meta.json`, `thread.jsonl`, `notes.md`, `summary_*.md` |
-| `~/.swifty/sessions/{sid}/runs/{runId}/` | Per-run event logs (`events.jsonl`)                                   |
-| `~/.swifty/traces/daemon.jsonl`          | Trace log (NDJSON)                                                    |
-| `~/.swifty/logs/core.log`                | Application log (Pino)                                                |
-| `~/.swifty/context.md`                   | Global context injected into agent system prompts                     |
-| `~/.swifty/swifty-core.pid`              | Daemon PID file                                                       |
-| `.swifty/config.toml`                    | Project-local configuration                                           |
-| `.swifty/context.md`                     | Project-local context                                                 |
+| Path                                          | Purpose                                                               |
+| --------------------------------------------- | --------------------------------------------------------------------- |
+| `~/.swifty-code/config.toml`                  | Global configuration                                                  |
+| `~/.swifty-code/policy.toml`                  | Persistent permission policies                                        |
+| `~/.swifty-code/sessions/`                    | Session data: `meta.json`, `thread.jsonl`, `notes.md`, `summary_*.md` |
+| `~/.swifty-code/sessions/{sid}/runs/{runId}/` | Per-run event logs (`events.jsonl`)                                   |
+| `~/.swifty-code/traces/daemon.jsonl`          | Trace log (NDJSON)                                                    |
+| `~/.swifty-code/logs/core.log`                | Application log (Pino)                                                |
+| `~/.swifty-code/context.md`                   | Global context injected into agent system prompts                     |
+| `~/.swifty-code/swifty-core.pid`              | Daemon PID file                                                       |
+| `.swifty-code/config.toml`                    | Project-local configuration                                           |
+| `.swifty-code/context.md`                     | Project-local context                                                 |
 
 ---
 

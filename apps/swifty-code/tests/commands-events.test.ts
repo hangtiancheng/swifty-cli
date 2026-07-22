@@ -25,7 +25,10 @@
 import { describe, expect, test } from "vitest";
 import { ZodError } from "zod";
 
-import { PingCommandSchema, PongResultSchema } from "../src/core/bus/commands.js";
+import {
+  PingCommandSchema,
+  PongResultSchema,
+} from "../src/core/bus/commands.js";
 import {
   CoreStartedEventSchema,
   SubagentStartedEventSchema,
@@ -79,12 +82,12 @@ describe("CoreStartedEvent", () => {
   // Design: CoreStartedEvent is daemon startup notification, roundtrip confirms type literal constraint persists after deserialization
   test("roundtrip preserves listen_addr and type", () => {
     const evt = CoreStartedEventSchema.parse({
-      listen_addr: "127.0.0.1:7437",
+      listen_addr: "127.0.0.1:5520",
       version: "0.0.1",
     });
     const json = JSON.stringify(evt);
     const evt2 = CoreStartedEventSchema.parse(JSON.parse(json));
-    expect(evt2.listen_addr).toBe("127.0.0.1:7437");
+    expect(evt2.listen_addr).toBe("127.0.0.1:5520");
     expect(evt2.type).toBe("core.started");
   });
 });

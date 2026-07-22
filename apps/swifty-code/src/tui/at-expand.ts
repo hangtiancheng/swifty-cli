@@ -39,7 +39,7 @@ const SKIP_DIRS = new Set([
   ".turbo",
   ".vercel",
   "coverage",
-  ".swifty",
+  ".swifty-code",
   ".venv",
   "__pycache__",
   ".mypy_cache",

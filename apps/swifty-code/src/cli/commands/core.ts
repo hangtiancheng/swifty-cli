@@ -22,7 +22,13 @@
 
 // CLI core command: daemon lifecycle management (start/stop/status)
 import { execFileSync, spawn } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 import process from "node:process";
@@ -31,7 +37,7 @@ import { fileURLToPath } from "node:url";
 import type { SwiftyConfig } from "../../core/config.js";
 import { pingDaemon } from "../../core/commands/ping.js";
 
-const PID_FILE = path.join(homedir(), ".swifty", "swifty-core.pid");
+const PID_FILE = path.join(homedir(), ".swifty-code", "swifty-core.pid");
 
 // B-12: guard against PID reuse — before killing, verify the process command
 // line looks like our daemon ("swifty" or "node"). Uses `ps` (darwin/linux);
@@ -82,7 +88,9 @@ export function cmdCoreStart(config: SwiftyConfig): void {
   // Check if already running
   const pid = runningPid();
   if (pid) {
-    console.log(`already running  pid=${String(pid)}  (${config.host}:${String(config.port)})`);
+    console.log(
+      `already running  pid=${String(pid)}  (${config.host}:${String(config.port)})`,
+    );
     return;
   }
 
@@ -104,7 +112,9 @@ export function cmdCoreStart(config: SwiftyConfig): void {
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
   writeFileSync(PID_FILE, String(child.pid), "utf-8");
 
-  console.log(`started  pid=${String(child.pid)}  (${config.host}:${String(config.port)})`);
+  console.log(
+    `started  pid=${String(child.pid)}  (${config.host}:${String(config.port)})`,
+  );
 }
 
 export function cmdCoreStop(_config: SwiftyConfig): void {

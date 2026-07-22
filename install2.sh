@@ -19,11 +19,11 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-# install.sh — Bootstrap installer for swifty-code CLI via npm global install.
+# install2.sh — Bootstrap installer for swifty-code CLI via npm global install.
 #
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/hangtiancheng/swifty-cli/main/install2.sh | bash
-#   curl -fsSL https://raw.githubusercontent.com/hangtiancheng/swifty-cli/main/install2.sh | bash -s -- --beta
+#   curl -fsSL https://raw.githubusercontent.com/hangtiancheng/swifty-cli/main/install2.sh | bash -s -- --alpha
 #
 # Installs @swifty.js/swifty-code globally via npm. npm's `bin` field automatically
 # creates the `swifty-code` command on PATH. Requires Node.js >= 20.
@@ -59,10 +59,10 @@ for arg in "$@"; do
 	--tag=*) TAG="${arg#--tag=}" ;;
 	--help | -h)
 		cat <<EOF
-Usage: install.sh [OPTIONS]
+Usage: install2.sh [OPTIONS]
 
   (default)    Install the latest stable swifty-code from npm
-  --uninstall  Remove swifty-code globally
+  --uninstall  Uninstall swifty-code
   --version=   Install a specific version (e.g. --version=0.1.0)
   --alpha      Install from the 'alpha' dist-tag
   --beta       Install from the 'beta' dist-tag
@@ -96,6 +96,54 @@ if [ "$ACTION" = "uninstall" ]; then
 	exit 0
 fi
 
+# ── Write default config (skip if it already exists) ─────────────────
+CONFIG_DIR="$HOME/.swifty"
+CONFIG_FILE="$CONFIG_DIR/config.toml"
+if [ -f "$CONFIG_FILE" ]; then
+	info "Config already exists at $CONFIG_FILE, leaving it untouched."
+else
+	mkdir -p "$CONFIG_DIR"
+	cat > "$CONFIG_FILE" <<'EOF'
+# Swifty Code global configuration (~/.swifty/config.toml)
+[core]
+host = "127.0.0.1"
+port = 5520
+
+[logging]
+level = "INFO"
+file = "~/.swifty/logs/core.log"
+format = "text"
+
+[agent]
+max_steps = 20
+
+[llm]
+default_model = "claude-sonnet-4-6"
+router = "static"
+
+[trace]
+enabled = true
+file = "~/.swifty/traces/daemon.jsonl"
+include_llm_payload = true
+
+[permission]
+timeout_s = 60.0
+
+[compaction]
+auto_threshold = 0.0
+tool_result_limit = 8000
+tool_result_keep = 4000
+
+# MCP servers — optional, empty by default.
+# [[mcp.servers]]
+# name = "filesystem"
+# transport = "stdio"
+# command = "npx"
+# args = ["-y", "@modelcontextprotocol/server-filesystem", "."]
+EOF
+	ok "Wrote default config to $CONFIG_FILE"
+fi
+
 # ── Check Node.js ─────────────────────────────────────────────────────
 if ! command -v node >/dev/null 2>&1; then
 	err "Node.js not found. Install Node.js >= $NODE_MAJOR_MIN first:"
@@ -118,26 +166,27 @@ fi
 if [ -n "$VERSION" ]; then
 	# Strip leading 'v' if user passed v0.1.0
 	VERSION="${VERSION#v}"
-	INSTALL_SPEC="$PACKAGE@$VERSION"
+	PKG_VERSION="$PACKAGE@$VERSION"
 elif [ -n "$TAG" ]; then
-	INSTALL_SPEC="$PACKAGE@$TAG"
+	PKG_VERSION="$PACKAGE@$TAG"
 else
-	INSTALL_SPEC="$PACKAGE@latest"
+	PKG_VERSION="$PACKAGE@latest"
 fi
 
-info "Installing $INSTALL_SPEC globally..."
-npm install -g "$INSTALL_SPEC"
+info "Installing $PKG_VERSION globally..."
+npm install -g "$PKG_VERSION"
 
 # ── Verify ────────────────────────────────────────────────────────────
 # npm global bin should be on PATH. If not, print the prefix/bin hint.
 NPM_BIN="$(npm config get prefix 2>/dev/null)/bin"
 if command -v swifty-code >/dev/null 2>&1; then
 	ok "swifty-code installed successfully"
-	info "Version: $(swifty-code --version 2>/dev/null || echo 'unknown')"
-	echo
-	info "Run 'swifty-code' to get started."
+	SWIFTY_VERSION="$(swifty-code --version 2>/dev/null || true)"
+	[ -n "$SWIFTY_VERSION" ] && info "Version: $SWIFTY_VERSION"
 else
 	warn "Installation completed but 'swifty-code' is not on your PATH."
 	warn "Add npm's global bin to your shell profile (~/.bashrc / ~/.zshrc):"
 	warn "  export PATH=\"$NPM_BIN:\$PATH\""
 fi
+
+ok 'Love & Peace, Enjoy Swifty Code!!!'

@@ -18,19 +18,19 @@ The architecture separates concerns into two processes: a long-lived daemon (swi
 - MCP (Model Context Protocol) server integration for third-party tool extensions
 - Agent profiles (planner, executor, reviewer) defined in TOML
 - Skills system with built-in skills (init, orchestrate, review, summarize)
-- Context memory layers: global (~/.swifty/context.md), project (.swifty/context.md), and session notes
+- Context memory layers: global (~/.swifty-code/context.md), project (.swifty-code/context.md), and session notes
 
 ### Session Management
 
 - Two session modes: one_shot (single-goal, auto-closing) and chat (multi-turn interactive)
-- Per-run event logs stored in ~/.swifty/sessions/{sid}/runs/{runId}/events.jsonl
+- Per-run event logs stored in ~/.swifty-code/sessions/{sid}/runs/{runId}/events.jsonl
 - Context compaction (manual /compact or automatic via threshold) for long-running sessions
 - Session notes persistence via note_save tool
 
 ### Permission System
 
 - Interactive permission prompts for tool invocations
-- Persistent policy file (~/.swifty/policy.toml) with four decision types: allow_once, always_allow, deny_once, always_deny
+- Persistent policy file (~/.swifty-code/policy.toml) with four decision types: allow_once, always_allow, deny_once, always_deny
 - Configurable timeout (default 60 seconds)
 
 ### Interfaces
@@ -41,7 +41,7 @@ The architecture separates concerns into two processes: a long-lived daemon (swi
 
 ### Observability
 
-- NDJSON trace log (~/.swifty/traces/daemon.jsonl) with directional coloring
+- NDJSON trace log (~/.swifty-code/traces/daemon.jsonl) with directional coloring
 - Trace filtering by layer (ipc, event, llm), direction, and run ID
 - Pino-based structured logging with configurable levels
 
@@ -50,7 +50,7 @@ The architecture separates concerns into two processes: a long-lived daemon (swi
 ```
  +-----------+       TCP JSON-RPC       +------------------+
  | CLI / TUI |  <====================>  |   swifty-core     |
- |  (client) |     127.0.0.1:7437       |   (daemon)         |
+ |  (client) |     127.0.0.1:5520       |   (daemon)         |
  +-----------+                           +------------------+
                                               |
                                     +---------+---------+
@@ -82,28 +82,28 @@ The bin entry (swifty-code) points to dist/cli/main.js after building.
 Configuration follows a 5-tier priority chain where later tiers override earlier ones:
 
 1. Built-in defaults (hardcoded)
-2. Global TOML config (~/.swifty/config.toml)
-3. Project-local TOML (.swifty/config.toml)
+2. Global TOML config (~/.swifty-code/config.toml)
+3. Project-local TOML (.swifty-code/config.toml)
 4. dotenv (.env file in current directory)
 5. Environment variables (SWIFTY\_ prefix)
 
 ### Key Environment Variables
 
-| Variable                    | Default                       | Description                                |
-| --------------------------- | ----------------------------- | ------------------------------------------ |
-| ANTHROPIC_API_KEY           | (required)                    | Anthropic API key                          |
-| ANTHROPIC_BASE_URL          | (SDK default)                 | Override API base URL                      |
-| SWIFTY_HOST                 | 127.0.0.1                     | Daemon bind host                           |
-| SWIFTY_PORT                 | 7437                          | Daemon bind port                           |
-| SWIFTY_LOG_LEVEL            | INFO                          | Log level (DEBUG / INFO / WARN / ERROR)    |
-| SWIFTY_LOG_FILE             | ~/.swifty/logs/core.log       | Log file path                              |
-| SWIFTY_MAX_STEPS            | 20                            | Maximum agent loop steps                   |
-| SWIFTY_LLM_DEFAULT_MODEL    | claude-sonnet-4-6             | Default LLM model                          |
-| SWIFTY_TRACE_ENABLED        | true                          | Enable/disable tracing                     |
-| SWIFTY_TRACE_FILE           | ~/.swifty/traces/daemon.jsonl | Trace file path                            |
-| SWIFTY_PERMISSION_TIMEOUT_S | 60                            | Permission prompt timeout (seconds)        |
-| SWIFTY_COMPACT_THRESHOLD    | 0.0                           | Auto-compaction threshold (0.0 = disabled) |
-| SWIFTY_CONFIG               | ~/.swifty/config.toml         | Path to TOML config file                   |
+| Variable                    | Default                            | Description                                |
+| --------------------------- | ---------------------------------- | ------------------------------------------ |
+| ANTHROPIC_API_KEY           | (required)                         | Anthropic API key                          |
+| ANTHROPIC_BASE_URL          | (SDK default)                      | Override API base URL                      |
+| SWIFTY_HOST                 | 127.0.0.1                          | Daemon bind host                           |
+| SWIFTY_PORT                 | 5520                               | Daemon bind port                           |
+| SWIFTY_LOG_LEVEL            | INFO                               | Log level (DEBUG / INFO / WARN / ERROR)    |
+| SWIFTY_LOG_FILE             | ~/.swifty-code/logs/core.log       | Log file path                              |
+| SWIFTY_MAX_STEPS            | 20                                 | Maximum agent loop steps                   |
+| SWIFTY_LLM_DEFAULT_MODEL    | claude-sonnet-4-6                  | Default LLM model                          |
+| SWIFTY_TRACE_ENABLED        | true                               | Enable/disable tracing                     |
+| SWIFTY_TRACE_FILE           | ~/.swifty-code/traces/daemon.jsonl | Trace file path                            |
+| SWIFTY_PERMISSION_TIMEOUT_S | 60                                 | Permission prompt timeout (seconds)        |
+| SWIFTY_COMPACT_THRESHOLD    | 0.0                                | Auto-compaction threshold (0.0 = disabled) |
+| SWIFTY_CONFIG               | ~/.swifty-code/config.toml         | Path to TOML config file                   |
 
 ### MCP Server Configuration
 
@@ -259,20 +259,20 @@ apps/swifty-code/
 
 ## Data Directories
 
-| Path                                   | Purpose                                                         |
-| -------------------------------------- | --------------------------------------------------------------- |
-| ~/.swifty/config.toml                  | Global configuration                                            |
-| ~/.swifty/policy.toml                  | Persistent permission policies                                  |
-| ~/.swifty/context.md                   | Global context injected into agent system prompts               |
-| ~/.swifty/sessions/                    | Session data: meta.json, thread.jsonl, notes.md, summary\_\*.md |
-| ~/.swifty/sessions/{sid}/runs/{runId}/ | Per-run event logs                                              |
-| ~/.swifty/traces/daemon.jsonl          | Trace log (NDJSON)                                              |
-| ~/.swifty/logs/core.log                | Application log (Pino)                                          |
-| ~/.swifty/swifty-core.pid              | Daemon PID file                                                 |
-| ~/.swifty/agents/{name}.toml           | User-defined agent profiles                                     |
-| .swifty/config.toml                    | Project-local configuration                                     |
-| .swifty/context.md                     | Project-local context                                           |
-| .swifty/agents/{name}.toml             | Project-local agent profiles                                    |
+| Path                                        | Purpose                                                         |
+| ------------------------------------------- | --------------------------------------------------------------- |
+| ~/.swifty-code/config.toml                  | Global configuration                                            |
+| ~/.swifty-code/policy.toml                  | Persistent permission policies                                  |
+| ~/.swifty-code/context.md                   | Global context injected into agent system prompts               |
+| ~/.swifty-code/sessions/                    | Session data: meta.json, thread.jsonl, notes.md, summary\_\*.md |
+| ~/.swifty-code/sessions/{sid}/runs/{runId}/ | Per-run event logs                                              |
+| ~/.swifty-code/traces/daemon.jsonl          | Trace log (NDJSON)                                              |
+| ~/.swifty-code/logs/core.log                | Application log (Pino)                                          |
+| ~/.swifty-code/swifty-core.pid              | Daemon PID file                                                 |
+| ~/.swifty-code/agents/{name}.toml           | User-defined agent profiles                                     |
+| .swifty-code/config.toml                    | Project-local configuration                                     |
+| .swifty-code/context.md                     | Project-local context                                           |
+| .swifty-code/agents/{name}.toml             | Project-local agent profiles                                    |
 
 ## Tech Stack
 

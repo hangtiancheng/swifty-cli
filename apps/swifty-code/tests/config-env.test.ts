@@ -92,7 +92,7 @@ describe("config priority chain", () => {
     process.chdir(dir);
 
     const cfg = getConfig();
-    expect(cfg.port).toBe(7437);
+    expect(cfg.port).toBe(5520);
   });
 
   // Feature: Verify .env file values are loaded correctly and override built-in defaults
@@ -131,7 +131,7 @@ describe("config priority chain", () => {
     expect(cfg.port).toBe(5555);
   });
 
-  // Feature: Verify full 4-tier priority chain: defaults(7437) → TOML(6000) → .env(7000) → env var(8000)
+  // Feature: Verify full 4-tier priority chain: defaults(5520) → TOML(6000) → .env(7000) → env var(8000)
   // Design: Set all 4 tiers simultaneously, confirm final value is highest priority env var
   test("full priority chain: env var wins", () => {
     const dir = makeTmpDir();
