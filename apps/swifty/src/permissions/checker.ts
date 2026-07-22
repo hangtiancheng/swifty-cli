@@ -24,7 +24,7 @@ import { createChildLogger } from "../logger/index.js";
 
 const log = createChildLogger({ module: "permissions" });
 
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, statSync } from "node:fs";
 import { join, resolve, dirname } from "node:path";
 import { homedir, tmpdir } from "node:os";
 import yaml from "js-yaml";
@@ -438,6 +438,12 @@ export class PermissionChecker {
       }
       const sandboxDecision = this.sandbox.check(filePath);
       if (sandboxDecision && this.mode !== "bypassPermissions") {
+        // An explicit rule (e.g. `ReadFile(/foo/*)` allow) overrides the
+        // sandbox ask; otherwise rules for outside paths could never apply.
+        const ruleEffect = this.ruleEngine.evaluate(toolName, content);
+        if (ruleEffect) {
+          return { effect: ruleEffect, reason: `Permission rule: ${ruleEffect}` };
+        }
         return { effect: "ask", reason: sandboxDecision.reason };
       }
     }
@@ -467,12 +473,27 @@ export class PermissionChecker {
     this.sessionAllowed.add(`${toolName}:${content}`);
   }
 
-  // Persist a scoped "allow always" rule. The pattern is derived from the
-  // tool's content field (capped at 60 chars) so it allows that specific
-  // command/path family rather than the whole tool. Mirrors Go.
+  // Persist a scoped "allow always" rule.
+  // - File path: parent directory + `/*` (a directory path uses itself + `/*`).
+  // - Command: first 1-2 words + `*` so it allows that command family.
   allowAlways(toolName: string, args: Record<string, unknown>): void {
     const content = extractContent(toolName, args);
-    const pattern = content.length > 60 ? content.slice(0, 60) + "*" : content + "*";
+    const isFilePath =
+      toolName === "ReadFile" || toolName === "WriteFile" || toolName === "EditFile";
+    let pattern: string;
+    if (isFilePath && content) {
+      const abs = resolve(content);
+      let isDir = false;
+      try {
+        isDir = statSync(abs).isDirectory();
+      } catch {
+        // Path may not exist yet (e.g. WriteFile creating a new file) — treat as file.
+      }
+      pattern = join(isDir ? abs : dirname(abs), "*");
+    } else {
+      const words = content.trim().split(/\s+/).slice(0, 2);
+      pattern = words.join(" ") + "*";
+    }
     this.ruleEngine.appendLocalRule({
       tool: toolName,
       pattern,
