@@ -23,6 +23,7 @@
 #
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/hangtiancheng/swifty-cli/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/hangtiancheng/swifty-cli/main/install.sh | bash -s -- --alpha
 #
 # Installs @swifty.js/swifty globally via npm. npm's `bin` field automatically
 # creates the `swifty` command on PATH. Requires Node.js >= 20.
