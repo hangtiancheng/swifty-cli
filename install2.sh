@@ -100,7 +100,7 @@ fi
 CONFIG_DIR="$HOME/.swifty"
 CONFIG_FILE="$CONFIG_DIR/config.toml"
 if [ -f "$CONFIG_FILE" ]; then
-	info "Config already exists at $CONFIG_FILE, leaving it untouched."
+	info "Config already exists at $CONFIG_FILE."
 else
 	mkdir -p "$CONFIG_DIR"
 	cat > "$CONFIG_FILE" <<'EOF'
@@ -174,7 +174,7 @@ else
 fi
 
 info "Installing $PKG_VERSION globally..."
-npm install -g "$PKG_VERSION"
+npm install -g "$PKG_VERSION" --registry=https://registry.npmjs.org/
 
 # ── Verify ────────────────────────────────────────────────────────────
 # npm global bin should be on PATH. If not, print the prefix/bin hint.
