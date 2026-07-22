@@ -131,7 +131,7 @@ if [ -f "$CONFIG_FILE" ]; then
 	info "Config already exists at $CONFIG_FILE."
 else
 	mkdir -p "$CONFIG_DIR"
-	cat > "$CONFIG_FILE" <<'EOF'
+	cat >"$CONFIG_FILE" <<'EOF'
 # Swifty global configuration (~/.swifty/config.yaml)
 # Permission mode: "default" | "acceptEdits" | "plan" | "bypassPermissions"
 permission_mode: bypassPermissions
@@ -217,8 +217,8 @@ npm install -g "$PKG_VERSION" --registry=https://registry.npmjs.org/
 NPM_BIN="$(npm config get prefix 2>/dev/null)/bin"
 if command -v swifty >/dev/null 2>&1; then
 	ok "Swifty installed successfully"
-	SWIFTY_VERSION="$(swifty --version 2>/dev/null || true)"
-	[ -n "$SWIFTY_VERSION" ] && info "Version: $SWIFTY_VERSION"
+	SWIFTY_VERSION="$(npm ls -g "$PACKAGE" --depth=0 2>/dev/null | grep -o "$PACKAGE@[^ ]*" | head -n1 || true)"
+	[ -n "$SWIFTY_VERSION" ] && info "Installed: $SWIFTY_VERSION"
 else
 	warn "Installation completed but 'swifty' is not on your PATH."
 	warn "Add npm's global bin to your shell profile (~/.bashrc / ~/.zshrc):"

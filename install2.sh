@@ -103,7 +103,7 @@ if [ -f "$CONFIG_FILE" ]; then
 	info "Config already exists at $CONFIG_FILE."
 else
 	mkdir -p "$CONFIG_DIR"
-	cat > "$CONFIG_FILE" <<'EOF'
+	cat >"$CONFIG_FILE" <<'EOF'
 # Swifty Code global configuration (~/.swifty/config.toml)
 [core]
 host = "127.0.0.1"
@@ -181,8 +181,8 @@ npm install -g "$PKG_VERSION" --registry=https://registry.npmjs.org/
 NPM_BIN="$(npm config get prefix 2>/dev/null)/bin"
 if command -v swifty-code >/dev/null 2>&1; then
 	ok "swifty-code installed successfully"
-	SWIFTY_VERSION="$(swifty-code --version 2>/dev/null || true)"
-	[ -n "$SWIFTY_VERSION" ] && info "Version: $SWIFTY_VERSION"
+	SWIFTY_VERSION="$(npm ls -g "$PACKAGE" --depth=0 2>/dev/null | grep -o "$PACKAGE@[^ ]*" | head -n1 || true)"
+	[ -n "$SWIFTY_VERSION" ] && info "Installed: $SWIFTY_VERSION"
 else
 	warn "Installation completed but 'swifty-code' is not on your PATH."
 	warn "Add npm's global bin to your shell profile (~/.bashrc / ~/.zshrc):"
