@@ -1,7 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(ls apps && ls apps/*/src 2>/dev/null | head -50)"
-    ]
-  }
-}
