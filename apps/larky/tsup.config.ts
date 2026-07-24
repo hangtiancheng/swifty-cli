@@ -25,9 +25,7 @@ import { readFileSync } from "node:fs";
 import { defineConfig, type Options } from "tsup";
 
 // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
-const pkg = JSON.parse(
-  readFileSync(new URL("./package.json", import.meta.url), "utf-8"),
-) as {
+const pkg = JSON.parse(readFileSync(new URL("./package.json", import.meta.url), "utf-8")) as {
   version: string;
 };
 

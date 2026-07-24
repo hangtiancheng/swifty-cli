@@ -58,10 +58,7 @@ import { PermissionManager } from "./permissions/manager.js";
 import { newRunId } from "./runs.js";
 import { SessionManager } from "./session/manager.js";
 import { SessionStore } from "./session/store.js";
-import {
-  getConnectionWriter,
-  SocketServer,
-} from "./transport/socket-server.js";
+import { getConnectionWriter, SocketServer } from "./transport/socket-server.js";
 import { IpcEventBroadcaster } from "./transport/ipc-broadcaster.js";
 import { makeEventTrace } from "./trace/record.js";
 import { TraceWriter } from "./trace/writer.js";
@@ -89,9 +86,7 @@ export class CoreApp {
   private _abortController = new AbortController();
 
   // Handle core.ping request
-  private async _pingHandler(
-    params: Record<string, unknown>,
-  ): Promise<unknown> {
+  private async _pingHandler(params: Record<string, unknown>): Promise<unknown> {
     await Promise.resolve();
     console.debug(`ping from ${String(params["client"])}`);
     const uptimeMs = Math.round(performance.now() - this._startTime);
@@ -111,15 +106,10 @@ export class CoreApp {
   }
 
   // agent.run handler
-  private async _agentRunHandler(
-    params: Record<string, unknown>,
-  ): Promise<unknown> {
+  private async _agentRunHandler(params: Record<string, unknown>): Promise<unknown> {
     if (!this._sessions) throw new Error("sessions not initialized");
     const cmd = AgentRunCommandSchema.parse(params);
-    const session = await this._sessions.create(
-      "one_shot",
-      cmd.goal.slice(0, 40),
-    );
+    const session = await this._sessions.create("one_shot", cmd.goal.slice(0, 40));
     const rid = newRunId();
     const runPromise = this._sessions.sendMessage(session.id, cmd.goal, rid);
     this._runningRuns.add(runPromise);
@@ -128,9 +118,7 @@ export class CoreApp {
   }
 
   // session.create handler
-  private async _sessionCreateHandler(
-    params: Record<string, unknown>,
-  ): Promise<unknown> {
+  private async _sessionCreateHandler(params: Record<string, unknown>): Promise<unknown> {
     if (!this._sessions) throw new Error("sessions not initialized");
     const cmd = SessionCreateCommandSchema.parse(params);
     const session = await this._sessions.create(cmd.mode, cmd.title);
@@ -141,9 +129,7 @@ export class CoreApp {
   }
 
   // session.send_message handler
-  private async _sessionSendHandler(
-    params: Record<string, unknown>,
-  ): Promise<unknown> {
+  private async _sessionSendHandler(params: Record<string, unknown>): Promise<unknown> {
     if (!this._sessions) throw new Error("sessions not initialized");
     const cmd = SessionSendMessageCommandSchema.parse(params);
     const rid = await this._sessions.sendMessage(cmd.session_id, cmd.content);
@@ -159,9 +145,7 @@ export class CoreApp {
   }
 
   // session.close handler
-  private async _sessionCloseHandler(
-    params: Record<string, unknown>,
-  ): Promise<unknown> {
+  private async _sessionCloseHandler(params: Record<string, unknown>): Promise<unknown> {
     if (!this._sessions) throw new Error("sessions not initialized");
     const cmd = SessionCloseCommandSchema.parse(params);
     await this._sessions.close(cmd.session_id);
@@ -169,9 +153,7 @@ export class CoreApp {
   }
 
   // permission.respond handler
-  private async _permissionRespondHandler(
-    params: Record<string, unknown>,
-  ): Promise<unknown> {
+  private async _permissionRespondHandler(params: Record<string, unknown>): Promise<unknown> {
     await Promise.resolve();
     const cmd = PermissionRespondCommandSchema.parse(params);
     console.log(
@@ -186,9 +168,7 @@ export class CoreApp {
   }
 
   // session.compact handler
-  private async _sessionCompactHandler(
-    params: Record<string, unknown>,
-  ): Promise<unknown> {
+  private async _sessionCompactHandler(params: Record<string, unknown>): Promise<unknown> {
     if (!this._sessions) throw new Error("sessions not initialized");
     const cmd = SessionCompactCommandSchema.parse(params);
     const result = await this._sessions.compact(cmd.session_id, cmd.focus);
@@ -230,9 +210,7 @@ export class CoreApp {
     });
 
     // Broadcaster
-    this._broadcaster = new IpcEventBroadcaster(
-      this._trace ? { trace: this._trace } : undefined,
-    );
+    this._broadcaster = new IpcEventBroadcaster(this._trace ? { trace: this._trace } : undefined);
     this._bus.subscribe(async (e) => {
       if (this._broadcaster) {
         await this._broadcaster.handle(e);
@@ -244,7 +222,10 @@ export class CoreApp {
     const store = new SessionStore(sessionsRoot);
 
     // LLM provider for compaction
-    const provider = new AnthropicProvider(config.llm.defaultModel);
+    const provider = new AnthropicProvider(config.llm.defaultModel, undefined, {
+      apiKey: config.llm.apiKey,
+      baseUrl: config.llm.baseUrl,
+    });
 
     // MCP
     this._mcpManager = new McpServerManager();
@@ -258,9 +239,7 @@ export class CoreApp {
         new AgentRunner(config, {
           bus: this._bus,
           ...(this._trace ? { trace: this._trace } : {}),
-          ...(this._permissionManager
-            ? { permissionManager: this._permissionManager }
-            : {}),
+          ...(this._permissionManager ? { permissionManager: this._permissionManager } : {}),
           ...(this._mcpManager ? { mcpManager: this._mcpManager } : {}),
           signal: this._abortController.signal,
         }),
@@ -292,13 +271,9 @@ export class CoreApp {
     server.register("event.subscribe", (p) => this._subscribeHandler(p));
     server.register("session.create", (p) => this._sessionCreateHandler(p));
     server.register("session.send_message", (p) => this._sessionSendHandler(p));
-    server.register("session.get_history", (p) =>
-      Promise.resolve(this._sessionHistoryHandler(p)),
-    );
+    server.register("session.get_history", (p) => Promise.resolve(this._sessionHistoryHandler(p)));
     server.register("session.close", (p) => this._sessionCloseHandler(p));
-    server.register("permission.respond", (p) =>
-      this._permissionRespondHandler(p),
-    );
+    server.register("permission.respond", (p) => this._permissionRespondHandler(p));
     server.register("session.compact", (p) => this._sessionCompactHandler(p));
 
     let addr: string;
@@ -306,8 +281,7 @@ export class CoreApp {
       addr = await server.start();
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      const code =
-        isRecord(e) && typeof e["code"] === "string" ? e["code"] : "";
+      const code = isRecord(e) && typeof e["code"] === "string" ? e["code"] : "";
       if (code === "EADDRINUSE" || msg.includes("already running")) {
         console.error(
           `larky-core: port ${String(config.port)} already in use (${config.host}:${String(config.port)})`,
@@ -388,13 +362,7 @@ export function snapshotReplayLines(runId: string, topics: string[]): string[] {
       try {
         const sessionIds = readdirSync(sessionsDir);
         for (const sessionId of sessionIds) {
-          const candidate = path.join(
-            sessionsDir,
-            sessionId,
-            "runs",
-            runId,
-            "events.jsonl",
-          );
+          const candidate = path.join(sessionsDir, sessionId, "runs", runId, "events.jsonl");
           if (existsSync(candidate)) {
             eventsPath = candidate;
             break;
@@ -411,10 +379,7 @@ export function snapshotReplayLines(runId: string, topics: string[]): string[] {
 
 // Synchronously read an events.jsonl file and return the topic-matching
 // event envelope lines ("\n"-terminated); empty array on any read error
-export function snapshotReplayLinesFromFile(
-  eventsPath: string,
-  topics: string[],
-): string[] {
+export function snapshotReplayLinesFromFile(eventsPath: string, topics: string[]): string[] {
   if (!existsSync(eventsPath)) return [];
 
   // Compile topic matchers once (same picomatch semantics as IpcEventBroadcaster)
@@ -429,8 +394,7 @@ export function snapshotReplayLinesFromFile(
         const parsed: unknown = JSON.parse(line);
         if (!isRecord(parsed)) continue;
         const event = parsed;
-        const eventType =
-          typeof event["type"] === "string" ? event["type"] : "";
+        const eventType = typeof event["type"] === "string" ? event["type"] : "";
         if (!matchTopic(eventType, matchers)) continue;
         out.push(JSON.stringify({ kind: "event", event }) + "\n");
       } catch {
@@ -454,10 +418,7 @@ export async function handleEventSubscribe(
   broadcaster: IpcEventBroadcaster,
   writer: net.Socket,
   cmd: { topics: string[]; scope: string; replay_from_run: string | null },
-  snapshotFn: (
-    runId: string,
-    topics: string[],
-  ) => string[] = snapshotReplayLines,
+  snapshotFn: (runId: string, topics: string[]) => string[] = snapshotReplayLines,
 ): Promise<unknown> {
   // 1. Synchronous snapshot of history
   let replayLines: string[] = [];
@@ -488,8 +449,7 @@ async function main(): Promise<void> {
   process.exit(0);
 }
 
-const isDirectRun =
-  process.argv[1].endsWith("/app.ts") || process.argv[1].endsWith("/app.js");
+const isDirectRun = process.argv[1].endsWith("/app.ts") || process.argv[1].endsWith("/app.js");
 
 if (isDirectRun) {
   void main();

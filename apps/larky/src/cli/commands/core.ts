@@ -22,13 +22,7 @@
 
 // CLI core command: daemon lifecycle management (start/stop/status)
 import { execFileSync, spawn } from "node:child_process";
-import {
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  unlinkSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 import process from "node:process";
@@ -88,9 +82,7 @@ export function cmdCoreStart(config: LarkyConfig): void {
   // Check if already running
   const pid = runningPid();
   if (pid) {
-    console.log(
-      `already running  pid=${String(pid)}  (${config.host}:${String(config.port)})`,
-    );
+    console.log(`already running  pid=${String(pid)}  (${config.host}:${String(config.port)})`);
     return;
   }
 
@@ -112,9 +104,7 @@ export function cmdCoreStart(config: LarkyConfig): void {
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
   writeFileSync(PID_FILE, String(child.pid), "utf-8");
 
-  console.log(
-    `started  pid=${String(child.pid)}  (${config.host}:${String(config.port)})`,
-  );
+  console.log(`started  pid=${String(child.pid)}  (${config.host}:${String(config.port)})`);
 }
 
 export function cmdCoreStop(_config: LarkyConfig): void {

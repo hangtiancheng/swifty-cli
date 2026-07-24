@@ -27,8 +27,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import toml from "toml";
-
-import { isRecord } from "../bus/envelope.js";
+import { z } from "zod";
 
 export interface AgentProfile {
   name: string;
@@ -37,6 +36,24 @@ export interface AgentProfile {
   allowedTools: string[];
   model: string;
 }
+
+// Lenient [agent] section schema: missing or wrongly-typed values silently
+// fall back to their defaults (matches the historical tolerant parsing)
+const AgentSectionSchema = z.object({
+  description: z.string().catch(""),
+  system_prompt: z.string().catch(""),
+  allowed_tools: z.array(z.coerce.string()).catch([]),
+  model: z.string().catch(""),
+});
+
+const AgentProfileSchema = z.object({
+  agent: AgentSectionSchema.catch({
+    description: "",
+    system_prompt: "",
+    allowed_tools: [],
+    model: "",
+  }),
+});
 
 // Search and parse agent profile configs by three-tier priority (project local > user global > builtin)
 export class AgentProfileLoader {
@@ -69,26 +86,17 @@ export class AgentProfileLoader {
     return [local, globalDir, builtin];
   }
 
-  // Parse a TOML agent profile file
+  // Parse a TOML agent profile file; throws (caught by load) on invalid TOML
+  // or a non-table root, which AgentProfileSchema rejects
   private _parse(profilePath: string, name: string): AgentProfile {
     const content = readFileSync(profilePath, "utf-8");
-    const parsed: unknown = toml.parse(content);
-    if (!isRecord(parsed)) {
-      throw new Error(`Invalid TOML structure in ${profilePath}`);
-    }
-    const agentRaw = parsed["agent"];
-    const agent = isRecord(agentRaw) ? agentRaw : {};
-    const allowedRaw = agent["allowed_tools"];
+    const { agent } = AgentProfileSchema.parse(toml.parse(content));
     return {
       name,
-      description:
-        typeof agent["description"] === "string" ? agent["description"] : "",
-      systemPrompt:
-        typeof agent["system_prompt"] === "string"
-          ? agent["system_prompt"].trim()
-          : "",
-      allowedTools: Array.isArray(allowedRaw) ? allowedRaw.map(String) : [],
-      model: typeof agent["model"] === "string" ? agent["model"] : "",
+      description: agent.description,
+      systemPrompt: agent.system_prompt.trim(),
+      allowedTools: agent.allowed_tools,
+      model: agent.model,
     };
   }
 }

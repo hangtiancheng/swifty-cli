@@ -41,9 +41,7 @@ for (const { pattern, label } of TARGETS) {
     }).trim();
     if (!pids) continue;
     const pidList = pids.split("\n");
-    console.log(
-      `[kill] found ${pidList.length} ${label} process(es): ${pidList.join(", ")}`,
-    );
+    console.log(`[kill] found ${pidList.length} ${label} process(es): ${pidList.join(", ")}`);
     execSync(`kill -TERM ${pids}`);
     killed += pidList.length;
   } catch {
@@ -65,9 +63,7 @@ for (const { pattern, label } of TARGETS) {
       encoding: "utf-8",
     }).trim();
     if (!pids) continue;
-    console.log(
-      `[kill] ${label} still alive (${pids.replace(/\n/g, ", ")}), sending SIGKILL`,
-    );
+    console.log(`[kill] ${label} still alive (${pids.replace(/\n/g, ", ")}), sending SIGKILL`);
     execSync(`kill -KILL ${pids}`);
   } catch {
     // No survivors
@@ -78,9 +74,7 @@ for (const { pattern, label } of TARGETS) {
 try {
   const portPids = execSync("lsof -ti :5520", { encoding: "utf-8" }).trim();
   if (portPids) {
-    console.log(
-      `[kill] port 5520 still held by: ${portPids.replace(/\n/g, ", ")}, SIGKILL`,
-    );
+    console.log(`[kill] port 5520 still held by: ${portPids.replace(/\n/g, ", ")}, SIGKILL`);
     execSync(`kill -KILL ${portPids}`);
   }
 } catch {

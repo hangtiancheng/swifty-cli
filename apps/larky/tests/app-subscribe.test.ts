@@ -33,10 +33,7 @@ import path from "node:path";
 
 import { describe, expect, test } from "vitest";
 
-import {
-  handleEventSubscribe,
-  snapshotReplayLinesFromFile,
-} from "../src/core/app.js";
+import { handleEventSubscribe, snapshotReplayLinesFromFile } from "../src/core/app.js";
 import { IpcEventBroadcaster } from "../src/core/transport/ipc-broadcaster.js";
 import { isRecord } from "../src/core/bus/envelope.js";
 
@@ -45,9 +42,7 @@ function makeMockSocket(): { socket: net.Socket; writes: string[] } {
   const socket = new net.Socket();
   const writes: string[] = [];
   socket.write = (chunk: string | Uint8Array): boolean => {
-    writes.push(
-      typeof chunk === "string" ? chunk : Buffer.from(chunk).toString(),
-    );
+    writes.push(typeof chunk === "string" ? chunk : Buffer.from(chunk).toString());
     return true;
   };
   return { socket, writes };
@@ -63,9 +58,7 @@ function envelopeEventField(raw: string, field: string): string {
   const parsed: unknown = JSON.parse(raw.trim());
   if (!isRecord(parsed)) return "";
   const event = parsed["event"];
-  return isRecord(event) && typeof event[field] === "string"
-    ? event[field]
-    : "";
+  return isRecord(event) && typeof event[field] === "string" ? event[field] : "";
 }
 
 describe("handleEventSubscribe (B-11)", () => {
@@ -169,10 +162,7 @@ describe("snapshotReplayLinesFromFile (B-11)", () => {
 
   // Feature: missing file yields an empty snapshot
   test("returns empty array for missing file", () => {
-    const out = snapshotReplayLinesFromFile(
-      "/tmp/nonexistent-larky-events.jsonl",
-      ["*"],
-    );
+    const out = snapshotReplayLinesFromFile("/tmp/nonexistent-larky-events.jsonl", ["*"]);
     expect(out).toEqual([]);
   });
 });

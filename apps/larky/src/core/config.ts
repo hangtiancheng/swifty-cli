@@ -27,6 +27,7 @@ import path from "node:path";
 
 import toml from "toml";
 import { config as dotenvConfig } from "dotenv";
+import { z } from "zod";
 
 // Print config error message to stderr and exit with code 1 (matches Python SystemExit behavior)
 function configExit(msg: string): never {
@@ -61,6 +62,8 @@ export interface AgentConfig {
 export interface LlmConfig {
   defaultModel: string;
   router: string;
+  baseUrl: string;
+  apiKey: string;
 }
 
 export interface TraceConfig {
@@ -116,7 +119,7 @@ function createDefaultConfig(): LarkyConfig {
       format: DEFAULT_LOG_FORMAT,
     },
     agent: { maxSteps: DEFAULT_MAX_STEPS },
-    llm: { defaultModel: DEFAULT_MODEL, router: "static" },
+    llm: { defaultModel: DEFAULT_MODEL, router: "static", baseUrl: "", apiKey: "" },
     trace: { enabled: true, file: DEFAULT_TRACE_FILE, includeLlmPayload: true },
     permission: { timeoutS: 60.0 },
     compaction: {
@@ -176,300 +179,130 @@ function loadDotenv(): void {
   dotenvConfig({ override: false });
 }
 
-// Valid top-level TOML section names
-const VALID_SECTIONS = new Set([
-  "core",
-  "logging",
-  "agent",
-  "llm",
-  "trace",
-  "permission",
-  "compaction",
-  "mcp",
-]);
+// ---- TOML schema (zod) ----
+// Every section and key is optional; unknown sections or keys are fatal
+// (strictObject). Constraint violations are reported via configExit.
 
-// Apply parsed TOML root table to config; throw on unknown sections or type errors
+const CoreSectionSchema = z.strictObject({
+  host: z.string().optional(),
+  port: z.number().int().optional(),
+});
+
+const LoggingSectionSchema = z.strictObject({
+  level: z.string().optional(),
+  file: z.string().optional(),
+  format: z.string().optional(),
+});
+
+const AgentSectionSchema = z.strictObject({
+  max_steps: z.number().positive("must be a positive integer").optional(),
+});
+
+const LlmSectionSchema = z.strictObject({
+  default_model: z.string().optional(),
+  router: z.string().optional(),
+  base_url: z.string().optional(),
+  api_key: z.string().optional(),
+});
+
+const TraceSectionSchema = z.strictObject({
+  enabled: z.boolean().optional(),
+  file: z.string().optional(),
+  include_llm_payload: z.boolean().optional(),
+});
+
+const PermissionSectionSchema = z.strictObject({
+  timeout_s: z.number().min(0, "must be a non-negative number").optional(),
+});
+
+const CompactionSectionSchema = z.strictObject({
+  auto_threshold: z
+    .number()
+    .min(0, "must be between 0 and 1")
+    .max(1, "must be between 0 and 1")
+    .optional(),
+  tool_result_limit: z.number().positive("must be a positive integer").optional(),
+  tool_result_keep: z.number().positive("must be a positive integer").optional(),
+});
+
+const McpServerSchema = z.strictObject({
+  name: z.string().min(1, "must be a non-empty string"),
+  transport: z.enum(["stdio", "tcp"], "must be 'stdio' or 'tcp'").default("stdio"),
+  command: z.string().default(""),
+  args: z.array(z.coerce.string()).default([]),
+  env: z.record(z.string(), z.coerce.string()).default({}),
+  host: z.string().default("localhost"),
+  port: z.number().int().default(3000),
+});
+
+const McpSectionSchema = z.strictObject({
+  servers: z.array(McpServerSchema).default([]),
+});
+
+const TomlConfigSchema = z.strictObject({
+  core: CoreSectionSchema.optional(),
+  logging: LoggingSectionSchema.optional(),
+  agent: AgentSectionSchema.optional(),
+  llm: LlmSectionSchema.optional(),
+  trace: TraceSectionSchema.optional(),
+  permission: PermissionSectionSchema.optional(),
+  compaction: CompactionSectionSchema.optional(),
+  mcp: McpSectionSchema.optional(),
+});
+
+// Render a zod issue in the established config error style
+// ("Unknown ... keys" for unrecognized keys, "Config error: <path>: <reason>" otherwise)
+function formatIssue(issue: z.core.$ZodIssue): string {
+  const path = issue.path.map(String);
+  if (issue.code === "unrecognized_keys") {
+    const keys = [...issue.keys].sort().join(", ");
+    return path.length === 0
+      ? `Unknown top-level config keys: ${keys}`
+      : `Unknown [${path.join(".")}] keys: ${keys}`;
+  }
+  const where = path.length > 0 ? `${path.join(".")}: ` : "";
+  return `Config error: ${where}${issue.message}`;
+}
+
+// Validate parsed TOML root table against the schema and merge it into config;
+// exits with an error message on unknown keys or type/constraint violations
 function applyToml(config: LarkyConfig, data: Record<string, unknown>): void {
-  const unknownKeys = Object.keys(data).filter((k) => !VALID_SECTIONS.has(k));
-  if (unknownKeys.length > 0) {
-    configExit(
-      `Unknown top-level config keys: ${unknownKeys.sort().join(", ")}`,
-    );
+  const result = TomlConfigSchema.safeParse(data);
+  if (!result.success) {
+    configExit(result.error.issues.map(formatIssue).join("\n"));
   }
+  const t = result.data;
 
-  if ("core" in data) {
-    const core = data["core"];
-    if (!isRecord(core)) {
-      configExit("Config error: [core] must be a table");
-    }
-    const coreObj = core;
-    const unknownCore = Object.keys(coreObj).filter(
-      (k) => !["host", "port"].includes(k),
-    );
-    if (unknownCore.length > 0) {
-      configExit(`Unknown [core] keys: ${unknownCore.sort().join(", ")}`);
-    }
-    if ("host" in coreObj) {
-      if (typeof coreObj["host"] !== "string")
-        configExit("Config error: core.host must be a string");
-      config.host = coreObj["host"];
-    }
-    if ("port" in coreObj) {
-      if (typeof coreObj["port"] !== "number")
-        configExit("Config error: core.port must be an integer");
-      config.port = coreObj["port"];
-    }
-  }
+  if (t.core?.host !== undefined) config.host = t.core.host;
+  if (t.core?.port !== undefined) config.port = t.core.port;
 
-  if ("logging" in data) {
-    const log = data["logging"];
-    if (!isRecord(log)) {
-      configExit("Config error: [logging] must be a table");
-    }
-    const logObj = log;
-    const unknownLog = Object.keys(logObj).filter(
-      (k) => !["level", "file", "format"].includes(k),
-    );
-    if (unknownLog.length > 0) {
-      configExit(`Unknown [logging] keys: ${unknownLog.sort().join(", ")}`);
-    }
-    for (const key of ["level", "file", "format"] as const) {
-      if (key in logObj) {
-        if (typeof logObj[key] !== "string")
-          configExit(`Config error: logging.${key} must be a string`);
-        config.logging[key] = logObj[key];
-      }
-    }
-  }
+  if (t.logging?.level !== undefined) config.logging.level = t.logging.level;
+  if (t.logging?.file !== undefined) config.logging.file = t.logging.file;
+  if (t.logging?.format !== undefined) config.logging.format = t.logging.format;
 
-  if ("agent" in data) {
-    const agent = data["agent"];
-    if (!isRecord(agent)) {
-      configExit("Config error: [agent] must be a table");
-    }
-    const agentObj = agent;
-    const unknownAgent = Object.keys(agentObj).filter(
-      (k) => !["max_steps"].includes(k),
-    );
-    if (unknownAgent.length > 0) {
-      configExit(`Unknown [agent] keys: ${unknownAgent.sort().join(", ")}`);
-    }
-    if ("max_steps" in agentObj) {
-      const val = agentObj["max_steps"];
-      if (typeof val !== "number" || val <= 0) {
-        configExit("Config error: agent.max_steps must be a positive integer");
-      }
-      config.agent.maxSteps = val;
-    }
-  }
+  if (t.agent?.max_steps !== undefined) config.agent.maxSteps = t.agent.max_steps;
 
-  if ("llm" in data) {
-    const llm = data["llm"];
-    if (!isRecord(llm)) {
-      configExit("Config error: [llm] must be a table");
-    }
-    const llmObj = llm;
-    const unknownLlm = Object.keys(llmObj).filter(
-      (k) => !["default_model", "router"].includes(k),
-    );
-    if (unknownLlm.length > 0) {
-      configExit(`Unknown [llm] keys: ${unknownLlm.sort().join(", ")}`);
-    }
-    if ("default_model" in llmObj) {
-      if (typeof llmObj["default_model"] !== "string")
-        configExit("Config error: llm.default_model must be a string");
-      config.llm.defaultModel = llmObj["default_model"];
-    }
-    if ("router" in llmObj) {
-      if (typeof llmObj["router"] !== "string")
-        configExit("Config error: llm.router must be a string");
-      config.llm.router = llmObj["router"];
-    }
-  }
+  if (t.llm?.default_model !== undefined) config.llm.defaultModel = t.llm.default_model;
+  if (t.llm?.router !== undefined) config.llm.router = t.llm.router;
+  if (t.llm?.base_url !== undefined) config.llm.baseUrl = t.llm.base_url;
+  if (t.llm?.api_key !== undefined) config.llm.apiKey = t.llm.api_key;
 
-  if ("trace" in data) {
-    const trace = data["trace"];
-    if (!isRecord(trace)) {
-      configExit("Config error: [trace] must be a table");
-    }
-    const traceObj = trace;
-    const unknownTrace = Object.keys(traceObj).filter(
-      (k) => !["enabled", "file", "include_llm_payload"].includes(k),
-    );
-    if (unknownTrace.length > 0) {
-      configExit(`Unknown [trace] keys: ${unknownTrace.sort().join(", ")}`);
-    }
-    if ("enabled" in traceObj) {
-      if (typeof traceObj["enabled"] !== "boolean")
-        configExit("Config error: trace.enabled must be a boolean");
-      config.trace.enabled = traceObj["enabled"];
-    }
-    if ("file" in traceObj) {
-      if (typeof traceObj["file"] !== "string")
-        configExit("Config error: trace.file must be a string");
-      config.trace.file = traceObj["file"];
-    }
-    if ("include_llm_payload" in traceObj) {
-      if (typeof traceObj["include_llm_payload"] !== "boolean")
-        configExit("Config error: trace.include_llm_payload must be a boolean");
-      config.trace.includeLlmPayload = traceObj["include_llm_payload"];
-    }
-  }
+  if (t.trace?.enabled !== undefined) config.trace.enabled = t.trace.enabled;
+  if (t.trace?.file !== undefined) config.trace.file = t.trace.file;
+  if (t.trace?.include_llm_payload !== undefined)
+    config.trace.includeLlmPayload = t.trace.include_llm_payload;
 
-  if ("permission" in data) {
-    const perm = data["permission"];
-    if (!isRecord(perm)) {
-      configExit("Config error: [permission] must be a table");
-    }
-    const permObj = perm;
-    const unknownPerm = Object.keys(permObj).filter(
-      (k) => !["timeout_s"].includes(k),
-    );
-    if (unknownPerm.length > 0) {
-      configExit(`Unknown [permission] keys: ${unknownPerm.sort().join(", ")}`);
-    }
-    if ("timeout_s" in permObj) {
-      const val = permObj["timeout_s"];
-      if (typeof val !== "number" || val < 0) {
-        configExit(
-          "Config error: permission.timeout_s must be a non-negative number",
-        );
-      }
-      config.permission.timeoutS = val;
-    }
-  }
+  if (t.permission?.timeout_s !== undefined) config.permission.timeoutS = t.permission.timeout_s;
 
-  if ("compaction" in data) {
-    const comp = data["compaction"];
-    if (!isRecord(comp)) {
-      configExit("Config error: [compaction] must be a table");
-    }
-    const compObj = comp;
-    const unknownComp = Object.keys(compObj).filter(
-      (k) =>
-        !["auto_threshold", "tool_result_limit", "tool_result_keep"].includes(
-          k,
-        ),
-    );
-    if (unknownComp.length > 0) {
-      configExit(`Unknown [compaction] keys: ${unknownComp.sort().join(", ")}`);
-    }
-    if ("auto_threshold" in compObj) {
-      const val = compObj["auto_threshold"];
-      if (typeof val !== "number" || val < 0 || val > 1) {
-        configExit(
-          "Config error: compaction.auto_threshold must be between 0 and 1",
-        );
-      }
-      config.compaction.autoThreshold = val;
-    }
-    if ("tool_result_limit" in compObj) {
-      const val = compObj["tool_result_limit"];
-      if (typeof val !== "number" || val <= 0) {
-        configExit(
-          "Config error: compaction.tool_result_limit must be a positive integer",
-        );
-      }
-      config.compaction.toolResultLimit = val;
-    }
-    if ("tool_result_keep" in compObj) {
-      const val = compObj["tool_result_keep"];
-      if (typeof val !== "number" || val <= 0) {
-        configExit(
-          "Config error: compaction.tool_result_keep must be a positive integer",
-        );
-      }
-      config.compaction.toolResultKeep = val;
-    }
-  }
+  if (t.compaction?.auto_threshold !== undefined)
+    config.compaction.autoThreshold = t.compaction.auto_threshold;
+  if (t.compaction?.tool_result_limit !== undefined)
+    config.compaction.toolResultLimit = t.compaction.tool_result_limit;
+  if (t.compaction?.tool_result_keep !== undefined)
+    config.compaction.toolResultKeep = t.compaction.tool_result_keep;
 
-  if ("mcp" in data) {
-    const mcp = data["mcp"];
-    if (!isRecord(mcp)) {
-      configExit("Config error: [mcp] must be a table");
-    }
-    const mcpObj = mcp;
-    const unknownMcp = Object.keys(mcpObj).filter(
-      (k) => !["servers"].includes(k),
-    );
-    if (unknownMcp.length > 0) {
-      configExit(`Unknown [mcp] keys: ${unknownMcp.sort().join(", ")}`);
-    }
-    const serversRaw = mcpObj["servers"] ?? [];
-    if (!Array.isArray(serversRaw)) {
-      configExit("Config error: mcp.servers must be an array of tables");
-    }
-    for (let i = 0; i < serversRaw.length; i++) {
-      const srv: unknown = serversRaw[i];
-      if (!isRecord(srv)) {
-        configExit(`Config error: mcp.servers[${String(i)}] must be a table`);
-      }
-      const srvObj = srv;
-      const name = srvObj["name"];
-      if (typeof name !== "string" || !name) {
-        configExit(
-          `Config error: mcp.servers[${String(i)}].name must be a non-empty string`,
-        );
-      }
-      const transportRaw = srvObj["transport"];
-      const transport =
-        typeof transportRaw === "string" ? transportRaw : "stdio";
-      if (transport !== "stdio" && transport !== "tcp") {
-        configExit(
-          `Config error: mcp.servers[${String(i)}].transport must be 'stdio' or 'tcp'`,
-        );
-      }
-      const s: McpServerConfig = {
-        name,
-        transport,
-        command: "",
-        args: [],
-        env: {},
-        host: "localhost",
-        port: 3000,
-      };
-      if ("command" in srvObj) {
-        if (typeof srvObj["command"] !== "string")
-          configExit(
-            `Config error: mcp.servers[${String(i)}].command must be a string`,
-          );
-        s.command = srvObj["command"];
-      }
-      if ("args" in srvObj) {
-        if (!Array.isArray(srvObj["args"]))
-          configExit(
-            `Config error: mcp.servers[${String(i)}].args must be an array`,
-          );
-        const argsRaw: unknown = srvObj["args"];
-        s.args = Array.isArray(argsRaw) ? argsRaw.map(String) : [];
-      }
-      if ("env" in srvObj) {
-        const envVal = srvObj["env"];
-        if (!isRecord(envVal)) {
-          configExit(
-            `Config error: mcp.servers[${String(i)}].env must be a table`,
-          );
-        }
-        s.env = Object.fromEntries(
-          Object.entries(envVal).map(([k, v]) => [k, String(v)]),
-        );
-      }
-      if ("host" in srvObj) {
-        if (typeof srvObj["host"] !== "string")
-          configExit(
-            `Config error: mcp.servers[${String(i)}].host must be a string`,
-          );
-        s.host = srvObj["host"];
-      }
-      if ("port" in srvObj) {
-        if (typeof srvObj["port"] !== "number")
-          configExit(
-            `Config error: mcp.servers[${String(i)}].port must be an integer`,
-          );
-        s.port = srvObj["port"];
-      }
-      config.mcp.servers.push(s);
-    }
+  if (t.mcp) {
+    config.mcp.servers.push(...t.mcp.servers);
   }
 }
 
@@ -482,9 +315,7 @@ function applyEnv(config: LarkyConfig): void {
   if (portStr !== undefined) {
     const port = Number(portStr);
     if (!Number.isInteger(port)) {
-      configExit(
-        `Config error: LARKY_PORT must be an integer, got: ${JSON.stringify(portStr)}`,
-      );
+      configExit(`Config error: LARKY_PORT must be an integer, got: ${JSON.stringify(portStr)}`);
     }
     config.port = port;
   }
@@ -512,11 +343,15 @@ function applyEnv(config: LarkyConfig): void {
   const defaultModel = process.env["LARKY_LLM_DEFAULT_MODEL"];
   if (defaultModel !== undefined) config.llm.defaultModel = defaultModel;
 
+  const anthropicBaseUrl = process.env["ANTHROPIC_BASE_URL"];
+  if (anthropicBaseUrl !== undefined) config.llm.baseUrl = anthropicBaseUrl;
+
+  const anthropicApiKey = process.env["ANTHROPIC_API_KEY"];
+  if (anthropicApiKey !== undefined) config.llm.apiKey = anthropicApiKey;
+
   const traceEnabled = process.env["LARKY_TRACE_ENABLED"];
   if (traceEnabled !== undefined) {
-    config.trace.enabled = !["0", "false", "no"].includes(
-      traceEnabled.toLowerCase(),
-    );
+    config.trace.enabled = !["0", "false", "no"].includes(traceEnabled.toLowerCase());
   }
 
   const traceFile = process.env["LARKY_TRACE_FILE"];
@@ -524,9 +359,7 @@ function applyEnv(config: LarkyConfig): void {
 
   const tracePayload = process.env["LARKY_TRACE_INCLUDE_LLM_PAYLOAD"];
   if (tracePayload !== undefined) {
-    config.trace.includeLlmPayload = !["0", "false", "no"].includes(
-      tracePayload.toLowerCase(),
-    );
+    config.trace.includeLlmPayload = !["0", "false", "no"].includes(tracePayload.toLowerCase());
   }
 
   const permTimeout = process.env["LARKY_PERMISSION_TIMEOUT_S"];

@@ -35,4 +35,4 @@ Output format (numbered list):
 Each step must specify: what to do, why it matters, and what the success criteria are.
 """
 allowed_tools = ["read_file", "list_dir", "task_create", "task_update"]
-model = "claude-sonnet-4-6"
+# model = "claude-sonnet-4-6"

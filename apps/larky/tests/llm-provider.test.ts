@@ -163,7 +163,7 @@ describe("AnthropicProvider", () => {
     const orig = process.env["ANTHROPIC_API_KEY"];
     Reflect.deleteProperty(process.env, "ANTHROPIC_API_KEY");
     try {
-      expect(() => new AnthropicProvider("claude-sonnet-4-6")).toThrow("ANTHROPIC_API_KEY not set");
+      expect(() => new AnthropicProvider("claude-sonnet-4-6")).toThrow("Anthropic API key not set");
     } finally {
       if (orig !== undefined) process.env["ANTHROPIC_API_KEY"] = orig;
     }

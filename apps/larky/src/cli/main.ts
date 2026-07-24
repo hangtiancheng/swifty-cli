@@ -151,8 +151,7 @@ async function main(): Promise<void> {
     case "trace": {
       // First positional (non-flag) argument after "trace" is the run_id
       const runIdArg = args[1];
-      const runId =
-        runIdArg !== undefined && !runIdArg.startsWith("-") ? runIdArg : null;
+      const runId = runIdArg !== undefined && !runIdArg.startsWith("-") ? runIdArg : null;
       const raw = args.includes("--raw");
       const follow = args.includes("--follow") || args.includes("-f");
       const layer = readFlagValue(args, "--layer");
@@ -185,8 +184,7 @@ async function main(): Promise<void> {
   }
 }
 
-const isDirectRun =
-  process.argv[1].endsWith("/main.ts") || process.argv[1].endsWith("/main.js");
+const isDirectRun = process.argv[1].endsWith("/main.ts") || process.argv[1].endsWith("/main.js");
 
 if (isDirectRun) {
   void main();

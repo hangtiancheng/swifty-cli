@@ -21,21 +21,11 @@
  */
 
 import { describe, expect, test } from "vitest";
-import {
-  mkdtempSync,
-  rmSync,
-  existsSync,
-  readdirSync,
-  readFileSync,
-  writeFileSync,
-} from "node:fs";
+import { mkdtempSync, rmSync, existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import {
-  loadPolicyFile,
-  savePolicyFile,
-} from "../src/core/permissions/storage.js";
+import { loadPolicyFile, savePolicyFile } from "../src/core/permissions/storage.js";
 
 function tmpDir(): string {
   return mkdtempSync(path.join(tmpdir(), "larky-test-"));
@@ -73,10 +63,7 @@ describe("Permission Storage", () => {
     const dir = tmpDir();
     try {
       const filePath = path.join(dir, "policy.toml");
-      savePolicyFile(
-        { bash: "allow", read_file: "allow", write_file: "deny" },
-        filePath,
-      );
+      savePolicyFile({ bash: "allow", read_file: "allow", write_file: "deny" }, filePath);
 
       const loaded = loadPolicyFile(filePath);
       expect(loaded["bash"]).toBe("allow");
@@ -194,11 +181,7 @@ describe("Permission Storage", () => {
     const dir = tmpDir();
     try {
       const filePath = path.join(dir, "policy.toml");
-      const content = [
-        "[always]",
-        'Bash = "allow"',
-        'WRITE_FILE = "deny"',
-      ].join("\n");
+      const content = ["[always]", 'Bash = "allow"', 'WRITE_FILE = "deny"'].join("\n");
       writeFileSync(filePath, content, "utf-8");
 
       const loaded = loadPolicyFile(filePath);

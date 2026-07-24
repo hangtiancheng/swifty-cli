@@ -36,7 +36,6 @@ export class RunCancelledError extends Error {
 // our own RunCancelledError, the Anthropic SDK's APIUserAbortError (thrown when
 // a request-level AbortSignal fires mid-stream), or a generic DOM AbortError.
 export function isAbortError(exc: unknown): boolean {
-  if (exc instanceof RunCancelledError) return true;
-  if (exc instanceof APIUserAbortError) return true;
+  if (exc instanceof RunCancelledError || exc instanceof APIUserAbortError) return true;
   return exc instanceof Error && exc.name === "AbortError";
 }

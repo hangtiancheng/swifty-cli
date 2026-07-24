@@ -69,14 +69,7 @@ const TEXT_LEVEL_LABELS: Record<number, string> = {
 };
 
 // Record keys already rendered by the text formatter (not re-emitted as extras)
-const TEXT_CORE_KEYS = new Set([
-  "level",
-  "time",
-  "msg",
-  "pid",
-  "hostname",
-  "name",
-]);
+const TEXT_CORE_KEYS = new Set(["level", "time", "msg", "pid", "hostname", "name"]);
 
 // Unknown level strings already warned about (warn once per value)
 const warnedUnknownLevels = new Set<string>();
@@ -134,8 +127,7 @@ export function formatTextLine(line: string): string {
     ts = new Date().toISOString();
   }
 
-  const source =
-    typeof record["name"] === "string" ? record["name"] : "larky-core";
+  const source = typeof record["name"] === "string" ? record["name"] : "larky-core";
   const msg = typeof record["msg"] === "string" ? record["msg"] : "";
 
   let out = `level=${label} ts=${ts} source=${source} msg=${JSON.stringify(msg)}`;
@@ -214,11 +206,9 @@ export class RotatingFileDestination implements pino.DestinationStream {
     }
     for (let i = this.maxBackups - 1; i >= 1; i--) {
       const src = `${this.filePath}.${String(i)}`;
-      if (fs.existsSync(src))
-        fs.renameSync(src, `${this.filePath}.${String(i + 1)}`);
+      if (fs.existsSync(src)) fs.renameSync(src, `${this.filePath}.${String(i + 1)}`);
     }
-    if (fs.existsSync(this.filePath))
-      fs.renameSync(this.filePath, `${this.filePath}.1`);
+    if (fs.existsSync(this.filePath)) fs.renameSync(this.filePath, `${this.filePath}.1`);
     this.open();
   }
 }

@@ -22,13 +22,7 @@
 
 // End-to-end integration test for the agent pipeline.
 // Uses a mock LLM provider to avoid requiring a real ANTHROPIC_API_KEY.
-import {
-  mkdtempSync,
-  rmSync,
-  readFileSync,
-  writeFileSync,
-  readdirSync,
-} from "node:fs";
+import { mkdtempSync, rmSync, readFileSync, writeFileSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -47,7 +41,7 @@ function makeConfig(overrides?: Partial<LarkyConfig>): LarkyConfig {
     port: 5520,
     logging: { level: "INFO", file: "/dev/null", format: "text" },
     agent: { maxSteps: 5 },
-    llm: { defaultModel: "claude-sonnet-4-6", router: "static" },
+    llm: { defaultModel: "claude-sonnet-4-6", router: "static", baseUrl: "", apiKey: "" },
     trace: { enabled: false, file: "", includeLlmPayload: false },
     permission: { timeoutS: 60 },
     compaction: {
@@ -216,9 +210,7 @@ describe("run e2e integration", () => {
       expect(finished["status"]).toBe("success");
 
       // read_file was actually invoked
-      const toolStarts = events.filter(
-        (e) => e["type"] === "tool.call_started",
-      );
+      const toolStarts = events.filter((e) => e["type"] === "tool.call_started");
       expect(toolStarts.some((e) => e["tool_name"] === "read_file")).toBe(true);
 
       // run_id is consistent across the event stream

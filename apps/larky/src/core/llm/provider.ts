@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/prefer-nullish-coalescing */
 /**
  * Copyright (c) 2026 hangtiancheng
  *
@@ -71,8 +72,7 @@ const RETRYABLE_API_STATUSES = new Set([429, 500, 502, 503, 529]);
 // API business error (429/5xx/529) or a socket-level network failure.
 // Abort errors (user cancellation) are never retryable.
 function isRetryableError(exc: unknown): boolean {
-  if (!(exc instanceof Error)) return false;
-  if (isAbortError(exc)) return false;
+  if (!(exc instanceof Error) || isAbortError(exc)) return false;
   // Anthropic SDK API errors carry an HTTP status (RateLimitError = 429,
   // InternalServerError = 5xx, ...). Retry only the transient statuses.
   // APIError instances without a numeric status (e.g. APIConnectionError)
@@ -98,16 +98,20 @@ export class AnthropicProvider implements LLMProvider {
   private _client: Anthropic;
   private _model: string;
 
-  // Initialize Anthropic client; inject client for testing to skip API key check
-  constructor(model: string, client?: Anthropic) {
+  // Initialize Anthropic client; inject client for testing to skip API key check.
+  // Credentials come from options (already resolved through the config priority
+  // chain: TOML < .env < ANTHROPIC_* env vars), falling back to process.env.
+  constructor(model: string, client?: Anthropic, options?: { apiKey?: string; baseUrl?: string }) {
     if (client) {
       this._client = client;
     } else {
-      const apiKey = process.env["ANTHROPIC_API_KEY"];
+      const apiKey = options?.apiKey || process.env["ANTHROPIC_API_KEY"];
       if (!apiKey) {
-        throw new Error("ANTHROPIC_API_KEY not set");
+        throw new Error(
+          "Anthropic API key not set (llm.api_key in config.toml or ANTHROPIC_API_KEY)",
+        );
       }
-      const baseURL = process.env["ANTHROPIC_BASE_URL"];
+      const baseURL = options?.baseUrl || process.env["ANTHROPIC_BASE_URL"];
       this._client = new Anthropic({
         ...(baseURL ? { baseURL } : {}),
         apiKey,

@@ -90,10 +90,7 @@ export async function pingDaemon(config: LarkyConfig): Promise<PingOutcome> {
     }
     if ("error" in raw) {
       const err = raw.error;
-      const { success, data: errData } = await safeParseAsync(
-        JsonRpcErrorObjectSchema,
-        err,
-      );
+      const { success, data: errData } = await safeParseAsync(JsonRpcErrorObjectSchema, err);
       if (success) {
         return {
           ok: false,
@@ -104,10 +101,7 @@ export async function pingDaemon(config: LarkyConfig): Promise<PingOutcome> {
     }
 
     const result: unknown = "result" in raw ? raw.result : undefined;
-    const { data: resData, success } = await safeParseAsync(
-      PongResultSchema,
-      result,
-    );
+    const { data: resData, success } = await safeParseAsync(PongResultSchema, result);
     if (!success) {
       return { ok: false, message: "invalid pong response from core" };
     }

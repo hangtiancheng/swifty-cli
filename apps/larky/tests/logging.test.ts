@@ -25,11 +25,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import {
-  formatTextLine,
-  RotatingFileDestination,
-  setupLogging,
-} from "../src/core/logging.js";
+import { formatTextLine, RotatingFileDestination, setupLogging } from "../src/core/logging.js";
 import type { LarkyConfig } from "../src/core/config.js";
 
 // Build a minimal LarkyConfig for logging tests
@@ -39,7 +35,7 @@ function loggingConfig(format: string, file: string): LarkyConfig {
     port: 5520,
     logging: { level: "info", file, format },
     agent: { maxSteps: 5 },
-    llm: { defaultModel: "claude-3", router: "static" },
+    llm: { defaultModel: "claude-3", router: "static", baseUrl: "", apiKey: "" },
     trace: { enabled: false, file: "", includeLlmPayload: false },
     permission: { timeoutS: 60 },
     compaction: {

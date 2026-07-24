@@ -42,7 +42,7 @@ function makeConfig(maxSteps: number): LarkyConfig {
     port: 5520,
     logging: { level: "INFO", file: "/dev/null", format: "text" },
     agent: { maxSteps },
-    llm: { defaultModel: "claude-sonnet-4-6", router: "static" },
+    llm: { defaultModel: "claude-sonnet-4-6", router: "static", baseUrl: "", apiKey: "" },
     trace: { enabled: false, file: "", includeLlmPayload: false },
     permission: { timeoutS: 60 },
     compaction: {
@@ -54,11 +54,7 @@ function makeConfig(maxSteps: number): LarkyConfig {
   };
 }
 
-function makeToolUse(
-  id: string,
-  name: string,
-  input: Record<string, unknown>,
-): ToolUseBlock {
+function makeToolUse(id: string, name: string, input: Record<string, unknown>): ToolUseBlock {
   return {
     type: "tool_use",
     id,
@@ -192,12 +188,7 @@ describe("permission flow integration", () => {
         return Promise.resolve();
       });
 
-      const runner = makeRunner(
-        singleBashProvider(),
-        bus,
-        manager,
-        path.join(dir, "runs"),
-      );
+      const runner = makeRunner(singleBashProvider(), bus, manager, path.join(dir, "runs"));
       const outcome = await runner.runAndCapture("run bash");
 
       expect(eventTypes).toContain("permission.requested");
@@ -230,12 +221,7 @@ describe("permission flow integration", () => {
         return Promise.resolve();
       });
 
-      const runner = makeRunner(
-        singleBashProvider(),
-        bus,
-        manager,
-        path.join(dir, "runs"),
-      );
+      const runner = makeRunner(singleBashProvider(), bus, manager, path.join(dir, "runs"));
       await runner.runAndCapture("run bash");
 
       expect(eventTypes).toContain("permission.requested");
@@ -270,12 +256,7 @@ describe("permission flow integration", () => {
         return Promise.resolve();
       });
 
-      const runner = makeRunner(
-        twoBashProvider(),
-        bus,
-        manager,
-        path.join(dir, "runs"),
-      );
+      const runner = makeRunner(twoBashProvider(), bus, manager, path.join(dir, "runs"));
       const outcome = await runner.runAndCapture("run two bash commands");
 
       expect(permRequestedCount).toBe(1);

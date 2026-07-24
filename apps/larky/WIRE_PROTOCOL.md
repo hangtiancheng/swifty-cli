@@ -859,14 +859,7 @@ Events written to `runs/<run_id>/events.jsonl` and forwarded over IPC to subscri
       "type": "string"
     }
   },
-  "required": [
-    "type",
-    "run_id",
-    "tool_use_id",
-    "tool_name",
-    "params",
-    "timestamp"
-  ],
+  "required": ["type", "run_id", "tool_use_id", "tool_name", "params", "timestamp"],
   "additionalProperties": false
 }
 ```
@@ -930,15 +923,7 @@ Events written to `runs/<run_id>/events.jsonl` and forwarded over IPC to subscri
       "type": "string"
     }
   },
-  "required": [
-    "type",
-    "run_id",
-    "tool_use_id",
-    "tool_name",
-    "elapsed_ms",
-    "output",
-    "timestamp"
-  ],
+  "required": ["type", "run_id", "tool_use_id", "tool_name", "elapsed_ms", "output", "timestamp"],
   "additionalProperties": false
 }
 ```

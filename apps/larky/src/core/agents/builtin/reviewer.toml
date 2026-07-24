@@ -45,4 +45,4 @@ Output format:
 (Follow-up actions, if any)
 """
 allowed_tools = ["read_file", "list_dir", "bash"]
-model = "claude-sonnet-4-6"
+# model = "claude-sonnet-4-6"

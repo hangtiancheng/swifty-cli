@@ -22,9 +22,9 @@ max_steps = 20 # optional, positive integer, default: 20 — maximum agent steps
 
 [llm]
 default_model = "claude-sonnet-4-6" # optional, string, default: "claude-sonnet-4-6" — default model (env: LARKY_LLM_DEFAULT_MODEL)
-router = "static" # optional, string, default: "static" — model routing strategy (no env override)
-base_url = "" # ANTHROPIC_API_KEY
-api_key = "" # ANTHROPIC_BASE_URL
+router = "static" # optional, string, default: "static" — model routing strategy; reserved, "static" is the only implemented strategy (no env override)
+base_url = "" # optional, string, default: "" — Anthropic API base URL; empty means SDK default (env: ANTHROPIC_BASE_URL)
+api_key = "" # optional, string, default: "" — Anthropic API key; must be set here or via env (env: ANTHROPIC_API_KEY)
 
 [trace]
 enabled = true # optional, boolean, default: true — enable tracing (env: LARKY_TRACE_ENABLED)

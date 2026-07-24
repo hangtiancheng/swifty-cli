@@ -21,13 +21,7 @@
  */
 
 // policy.toml persistence: load and save [always] section
-import {
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  renameSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 import process from "node:process";
@@ -58,10 +52,7 @@ export function loadPolicyFile(filePath?: string): Record<string, string> {
       const k = stripped.slice(0, eqIdx).trim();
       let v = stripped.slice(eqIdx + 1).trim();
       // Strip quotes
-      if (
-        (v.startsWith('"') && v.endsWith('"')) ||
-        (v.startsWith("'") && v.endsWith("'"))
-      ) {
+      if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) {
         v = v.slice(1, -1);
       }
       if (v === "allow" || v === "deny") {
@@ -75,10 +66,7 @@ export function loadPolicyFile(filePath?: string): Record<string, string> {
 }
 
 // Write {tool_name: "allow"/"deny"} to policy.toml, overwriting [always] section
-export function savePolicyFile(
-  always: Record<string, string>,
-  filePath?: string,
-): void {
+export function savePolicyFile(always: Record<string, string>, filePath?: string): void {
   const p = filePath ?? DEFAULT_POLICY_PATH;
   mkdirSync(path.dirname(p), { recursive: true });
 
