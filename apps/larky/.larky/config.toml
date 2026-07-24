@@ -1,0 +1,56 @@
+# Larky project-level configuration (.larky/config.toml)
+#
+# Precedence (lowest to highest):
+#   built-in defaults < ~/.larky/config.toml (global) < .larky/config.toml (project) < .env < LARKY_* environment variables
+# If the LARKY_CONFIG environment variable is set, only that single file is loaded instead.
+#
+# Every section and every key below is OPTIONAL unless marked required.
+# Omitted keys fall back to their defaults. Unknown sections or keys are fatal (startup exits with code 1).
+# Schema source: src/core/config.ts
+
+[core]
+host = "127.0.0.1" # optional, string, default: "127.0.0.1" — daemon listen address (env: LARKY_HOST)
+port = 5520 # optional, integer, default: 5520 — daemon listen port (env: LARKY_PORT)
+
+[logging]
+file = "~/.larky/logs/core.log" # optional, string, default: "~/.larky/logs/core.log" — log file path (env: LARKY_LOG_FILE)
+format = "text" # optional, string, default: "text" — "text" or "json" (env: LARKY_LOG_FORMAT)
+level = "INFO" # optional, string, default: "INFO" — log level (env: LARKY_LOG_LEVEL)
+
+[agent]
+max_steps = 20 # optional, positive integer, default: 20 — maximum agent steps per task (env: LARKY_MAX_STEPS)
+
+[llm]
+default_model = "claude-sonnet-4-6" # optional, string, default: "claude-sonnet-4-6" — default model (env: LARKY_LLM_DEFAULT_MODEL)
+router = "static" # optional, string, default: "static" — model routing strategy (no env override)
+base_url = "" # ANTHROPIC_API_KEY
+api_key = "" # ANTHROPIC_BASE_URL
+
+[trace]
+enabled = true # optional, boolean, default: true — enable tracing (env: LARKY_TRACE_ENABLED)
+file = "~/.larky/traces/daemon.jsonl" # optional, string, default: "~/.larky/traces/daemon.jsonl" — trace output file (env: LARKY_TRACE_FILE)
+include_llm_payload = true # optional, boolean, default: true — include LLM request/response payloads in traces (env: LARKY_TRACE_INCLUDE_LLM_PAYLOAD)
+
+[permission]
+timeout_s = 60.0 # optional, number >= 0, default: 60.0 — permission prompt timeout in seconds (env: LARKY_PERMISSION_TIMEOUT_S)
+
+[compaction]
+auto_threshold = 0.0 # optional, number in [0, 1], default: 0.0 (disabled) — auto-compaction trigger threshold (env: LARKY_COMPACT_THRESHOLD)
+tool_result_keep = 4000 # optional, positive integer, default: 4000 — length retained after truncation (env: LARKY_COMPACT_TOOL_KEEP)
+tool_result_limit = 8000 # optional, positive integer, default: 8000 — truncate tool results longer than this (env: LARKY_COMPACT_TOOL_LIMIT)
+
+# MCP servers — optional; default: [] (no servers). Declare one [[mcp.servers]] block per server.
+# No environment variable overrides exist for MCP servers.
+#
+# [[mcp.servers]]
+# name = "my-stdio-server"      # REQUIRED, non-empty string — unique server name
+# transport = "stdio"           # optional, "stdio" or "tcp", default: "stdio"
+# command = "npx"               # optional, string, default: "" — executable for stdio transport
+# args = ["-y", "@my/mcp-server"]        # optional, array of strings, default: []
+# env = { API_KEY = "your-api-key" }     # optional, table of strings, default: {}
+#
+# [[mcp.servers]]
+# name = "my-tcp-server"        # REQUIRED, non-empty string
+# transport = "tcp"             # optional, default: "stdio"
+# host = "localhost"            # optional, string, default: "localhost" — used by tcp transport
+# port = 3000                   # optional, integer, default: 3000 — used by tcp transport

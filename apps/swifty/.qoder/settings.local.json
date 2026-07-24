@@ -1,7 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(find /Users/hangtiancheng/github/swifty-cli/apps/swifty/src/permissions -type f | head -50)"
-    ]
-  }
-}
