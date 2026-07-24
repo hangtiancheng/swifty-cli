@@ -25,6 +25,8 @@ import { spawn, type ChildProcess } from "node:child_process";
 import net from "node:net";
 import { createInterface } from "node:readline";
 
+import { z } from "zod";
+
 // Application-level error from MCP server (connection OK, but tool call failed)
 export class McpToolError extends Error {
   readonly code: number;
@@ -63,6 +65,24 @@ function toDisplayString(value: unknown): string {
   if (typeof value === "number" || typeof value === "boolean") return String(value);
   return JSON.stringify(value);
 }
+
+// Lenient tool entry schema: wrongly-typed fields fall back to their defaults;
+// only a non-table entry fails parsing (and is skipped by listTools)
+const McpToolEntrySchema = z.object({
+  name: z.string().catch(""),
+  description: z.string().catch(""),
+  inputSchema: z.record(z.string(), z.unknown()).catch({}),
+});
+
+// JSON-RPC error object: `code` must be a number, otherwise -1;
+// parsing fails only when the error value is not a table
+const RpcErrorObjectSchema = z.object({
+  message: z.unknown(),
+  code: z.number().catch(-1),
+});
+
+// JSON-RPC result: any non-table value degrades to an empty table
+const RpcResultSchema = z.record(z.string(), z.unknown()).catch({});
 
 // Full MCP JSON-RPC 2.0 client supporting stdio subprocess and TCP transports
 export class McpClient {
@@ -119,12 +139,9 @@ export class McpClient {
     const rawTools = response["tools"];
     if (!Array.isArray(rawTools)) return tools;
     for (const t of rawTools) {
-      if (!isRecord(t)) continue;
-      const name = typeof t["name"] === "string" ? t["name"] : "";
-      const description = typeof t["description"] === "string" ? t["description"] : "";
-      const schemaRaw: unknown = t["inputSchema"];
-      const inputSchema = isRecord(schemaRaw) ? schemaRaw : {};
-      tools.push({ name, description, inputSchema });
+      const parsed = McpToolEntrySchema.safeParse(t);
+      if (!parsed.success) continue;
+      tools.push(parsed.data);
     }
     return tools;
   }
@@ -245,15 +262,14 @@ export class McpClient {
             cleanup();
             if ("error" in msg) {
               const rawError = msg["error"];
-              const errMsg = isRecord(rawError)
-                ? toDisplayString(rawError["message"])
-                : toDisplayString(rawError);
-              const errCode =
-                isRecord(rawError) && typeof rawError["code"] === "number" ? rawError["code"] : -1;
+              const parsedError = RpcErrorObjectSchema.safeParse(rawError);
+              const errMsg = toDisplayString(
+                parsedError.success ? parsedError.data.message : rawError,
+              );
+              const errCode = parsedError.success ? parsedError.data.code : -1;
               reject(new McpToolError(errMsg, errCode));
             } else {
-              const result = msg["result"];
-              resolve(isRecord(result) ? result : {});
+              resolve(RpcResultSchema.parse(msg["result"]));
             }
           }
         } catch {

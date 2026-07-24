@@ -21,6 +21,9 @@
  */
 
 // Session data model
+import { z } from "zod";
+
+import { SessionModeSchema, SessionStatusSchema } from "../bus/commands.js";
 import type { SessionMode, SessionStatus } from "../bus/commands.js";
 
 export type { SessionMode, SessionStatus };
@@ -62,27 +65,40 @@ export function sessionToDict(s: Session): Record<string, unknown> {
   };
 }
 
+// Persisted meta.json shape. mode/status are strict (corrupted data must
+// surface as an error); all other fields are leniently coerced or defaulted,
+// matching the historical String()/typeof fallbacks.
+const SessionDictSchema = z.object({
+  id: z.coerce.string(),
+  mode: SessionModeSchema,
+  status: SessionStatusSchema,
+  title: z.string().catch(""),
+  created_at: z.coerce.string(),
+  updated_at: z.coerce.string(),
+  run_ids: z.array(z.coerce.string()).catch([]),
+});
+
 // Restore Session from meta.json object.
 // Throws on invalid mode/status so corrupted persisted data is surfaced
 // instead of being silently coerced to defaults.
 export function sessionFromDict(data: Record<string, unknown>): Session {
-  const modeRaw = data["mode"];
-  const statusRaw = data["status"];
-  const titleRaw = data["title"];
-  const runIdsRaw = data["run_ids"];
-  if (modeRaw !== "one_shot" && modeRaw !== "chat") {
-    throw new Error(`Invalid session mode: ${String(modeRaw)}`);
+  const parsed = SessionDictSchema.safeParse(data);
+  if (!parsed.success) {
+    // Only mode/status can fail (every other field coerces or defaults);
+    // report mode first to preserve the historical check order
+    if (parsed.error.issues.some((issue) => issue.path[0] === "mode")) {
+      throw new Error(`Invalid session mode: ${String(data["mode"])}`);
+    }
+    throw new Error(`Invalid session status: ${String(data["status"])}`);
   }
-  if (statusRaw !== "active" && statusRaw !== "waiting_for_input" && statusRaw !== "closed") {
-    throw new Error(`Invalid session status: ${String(statusRaw)}`);
-  }
+  const d = parsed.data;
   return {
-    id: String(data["id"]),
-    mode: modeRaw,
-    status: statusRaw,
-    title: typeof titleRaw === "string" ? titleRaw : "",
-    createdAt: String(data["created_at"]),
-    updatedAt: String(data["updated_at"]),
-    runIds: Array.isArray(runIdsRaw) ? runIdsRaw.map(String) : [],
+    id: d.id,
+    mode: d.mode,
+    status: d.status,
+    title: d.title,
+    createdAt: d.created_at,
+    updatedAt: d.updated_at,
+    runIds: d.run_ids,
   };
 }

@@ -48,7 +48,7 @@ function writeLine(socket: net.Socket, data: unknown): boolean {
   return socket.write(JSON.stringify(data) + "\n", "utf-8");
 }
 
-// Return peer address string for trace client_id (matches Python peername)
+// Return peer address string for trace client_id
 function peerAddress(socket: net.Socket): string {
   const addr = socket.remoteAddress;
   const port = socket.remotePort;

@@ -25,10 +25,31 @@ import net from "node:net";
 import { createInterface } from "node:readline";
 import { randomUUID } from "node:crypto";
 
+import { z } from "zod";
+
 import type { JsonRpcRequest } from "../bus/envelope.js";
 import { isRecord } from "../bus/envelope.js";
 
 export type EventHandler = (event: Record<string, unknown>) => Promise<void>;
+
+// JSON-RPC error object: non-numeric code → -1, non-string message → "unknown",
+// and a non-table error value degrades to both defaults
+const RpcErrorSchema = z
+  .object({
+    code: z.number().catch(-1),
+    message: z.string().catch("unknown"),
+  })
+  .catch({ code: -1, message: "unknown" });
+
+// JSON-RPC result: any non-table value degrades to an empty table
+const RpcResultSchema = z.record(z.string(), z.unknown()).catch({});
+
+// Server-pushed event envelope: dispatched only when kind === "event"
+// and the event payload is a table
+const EventMessageSchema = z.object({
+  kind: z.literal("event"),
+  event: z.record(z.string(), z.unknown()),
+});
 
 // IPC error: JSON-RPC error response
 export class IpcError extends Error {
@@ -191,26 +212,17 @@ export class SocketClient {
         if (!pending) return;
         this._pending.delete(reqId);
         if ("error" in msg) {
-          const errRaw = msg["error"];
-          const errObj = typeof errRaw === "object" && errRaw !== null ? errRaw : null;
-          const errCode = errObj && "code" in errObj ? errObj.code : undefined;
-          const errMsg = errObj && "message" in errObj ? errObj.message : undefined;
-          pending.reject(
-            new IpcError(
-              typeof errCode === "number" ? errCode : -1,
-              typeof errMsg === "string" ? errMsg : "unknown",
-            ),
-          );
+          const { code, message } = RpcErrorSchema.parse(msg["error"]);
+          pending.reject(new IpcError(code, message));
         } else {
-          const result = msg["result"];
-          pending.resolve(isRecord(result) ? result : {});
+          pending.resolve(RpcResultSchema.parse(msg["result"]));
         }
       }
-    } else if (msg["kind"] === "event") {
-      const eventData = msg["event"];
-      if (isRecord(eventData)) {
+    } else {
+      const parsed = EventMessageSchema.safeParse(msg);
+      if (parsed.success) {
         for (const handler of this._eventHandlers) {
-          await handler(eventData);
+          await handler(parsed.data.event);
         }
       }
     }

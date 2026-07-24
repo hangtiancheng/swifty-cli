@@ -24,8 +24,9 @@
 import { readFileSync, statSync, createReadStream } from "node:fs";
 import readline from "node:readline";
 
+import { z } from "zod";
+
 import { expandUser, type LarkyConfig } from "../../core/config.js";
-import { isRecord } from "../../core/bus/envelope.js";
 
 const COLORS: Record<string, string> = {
   "CLIENT→CORE": "\x1b[36m", // cyan
@@ -48,6 +49,49 @@ interface TraceRecord {
   data: Record<string, unknown>;
 }
 
+// Trace line schema: ts/direction/layer/kind/data are required (a line failing
+// them is silently skipped); run_id/step/client_id leniently degrade to null
+const TraceRecordSchema = z.object({
+  ts: z.string(),
+  direction: z.string(),
+  layer: z.string(),
+  kind: z.string(),
+  run_id: z.string().nullable().catch(null),
+  step: z.number().nullable().catch(null),
+  client_id: z.string().nullable().catch(null),
+  data: z.record(z.string(), z.unknown()),
+});
+
+// Per-kind lenient payload schemas for summarize(): wrongly-typed or missing
+// nested values degrade to the historical fallbacks instead of failing
+const CommandDataSchema = z.object({
+  method: z.unknown(),
+  params: z.object({ goal: z.string().catch("") }).catch({ goal: "" }),
+});
+
+const ResponseResultSchema = z.object({ run_id: z.string() });
+
+const ErrorDataSchema = z.object({
+  error: z
+    .object({ code: z.unknown(), message: z.unknown() })
+    .catch({ code: undefined, message: undefined }),
+});
+
+const ApiCallDataSchema = z.object({
+  messages: z.array(z.unknown()).optional().catch(undefined),
+  message_count: z.number().optional().catch(undefined),
+  tool_schemas: z.array(z.unknown()).optional().catch(undefined),
+  tool_count: z.number().optional().catch(undefined),
+});
+
+const ApiResponseDataSchema = z.object({
+  stop_reason: z.unknown(),
+  latency_ms: z.unknown(),
+  usage: z
+    .object({ output_tokens: z.number().optional().catch(undefined) })
+    .catch({ output_tokens: undefined }),
+});
+
 function str(v: unknown): string {
   if (typeof v === "string") return v;
   if (typeof v === "number") return String(v);
@@ -59,23 +103,22 @@ function summarize(record: TraceRecord): string {
   const kind = record.kind;
 
   if (kind === "command") {
-    const params = isRecord(data["params"]) ? data["params"] : {};
-    const goal = typeof params["goal"] === "string" ? params["goal"] : "";
-    const suffix = goal ? `  goal="${goal.slice(0, 50)}"` : "";
-    return `method=${str(data["method"])}${suffix}`;
+    const d = CommandDataSchema.parse(data);
+    const suffix = d.params.goal ? `  goal="${d.params.goal.slice(0, 50)}"` : "";
+    return `method=${str(d.method)}${suffix}`;
   }
 
   if (kind === "response") {
-    const result = data["result"];
-    if (isRecord(result) && typeof result["run_id"] === "string") {
-      return `run_id=${result["run_id"].slice(0, 8)}`;
+    const result = ResponseResultSchema.safeParse(data["result"]);
+    if (result.success) {
+      return `run_id=${result.data.run_id.slice(0, 8)}`;
     }
-    return JSON.stringify(result ?? "").slice(0, 60);
+    return JSON.stringify(data["result"] ?? "").slice(0, 60);
   }
 
   if (kind === "error") {
-    const err = isRecord(data["error"]) ? data["error"] : {};
-    return `code=${str(err["code"])}  ${str(err["message"])}`;
+    const d = ErrorDataSchema.parse(data);
+    return `code=${str(d.error.code)}  ${str(d.error.message)}`;
   }
 
   if (kind === "push") {
@@ -87,25 +130,16 @@ function summarize(record: TraceRecord): string {
   }
 
   if (kind === "api_call") {
-    const msgs = data["messages"];
-    const count = Array.isArray(msgs)
-      ? msgs.length
-      : typeof data["message_count"] === "number"
-        ? data["message_count"]
-        : "?";
-    const tools = data["tool_schemas"];
-    const tc = Array.isArray(tools)
-      ? tools.length
-      : typeof data["tool_count"] === "number"
-        ? data["tool_count"]
-        : "?";
+    const d = ApiCallDataSchema.parse(data);
+    const count = d.messages ? d.messages.length : (d.message_count ?? "?");
+    const tc = d.tool_schemas ? d.tool_schemas.length : (d.tool_count ?? "?");
     return `msgs=${String(count)}  tools=${String(tc)}`;
   }
 
   if (kind === "api_response") {
-    const usage = isRecord(data["usage"]) ? data["usage"] : {};
-    const outTokens = typeof usage["output_tokens"] === "number" ? usage["output_tokens"] : "?";
-    return `stop=${str(data["stop_reason"])}  latency=${str(data["latency_ms"])}ms  out_tokens=${String(outTokens)}`;
+    const d = ApiResponseDataSchema.parse(data);
+    const outTokens = d.usage.output_tokens ?? "?";
+    return `stop=${str(d.stop_reason)}  latency=${str(d.latency_ms)}ms  out_tokens=${String(outTokens)}`;
   }
 
   return JSON.stringify(data).slice(0, 60);
@@ -134,27 +168,9 @@ function processLine(
 ): void {
   if (!line.trim()) return;
   try {
-    const parsed: unknown = JSON.parse(line);
-    if (!isRecord(parsed)) return;
-    if (
-      typeof parsed["ts"] !== "string" ||
-      typeof parsed["direction"] !== "string" ||
-      typeof parsed["layer"] !== "string" ||
-      typeof parsed["kind"] !== "string" ||
-      !isRecord(parsed["data"])
-    )
-      return;
-
-    const record: TraceRecord = {
-      ts: parsed["ts"],
-      direction: parsed["direction"],
-      layer: parsed["layer"],
-      kind: parsed["kind"],
-      run_id: typeof parsed["run_id"] === "string" ? parsed["run_id"] : null,
-      step: typeof parsed["step"] === "number" ? parsed["step"] : null,
-      client_id: typeof parsed["client_id"] === "string" ? parsed["client_id"] : null,
-      data: parsed["data"],
-    };
+    const result = TraceRecordSchema.safeParse(JSON.parse(line));
+    if (!result.success) return;
+    const record: TraceRecord = result.data;
 
     // Apply filters
     if (runId && record.run_id !== runId) return;

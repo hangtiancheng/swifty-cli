@@ -55,7 +55,7 @@ export function getConnectionWriter(): net.Socket {
 
 const MAX_LINE_BYTES = 64 * 1024 * 1024; // 64 MB per frame
 
-// Return peer address string for trace client_id (matches Python peername)
+// Return peer address string for trace client_id
 function peerAddress(socket: net.Socket): string {
   const addr = socket.remoteAddress;
   const port = socket.remotePort;

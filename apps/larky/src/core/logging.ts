@@ -36,6 +36,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 import pino from "pino";
+import { z } from "zod";
 
 import { expandUser, type LarkyConfig } from "./config.js";
 
@@ -55,7 +56,7 @@ const LEVEL_ALIASES: Record<string, PinoLevel> = {
   info: "info",
   debug: "debug",
   trace: "trace",
-  notset: "trace",
+  none: "trace",
 };
 
 // pino numeric level -> Python-style text label (for the text format)
@@ -93,6 +94,25 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+// Head fields of a pino JSON line, leniently parsed for the text format:
+// - level: numeric pino level → Python-style label (unknown numbers stringified),
+//   string → uppercased, anything else → "INFO"
+// - time: string kept as-is, number treated as epoch millis, otherwise "now"
+// - name/msg: non-strings degrade to their defaults
+const LogHeadSchema = z.object({
+  level: z
+    .union([
+      z.number().transform((n) => TEXT_LEVEL_LABELS[n] ?? String(n)),
+      z.string().transform((s) => s.toUpperCase()),
+    ])
+    .catch("INFO"),
+  time: z
+    .union([z.string(), z.number().transform((n) => new Date(n).toISOString())])
+    .catch(() => new Date().toISOString()),
+  name: z.string().catch("larky-core"),
+  msg: z.string().catch(""),
+});
+
 // Format one pino JSON line as the old Python text format:
 //   level=INFO ts=2026-01-01T00:00:00.000Z source=larky-core msg="hello"
 // Extra bound fields are appended as key=value pairs. Non-JSON input is
@@ -109,28 +129,9 @@ export function formatTextLine(line: string): string {
   if (!isRecord(parsed)) return line;
   const record = parsed;
 
-  const rawLevel = record["level"];
-  let label = "INFO";
-  if (typeof rawLevel === "number") {
-    label = TEXT_LEVEL_LABELS[rawLevel] ?? String(rawLevel);
-  } else if (typeof rawLevel === "string") {
-    label = rawLevel.toUpperCase();
-  }
+  const head = LogHeadSchema.parse(record);
 
-  const rawTime = record["time"];
-  let ts: string;
-  if (typeof rawTime === "string") {
-    ts = rawTime;
-  } else if (typeof rawTime === "number") {
-    ts = new Date(rawTime).toISOString();
-  } else {
-    ts = new Date().toISOString();
-  }
-
-  const source = typeof record["name"] === "string" ? record["name"] : "larky-core";
-  const msg = typeof record["msg"] === "string" ? record["msg"] : "";
-
-  let out = `level=${label} ts=${ts} source=${source} msg=${JSON.stringify(msg)}`;
+  let out = `level=${head.level} ts=${head.time} source=${head.name} msg=${JSON.stringify(head.msg)}`;
   for (const [key, value] of Object.entries(record)) {
     if (TEXT_CORE_KEYS.has(key)) continue;
     out += ` ${key}=${JSON.stringify(value)}`;

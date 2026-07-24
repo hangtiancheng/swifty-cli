@@ -26,12 +26,38 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 
+import { z } from "zod";
+
 import type { Task } from "./model.js";
-import { isRecord } from "../bus/envelope.js";
 
 function now(): string {
   return new Date().toISOString();
 }
+
+// Lenient persisted task file schema. Parsing fails only when the root is not
+// a table; every field degrades to a safe default. Semantics preserved from
+// the historical manual checks:
+// - id: non-empty string kept, number stringified, anything else falls back
+//   to the id derived from the file name (undefined sentinel)
+// - createdAt/updatedAt/blockedBy: null/absent falls through to the legacy
+//   snake_case key (nullish), while a present-but-invalid value does NOT
+// - status: unknown values degrade to "pending"
+const TaskFileSchema = z.object({
+  id: z
+    .union([z.string().min(1), z.number().transform((n) => String(n))])
+    .optional()
+    .catch(undefined),
+  subject: z.string().catch(""),
+  description: z.string().catch(""),
+  status: z.enum(["pending", "in_progress", "completed"]).catch("pending"),
+  createdAt: z.string().nullish().catch(""),
+  created_at: z.string().nullish().catch(""),
+  updatedAt: z.string().nullish().catch(""),
+  updated_at: z.string().nullish().catch(""),
+  blockedBy: z.array(z.coerce.string()).nullish().catch([]),
+  blocked_by: z.array(z.coerce.string()).nullish().catch([]),
+  blocks: z.array(z.coerce.string()).catch([]),
+});
 
 export class TaskManager {
   private _dir: string;
@@ -219,43 +245,18 @@ export class TaskManager {
     const filePath = this._filePath(id);
     if (!existsSync(filePath)) return null;
     try {
-      const parsed: unknown = JSON.parse(readFileSync(filePath, "utf-8"));
-      if (!isRecord(parsed)) return null;
-      const data = parsed;
-
-      const idRaw = data["id"];
-      const taskId =
-        typeof idRaw === "string" && idRaw !== ""
-          ? idRaw
-          : typeof idRaw === "number"
-            ? String(idRaw)
-            : id;
-
-      const subject = typeof data["subject"] === "string" ? data["subject"] : "";
-      const description = typeof data["description"] === "string" ? data["description"] : "";
-      const statusRaw = data["status"];
-      const status =
-        statusRaw === "pending" || statusRaw === "in_progress" || statusRaw === "completed"
-          ? statusRaw
-          : "pending";
-
-      const createdAtRaw = data["createdAt"] ?? data["created_at"];
-      const updatedAtRaw = data["updatedAt"] ?? data["updated_at"];
-      const createdAt = typeof createdAtRaw === "string" ? createdAtRaw : "";
-      const updatedAt = typeof updatedAtRaw === "string" ? updatedAtRaw : "";
-
-      const blockedByRaw = data["blockedBy"] ?? data["blocked_by"];
-      const blocksRaw = data["blocks"];
-
+      const parsed = TaskFileSchema.safeParse(JSON.parse(readFileSync(filePath, "utf-8")));
+      if (!parsed.success) return null;
+      const d = parsed.data;
       return {
-        id: taskId,
-        subject,
-        description,
-        status,
-        blockedBy: Array.isArray(blockedByRaw) ? blockedByRaw.map(String) : [],
-        blocks: Array.isArray(blocksRaw) ? blocksRaw.map(String) : [],
-        createdAt,
-        updatedAt,
+        id: d.id ?? id,
+        subject: d.subject,
+        description: d.description,
+        status: d.status,
+        blockedBy: d.blockedBy ?? d.blocked_by ?? [],
+        blocks: d.blocks,
+        createdAt: d.createdAt ?? d.created_at ?? "",
+        updatedAt: d.updatedAt ?? d.updated_at ?? "",
       };
     } catch {
       return null;
