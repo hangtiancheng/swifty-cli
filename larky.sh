@@ -19,11 +19,11 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-# install2.sh — Bootstrap installer for swifty-code CLI via npm global install.
+# larky.sh — Bootstrap installer for swifty-code CLI via npm global install.
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/hangtiancheng/swifty-cli/main/install2.sh | bash
-#   curl -fsSL https://raw.githubusercontent.com/hangtiancheng/swifty-cli/main/install2.sh | bash -s -- --alpha
+#   curl -fsSL https://raw.githubusercontent.com/hangtiancheng/swifty-cli/main/larky.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/hangtiancheng/swifty-cli/main/larky.sh | bash -s -- --alpha
 #
 # Installs @swifty.js/swifty-code globally via npm. npm's `bin` field automatically
 # creates the `swifty-code` command on PATH. Requires Node.js >= 20.
@@ -87,7 +87,7 @@ for arg in "$@"; do
 	--tag=*) TAG="${arg#--tag=}" ;;
 	--help | -h)
 		cat <<EOF
-Usage: install2.sh [OPTIONS]
+Usage: larky.sh [OPTIONS]
 
   (default)    Install the latest stable swifty-code from npm
   --uninstall  Uninstall swifty-code
