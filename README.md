@@ -15,8 +15,6 @@ swifty-cli.code-workspace
 }
 ```
 
-[Swifty CLI](https://hangtiancheng.github.io/swifty-cli)
-
 ```bash
 brew install scc tokei
 scc .
