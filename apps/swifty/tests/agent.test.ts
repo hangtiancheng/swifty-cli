@@ -48,6 +48,9 @@ class MockClient implements LLMClient {
   calls = 0;
   maxTokensSet: number | null = null;
   constructor(private scripts: StreamEvent[][]) {}
+  setSystemPrompt(_prompt: string): void {
+    /** noop */
+  }
   async *stream(): AsyncGenerator<StreamEvent> {
     const script = this.scripts[this.calls++] ?? [end()];
     for (const ev of script) {

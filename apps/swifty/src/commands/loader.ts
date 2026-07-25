@@ -33,7 +33,7 @@ import { z, parse } from "zod";
 
 // Loads user-defined slash commands from .swifty/commands/*.md (user then
 // project, so project wins on a name collision). Subdirectories namespace the
-// command name: sub/dir/foo.md → "sub:dir:foo". Mirrors Go LoadUserCommands.
+// command name: sub/dir/foo.md → "sub:dir:foo".
 export function loadUserCommands(workDir: string): Command[] {
   const byName = new Map<string, Command>();
   const bases = [join(homedir(), ".swifty", "commands"), join(workDir, ".swifty", "commands")];
@@ -143,7 +143,7 @@ function parseCommandFile(base: string, full: string): Command | null {
 }
 
 // Render a command body, substituting $ARGUMENTS; if there is no placeholder and
-// args were given, append them. Mirrors Go promptHandler.
+// args were given, append them.
 export function renderBody(body: string, args: string): string {
   if (body.includes("$ARGUMENTS")) {
     return body.replaceAll("$ARGUMENTS", args);

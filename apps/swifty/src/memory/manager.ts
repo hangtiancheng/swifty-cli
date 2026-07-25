@@ -46,6 +46,44 @@ const MAX_ENTRYPOINT_LINES = 200;
 const MAX_ENTRYPOINT_BYTES = 25_000;
 const MEMORY_INDEX_NAME = "MEMORY.md";
 
+/**
+ * Truncates index content to fit within the byte limit.
+ *
+ * Preferably cuts at the last newline before the limit so that only complete entries are retained.
+ * In UTF-8, ASCII bytes never appear inside multi-byte sequences, so scanning for a newline at the
+ * byte level is safe. When no newline exists in the entire segment, we hard-cut at the byte limit
+ * and then back up to a character boundary; otherwise a multi-byte character split in half would
+ * decode to a replacement character.
+ */
+function capEntrypoint(content: string): string {
+  const buf = Buffer.from(content, "utf-8");
+  if (buf.length <= MAX_ENTRYPOINT_BYTES) {
+    return content;
+  }
+
+  const nl = buf.lastIndexOf(0x0a, MAX_ENTRYPOINT_BYTES - 1);
+  if (nl > 0) {
+    return buf.subarray(0, nl).toString("utf-8");
+  }
+
+  let end = MAX_ENTRYPOINT_BYTES;
+  // UTF-8 continuation bytes always have the top two bits set to 10; skip backward past them to land on a character boundary
+  while (end > 0 && (buf[end] & 0xc0) === 0x80) {
+    end--;
+  }
+  return buf.subarray(0, end).toString("utf-8");
+}
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) {
+    return `${String(bytes)}B`;
+  }
+  if (bytes < 1024 * 1024) {
+    return `${(bytes / 1024).toFixed(1)}KB`;
+  }
+  return `${(bytes / 1024 / 1024).toFixed(1)}MB`;
+}
+
 const SelectedMemoriesSchema = z.object({
   selected_memories: z.array(z.string()),
 });
@@ -76,7 +114,7 @@ export interface RelevantMemory {
   mtimeMs: number;
 }
 
-/** The system prompt for the selector agent. Mirrors the Go SelectMemoriesSystemPrompt. */
+/** The system prompt for the selector agent. */
 const SELECT_MEMORIES_SYSTEM_PROMPT = `You are selecting memories that will be useful to Swifty as it processes a user's query. You will be given the user's query and a list of available memory files with their filenames and descriptions.
 
 Return a list of filenames for the memories that will clearly be useful to Swifty as it processes the user's query (up to 5). Only include memories that you are certain will be helpful based on their name and description.
@@ -130,6 +168,15 @@ export class MemoryManager {
     return this.loadAll();
   }
 
+  /**
+   * Builds the memory index injected into the system prompt.
+   *
+   * This content is re-sent to the model on every conversation turn, so each additional index line
+   * is a recurring cost. We therefore enforce both a line-count and a byte-size cap at the output
+   * boundary. When either limit is exceeded, a warning is appended at the end so the model knows
+   * the index it received is incomplete; otherwise it would assume a memory does not exist and
+   * create a duplicate entry.
+   */
   buildSystemReminder(): string {
     const memories = this.loadAll();
     if (memories.length === 0) {
@@ -137,7 +184,35 @@ export class MemoryManager {
     }
 
     const lines = memories.map((m) => `- [${m.name}] (${m.type}): ${m.description}`);
-    return `Active memories:\n${lines.join("\n")}`;
+
+    const lineCount = lines.length;
+    const joined = lines.join("\n");
+    const byteCount = Buffer.byteLength(joined, "utf-8");
+    const overLines = lineCount > MAX_ENTRYPOINT_LINES;
+    const overBytes = byteCount > MAX_ENTRYPOINT_BYTES;
+
+    if (!overLines && !overBytes) {
+      return `Active memories:\n${joined}`;
+    }
+
+    const body = capEntrypoint(lines.slice(0, MAX_ENTRYPOINT_LINES).join("\n"));
+
+    let reason: string;
+    if (overBytes && !overLines) {
+      reason = `${formatFileSize(byteCount)} (limit: ${formatFileSize(
+        MAX_ENTRYPOINT_BYTES,
+      )}) — index entries are too long`;
+    } else if (overLines && !overBytes) {
+      reason = `${String(lineCount)} lines (limit: ${String(MAX_ENTRYPOINT_LINES)})`;
+    } else {
+      reason = `${String(lineCount)} lines and ${formatFileSize(byteCount)}`;
+    }
+
+    return (
+      `Active memories:\n${body}\n\n` +
+      `> WARNING: ${MEMORY_INDEX_NAME} is ${reason}. Only part of it was loaded. ` +
+      `Keep index entries to one line under ~200 chars; move detail into topic files.`
+    );
   }
 
   clear(): void {
@@ -218,18 +293,7 @@ export class MemoryManager {
       }
     }
 
-    // Truncate to MAX_ENTRYPOINT_LINES
-    let content = lines.slice(0, MAX_ENTRYPOINT_LINES).join("\n");
-
-    // Truncate to MAX_ENTRYPOINT_BYTES at a newline boundary
-    if (Buffer.byteLength(content, "utf-8") > MAX_ENTRYPOINT_BYTES) {
-      // Find the last newline before the byte cap
-      const buf = Buffer.from(content, "utf-8");
-      const truncBuf = buf.subarray(0, MAX_ENTRYPOINT_BYTES);
-      const truncStr = truncBuf.toString("utf-8");
-      const lastNL = truncStr.lastIndexOf("\n");
-      content = lastNL > 0 ? truncStr.slice(0, lastNL) : truncStr;
-    }
+    const content = capEntrypoint(lines.slice(0, MAX_ENTRYPOINT_LINES).join("\n"));
 
     // Write MEMORY.md into projectDir, ensuring the dir exists
     mkdirSync(this.projectDir, { recursive: true });
@@ -477,9 +541,11 @@ interface ParsedFrontmatter {
 /**
  * Parse frontmatter
  * ---
- * name: swifty-mvc
- * description: The description of swifty-mvc
+ * name: swifty-docs
+ * description: The description of swifty-docs
  * ---
+ * Parses frontmatter and extracts name/description/type.
+ * The type field is read from the top level first; the nested metadata.type form is also accepted.
  */
 function parseFrontmatter(content: string): ParsedFrontmatter | null {
   if (!content.startsWith("---")) {

@@ -34,6 +34,12 @@ import {
   COMPACT_BOUNDARY,
 } from "../src/session/session.js";
 
+const t0 = Math.floor(Date.now() / 1000);
+const t1 = t0 + 1;
+const t2 = t0 + 2;
+const t3 = t0 + 3;
+const t4 = t0 + 4;
+
 describe("session save/load round-trip", () => {
   it("persists messages and loads them back in order", () => {
     const workDir = mkdtempSync(join(tmpdir(), "swifty-session-"));
@@ -42,12 +48,12 @@ describe("session save/load round-trip", () => {
     saveMessage(workDir, id, {
       role: "user",
       content: "first",
-      timestamp: "t1",
+      timestamp: t0,
     });
     saveMessage(workDir, id, {
       role: "assistant",
       content: "reply",
-      timestamp: "t2",
+      timestamp: t1,
     });
 
     const loaded = loadSession(workDir, id);
@@ -64,10 +70,10 @@ describe("session save/load round-trip", () => {
     writeFileSync(
       join(dir, `${id}.jsonl`),
       [
-        JSON.stringify({ role: "user", content: "ok", timestamp: "t" }),
+        JSON.stringify({ role: "user", content: "ok", timestamp: t0 }),
         "{ not valid json",
-        JSON.stringify({ role: "assistant", content: "", timestamp: "t" }),
-        JSON.stringify({ role: "assistant", content: "good", timestamp: "t" }),
+        JSON.stringify({ role: "assistant", content: "", timestamp: t0 }),
+        JSON.stringify({ role: "assistant", content: "good", timestamp: t0 }),
       ].join("\n") + "\n",
     );
 
@@ -82,12 +88,12 @@ describe("session save/load round-trip", () => {
     saveMessage(workDir, id, {
       role: "system",
       content: "boot",
-      timestamp: "t0",
+      timestamp: t0,
     });
     saveMessage(workDir, id, {
       role: "user",
       content: "the real question",
-      timestamp: "t1",
+      timestamp: t1,
     });
 
     const info = listSessions(workDir).find((s) => s.id === id);
@@ -106,17 +112,17 @@ describe("rebuildFromSession (compacted-state resume)", () => {
     saveMessage(workDir, id, {
       role: "user",
       content: "ORIGINAL-Q-1 must-not-replay",
-      timestamp: "t0",
+      timestamp: t0,
     });
     saveMessage(workDir, id, {
       role: "assistant",
       content: "ORIGINAL-A-1 must-not-replay",
-      timestamp: "t1",
+      timestamp: t1,
     });
     saveMessage(workDir, id, {
       role: "user",
       content: "ORIGINAL-Q-2 must-not-replay",
-      timestamp: "t2",
+      timestamp: t2,
     });
 
     // The boundary: summary + the verbatim kept tail inlined as role+text.
@@ -132,12 +138,12 @@ describe("rebuildFromSession (compacted-state resume)", () => {
     saveMessage(workDir, id, {
       role: "user",
       content: "POST-BOUNDARY-Q new",
-      timestamp: "t3",
+      timestamp: t3,
     });
     saveMessage(workDir, id, {
       role: "assistant",
       content: "POST-BOUNDARY-A new",
-      timestamp: "t4",
+      timestamp: t4,
     });
 
     const saved = loadSession(workDir, id);
@@ -168,7 +174,7 @@ describe("rebuildFromSession (compacted-state resume)", () => {
     saveMessage(workDir, id, {
       role: "user",
       content: "VERY-OLD must-not-replay",
-      timestamp: "t0",
+      timestamp: t0,
     });
     // First boundary (superseded by the second).
     saveCompactBoundary(workDir, id, {
@@ -178,7 +184,7 @@ describe("rebuildFromSession (compacted-state resume)", () => {
     saveMessage(workDir, id, {
       role: "assistant",
       content: "MID must-not-replay",
-      timestamp: "t1",
+      timestamp: t1,
     });
     // Second (latest) boundary — the one resume should use.
     saveCompactBoundary(workDir, id, {
@@ -188,7 +194,7 @@ describe("rebuildFromSession (compacted-state resume)", () => {
     saveMessage(workDir, id, {
       role: "user",
       content: "AFTER-SECOND new",
-      timestamp: "t2",
+      timestamp: t2,
     });
 
     const rebuilt = rebuildFromSession(loadSession(workDir, id));
@@ -206,13 +212,13 @@ describe("rebuildFromSession (compacted-state resume)", () => {
     const workDir = mkdtempSync(join(tmpdir(), "swifty-session-"));
     const id = newSessionId();
 
-    saveMessage(workDir, id, { role: "user", content: "q1", timestamp: "t0" });
+    saveMessage(workDir, id, { role: "user", content: "q1", timestamp: t0 });
     saveMessage(workDir, id, {
       role: "assistant",
       content: "a1",
-      timestamp: "t1",
+      timestamp: t1,
     });
-    saveMessage(workDir, id, { role: "user", content: "q2", timestamp: "t2" });
+    saveMessage(workDir, id, { role: "user", content: "q2", timestamp: t2 });
 
     const rebuilt = rebuildFromSession(loadSession(workDir, id));
     expect(rebuilt).toEqual([
@@ -230,6 +236,6 @@ describe("rebuildFromSession (compacted-state resume)", () => {
     const saved = loadSession(workDir, id);
     expect(saved).toHaveLength(1);
     expect(saved[0].type).toBe(COMPACT_BOUNDARY);
-    expect(JSON.parse(saved[0].content)).toEqual({ summary: "s", keep: [] });
+    expect(JSON.parse(saved[0].content ?? "{}")).toEqual({ summary: "s", keep: [] });
   });
 });

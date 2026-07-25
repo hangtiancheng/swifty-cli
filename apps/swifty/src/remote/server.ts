@@ -69,7 +69,7 @@ import { MemoryManager } from "../memory/manager.js";
 import { MemoryConsolidator } from "../memory/consolidation.js";
 import { MemoryExtractor } from "../memory/extractor.js";
 import { SkillCatalog } from "../skills/catalog.js";
-import type { SkillHost } from "../skills/skill.js";
+import type { SkillForkHost, SkillHost } from "../skills/skill.js";
 import { LoadSkillTool } from "../skills/load-skill-tool.js";
 import { runInline as runSkillInline } from "../skills/executor.js";
 import { TaskList } from "../todo/todo.js";
@@ -79,6 +79,9 @@ import { AgentTool } from "../subagent/agent-tool.js";
 import { spawnSubagent } from "../subagent/spawn.js";
 import { TeamCreateTool, SendMessageTool, TeamDeleteTool } from "../teams/tools.js";
 import { TeamManager, type RunAgent } from "../teams/team.js";
+import { TaskStopTool } from "../teams/task-stop.js";
+import { SyntheticOutputTool } from "../tools/synthetic-output.js";
+import { coordinatorToolFilter, coordinatorActive } from "../teams/coordinator.js";
 import { HookEngine, validate as validateHooks } from "../hooks/hooks.js";
 import { forceCompact } from "../compact/compact.js";
 import { RecoveryState } from "../compact/recovery.js";
@@ -187,6 +190,8 @@ export interface RemoteAgentHandle {
   hookEngine: HookEngine | null;
   recoveryState: RecoveryState;
   teamManager: TeamManager;
+  enableCoordinatorMode: boolean;
+  forkDisabled: boolean;
   memoryManager: MemoryManager;
   contextWindow: number;
   ltmInstructions: string;
@@ -219,6 +224,8 @@ class AgentHandleImpl implements RemoteAgentHandle {
   hookEngine: HookEngine | null;
   recoveryState: RecoveryState;
   teamManager: TeamManager;
+  enableCoordinatorMode: boolean;
+  forkDisabled: boolean;
   memoryManager: MemoryManager;
   contextWindow: number;
   ltmInstructions: string;
@@ -229,28 +236,30 @@ class AgentHandleImpl implements RemoteAgentHandle {
 
   private abortController: AbortController | null = null;
 
-  constructor(init: Omit<AgentHandleImpl, "abortController" | "run" | "abort">) {
-    this.client = init.client;
-    this.conv = init.conv;
-    this.registry = init.registry;
-    this.sessionId = init.sessionId;
-    this.fileHistory = init.fileHistory;
-    this.fileStateCache = init.fileStateCache;
-    this.cmdRegistry = init.cmdRegistry;
-    this.skillCatalog = init.skillCatalog;
-    this.activeSkills = init.activeSkills;
-    this.toolFilter = init.toolFilter;
-    this.mcpManager = init.mcpManager;
-    this.hookEngine = init.hookEngine;
-    this.recoveryState = init.recoveryState;
-    this.teamManager = init.teamManager;
-    this.memoryManager = init.memoryManager;
-    this.contextWindow = init.contextWindow;
-    this.ltmInstructions = init.ltmInstructions;
-    this.ltmMemoryContent = init.ltmMemoryContent;
-    this.mcpInstructions = init.mcpInstructions;
-    this.provider = init.provider;
-    this.workDir = init.workDir;
+  constructor(agentHandleImpl: Omit<AgentHandleImpl, "abortController" | "run" | "abort">) {
+    this.client = agentHandleImpl.client;
+    this.conv = agentHandleImpl.conv;
+    this.registry = agentHandleImpl.registry;
+    this.sessionId = agentHandleImpl.sessionId;
+    this.fileHistory = agentHandleImpl.fileHistory;
+    this.fileStateCache = agentHandleImpl.fileStateCache;
+    this.cmdRegistry = agentHandleImpl.cmdRegistry;
+    this.skillCatalog = agentHandleImpl.skillCatalog;
+    this.activeSkills = agentHandleImpl.activeSkills;
+    this.toolFilter = agentHandleImpl.toolFilter;
+    this.mcpManager = agentHandleImpl.mcpManager;
+    this.hookEngine = agentHandleImpl.hookEngine;
+    this.recoveryState = agentHandleImpl.recoveryState;
+    this.teamManager = agentHandleImpl.teamManager;
+    this.enableCoordinatorMode = agentHandleImpl.enableCoordinatorMode;
+    this.forkDisabled = agentHandleImpl.forkDisabled;
+    this.memoryManager = agentHandleImpl.memoryManager;
+    this.contextWindow = agentHandleImpl.contextWindow;
+    this.ltmInstructions = agentHandleImpl.ltmInstructions;
+    this.ltmMemoryContent = agentHandleImpl.ltmMemoryContent;
+    this.mcpInstructions = agentHandleImpl.mcpInstructions;
+    this.provider = agentHandleImpl.provider;
+    this.workDir = agentHandleImpl.workDir;
     this.abortController = null;
   }
 
@@ -284,7 +293,14 @@ class AgentHandleImpl implements RemoteAgentHandle {
         maxOutput: getMaxOutputTokens(this.provider),
         recoveryState: this.recoveryState,
         activeSkills: this.activeSkills,
-        toolFilter: this.toolFilter ?? undefined,
+        toolFilter: (name: string) => {
+          // Skill filtering and coordinator narrowing must both pass; either one blocking is sufficient to deny
+          if (!coordinatorToolFilter(this.enableCoordinatorMode)(name)) {
+            return false;
+          }
+          return this.toolFilter ? this.toolFilter(name) : true;
+        },
+        coordinatorActiveFn: () => coordinatorActive(this.enableCoordinatorMode),
         instructions: this.ltmInstructions,
         memoryContent: this.ltmMemoryContent,
         notificationFn: () => this.teamManager.drainLeads(),
@@ -332,6 +348,8 @@ interface CreateRemoteAgentOptions {
   workDir: string;
   hooks?: HookConfig[];
   mcpServers?: MCPServerConfig[];
+  enableCoordinatorMode: boolean;
+  forkDisabled: boolean;
   askUser: Asker;
 }
 
@@ -343,7 +361,15 @@ interface CreateRemoteAgentOptions {
 export async function createRemoteAgent(
   opts: CreateRemoteAgentOptions,
 ): Promise<RemoteAgentHandle> {
-  const { provider, workDir, hooks: hookConfigs, mcpServers: mcpConfigs, askUser } = opts;
+  const {
+    provider,
+    workDir,
+    hooks: hookConfigs,
+    mcpServers: mcpConfigs,
+    enableCoordinatorMode,
+    forkDisabled,
+    askUser,
+  } = opts;
 
   // 1. Create session and file history
   const sessionId = newSessionId();
@@ -407,8 +433,56 @@ export async function createRemoteAgent(
     },
   };
 
+  // Fork-mode host: Skills declaring mode: fork run in an isolated sub-agent;
+  // the SOP body only appears in the sub-agent's conversation — the main conversation receives the final result
+  const skillForkHost: SkillForkHost = {
+    // TODO: determine whether bind is needed
+    activateSkill: skillHost.activateSkill.bind(skillHost),
+    snapshotParentMessages: (count: number) => {
+      const msgs = conv?.getMessages() ?? [];
+      return msgs
+        .slice(-count)
+        .map((m) => `${m.role}: ${m.content}`)
+        .join("\n");
+    },
+    runSubagent: async (prompt: string) => {
+      if (!client) {
+        throw new Error("no llm client (provider not initialized)");
+      }
+      const { PermissionChecker: PC } = await import("../permissions/checker.js");
+      const { Agent: AgentClass } = await import("../agent/agent.js");
+
+      // Sub-agent uses an independent conversation to avoid polluting the main context
+      const subConv = new ConversationManager();
+      subConv.addUserMessage(prompt);
+
+      const subAgent = new AgentClass({
+        client,
+        registry,
+        checker: new PC(workDir, "acceptEdits"),
+        conversation: subConv,
+        workDir,
+        maxIterations: 200,
+      });
+
+      let output = "";
+      for await (const event of subAgent.run()) {
+        switch (event.type) {
+          case "stream_text":
+            output += event.text;
+            break;
+          case "loop_complete":
+            return output || "[No output]";
+          case "error":
+            throw event.error;
+        }
+      }
+      return output || "[No output]";
+    },
+  };
+
   // 12. Register LoadSkill tool
-  registry.register(new LoadSkillTool(catalog, skillHost));
+  registry.register(new LoadSkillTool(catalog, skillHost, skillForkHost));
 
   // 13. Register AskUserQuestion tool (uses the injected askUser callback)
   registry.register(new AskUserQuestionTool(askUser));
@@ -417,7 +491,7 @@ export async function createRemoteAgent(
   // registry (with shared task-board tools injected) and returns the callback
   // that runs the teammate agent's main loop.
   const teamRunAgentFactory =
-    (registry: ToolRegistry): RunAgent =>
+    (registry: ToolRegistry, teamChecker?: PermissionChecker): RunAgent =>
     (task, onEvent) =>
       spawnSubagent(
         BUILTIN_AGENTS[0],
@@ -428,25 +502,29 @@ export async function createRemoteAgent(
         workDir,
         undefined,
         onEvent,
+        undefined,
+        teamChecker,
       );
   // 14. Register Team tools
   const teamManager = new TeamManager(workDir);
   registry.register(new TeamCreateTool(teamManager));
   registry.register(new SendMessageTool(teamManager));
   registry.register(new TeamDeleteTool(teamManager));
+  registry.register(new TaskStopTool(teamManager));
+  registry.register(new SyntheticOutputTool());
 
   // 15. Register AgentTool (with both spawn and fork paths)
   const agentTool = new AgentTool(
     workDir,
     registry,
-    async (def, prompt, _bg, modelOverride?) => {
+    async (def, prompt, _bg, modelOverride?, workDirOverride?) => {
       return spawnSubagent(
         def,
         prompt,
         client,
         registry,
         provider,
-        workDir,
+        workDirOverride ?? workDir,
         undefined,
         undefined,
         modelOverride,
@@ -492,7 +570,8 @@ export async function createRemoteAgent(
       return output || "[No output]";
     },
   );
-
+  // Wire the team manager into AgentTool so the team_name teammate path takes effect (teammates receive shared team task-board tools)
+  agentTool.forkDisabled = forkDisabled;
   agentTool.setTeamManager(teamManager, teamRunAgentFactory);
   registry.register(agentTool);
 
@@ -557,6 +636,8 @@ export async function createRemoteAgent(
     hookEngine,
     recoveryState: new RecoveryState(),
     teamManager,
+    forkDisabled,
+    enableCoordinatorMode,
     memoryManager,
     contextWindow,
     ltmInstructions: instructions,
@@ -649,6 +730,8 @@ interface RemoteServerOptions {
   mcpServers?: MCPServerConfig[];
   hookConfigs?: HookConfig[];
   addr: string;
+  enableCoordinatorMode: boolean;
+  forkDisabled: boolean;
 }
 
 export class RemoteServer {
@@ -812,6 +895,8 @@ export class RemoteServer {
           hooks: this.opts.hookConfigs,
           mcpServers: this.opts.mcpServers,
           askUser: this.createAskUserCallback(),
+          enableCoordinatorMode: this.opts.enableCoordinatorMode,
+          forkDisabled: this.opts.forkDisabled,
         });
         // Broadcast connected with the real session ID
         this.broadcast({
@@ -845,7 +930,7 @@ export class RemoteServer {
     saveMessage(workDir, sessionId, {
       role: "user",
       content: text,
-      timestamp: new Date().toISOString(),
+      timestamp: Math.floor(Date.now() / 1000),
     });
 
     try {
@@ -1049,7 +1134,7 @@ export class RemoteServer {
         saveMessage(workDir, sessionId, {
           role: "user",
           content: displayText,
-          timestamp: new Date().toISOString(),
+          timestamp: Math.floor(Date.now() / 1000),
         });
 
         const startTime = Date.now();
@@ -1281,7 +1366,7 @@ export class RemoteServer {
       saveMessage(workDir, handle.sessionId, {
         role: "user",
         content: `/plan ${args}`,
-        timestamp: new Date().toISOString(),
+        timestamp: Math.floor(Date.now() / 1000),
       });
 
       const startTime = Date.now();
@@ -1384,11 +1469,28 @@ export class RemoteServer {
     // Clear UI and replay messages
     this.broadcast({ type: "clear", data: null });
     for (const msg of replay) {
-      if (msg.role === "user") {
+      // Tool blocks must be restored as well, otherwise the replayed history will have a broken call chain
+      if (msg.toolUses?.length) {
+        handle.conv.addAssistantMessageWithTools(
+          msg.content,
+          msg.toolUses.map((tu) => ({ ...tu, arguments: tu.arguments ?? {} })),
+        );
+      } else if (msg.toolResults?.length) {
+        handle.conv.addToolResultsMessage(
+          msg.toolResults.map((tr) => ({ ...tr, isError: tr.isError ?? false })),
+        );
+      } else if (msg.role === "user") {
         handle.conv.addUserMessage(msg.content);
-        this.broadcast({ type: "replay_user", data: { content: msg.content } });
-      } else if (msg.role === "assistant") {
+      } else {
         handle.conv.addAssistantMessage(msg.content);
+      }
+      // Messages carrying only tool results have no text content; skip pushing them to the frontend
+      if (!msg.content) {
+        continue;
+      }
+      if (msg.role === "user") {
+        this.broadcast({ type: "replay_user", data: { content: msg.content } });
+      } else {
         this.broadcast({
           type: "replay_assistant",
           data: { content: msg.content },
@@ -1494,6 +1596,8 @@ export class RemoteServer {
         hooks: this.opts.hookConfigs,
         mcpServers: this.opts.mcpServers,
         askUser: this.createAskUserCallback(),
+        enableCoordinatorMode: this.opts.enableCoordinatorMode,
+        forkDisabled: this.opts.forkDisabled,
       });
       log.info({ sessionId: this.agentHandle.sessionId }, "agent initialized");
     } catch (err) {

@@ -189,6 +189,7 @@ export class HookEngine {
               ...process.env,
               SWIFTY_EVENT: context.event,
               SWIFTY_TOOL: context.toolName ?? "",
+              // Inject the file path environment variable
               SWIFTY_FILE_PATH: context.filePath ?? "",
             },
           });

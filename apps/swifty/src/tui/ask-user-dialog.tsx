@@ -28,6 +28,7 @@ interface Props {
   questions: Question[];
   onComplete: (answers: Record<string, string>) => void;
 }
+// ── State management ──
 
 interface QuestionState {
   cursor: number;
@@ -73,7 +74,7 @@ function reducer(state: State, action: Action): State {
   }
 }
 
-// ── Navigation bar (modeled after Claude Code's QuestionNavigationBar) ──
+// ── Navigation bar ──
 
 function NavigationBar({
   questions,
@@ -127,8 +128,7 @@ function NavigationBar({
   );
 }
 
-// ── Question view (modeled after Claude Code's QuestionView + compact-vertical Select) ──
-
+// ── Question view: compact vertical single-select ──
 function QuestionContent({
   question,
   state,
@@ -203,7 +203,7 @@ function QuestionContent({
   );
 }
 
-// ── Submit view (modeled after Claude Code's SubmitQuestionsView) ──
+// ── Submit view ──
 
 function SubmitContent({
   questions,

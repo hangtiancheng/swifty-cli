@@ -50,6 +50,7 @@ export async function spawnSubagent(
   onProgress?: (p: { turn?: number; lastTool?: string }) => void,
   onEvent?: AgentEventSink,
   modelOverride?: string,
+  checkerOverride?: PermissionChecker,
 ): Promise<string> {
   // Determine the model: call-level override > definition-level model > parent Agent's model
 
@@ -69,9 +70,11 @@ export async function spawnSubagent(
     definition.disallowedTools,
     false, // isAsync — spawnSubagent currently on the synchronous path
   );
-
+  // When a teammate runs in plan mode, the checker is created and held by the team layer:
+  // after approval passes, the mode must be switched back to default in place. If the checker
+  // were only instantiated here, the team layer would have no handle to modify it.
   const permMode = definition.permissionMode ?? "acceptEdits";
-  const checker = new PermissionChecker(workDir, permMode);
+  const checker = checkerOverride ?? new PermissionChecker(workDir, permMode);
   const conversation = new ConversationManager();
   conversation.addUserMessage(prompt);
 

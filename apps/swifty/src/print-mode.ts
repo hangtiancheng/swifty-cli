@@ -20,7 +20,7 @@
  * SOFTWARE.
  */
 
-import { loadConfig } from "./config/config.js";
+import { forkEnabled, loadConfig } from "./config/config.js";
 import { getContextWindow, getMaxOutputTokens } from "./config/config.js";
 import { createClient } from "./llm/client.js";
 import { ConversationManager } from "./conversation/conversation.js";
@@ -37,6 +37,14 @@ import { PermissionChecker } from "./permissions/checker.js";
 import { Agent } from "./agent/agent.js";
 import type { AgentEvent } from "./agent/events.js";
 import { FileStateCache } from "./tools/file-state-cache.js";
+import { AgentTool } from "./subagent/agent-tool.js";
+import { spawnSubagent } from "./subagent/spawn.js";
+import { BUILTIN_AGENTS } from "./subagent/definition.js";
+import { TeamManager } from "./teams/team.js";
+import { TeamCreateTool, SendMessageTool, TeamDeleteTool } from "./teams/tools.js";
+import { TaskStopTool } from "./teams/task-stop.js";
+import { SyntheticOutputTool } from "./tools/synthetic-output.js";
+import { coordinatorToolFilter, coordinatorActive } from "./teams/coordinator.js";
 
 /** Supported output formats for -p (print) mode. */
 type OutputFormat = "text" | "stream-json";
@@ -110,6 +118,50 @@ export async function runPrintMode(args: PrintArgs): Promise<void> {
   registry.register(new EditFileTool());
   registry.register(new ToolSearchTool(registry));
 
+  // Team tools are also available in -p mode, allowing the Lead to assemble a team and delegate
+  // tasks within a single non-interactive execution
+  const teamManager = new TeamManager(workDir);
+  registry.register(new TeamCreateTool(teamManager));
+  registry.register(new SendMessageTool(teamManager));
+  registry.register(new TeamDeleteTool(teamManager));
+  registry.register(new TaskStopTool(teamManager));
+  registry.register(new SyntheticOutputTool());
+
+  const agentTool = new AgentTool(
+    workDir,
+    registry,
+    (def, prompt, _bg, modelOverride, workDirOverride) =>
+      spawnSubagent(
+        def,
+        prompt,
+        client,
+        registry,
+        provider,
+        workDirOverride ?? workDir,
+        undefined,
+        undefined,
+        modelOverride,
+      ),
+  );
+  agentTool.forkDisabled = !forkEnabled(cfg);
+  agentTool.setTeamManager(
+    teamManager,
+    (teamRegistry, teamChecker) => (task, onEvent) =>
+      spawnSubagent(
+        BUILTIN_AGENTS[0],
+        task,
+        client,
+        teamRegistry,
+        provider,
+        workDir,
+        undefined,
+        onEvent,
+        undefined,
+        teamChecker,
+      ),
+  );
+  registry.register(agentTool);
+
   // Create conversation manager and add user message
   const conv = new ConversationManager();
   conv.addUserMessage(args.prompt);
@@ -127,6 +179,10 @@ export async function runPrintMode(args: PrintArgs): Promise<void> {
     fileStateCache: new FileStateCache(),
     contextWindow: getContextWindow(provider),
     maxOutput: getMaxOutputTokens(provider),
+    // Teammate completion reports land in the Lead's inbox; drained each turn as a system-reminder delivered to the Lead
+    notificationFn: () => teamManager.drainLeads(),
+    toolFilter: coordinatorToolFilter(cfg.enable_coordinator_mode ?? false),
+    coordinatorActiveFn: () => coordinatorActive(cfg.enable_coordinator_mode ?? false),
   });
 
   // Statistics

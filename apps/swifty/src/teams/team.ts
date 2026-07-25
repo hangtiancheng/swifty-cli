@@ -25,8 +25,18 @@ import { createChildLogger } from "../logger/index.js";
 const log = createChildLogger({ module: "teams" });
 
 import { join } from "node:path";
-import { mkdirSync } from "node:fs";
-import { FileMailbox } from "./file-mailbox.js";
+import { mkdirSync, readFileSync, rmSync } from "node:fs";
+import { FileMailbox, type FileMailMessage } from "./file-mailbox.js";
+import {
+  MSG_PLAN_APPROVAL_RESPONSE,
+  MSG_SHUTDOWN_REQUEST,
+  approved,
+  isShutdownRequest,
+  planApprovalRequest,
+  shutdownRequest,
+  shutdownResponse,
+} from "./protocol.js";
+import { readTeamFile, teamDir, writeTeamFile, type TeamFile } from "./team-file.js";
 import { detectBackend, spawnTeammate as spawnTeammateProcess } from "./backend.js";
 import type { SpawnConfig } from "./backend.js";
 import type { TeammateUIState } from "./progress.js";
@@ -37,6 +47,8 @@ import { saveTranscript } from "./transcript.js";
 import { asErrorString } from "@/utils/index.js";
 import { SharedTaskStore } from "./shared-task.js";
 import { getNameRegistry } from "./registry.js";
+import { getOrCreatePlanPath } from "../plan-file/plan-file.js";
+import type { PermissionChecker } from "../permissions/checker.js";
 
 export type TeamMode = "in-process" | "tmux" | "iterm";
 
@@ -62,6 +74,18 @@ export interface Member {
   paneId?: string;
   /** Whether this is an external-process teammate (tmux/iTerm); determines whether shutdown is delivered via the mailbox. */
   external?: boolean;
+
+  /** Optional: permission checker for the teammate. Plan mode uses it to determine the current state; permissions are elevated in place once approval is granted. */
+  checker?: PermissionChecker;
+
+  // The following fields are metadata for persistence; they do not participate in
+  // runtime scheduling and are only used when writing config.json or restoring
+  // the team from disk.
+  agentId?: string;
+  agentType?: string;
+  model?: string;
+  worktreePath?: string;
+  joinedAt?: number;
 }
 
 // Runs a teammate's task and returns its final output. Injected so the team
@@ -78,20 +102,79 @@ export class Team {
   private mailboxDir: string;
   private workDir: string;
 
+  // Team-level metadata for persistence
+  leadAgentId = "";
+  description?: string;
+  createdAt = Math.floor(Date.now() / 1000);
+
   constructor(name: string, mode: TeamMode, workDir: string) {
     this.name = name;
     this.mode = mode;
     this.workDir = workDir;
-    this.mailboxDir = join(workDir, ".swifty", "teams", name);
+    this.mailboxDir = teamDir(name);
     mkdirSync(this.mailboxDir, { recursive: true });
     this.leadMailbox = new FileMailbox(this.mailboxDir, "lead");
   }
 
   addMember(name: string): Member {
     const mailbox = new FileMailbox(this.mailboxDir, name);
-    const member: Member = { name, active: false, mailbox };
+    const member: Member = {
+      name,
+      active: false,
+      mailbox,
+      agentId: name,
+      joinedAt: Math.floor(Date.now() / 1000),
+    };
     this.members.set(name, member);
+    this.persist();
     return member;
+  }
+
+  /**
+   * Backfills member metadata (agent type, model, worktree path) and persists.
+   * The spawn flow obtains this information later than addMember, hence the two-step write.
+   */
+  setMemberMeta(
+    name: string,
+    meta: { agentType?: string; model?: string; worktreePath?: string },
+  ): void {
+    const member = this.members.get(name);
+    if (!member) {
+      return;
+    }
+    member.agentType = meta.agentType;
+    member.model = meta.model;
+    member.worktreePath = meta.worktreePath;
+    this.persist();
+  }
+
+  /** Exports the current state into a persistable structure. */
+  snapshot(): TeamFile {
+    return {
+      name: this.name,
+      description: this.description,
+      createdAt: this.createdAt,
+      leadAgentId: this.leadAgentId,
+      members: [...this.members.values()].map((m) => ({
+        agentId: m.agentId ?? m.name,
+        name: m.name,
+        agentType: m.agentType,
+        model: m.model,
+        joinedAt: m.joinedAt ?? 0,
+        worktreePath: m.worktreePath,
+        backendType: this.mode,
+        isActive: m.active,
+      })),
+    };
+  }
+
+  /**
+   * Writes the current state back to disk. A write failure does not affect the
+   * in-memory team's operation — persistence serves cross-process and cross-restart
+   * continuity, not runtime correctness.
+   */
+  persist(): void {
+    writeTeamFile(this.name, this.snapshot());
   }
 
   // Idle polling interval (in milliseconds). Polls the mailbox for new messages after a teammate completes a turn.
@@ -108,16 +191,16 @@ export class Team {
    * Falls back to in-process when the external backend is unavailable (tmux not installed,
    * non-iTerm environment, etc.) to avoid crashes.
    */
-  spawnTeammate(name: string, task: string, runAgent: RunAgent): void {
+  spawnTeammate(name: string, task: string, runAgent: RunAgent, checker?: PermissionChecker): void {
     if (this.mode === "in-process") {
-      this.spawnInProcess(name, task, runAgent);
+      this.spawnInProcess(name, task, runAgent, checker);
       return;
     }
     try {
       this.spawnExternal(name, task);
     } catch {
       // Fall back to in-process mode when the external backend fails to launch (missing dependency / unsupported platform)
-      this.spawnInProcess(name, task, runAgent);
+      this.spawnInProcess(name, task, runAgent, checker);
     }
   }
 
@@ -175,10 +258,17 @@ export class Team {
    * Starts an in-process teammate: runs the agent's main loop in the background,
    * sends an idle notification upon completion, and then polls the mailbox for new tasks.
    * Exits the loop upon receiving a shutdown message or being canceled.
+   * Uses the idle-poll-continue pattern: after each turn completes, reports idle and waits for the next task.
    */
-  private spawnInProcess(name: string, task: string, runAgent: RunAgent): void {
+  private spawnInProcess(
+    name: string,
+    task: string,
+    runAgent: RunAgent,
+    checker?: PermissionChecker,
+  ): void {
     const member = this.addMember(name);
     member.active = true;
+    member.checker = checker;
 
     // Register the member name in the global name registry so SendMessage can resolve and deliver by name
     getNameRegistry().register(name, name);
@@ -225,6 +315,18 @@ export class Team {
           uiState.status = "running";
           const result = await runAgent(nextPrompt, onEvent);
           uiState.lastMessage = result.length > 200 ? result.slice(0, 200) + "..." : result;
+          // Plan-mode teammate: a completed turn means it called ExitPlanMode and the plan
+          // has been written to disk. Submit the plan to the Lead for approval; only after
+          // approval is the read-only restriction lifted and execution begins.
+          if (member.checker?.mode === "plan") {
+            uiState.status = "idle";
+            const next = await this.runPlanApproval(member, this.readPlanForReview());
+            if (next === null) {
+              break;
+            }
+            nextPrompt = next;
+            continue;
+          }
 
           // Send idle notification to the lead
           uiState.status = "idle";
@@ -233,7 +335,20 @@ export class Team {
 
           // Poll mailbox for new messages or shutdown
           const pollResult = await this.waitForNextPromptOrShutdown(member);
-          if (pollResult.shutdown) {
+          if (pollResult.shutdown || !member.active) {
+            // Before exiting, send the Lead an explicit acknowledgment so it knows the pane
+            // can be reclaimed. The teammate always approves here: it is already in the idle
+            // poll loop with no work in progress.
+            const req = pollResult.shutdown;
+            if (req?.type === MSG_SHUTDOWN_REQUEST) {
+              const resp = shutdownResponse(
+                member.name,
+                req.requestId ?? "",
+                true,
+                "acknowledged, shutting down",
+              );
+              await this.leadMailbox.send(member.name, resp.text, resp);
+            }
             break;
           }
           nextPrompt = pollResult.prompt;
@@ -270,7 +385,7 @@ export class Team {
 
   private async waitForNextPromptOrShutdown(
     member: Member,
-  ): Promise<{ prompt: string; shutdown: boolean }> {
+  ): Promise<{ prompt: string; shutdown?: FileMailMessage }> {
     while (member.active) {
       await new Promise((r) => setTimeout(r, Team.IDLE_POLL_INTERVAL_MS));
       const msgs = member.mailbox.receiveSync();
@@ -278,20 +393,61 @@ export class Team {
         continue;
       }
 
-      // Check for a shutdown request
-      const hasShutdown = msgs.some((m) => m.text.trimStart().startsWith(Team.SHUTDOWN_PREFIX));
-      if (hasShutdown) {
-        return { prompt: "", shutdown: true };
+      // Return the shutdown message itself (not a boolean) so the caller can use its requestId to send a response
+      const shutdown = msgs.find((m) => isShutdownRequest(m));
+      if (shutdown) {
+        return { prompt: "", shutdown };
       }
 
-      // Concatenate all messages to form the user prompt for the next turn
+      // Concatenate all messages as the user prompt for the next turn
       const prompt = msgs.map((m) => `From ${m.from}: ${m.text}`).join("\n\n");
-      return {
-        prompt: `You have new messages from your team:\n\n${prompt}`,
-        shutdown: false,
-      };
+      return { prompt: `You have new messages from your team:\n\n${prompt}` };
     }
-    return { prompt: "", shutdown: true };
+    return { prompt: "", shutdown: shutdownRequest("lead", "member deactivated") };
+  }
+
+  /**
+   * Sends the teammate's completed plan to the Lead, blocks until approval is received,
+   * and returns the prompt to feed the model on the next turn.
+   *
+   * The teammate holds read-only permissions at this point, so no matter how long the
+   * wait, no damage can occur — hence no timeout is set here. Rather than timing out and
+   * autonomously modifying files, it is better to wait indefinitely and let the user
+   * drive progress from the Lead side. Returns null when the teammate has been
+   * deactivated; the caller should exit the main loop.
+   */
+  private readPlanForReview(): string {
+    try {
+      const text = readFileSync(getOrCreatePlanPath(this.workDir), "utf-8");
+      if (text.trim()) {
+        return text;
+      }
+    } catch {
+      // Falls through to the fallback message below
+    }
+    return "(Plan file is empty — the teammate may not have written the plan as expected)";
+  }
+
+  private async runPlanApproval(member: Member, plan: string): Promise<string | null> {
+    const req = planApprovalRequest(member.name, plan);
+    await this.leadMailbox.send(member.name, req.text, req);
+
+    while (member.active) {
+      await new Promise((r) => setTimeout(r, Team.IDLE_POLL_INTERVAL_MS));
+      for (const m of member.mailbox.receiveSync()) {
+        // Only accept the approval response matching this request; other messages are deferred to the next turn
+        if (m.type === MSG_PLAN_APPROVAL_RESPONSE && m.requestId === req.requestId) {
+          // On approval, switch back to normal permissions so the teammate can modify files; on rejection, stay in plan mode to revise
+          if (approved(m) && member.checker) {
+            member.checker.mode = "default";
+          }
+          return approved(m)
+            ? "The Lead has approved your plan. Begin execution now."
+            : `The Lead rejected your plan. Feedback: ${m.text}\nPlease revise the plan accordingly and resubmit.`;
+        }
+      }
+    }
+    return null;
   }
 
   getMember(name: string): Member | undefined {
@@ -310,6 +466,7 @@ export class Team {
     const member = this.members.get(name);
     if (member) {
       await this.stopOne(member);
+      this.persist();
     }
   }
 
@@ -365,22 +522,62 @@ export class TeamManager {
   }
 
   private teamDir(name: string): string {
-    return join(this.workDir, ".swifty", "teams", name);
+    return teamDir(name);
   }
 
-  create(name: string, mode: TeamMode = detectBackend()): Team {
+  create(
+    name: string,
+    mode: TeamMode = detectBackend(),
+    opts: { leadAgentId?: string; description?: string } = {},
+  ): Team {
     const team = new Team(name, mode, this.workDir);
+    team.leadAgentId = opts.leadAgentId ?? "";
+    team.description = opts.description;
     this.teams.set(name, team);
     // Initialize an empty shared task store when creating a new team
     const store = new SharedTaskStore(join(this.teamDir(name), "tasks.json"));
     store.initEmpty();
     this.taskStores.set(name, store);
+    team.persist();
     return team;
   }
 
+  /**
+   * Checks the in-memory cache first; on miss, looks for config.json on disk.
+   *
+   * A Team reconstructed from disk carries only metadata — members have no running
+   * agents. This is sufficient for SendMessage to deliver by name and for UI display;
+   * to actually run a member again, it must be re-spawned.
+   */
   get(name: string): Team | undefined {
-    return this.teams.get(name);
+    const cached = this.teams.get(name);
+    if (cached) {
+      return cached;
+    }
+
+    const tf = readTeamFile(name);
+    if (!tf) {
+      return undefined;
+    }
+
+    const mode = tf.members.find((m) => m.backendType)?.backendType;
+    const team = new Team(tf.name, isTeamMode(mode) ? mode : "in-process", this.workDir);
+    team.leadAgentId = tf.leadAgentId;
+    team.description = tf.description;
+    team.createdAt = tf.createdAt;
+    for (const m of tf.members) {
+      const member = team.addMember(m.name);
+      member.agentId = m.agentId;
+      member.agentType = m.agentType;
+      member.model = m.model;
+      member.worktreePath = m.worktreePath;
+      member.joinedAt = m.joinedAt;
+      member.active = m.isActive === true;
+    }
+    this.teams.set(name, team);
+    return team;
   }
+
   /** Retrieves the team's shared task store; loads from disk (tasks.json) when not cached in memory (e.g. in a teammate process). */
   getTaskStore(teamName: string): SharedTaskStore {
     const cached = this.taskStores.get(teamName);
@@ -408,6 +605,9 @@ export class TeamManager {
       this.teams.delete(name);
     }
     this.taskStores.delete(name);
+    // The team directory contains config.json, tasks.json, and mailboxes. When the team
+    // is deleted, remove everything to prevent a future same-named team from picking up stale data.
+    rmSync(teamDir(name), { recursive: true, force: true });
   }
 
   getAllTeammateStates(): TeammateUIState[] {
@@ -435,4 +635,8 @@ export class TeamManager {
     }
     return out;
   }
+}
+
+function isTeamMode(mode?: string): mode is TeamMode {
+  return mode === "in-process" || mode === "tmux" || mode === "iterm";
 }

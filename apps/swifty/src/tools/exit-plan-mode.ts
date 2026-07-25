@@ -32,7 +32,6 @@ export class ExitPlanModeTool implements Tool {
   Call this when your plan is complete and written to the plan file.
   `;
   category: ToolCategory = "read";
-  deferred = false;
 
   isPlanMode: (() => boolean) | null = null;
   planExists: (() => boolean) | null = null;

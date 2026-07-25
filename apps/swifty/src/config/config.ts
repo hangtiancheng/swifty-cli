@@ -279,7 +279,19 @@ const AppConfigSchema = z.object({
   hooks: z.array(HookConfigSchema).default([]),
   sandbox: SandboxYamlConfigSchema.optional(),
   enable_coordinator_mode: z.boolean().optional(),
+  /**
+   * Whether to fork when subagent_type is omitted. Enabled by default, so this
+   * field is left as undefined to represent "not specified in config". Using a
+   * concrete boolean would make it impossible to distinguish "not set" from
+   * "explicitly false", and the latter could never be turned back off.
+   */
+  enable_fork: z.boolean().optional(),
 });
+
+/** Whether fork is available. Defaults to enabled when not specified in config. */
+export function forkEnabled(cfg: AppConfig): boolean {
+  return cfg.enable_fork !== false;
+}
 
 export type AppConfig = z.infer<typeof AppConfigSchema>;
 
@@ -311,6 +323,7 @@ function loadSingleFile(path: string): AppConfig {
   let hooks: HookConfig[] = [];
   let sandbox: SandboxYamlConfig | undefined = undefined;
   let enableCoordinatorMode = false;
+  let enableFork = true;
 
   if ("providers" in raw) {
     const parsed = safeParse(z.array(ProviderConfigSchema), raw.providers);
@@ -342,6 +355,9 @@ function loadSingleFile(path: string): AppConfig {
   if ("enable_coordinator_mode" in raw) {
     enableCoordinatorMode = Boolean(raw.enable_coordinator_mode);
   }
+  if ("enable_fork" in raw) {
+    enableFork = Boolean(raw.enable_fork);
+  }
   return {
     providers,
     permission_mode: permissionMode,
@@ -349,6 +365,7 @@ function loadSingleFile(path: string): AppConfig {
     hooks,
     sandbox,
     enable_coordinator_mode: enableCoordinatorMode,
+    enable_fork: enableFork,
   };
 }
 
@@ -386,6 +403,12 @@ export function mergeConfig(base: AppConfig, override: AppConfig): AppConfig {
   }
   if (override.enable_coordinator_mode) {
     base.enable_coordinator_mode = true;
+  }
+  // enable_fork defaults to true, so we cannot use the "override only if truthy"
+  // pattern here — otherwise an explicit false in config would be treated as
+  // unset and the feature could never be disabled.
+  if (override.enable_fork !== undefined) {
+    base.enable_fork = override.enable_fork;
   }
   return base;
 }

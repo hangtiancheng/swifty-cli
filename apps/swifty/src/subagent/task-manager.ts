@@ -25,7 +25,7 @@ import { asErrorString } from "@/utils/index.js";
 export interface AgentTask {
   id: string;
   name: string;
-  status: "running" | "completed" | "failed";
+  status: "running" | "completed" | "failed" | "cancelled";
   output: string;
   cancel: () => void;
 }
@@ -66,13 +66,16 @@ export class TaskManager {
     return [...this.tasks.values()];
   }
 
-  stop(id: string): void {
+  /** Abort a running task; returns whether a task was actually stopped. Returns false for tasks that have already finished. */
+  stop(id: string): boolean {
     const task = this.tasks.get(id);
     if (task?.status === "running") {
       task.cancel();
-      task.status = "failed";
+      task.status = "cancelled";
       task.output = "Stopped by user";
+      return true;
     }
+    return false;
   }
 
   drainNotifications(): AgentTask[] {

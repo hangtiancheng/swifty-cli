@@ -24,7 +24,11 @@ import type { LLMClient } from "../llm/client.js";
 import { ConversationManager } from "../conversation/conversation.js";
 import type { Message } from "../conversation/conversation.js";
 import type { RecoveryState } from "./recovery.js";
-import type { CompactBoundaryPayload } from "../session/session.js";
+import {
+  type CompactBoundaryPayload,
+  toolUsesToRecords,
+  toolResultsToRecords,
+} from "../session/session.js";
 import { asErrorString } from "@/utils/index.js";
 import type { ToolSchema } from "@/tools/types.js";
 
@@ -204,19 +208,8 @@ function backUpPastToolUse(messages: Message[], keepStart: number): number {
 // yet) we fall back to estimating the entire transcript so the very first turn
 // still works. Mirrors CC tokenCountWithEstimation and the python last_input
 // simplification, extended with cache tokens for a more accurate baseline.
-export function currentContextTokens(
-  conv: ConversationManager,
-  anchor?: UsageAnchor,
-  budgetMessages?: Message[],
-): number {
+export function currentContextTokens(conv: ConversationManager, anchor?: UsageAnchor): number {
   const a = anchor ?? conv.usageAnchorState();
-  if (budgetMessages && budgetMessages.length > 0) {
-    if (!a) {
-      return estimateMessages(budgetMessages);
-    }
-    const start = Math.min(a.anchorCount, budgetMessages.length);
-    return a.baselineTokens + estimateMessages(budgetMessages.slice(start));
-  }
   if (!a) {
     return estimateTokens(conv);
   }
@@ -235,12 +228,11 @@ export async function manageContext(
   toolSchemaNames: string[],
   toolSchemas: ToolSchema[],
   sessionFilePath = "",
-  budgetMessages?: Message[],
 ): Promise<CompactResult> {
   // Apply tool-result budget first, then auto-compact, ensuring in-budget results
   // are not mistakenly compressed. When the caller provides a budget-applied message
   // list, estimate tokens against it so compact decisions reflect the reduced size.
-  const tokens = currentContextTokens(conv, undefined, budgetMessages);
+  const tokens = currentContextTokens(conv);
   const autoThreshold = computeCompactThreshold(contextWindow, maxOutput);
   const hardBlock = computeCompactThreshold(contextWindow, maxOutput, true);
 
@@ -265,7 +257,6 @@ export async function manageContext(
       toolSchemaNames,
       toolSchemas,
       sessionFilePath,
-      budgetMessages,
     );
     trackingState.consecutiveFailures = 0;
     return result;
@@ -285,17 +276,8 @@ export async function forceCompact(
   toolSchemaNames: string[],
   toolSchemas: ToolSchema[],
   sessionFilePath = "",
-  budgetMessages?: Message[],
 ): Promise<CompactResult> {
-  return doCompact(
-    conv,
-    client,
-    recoveryState,
-    toolSchemaNames,
-    toolSchemas,
-    sessionFilePath,
-    budgetMessages,
-  );
+  return doCompact(conv, client, recoveryState, toolSchemaNames, toolSchemas, sessionFilePath);
 }
 
 // Summary structure uses 9 sections to cover the key context dimensions.
@@ -506,14 +488,12 @@ async function doCompact(
   toolSchemaNames: string[],
   toolSchemas: ToolSchema[],
   sessionFilePath = "",
-  budgetMessages?: Message[],
 ): Promise<CompactResult> {
-  // Apply tool-result budget first, then auto-compact, ensuring in-budget results
-  // are not mistakenly compressed. When the caller provides a budget-applied message
-  // list, estimate tokens and determine the retention boundary against it so
-  // compact keepStart decisions reflect the reduced token size.
-  const estimationMessages =
-    budgetMessages && budgetMessages.length > 0 ? budgetMessages : conv.getMessages();
+  // Tool results in the transcript were already budget-processed to their final
+  // form at insertion time; the conversation's own messages represent the actual
+  // payload, so estimate tokens and determine the retention boundary directly
+  // from them.
+  const estimationMessages = conv.getMessages();
 
   // Decide how much recent history to keep verbatim. Only messages[:keepStart]
   // get summarized; messages[keepStart:] are carried over untouched so the
@@ -564,9 +544,20 @@ async function doCompact(
   // already skips empty-content lines. The summary here is the bare summary
   // (no recovery attachment): recovery context is rebuilt fresh per process, so
   // baking it into the persisted boundary would be stale on the next resume.
+  // The kept tail must be persisted together with its tool blocks so that the
+  // full call chain is available when the session is restored.
   const keep = toKeep
-    .filter((m) => (m.role === "user" || m.role === "assistant") && m.content)
-    .map((m) => ({ role: m.role, content: m.content }));
+    .filter(
+      (m) =>
+        (m.role === "user" || m.role === "assistant") &&
+        (m.content || (m.toolUses?.length ?? 0) || (m.toolResults?.length ?? 0)),
+    )
+    .map((m) => ({
+      role: m.role,
+      content: m.content,
+      ...(m.toolUses?.length ? { tool_uses: toolUsesToRecords(m.toolUses) } : {}),
+      ...(m.toolResults?.length ? { tool_results: toolResultsToRecords(m.toolResults) } : {}),
+    }));
 
   return {
     compacted: true,

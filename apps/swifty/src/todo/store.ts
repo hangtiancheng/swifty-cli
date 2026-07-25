@@ -49,7 +49,7 @@ export type Task = z.infer<typeof TaskSchema>;
 export class TaskStore {
   private filePath: string;
 
-  // Session-scoped store: .swifty/tasks/<listId>.json (mirrors Go NewStore).
+  // Session-scoped store: .swifty/tasks/<listId>.json.
   constructor(workDir: string, listId: string) {
     this.filePath = join(workDir, ".swifty", "tasks", `${listId}.json`);
   }

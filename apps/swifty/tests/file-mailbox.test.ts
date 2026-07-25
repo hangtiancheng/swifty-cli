@@ -68,3 +68,19 @@ describe("FileMailbox", () => {
     expect(await mbox.receive()).toEqual([]);
   });
 });
+
+describe("FileMailbox concurrent writes", () => {
+  it("keeps every message when many writes race for the same inbox", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "swifty-mbox-"));
+    // 20 writers each hold a handle to the same inbox; failing to acquire the lock throws rather than silently dropping messages
+    const writers = Array.from({ length: 20 }, () => new FileMailbox(dir, "dest"));
+
+    await Promise.all(
+      writers.map((mbox, i) => mbox.send(`sender-${String(i)}`, `msg-${String(i)}`)),
+    );
+
+    const received = await new FileMailbox(dir, "dest").receive();
+    expect(received).toHaveLength(20);
+    expect(new Set(received.map((m) => m.text)).size).toBe(20);
+  });
+});

@@ -20,7 +20,7 @@
  * SOFTWARE.
  */
 
-import { describe, test, expect, beforeEach } from "vitest";
+import { describe, test, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -33,6 +33,33 @@ import {
   TaskListTool,
   TaskUpdateTool,
 } from "../src/teams/task-tools.js";
+
+// The teams directory lives at <home>/.swifty/teams, so the tests redirect the
+// entire home directory to a temp dir to avoid leaving residue in the real
+// ~/.swifty/teams. os.homedir() reads USERPROFILE on Windows and HOME on other
+// platforms, so set both.
+let realHome: string | undefined;
+let realUserProfile: string | undefined;
+
+beforeEach(() => {
+  realHome = process.env.HOME;
+  realUserProfile = process.env.USERPROFILE;
+  const tmp = mkdtempSync(join(tmpdir(), "swifty-home-"));
+  process.env.HOME = tmp;
+  process.env.USERPROFILE = tmp;
+});
+afterEach(() => {
+  if (realHome === undefined) {
+    delete process.env.HOME;
+  } else {
+    process.env.HOME = realHome;
+  }
+  if (realUserProfile === undefined) {
+    delete process.env.USERPROFILE;
+  } else {
+    process.env.USERPROFILE = realUserProfile;
+  }
+});
 
 function tempDir(): string {
   return mkdtempSync(join(tmpdir(), "swifty-teams-"));
@@ -130,7 +157,7 @@ describe("team task tools", () => {
     const list = new TaskListTool(mgr, "my-team");
     const update = new TaskUpdateTool(mgr, "my-team");
     const get = new TaskGetTool(mgr, "my-team");
-    const ctx = { workDir: "." };
+    const ctx = { workDir: process.cwd() };
 
     const created = await create.execute(ctx, {
       title: "build parser",
@@ -157,7 +184,7 @@ describe("team task tools", () => {
   });
 
   test("update rejects invalid status", async () => {
-    const ctx = { workDir: "." };
+    const ctx = { workDir: process.cwd() };
     await new TaskCreateTool(mgr, "my-team").execute(ctx, { title: "t" });
     const r = await new TaskUpdateTool(mgr, "my-team").execute(ctx, {
       task_id: "1",

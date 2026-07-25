@@ -22,12 +22,14 @@
 
 /* eslint-disable @typescript-eslint/require-await */
 import { describe, it, expect } from "vitest";
-import { mkdtempSync, existsSync, readFileSync } from "node:fs";
+import { mkdtempSync, existsSync, readFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { MemoryExtractor } from "../src/memory/extractor.js";
+import { MemoryManager } from "../src/memory/manager.js";
 import type { LLMClient } from "../src/llm/client.js";
 import type { StreamEvent } from "../src/llm/events.js";
+import { writeFileSync } from "fs";
 
 class MockClient implements LLMClient {
   constructor(private text: string) {}
@@ -90,5 +92,47 @@ describe("MemoryExtractor", () => {
       "conversation",
     );
     expect(saved).toEqual([]);
+  });
+});
+
+describe("MemoryManager index truncation", () => {
+  function seed(count: number, descLen: number, filler = "a"): string {
+    const workDir = mkdtempSync(join(tmpdir(), "swifty-cap-"));
+    const dir = join(workDir, ".swifty", "memory");
+    mkdirSync(dir, { recursive: true });
+    for (let i = 0; i < count; i++) {
+      const name = `mem${String(i).padStart(4, "0")}`;
+      writeFileSync(
+        join(dir, `${name}.md`),
+        `---\nname: ${name}\ndescription: ${filler.repeat(descLen)}\nmetadata:\n  type: project\n---\n\nbody\n`,
+        "utf-8",
+      );
+    }
+    return workDir;
+  }
+
+  it("injects entries verbatim without a warning when there are few of them", () => {
+    const mgr = new MemoryManager(seed(3, 10));
+    const out = mgr.buildSystemReminder();
+    expect(out).toContain("Active memories:");
+    expect(out).not.toContain("WARNING");
+  });
+
+  it("truncates with a notice when entries exceed the line limit", () => {
+    const mgr = new MemoryManager(seed(230, 10));
+    const out = mgr.buildSystemReminder();
+    expect(out).toContain("WARNING");
+    expect(out).toContain("lines (limit: 200)");
+    const body = out.split("\n\n> WARNING")[0]?.replace("Active memories:\n", "");
+    expect(body.split("\n").length).toBe(200);
+  });
+
+  it("truncates over-long CJK entries by bytes without exceeding the limit", () => {
+    const mgr = new MemoryManager(seed(20, 800, "杭"));
+    const out = mgr.buildSystemReminder();
+    expect(out).toContain("WARNING");
+    const body = out.split("\n\n> WARNING")[0]?.replace("Active memories:\n", "");
+    expect(Buffer.byteLength(body, "utf-8")).toBeLessThanOrEqual(25_000);
+    expect(body).not.toContain("\uFFFD");
   });
 });

@@ -21,82 +21,122 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { mkdtempSync, readdirSync } from "node:fs";
+import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Message } from "../src/conversation/conversation.js";
-import { applyBudget } from "../src/tool-result/budget.js";
-
-function bigToolResultConversation(size: number): Message[] {
-  return [
-    { role: "user", content: "do something" },
-    {
-      role: "assistant",
-      content: "",
-      toolUses: [{ toolUseId: "t1", toolName: "Bash", arguments: { command: "ls" } }],
-    },
-    {
-      role: "user",
-      content: "",
-      toolResults: [{ toolUseId: "t1", content: "x".repeat(size), isError: false }],
-    },
-  ];
+import type { ToolResultBlock } from "../src/conversation/conversation.js";
+import { applyBudget, isSpillReadback, persistLargeResult } from "../src/tool-result/budget.js";
+function batch(...sizes: number[]): ToolResultBlock[] {
+  return sizes.map((n, i) => ({
+    toolUseId: `t${String(i + 1)}`,
+    content: "x".repeat(n),
+    isError: false,
+  }));
 }
 
-describe("tool result budget wiring", () => {
-  it("spills a large tool result in-place", () => {
+function totalLen(rs: ToolResultBlock[]): number {
+  return rs.reduce((sum, r) => sum + r.content.length, 0);
+}
+
+describe("tool result budget", () => {
+  it("leaves an under-limit batch untouched", () => {
     const workDir = mkdtempSync(join(tmpdir(), "swifty-tr-"));
-    const messages = bigToolResultConversation(60000);
+    const rs = batch(40000, 40000);
 
-    applyBudget(messages, workDir, "test-session");
-    const result = messages[2].toolResults?.[0].content;
+    applyBudget(rs, workDir, "s");
 
-    // 60000-character raw output (exceeds SINGLE_RESULT_LIMIT) is replaced in-place with a spill preview
-    expect(result?.length).toBeLessThan(60000);
-    expect(result).toContain("Full content saved to:");
-    // Replaced content should start with the persistedTagPrefix
-    expect(result).toMatch(/^\[Result of /);
+    expect(rs[0].content).toBe("x".repeat(40000));
+    expect(rs[1].content).toBe("x".repeat(40000));
   });
 
-  it("is idempotent: re-applying skips already-replaced results", () => {
+  it("spills the largest results until aggregate is within limit", () => {
     const workDir = mkdtempSync(join(tmpdir(), "swifty-tr-"));
-    const messages = bigToolResultConversation(60000);
+    // 5 results totaling 225K+1; spilling only the largest, t3, is enough to get back within the limit
+    const rs = batch(45000, 45000, 45001, 45000, 45000);
 
-    applyBudget(messages, workDir, "test-session");
-    const first = messages[2].toolResults?.[0].content;
-    const spillCount = readdirSync(
-      join(workDir, ".swifty", "sessions", "test-session", "tool_results"),
-    ).length;
+    applyBudget(rs, workDir, "s");
 
-    // Re-applying: already-replaced content should remain unchanged, no new spill files written
-    applyBudget(messages, workDir, "test-session");
-    const second = messages[2].toolResults?.[0].content;
-    const spillCountAfter = readdirSync(
-      join(workDir, ".swifty", "sessions", "test-session", "tool_results"),
-    ).length;
-
-    expect(second).toBe(first);
-    expect(spillCountAfter).toBe(spillCount);
+    expect(totalLen(rs)).toBeLessThanOrEqual(200000);
+    const replaced = rs.filter((r) => r.content.includes("<persisted-output>"));
+    expect(replaced.length).toBe(1);
+    expect(rs[2].content).toContain("<persisted-output>");
+    // The spill file stores the complete content
+    const spilled = readFileSync(
+      join(workDir, ".swifty", "sessions", "s", "tool-results", "t3.txt"),
+      "utf-8",
+    );
+    expect(spilled.length).toBe(45001);
   });
 
-  it("leaves small tool results untouched", () => {
+  it("skips exempt ids and spills the next largest instead", () => {
     const workDir = mkdtempSync(join(tmpdir(), "swifty-tr-"));
-    const messages = bigToolResultConversation(100);
+    const rs = batch(45000, 45000, 45001, 45000, 45000);
 
-    applyBudget(messages, workDir, "test-session");
-    // Small results should not be modified
-    expect(messages[2].toolResults?.[0].content).toBe("x".repeat(100));
+    applyBudget(rs, workDir, "s", new Set(["t3"]));
+
+    expect(rs[2].content).toBe("x".repeat(45001));
+    expect(totalLen(rs)).toBeLessThanOrEqual(200000);
   });
 
-  it("modifies messages in-place (no new array returned)", () => {
+  it("accepts overage when everything is exempt", () => {
     const workDir = mkdtempSync(join(tmpdir(), "swifty-tr-"));
-    const messages = bigToolResultConversation(60000);
-    const originalRef = messages[2].toolResults?.[0];
+    const rs = batch(105000, 105000);
 
-    applyBudget(messages, workDir, "test-session");
+    applyBudget(rs, workDir, "s", new Set(["t1", "t2"]));
 
-    // The same object reference was modified
-    expect(originalRef?.content).toContain("saved to");
-    expect(messages[2].toolResults?.[0]).toBe(originalRef);
+    expect(rs[0].content).toBe("x".repeat(105000));
+    expect(rs[1].content).toBe("x".repeat(105000));
+  });
+
+  it("produces byte-identical output for identical input", () => {
+    const workDir = mkdtempSync(join(tmpdir(), "swifty-tr-"));
+    const rs1 = batch(45000, 45000, 45001, 45000, 45000);
+    const rs2 = batch(45000, 45000, 45001, 45000, 45000);
+
+    applyBudget(rs1, workDir, "s");
+    applyBudget(rs2, workDir, "s");
+
+    for (let i = 0; i < rs1.length; i++) {
+      expect(rs2[i].content).toBe(rs1[i].content);
+    }
+  });
+
+  it("is a no-op on an already-processed batch", () => {
+    const workDir = mkdtempSync(join(tmpdir(), "swifty-tr-"));
+    const rs = batch(45000, 45000, 45001, 45000, 45000);
+    applyBudget(rs, workDir, "s");
+    const snapshot = rs.map((r) => r.content);
+
+    applyBudget(rs, workDir, "s");
+
+    expect(rs.map((r) => r.content)).toEqual(snapshot);
+  });
+
+  it("detects spill readbacks", () => {
+    const workDir = mkdtempSync(join(tmpdir(), "swifty-tr-"));
+    const inside = join(workDir, ".swifty", "sessions", "s", "tool-results", "toolu_abc.txt");
+    const outside = join(workDir, "main.ts");
+
+    expect(isSpillReadback("ReadFile", { file_path: inside }, workDir, "s")).toBe(true);
+    expect(isSpillReadback("ReadFile", { file_path: outside }, workDir, "s")).toBe(false);
+    expect(isSpillReadback("Bash", { file_path: inside }, workDir, "s")).toBe(false);
+    expect(isSpillReadback("ReadFile", {}, workDir, "s")).toBe(false);
+  });
+
+  it("persistLargeResult round-trips deterministically", () => {
+    const workDir = mkdtempSync(join(tmpdir(), "swifty-tr-"));
+    const content = "y".repeat(60000);
+
+    const preview = persistLargeResult(workDir, "s", "t_big", content);
+
+    expect(preview).toContain("<persisted-output>");
+    expect(preview).toContain("saved to");
+    const spilled = readFileSync(
+      join(workDir, ".swifty", "sessions", "s", "tool-results", "t_big.txt"),
+      "utf-8",
+    );
+    expect(spilled.length).toBe(60000);
+    // A second call (the file already exists) returns a byte-identical preview
+    expect(persistLargeResult(workDir, "s", "t_big", content)).toBe(preview);
   });
 });

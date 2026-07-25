@@ -39,6 +39,7 @@ import {
 import type { ConversationManager, Message } from "../conversation/conversation.js";
 import { asErrorString, asRecord, asString, DANGEROUSLY_JSON, isRecord } from "../utils/index.js";
 import type { LLMClient } from "./client.js";
+import { ensureToolPairing } from "../conversation/pairing.js";
 import {
   AuthenticationError,
   ContextTooLongError,
@@ -281,7 +282,10 @@ export class AnthropicClient implements LLMClient {
     toolSchemas: ToolSchema[],
     abortSignal?: AbortSignal,
   ): AsyncGenerator<StreamEvent> {
-    const messages = buildAnthropicMessages(conversation.getMessages());
+    // Reconcile tool-call/result pairing before sending the request: interruptions,
+    // session restores, and concurrent interleaving can all leave dangling tool_use
+    // entries, and a missing pairing causes the API to reject the request outright.
+    const messages = buildAnthropicMessages(ensureToolPairing(conversation.getMessages()));
     const antToolSchemas: Anthropic.Tool[] = toolSchemas.map((s) => {
       const inputSchema = s.input_schema;
       return {

@@ -45,8 +45,6 @@ export class EnterWorktreeTool implements Tool {
 
   category: ToolCategory = "write";
 
-  deferred = true;
-
   schema(): ToolSchema {
     const inputSchema = {
       type: "object" as const,

@@ -33,6 +33,17 @@ import type { TeamManager, RunAgent } from "../teams/team.js";
 import { asErrorString, boolArg, strArg } from "@/utils/index.js";
 import { TaskCreateTool, TaskGetTool, TaskListTool, TaskUpdateTool } from "../teams/task-tools.js";
 import { SendMessageTool } from "../teams/tools.js";
+import { PermissionChecker } from "../permissions/checker.js";
+import { buildWorktreeNotice, createAgentWorktree } from "../worktree/worktree.js";
+import { randomBytes } from "node:crypto";
+
+/** Fallback target when subagent_type is omitted and fork is disabled */
+const GENERAL_PURPOSE_AGENT_TYPE = "general-purpose";
+
+/** Worktree directory name. Uses a random string instead of the task description — spaces and non-ASCII characters in descriptions cannot be used directly as branch names. */
+function newAgentSlug(): string {
+  return `agent-a${randomBytes(4).toString("hex").slice(0, 7)}`;
+}
 
 // Leading marker for forked child Agents — used for nested fork detection
 const FORK_BOILERPLATE_TAG = "<fork_boilerplate>";
@@ -53,7 +64,6 @@ export class AgentTool implements Tool {
   name = "Agent";
   description = "Launch a subagent to handle complex, multi-step tasks.";
   category = "read" as const;
-  system = true;
 
   private definitions: AgentDefinition[];
   private registry: ToolRegistry;
@@ -65,18 +75,27 @@ export class AgentTool implements Tool {
 
   /** Optional: Team manager, enables the team_name parameter. */
   private teamManager?: TeamManager;
+  private workDir: string;
+  /**
+   * When fork is disabled, omitting subagent_type no longer forks but falls back to the
+   * general-purpose agent. The "disabled" semantics (rather than "enabled") are used so
+   * that the default value represents the default behavior (fork available), and each
+   * construction site does not need to explicitly assign it.
+   */
+  forkDisabled = false;
   /**
    * Optional: factory that produces a per-teammate RunAgent. Receives a
    * teammate-scoped tool registry (with shared task-board tools injected)
    * and returns the callback that runs the teammate agent's main loop.
    */
-  private teamRunAgentFactory?: (registry: ToolRegistry) => RunAgent;
+  private teamRunAgentFactory?: (registry: ToolRegistry, checker?: PermissionChecker) => RunAgent;
 
   private spawnHandler: (
     definition: AgentDefinition,
     prompt: string,
     background: boolean,
     modelOverride?: string,
+    workDirOverride?: string,
   ) => Promise<string>;
 
   private forkHandler?: (
@@ -94,6 +113,7 @@ export class AgentTool implements Tool {
       prompt: string,
       bg: boolean,
       modelOverride?: string,
+      workDirOverride?: string,
     ) => Promise<string>,
     conversation?: ConversationManager,
     forkHandler?: (
@@ -104,6 +124,7 @@ export class AgentTool implements Tool {
     ) => Promise<string>,
   ) {
     this.definitions = loadAgentDefinitions(workDir);
+    this.workDir = workDir;
     this.registry = registry;
     this.spawnHandler = spawnHandler;
     this.conversation = conversation;
@@ -114,7 +135,10 @@ export class AgentTool implements Tool {
    * Sets the team manager and teammate run callback, enabling the team_name parameter.
    * Once configured, the Agent tool can spawn teammates directly without requiring a separate SpawnTeammate tool.
    */
-  setTeamManager(mgr: TeamManager, runAgentFactory: (registry: ToolRegistry) => RunAgent): void {
+  setTeamManager(
+    mgr: TeamManager,
+    runAgentFactory: (registry: ToolRegistry, checker?: PermissionChecker) => RunAgent,
+  ): void {
     this.teamManager = mgr;
     this.teamRunAgentFactory = runAgentFactory;
   }
@@ -148,6 +172,22 @@ export class AgentTool implements Tool {
             type: "boolean",
             description: "Run in background",
             default: false,
+          },
+          isolation: {
+            type: "string",
+            enum: ["worktree"],
+            description:
+              "Set to 'worktree' to run the agent in its own Git worktree, so its edits " +
+              "cannot collide with the parent or with other agents working in parallel.",
+          },
+          plan_mode_required: {
+            type: "boolean",
+            description:
+              "Only meaningful together with team_name. When true, the teammate starts in " +
+              "plan mode: it can read and investigate but cannot modify anything until it " +
+              "submits a plan and you approve it via SendMessage with " +
+              "type='plan_approval_response'. Use it for risky or ambiguous tasks where a " +
+              "wrong direction would cost a lot of rework.",
           },
           team_name: {
             type: "string",
@@ -201,15 +241,28 @@ When tasks are independent, launch multiple subagents in parallel by making mult
       };
     }
 
-    const subagentType = strArg(args, "subagent_type");
+    // The routing when subagent_type is omitted is determined by configuration: if fork is
+    // enabled, it inherits the parent conversation; if disabled, it is treated as unspecified
+    // and falls back to the general-purpose agent. No error is thrown here — the model simply
+    // did not provide an optional parameter, and aborting the call for that is not worthwhile;
+    // the general-purpose agent can get the job done just as well.
+    const subagentType =
+      strArg(args, "subagent_type") || (this.forkDisabled ? GENERAL_PURPOSE_AGENT_TYPE : "");
     const modelOverride = strArg(args, "model");
     const background = boolArg(args, "run_in_background");
     const teamName = strArg(args, "team_name");
+    const isolation = strArg(args, "isolation");
 
     // Team-member path: team_name takes precedence over fork/subagent. Runs the agent as a
     // persistent teammate and notifies the lead via SendMessage / mailbox upon completion.
     if (teamName && this.teamManager && this.teamRunAgentFactory) {
-      return this.runAsTeammate(teamName, description, prompt);
+      return await this.runAsTeammate(
+        teamName,
+        description,
+        prompt,
+        args.plan_mode_required === true,
+        isolation === "worktree",
+      );
     }
 
     // Fork path: Inherits parent conversation context when subagent_type is not specified
@@ -226,16 +279,32 @@ When tasks are independent, launch multiple subagents in parallel by making mult
       };
     }
 
+    // Worktree isolation: provision a separate working copy for the child agent; its changes
+    // land on its own branch and cannot collide with the parent or other parallel child agents.
+    let effectivePrompt = prompt;
+    let workDirOverride: string | undefined;
+    if (isolation === "worktree" || definition.isolation === "worktree") {
+      try {
+        const wt = await createAgentWorktree(newAgentSlug());
+        workDirOverride = wt.path;
+        effectivePrompt = `${buildWorktreeNotice(this.workDir, wt.path)}
+
+${prompt}`;
+      } catch (e) {
+        return { output: `Error creating agent worktree: ${asErrorString(e)}`, isError: true };
+      }
+    }
+
     try {
       const output = await this.spawnHandler(
         definition,
-        prompt,
+        effectivePrompt,
         background || !!definition.background,
         modelOverride,
+        workDirOverride,
       );
       return { output, isError: false };
     } catch (err) {
-      log.error({ err }, "subagent operation failed");
       return {
         output: `Agent error: ${asErrorString(err)}`,
         isError: true,
@@ -247,14 +316,27 @@ When tasks are independent, launch multiple subagents in parallel by making mult
    * Team-member mode: Spawns a persistent teammate in the specified team.
    * Delegates to Team.spawnTeammate() to start the idle-poll main loop.
    */
-  private runAsTeammate(teamName: string, description: string, prompt: string): ToolResult {
-    const team = this.teamManager?.get(teamName);
-    if (!team) {
+  private async runAsTeammate(
+    teamName: string,
+    description: string,
+    prompt: string,
+    planModeRequired: boolean,
+    worktreeIsolation: boolean,
+  ): Promise<ToolResult> {
+    if (!this.teamManager) {
       return {
-        output: `Error: team '${teamName}' not found. Create it first with TeamCreate.`,
+        output: `Error: team manager '${teamName}' not found.`,
         isError: true,
       };
     }
+    // If the team does not exist, create one on the fly: in coordinator mode TeamCreate is not
+    // in the allowlist, so requiring the lead to create a team first would block at step one.
+    const team =
+      this.teamManager.get(teamName) ??
+      this.teamManager.create(teamName, undefined, {
+        leadAgentId: "lead",
+        description,
+      });
 
     // Derive teammate name from description and deduplicate
     let memberName = description.replace(/\s+/g, "-").toLowerCase().slice(0, 30);
@@ -271,22 +353,42 @@ When tasks are independent, launch multiple subagents in parallel by making mult
     for (const tool of this.registry.listTools()) {
       teammateRegistry.register(tool);
     }
-    if (this.teamManager) {
-      teammateRegistry.register(new SendMessageTool(this.teamManager, memberName));
-      teammateRegistry.register(new TaskCreateTool(this.teamManager, teamName, memberName));
-      teammateRegistry.register(new TaskGetTool(this.teamManager, teamName));
-      teammateRegistry.register(new TaskListTool(this.teamManager, teamName));
-      teammateRegistry.register(new TaskUpdateTool(this.teamManager, teamName));
+    teammateRegistry.register(new SendMessageTool(this.teamManager, memberName));
+    teammateRegistry.register(new TaskCreateTool(this.teamManager, teamName, memberName));
+    teammateRegistry.register(new TaskGetTool(this.teamManager, teamName));
+    teammateRegistry.register(new TaskListTool(this.teamManager, teamName));
+    teammateRegistry.register(new TaskUpdateTool(this.teamManager, teamName));
+    // The plan-mode teammate requires the checker to be created here: after team-level approval
+    // passes, the mode must be switched back to default in place. If the checker were created
+    // only inside spawnSubAgent, no one would have a handle to modify it.
+    const checker = planModeRequired ? new PermissionChecker(this.workDir, "plan") : undefined;
+
+    // Worktree isolation: the teammate works on its own branch; changes are merged back during convergence
+    let teammatePrompt = prompt;
+    if (worktreeIsolation) {
+      try {
+        const wt = await createAgentWorktree(newAgentSlug());
+        team.setMemberMeta(memberName, { worktreePath: wt.path });
+        teammatePrompt = `${buildWorktreeNotice(this.workDir, wt.path)}
+
+${prompt}`;
+      } catch (e) {
+        return {
+          output: `Error creating teammate worktree: ${asErrorString(e)}`,
+          isError: true,
+        };
+      }
     }
-    const runAgent = this.teamRunAgentFactory?.(teammateRegistry);
+
+    const runAgent = this.teamRunAgentFactory?.(teammateRegistry, checker);
+
     if (runAgent) {
-      team.spawnTeammate(memberName, prompt, runAgent);
+      team.spawnTeammate(memberName, teammatePrompt, runAgent, checker);
     }
 
     return {
-      output:
-        `Teammate '${memberName}' spawned in team '${teamName}' (mode: ${team.mode}). ` +
-        `The teammate is now working on the assigned task.`,
+      output: `Teammate '${memberName}' spawned in team '${teamName}' (mode: ${team.mode})${planModeRequired ? ", starting in plan mode" : ""}.
+        The teammate is now working on the assigned task.`,
       isError: false,
     };
   }

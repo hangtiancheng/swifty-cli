@@ -21,7 +21,7 @@
  */
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Box, Static, Text, useApp, useInput } from "ink";
+import { Box, Text, useApp, useInput, useStdout, measureElement, type DOMElement } from "ink";
 import type {
   ProviderConfig,
   MCPServerConfig,
@@ -76,6 +76,8 @@ import {
   ListTeamsTool,
   TeamDeleteTool,
 } from "../teams/tools.js";
+import { TaskStopTool } from "../teams/task-stop.js";
+import { SyntheticOutputTool } from "../tools/synthetic-output.js";
 import { HookEngine, validate as validateHooks } from "../hooks/hooks.js";
 import { forceCompact } from "../compact/compact.js";
 import { RecoveryState } from "../compact/recovery.js";
@@ -91,7 +93,7 @@ import { LoadSkillTool } from "../skills/load-skill-tool.js";
 import { InstallSkillTool } from "../skills/install-tool.js";
 import type { SkillHost, SkillForkHost } from "../skills/skill.js";
 import { TeamManager } from "../teams/team.js";
-import { coordinatorToolFilter } from "../teams/coordinator.js";
+import { coordinatorToolFilter, coordinatorActive } from "../teams/coordinator.js";
 import { FileHistory } from "../file-history/file-history.js";
 import { FileStateCache } from "../tools/file-state-cache.js";
 import type { Snapshot } from "../file-history/file-history.js";
@@ -101,6 +103,7 @@ import { AskUserDialog } from "./ask-user-dialog.js";
 import { TeammateSpinnerTree } from "./teammate-spinner-tree.js";
 import { TeamStatus } from "./team-status.js";
 import { TeamsDialog } from "./teams-dialog.js";
+import { enableMouseTracking, disableMouseTracking, parseWheel } from "./mouse.js";
 import type { TeammateUIState } from "../teams/progress.js";
 import { AskUserQuestionTool, type Question } from "../tools/ask-user.js";
 import { existsSync, readFileSync } from "node:fs";
@@ -109,7 +112,7 @@ import * as sessionMod from "../session/session.js";
 import * as historyMod from "../history/history.js";
 import { ProviderSelect } from "./provider-select.js";
 import { InputBox } from "./input.js";
-import { ChatView, CommittedMessage, type ChatMessage, type ToolSummaryItem } from "./chat.js";
+import { ChatView, type ChatMessage, type ToolSummaryItem } from "./chat.js";
 import { ToolDisplay, type ToolBlockInfo } from "./tool-display.js";
 import Spinner from "./spinner.js";
 import { COLORS, ICONS } from "./styles.js";
@@ -128,6 +131,7 @@ interface Props {
   hooks: HookConfig[];
   sandboxConfig?: SandboxYamlConfig;
   enableCoordinatorMode?: boolean;
+  forkDisabled?: boolean;
 }
 
 function createToolRegistry(workDir: string, taskList: TaskList): ToolRegistry {
@@ -224,8 +228,10 @@ export function App({
   hooks,
   sandboxConfig: sandboxYaml,
   enableCoordinatorMode,
+  forkDisabled,
 }: Props) {
   const { exit } = useApp();
+  const { stdout } = useStdout();
   const [appState, setAppState] = useState<AppState>(
     providers.length === 1 ? "chat" : "providerSelect",
   );
@@ -256,7 +262,7 @@ export function App({
   const [error, setError] = useState<string | null>(null);
   const [planApprovalActive, setPlanApprovalActive] = useState(false);
   const [prePlanMode, setPrePlanMode] = useState<PermissionMode>("default");
-  // //  Plan Mode，
+  // Tracks whether plan mode has been exited
   const hasExitedPlanModeRef = useRef(false);
   const permModeRef = useRef(permMode);
   useEffect(() => {
@@ -311,7 +317,6 @@ export function App({
   const teamManagerRef = useRef(new TeamManager(workDir));
   const fileHistoryRef = useRef<FileHistory | null>(null);
   const fileStateCacheRef = useRef(new FileStateCache());
-  // //
   const sandboxRef = useRef<Promise<Sandbox | null>>(createSandbox());
   const [sandboxEnabled, setSandboxEnabled] = useState(sandboxYaml?.enabled ?? false);
   const [sandboxAutoAllow, setSandboxAutoAllow] = useState(sandboxYaml?.auto_allow ?? false);
@@ -460,7 +465,7 @@ export function App({
         catalog.load(workDir);
         skillCatalogRef.current = catalog;
 
-        // // Update skill section after installation
+        // Update skill section after installation
         const skillSection = buildSkillSection(catalog, workDir);
         if (skillSection) {
           const fullPrompt = buildSystemPrompt(env, { skillSection });
@@ -475,7 +480,7 @@ export function App({
         registryRef.current.register(
           new InstallSkillTool(workDir, catalog, () => {
             wireSkillsToRegistry(catalog, cmdRegistryRef.current, skillHostRef.current);
-            // //
+            // Refresh the skill section in the system prompt
             const updatedSection = buildSkillSection(catalog, workDir);
             const updatedPrompt = buildSystemPrompt(
               { ...detectEnvironment(workDir), model: selectedProvider.model },
@@ -528,6 +533,8 @@ export function App({
         registryRef.current.register(new SendMessageTool(teamManagerRef.current));
         registryRef.current.register(new ListTeamsTool(teamManagerRef.current));
         registryRef.current.register(new TeamDeleteTool(teamManagerRef.current));
+        registryRef.current.register(new TaskStopTool(teamManagerRef.current));
+        registryRef.current.register(new SyntheticOutputTool());
 
         // Load user-defined slash commands from .swifty/commands/*.md.
         for (const cmd of loadUserCommands(workDir)) {
@@ -547,7 +554,7 @@ export function App({
         const agentTool = new AgentTool(
           workDir,
           registryRef.current,
-          async (def, prompt, _bg, modelOverride?) => {
+          async (def, prompt, _bg, modelOverride?, workDirOverride?) => {
             const id = ++subagentIdRef.current;
             setSubagents((prev) => [...prev, { id, label: def.name, turn: 0 }]);
             const onProgress = (p: { turn?: number; lastTool?: string }) => {
@@ -560,7 +567,7 @@ export function App({
                 client,
                 registryRef.current,
                 provider,
-                workDir,
+                workDirOverride ?? workDir,
                 onProgress,
                 undefined,
                 modelOverride,
@@ -570,6 +577,7 @@ export function App({
             }
           },
         );
+        agentTool.forkDisabled = forkDisabled ?? false;
         // Wire the team manager into AgentTool to enable the team_name teammate path (teammates receive shared task-board tools)
         agentTool.setTeamManager(teamManagerRef.current, teamRunAgentFactory);
         registryRef.current.register(agentTool);
@@ -618,6 +626,10 @@ export function App({
     if (appState === "chat" && !clientRef.current) {
       void initClient(selectedProvider);
     }
+    // The brand header is now drawn at the top of the render tree (see render
+    // below): console.log writes to the terminal scrollback buffer, but the
+    // alt-screen has no scrollback region, so once the content grows it would
+    // be pushed off screen.
     if (appState === "chat" && !headerPrintedRef.current) {
       headerPrintedRef.current = true;
       const p = COLORS.primary;
@@ -758,21 +770,21 @@ export function App({
       const action = cmd.handler({ workDir, args: parsed.args });
       switch (action) {
         case "clear": {
-          // // ：
+          // Clear messages and start a fresh conversation
           setMessages([]);
           committedIndexRef.current = 0;
           convRef.current = new ConversationManager();
-          // //  session ID +
+          // Reset the session ID and the stores derived from it
           sessionIdRef.current = sessionMod.newSessionId();
           taskListRef.current.useStore(new TaskStore(workDir, sessionIdRef.current));
           fileHistoryRef.current = new FileHistory(workDir, sessionIdRef.current);
-          // //  token
+          // Reset token counters
           setInputTokens(0);
           setOutputTokens(0);
-          // //
+          // Reset memory extraction state
           memCursorRef.current = 0;
           memExtractingRef.current = false;
-          // //  <Static> ， Header
+          // Redraw the header (the <Static> output is cleared, so reprint it)
           const p = COLORS.primary;
           const d = COLORS.dim;
           process.stdout.write(
@@ -917,7 +929,18 @@ export function App({
           );
           const restored = sessionMod.rebuildFromSession(saved);
           for (const m of restored) {
-            if (m.role === "user") {
+            // Tool blocks must be restored as well; otherwise the recovered
+            // history is missing its call chain and the model can't see what was done before
+            if (m.toolUses?.length) {
+              conv.addAssistantMessageWithTools(
+                m.content,
+                m.toolUses.map((tu) => ({ ...tu, arguments: tu.arguments ?? {} })),
+              );
+            } else if (m.toolResults?.length) {
+              conv.addToolResultsMessage(
+                m.toolResults.map((tr) => ({ ...tr, isError: tr.isError ?? false })),
+              );
+            } else if (m.role === "user") {
               conv.addUserMessage(m.content);
             } else {
               conv.addAssistantMessage(m.content);
@@ -946,7 +969,7 @@ export function App({
               { role: "system", content: "Skills: no catalog loaded." },
             ]);
           } else if (parsed.args.trim() === "reload") {
-            // // /skills reload —
+            // /skills reload — hot-reload the catalog from disk
             catalog.reload();
             wireSkillsToRegistry(catalog, cmdRegistryRef.current, skillHostRef.current);
             if (clientRef.current) {
@@ -1025,7 +1048,7 @@ export function App({
           const arg = parsed.args.trim();
           const sbAvailable = (await sandboxRef.current)?.available() ?? false;
           if (arg === "1" || arg === "on") {
-            // //  1： +
+            // Mode 1: enable sandbox + auto-allow
             setSandboxEnabled(true);
             setSandboxAutoAllow(true);
             sandboxEnabledRef.current = true;
@@ -1038,7 +1061,7 @@ export function App({
               },
             ]);
           } else if (arg === "2" || arg === "manual") {
-            // //  2： +
+            // Mode 2: enable sandbox + manual permission confirmation
             setSandboxEnabled(true);
             setSandboxAutoAllow(false);
             sandboxEnabledRef.current = true;
@@ -1051,7 +1074,7 @@ export function App({
               },
             ]);
           } else if (arg === "3" || arg === "off") {
-            // //  3：
+            // Mode 3: disable sandbox
             setSandboxEnabled(false);
             setSandboxAutoAllow(false);
             sandboxEnabledRef.current = false;
@@ -1064,7 +1087,7 @@ export function App({
               },
             ]);
           } else {
-            // //
+            // No/unknown argument: show current status and usage
             const status = sandboxEnabled
               ? sandboxAutoAllow
                 ? "ON + auto-allow"
@@ -1102,7 +1125,7 @@ export function App({
         sessionMod.saveMessage(workDir, sessionIdRef.current, {
           role: "user",
           content: promptText,
-          timestamp: new Date().toISOString(),
+          timestamp: Math.floor(Date.now() / 1000),
         });
         setIsStreaming(true);
         setStreamingText("");
@@ -1205,11 +1228,11 @@ export function App({
     // modeOverride avoids a stale-closure read of permMode right after a
     // setPermMode call (e.g. plan approval switching out of plan mode in the same tick).
     const checker = new PermissionChecker(workDir, modeOverride ?? permMode);
-    // //
+    // Propagate the current sandbox settings to the permission checker
     checker.sandboxEnabled = sandboxEnabledRef.current;
     checker.sandboxAutoAllow = sandboxAutoAllowRef.current;
 
-    // //  BashTool
+    // Attach the sandbox to the BashTool when sandboxing is enabled
     // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
     const bashTool = registryRef.current.get("Bash") as BashTool | undefined;
     if (bashTool && sandboxEnabledRef.current) {
@@ -1226,7 +1249,7 @@ export function App({
     } else if (bashTool) {
       bashTool.sandbox = null;
     }
-    // // Memory recall: query relevant memories and provide context to LLM
+    // Memory recall: query relevant memories and provide context to LLM
     const recallPromise =
       memManagerRef.current && clientRef.current
         ? memManagerRef.current
@@ -1269,6 +1292,7 @@ export function App({
       checker,
       conversation: convRef.current,
       workDir,
+      sessionId: sessionIdRef.current,
       hookEngine: hookEngineRef.current ?? undefined,
       fileHistory: fileHistoryRef.current ?? undefined,
       fileStateCache: fileStateCacheRef.current,
@@ -1279,9 +1303,10 @@ export function App({
       activeSkills: activeSkillsRef.current,
       memoryRecallPromise: recallPromise,
       toolFilter: buildComposedToolFilter(
-        coordinatorToolFilter(teamManagerRef.current, enableCoordinatorMode ?? false),
+        coordinatorToolFilter(enableCoordinatorMode ?? false),
         toolFilterRef.current,
       ),
+      coordinatorActiveFn: () => coordinatorActive(enableCoordinatorMode ?? false),
       // Surface teammate results (from team lead mailboxes) as reminders.
       notificationFn: () => teamManagerRef.current.drainLeads(),
       onLoopComplete: (conv) => {
@@ -1300,7 +1325,7 @@ export function App({
           .map((m) => `[${m.role}]: ${m.content}`)
           .filter((s) => s.length > 12)
           .join("\n");
-        // // Lazy-init the Memory Extractor (one per session, reused across turns)
+        // Lazy-init the Memory Extractor (one per session, reused across turns)
         memExtractorRef.current ??= new MemoryExtractor(client, workDir);
         memExtractorRef.current
           .extract(summary)
@@ -1317,7 +1342,7 @@ export function App({
             }
           })
           .catch((err: unknown) => {
-            // // Suppress logging in production; debug via memory-extractor logs
+            // Suppress logging in production; debug via memory-extractor logs
             console.error("[memory-extractor]", asErrorString(err));
           })
           .finally(() => {
@@ -1489,11 +1514,8 @@ export function App({
               committedIndexRef.current = next.length;
               return next;
             });
-            sessionMod.saveMessage(workDir, sessionIdRef.current, {
-              role: "assistant",
-              content: fullText,
-              timestamp: new Date().toISOString(),
-            });
+            // Assistant messages are persisted by the agent main loop as they
+            // enter the conversation history (tool blocks included), so we don't duplicate that here
           } else {
             // Even when no final text, mark everything committed.
             setMessages((prev) => {
@@ -1541,7 +1563,7 @@ export function App({
           void handleSubmit(`Execute this plan:\n\n${planContent}`);
         }
       } else if (choice === "manual") {
-        // //  Plan Mode，
+        // Exit plan mode and restore the pre-plan permission mode
         hasExitedPlanModeRef.current = true;
         setPermMode(prePlanMode);
         convRef.current.addSystemReminder(buildPlanModeExitReminder(planPath, !!planContent));
@@ -1672,7 +1694,7 @@ export function App({
     sessionMod.saveMessage(workDir, sessionIdRef.current, {
       role: "user",
       content: text,
-      timestamp: new Date().toISOString(),
+      timestamp: Math.floor(Date.now() / 1000),
     });
 
     // If currently streaming, interrupt first
@@ -1728,165 +1750,260 @@ export function App({
     }
   };
 
+  // ── Scroll viewport ─────────────────────────────────────────────────────
+  // The alt-screen has no native terminal scrollback region, so the message
+  // history is scrolled by the app itself: the outer box has a fixed height
+  // and clips overflow, while the inner box is shifted up by scrollTop lines
+  // (negative marginTop) — equivalent to "translate the content, then clip to
+  // the viewport".
+  const viewportRef = useRef<DOMElement | null>(null);
+  const contentRef = useRef<DOMElement | null>(null);
+  const [scrollTop, setScrollTop] = useState(0);
+  const [contentHeight, setContentHeight] = useState(0);
+  const [viewportHeight, setViewportHeight] = useState(0);
+  // Stick-to-bottom follow: auto-scroll to the latest content as it arrives;
+  // stop following once the user scrolls up manually.
+  const stickToBottomRef = useRef(true);
+
+  const maxScroll = Math.max(0, contentHeight - viewportHeight);
+
+  // Enable SGR mouse tracking so the wheel is reported as mouse sequences
+  // instead of being translated by the terminal into ↑/↓ that misfire the input history.
+  useEffect(() => {
+    enableMouseTracking(stdout);
+    return () => {
+      disableMouseTracking(stdout);
+    };
+  }, [stdout]);
+
+  // Measure the content and viewport heights once after each render, used to
+  // compute the scrollable range.
+  useEffect(() => {
+    if (contentRef.current) {
+      const h = measureElement(contentRef.current).height;
+      setContentHeight((prev) => (prev === h ? prev : h));
+    }
+    if (viewportRef.current) {
+      const h = measureElement(viewportRef.current).height;
+      setViewportHeight((prev) => (prev === h ? prev : h));
+    }
+  });
+
+  // When the content grows: follow to the latest if stuck to the bottom;
+  // otherwise keep the current position, clamped to the valid range.
+  useEffect(() => {
+    setScrollTop((prev) => (stickToBottomRef.current ? maxScroll : Math.min(prev, maxScroll)));
+  }, [maxScroll]);
+
+  const scrollBy = useCallback(
+    (delta: number) => {
+      setScrollTop((prev) => {
+        const next = Math.max(0, Math.min(prev + delta, maxScroll));
+        stickToBottomRef.current = next >= maxScroll;
+        return next;
+      });
+    },
+    [maxScroll],
+  );
+
+  // The wheel and page keys drive scrolling. Mouse sequences never reach the
+  // input box (they are already filtered by SGR format inside InputBox).
+  useInput((input, key) => {
+    const wheel = parseWheel(input);
+    if (wheel) {
+      scrollBy(wheel === "up" ? -3 : 3);
+      return;
+    }
+    if (key.pageUp) {
+      scrollBy(-Math.max(1, viewportHeight - 2));
+    } else if (key.pageDown) {
+      scrollBy(Math.max(1, viewportHeight - 2));
+    }
+  });
+
   if (appState === "providerSelect") {
     return <ProviderSelect providers={providers} onSelect={handleProviderSelect} />;
   }
 
   return (
-    <Box flexDirection="column" width="100%">
-      <Box flexDirection="column" paddingTop={0} flexGrow={1}>
-        {/* Committed messages: written to terminal scroll buffer, eraseLines won't touch them */}
-        <Static
-          items={messages
-            .slice(0, committedIndexRef.current)
-            .map((msg, i) => ({ ...msg, _key: i }))}
-        >
-          {(item) => <CommittedMessage key={item._key} message={item} expanded={toolsExpanded} />}
-        </Static>
-
-        {/* Active content: streaming text + new messages, refreshed in dynamic area */}
-        <ChatView
-          messages={messages.slice(committedIndexRef.current)}
-          streamingText={isStreaming ? streamingText : undefined}
-          expanded={toolsExpanded}
-        />
-
-        {activeTools.length > 0 && !askRequest && <ToolDisplay tools={activeTools} />}
-
-        {subagents.length > 0 && !askRequest && (
-          <Box flexDirection="column" paddingLeft={1}>
-            {subagents.map((s) => (
-              <Text key={s.id} color="magenta">
-                {ICONS.dot} {s.label} subagent · turn {s.turn}
-                {s.lastTool ? ` · ${s.lastTool}` : ""}
-              </Text>
-            ))}
-          </Box>
-        )}
-
-        {isStreaming && !askRequest && (
-          <Box paddingLeft={1} flexDirection="column">
-            <Spinner inputTokens={inputTokens} outputTokens={outputTokens} />
-            {teammateStates.length > 0 && (
-              <TeammateSpinnerTree
-                teammates={teammateStates}
-                leaderTokens={inputTokens + outputTokens}
-              />
-            )}
-          </Box>
-        )}
-        {!isStreaming && teammateStates.some((t) => t.status === "running") && (
-          <Box paddingLeft={1}>
-            <TeammateSpinnerTree teammates={teammateStates} />
-          </Box>
-        )}
-
-        {error && (
-          <Box paddingLeft={1}>
-            <Text color="red">{error}</Text>
-          </Box>
-        )}
-
-        {!isStreaming && completionMark && !askRequest && !permissionRequest && (
-          <Box paddingLeft={1}>
-            <Text dimColor>{completionMark}</Text>
-          </Box>
-        )}
-
-        <Text> </Text>
+    <Box flexDirection="column" width="100%" height={Math.max(1, stdout.rows ?? 24)}>
+      {/* Top brand header: fixed and non-shrinking within the render tree, so it stays on screen even in long conversations */}
+      <Box flexDirection="column" flexShrink={0}>
+        <Text>
+          <Text color="#a78bfa"> /\_/\ </Text>
+          <Text dimColor>MewCode v0.1.0</Text>
+        </Text>
+        <Text>
+          <Text color="#a78bfa">( o.o ) </Text>
+          <Text dimColor>{selectedProvider.model || selectedProvider.name}</Text>
+        </Text>
+        <Text>
+          <Text color="#a78bfa">
+            {" "}
+            {">"} ^ {"<"}{" "}
+          </Text>
+          <Text dimColor>{workDir}</Text>
+        </Text>
       </Box>
 
-      {planApprovalActive && <PlanApprovalDialog onSelect={handlePlanApproval} />}
+      {/* Scroll viewport: fills the remaining middle space and clips overflow.
+          minHeight={0} is critical: the content box's flexShrink={0} would otherwise
+          push the viewport's minimum height up to the full content height, causing the
+          bottom input box — once it grows — to push the total height past the root
+          container and leave erase-misalignment artifacts. */}
+      <Box
+        ref={viewportRef}
+        flexGrow={1}
+        flexShrink={1}
+        minHeight={0}
+        flexDirection="column"
+        overflowY="hidden"
+      >
+        <Box ref={contentRef} flexDirection="column" flexShrink={0} marginTop={-scrollTop}>
+          {/* All messages live inside the render tree: scrolling is handled by the viewport, no longer relying on the terminal scrollback buffer */}
+          <ChatView
+            messages={messages}
+            streamingText={isStreaming ? streamingText : undefined}
+            expanded={toolsExpanded}
+          />
 
-      {rewindDialogActive && (
-        <RewindDialog
-          snapshots={rewindSnapshots}
-          onComplete={handleRewindAction}
-          onCancel={() => {
-            setRewindDialogActive(false);
-          }}
-        />
-      )}
+          {activeTools.length > 0 && !askRequest && <ToolDisplay tools={activeTools} />}
 
-      {permissionRequest && (
-        <PermissionDialog
-          toolName={permissionRequest.toolName}
-          argsSummary={permissionRequest.argsSummary}
-          reason={permissionRequest.reason}
-          onComplete={(action: PermissionAction) => {
-            permissionResolveRef.current?.(action);
-            permissionResolveRef.current = null;
-            setPermissionRequest(null);
-          }}
-        />
-      )}
+          {subagents.length > 0 && !askRequest && (
+            <Box flexDirection="column" paddingLeft={1}>
+              {subagents.map((s) => (
+                <Text key={s.id} color="magenta">
+                  {ICONS.dot} {s.label} subagent · turn {s.turn}
+                  {s.lastTool ? ` · ${s.lastTool}` : ""}
+                </Text>
+              ))}
+            </Box>
+          )}
 
-      {askRequest && (
-        <AskUserDialog
-          questions={askRequest}
-          onComplete={(answers) => {
-            askResolveRef.current?.(answers);
-            askResolveRef.current = null;
-            setAskRequest(null);
-          }}
-        />
-      )}
+          {isStreaming && !askRequest && (
+            <Box paddingLeft={1} flexDirection="column">
+              <Spinner inputTokens={inputTokens} outputTokens={outputTokens} />
+              {teammateStates.length > 0 && (
+                <TeammateSpinnerTree
+                  teammates={teammateStates}
+                  leaderTokens={inputTokens + outputTokens}
+                />
+              )}
+            </Box>
+          )}
+          {!isStreaming && teammateStates.some((t) => t.status === "running") && (
+            <Box paddingLeft={1}>
+              <TeammateSpinnerTree teammates={teammateStates} />
+            </Box>
+          )}
 
-      {teamsDialogOpen && (
-        <TeamsDialog
-          teammates={teammateStates}
-          onClose={() => {
-            setTeamsDialogOpen(false);
-          }}
-          onKill={(name, teamName) => {
-            const team = teamManagerRef.current.get(teamName);
-            if (team) {
-              void team.stopMember(name);
-            }
-          }}
-          onShutdown={(name, teamName) => {
-            const team = teamManagerRef.current.get(teamName);
-            if (team) {
-              void team.sendMessage("lead", name, "[shutdown] Please finish and exit");
-            }
-          }}
-        />
-      )}
+          {error && (
+            <Box paddingLeft={1}>
+              <Text color="red">{error}</Text>
+            </Box>
+          )}
 
-      {ctrlCHint && (
-        <Box paddingLeft={1}>
-          <Text dimColor>Press Ctrl+C again to exit.</Text>
+          {!isStreaming && completionMark && !askRequest && !permissionRequest && (
+            <Box paddingLeft={1}>
+              <Text dimColor>{completionMark}</Text>
+            </Box>
+          )}
         </Box>
-      )}
-      <TeamStatus
-        count={teammateStates.filter((t) => t.status === "running" || t.status === "idle").length}
-      />
-      <InputBox
-        onSubmit={(text: string) => {
-          void handleSubmit(text);
-        }}
-        disabled={rewindDialogActive || permissionRequest !== null || askRequest !== null}
-        history={promptHistory}
-        commands={cmdRegistryRef.current.listCommands()}
-        usageTracker={usageTrackerRef.current}
-        inputState={
-          error
-            ? "error"
-            : isStreaming || rewindDialogActive || permissionRequest
-              ? "idle"
-              : "focused"
-        }
-        permMode={permMode}
-        onModeChange={(mode) => {
-          setPermMode(mode);
-        }}
-        workDir={workDir}
-        onEscape={() => {
-          if (isStreaming) {
-            abortControllerRef.current?.abort();
+      </Box>
+      {/* Bottom region is fixed and non-shrinking: dialogs, team status, and the input box always render fully at the bottom of the screen */}
+      <Box flexDirection="column" flexShrink={0}>
+        {planApprovalActive && <PlanApprovalDialog onSelect={handlePlanApproval} />}
+
+        {rewindDialogActive && (
+          <RewindDialog
+            snapshots={rewindSnapshots}
+            onComplete={handleRewindAction}
+            onCancel={() => {
+              setRewindDialogActive(false);
+            }}
+          />
+        )}
+
+        {permissionRequest && (
+          <PermissionDialog
+            toolName={permissionRequest.toolName}
+            argsSummary={permissionRequest.argsSummary}
+            reason={permissionRequest.reason}
+            onComplete={(action: PermissionAction) => {
+              permissionResolveRef.current?.(action);
+              permissionResolveRef.current = null;
+              setPermissionRequest(null);
+            }}
+          />
+        )}
+
+        {askRequest && (
+          <AskUserDialog
+            questions={askRequest}
+            onComplete={(answers) => {
+              askResolveRef.current?.(answers);
+              askResolveRef.current = null;
+              setAskRequest(null);
+            }}
+          />
+        )}
+
+        {teamsDialogOpen && (
+          <TeamsDialog
+            teammates={teammateStates}
+            onClose={() => {
+              setTeamsDialogOpen(false);
+            }}
+            onKill={(name, teamName) => {
+              const team = teamManagerRef.current.get(teamName);
+              if (team) {
+                void team.stopMember(name);
+              }
+            }}
+            onShutdown={(name, teamName) => {
+              const team = teamManagerRef.current.get(teamName);
+              if (team) {
+                void team.sendMessage("lead", name, "[shutdown] Please finish and exit");
+              }
+            }}
+          />
+        )}
+
+        {ctrlCHint && (
+          <Box paddingLeft={1}>
+            <Text dimColor>Press Ctrl+C again to exit.</Text>
+          </Box>
+        )}
+        <TeamStatus
+          count={teammateStates.filter((t) => t.status === "running" || t.status === "idle").length}
+        />
+        <InputBox
+          onSubmit={(text: string) => {
+            void handleSubmit(text);
+          }}
+          disabled={rewindDialogActive || permissionRequest !== null || askRequest !== null}
+          history={promptHistory}
+          commands={cmdRegistryRef.current.listCommands()}
+          usageTracker={usageTrackerRef.current}
+          inputState={
+            error
+              ? "error"
+              : isStreaming || rewindDialogActive || permissionRequest
+                ? "idle"
+                : "focused"
           }
-        }}
-      />
+          permMode={permMode}
+          onModeChange={(mode) => {
+            setPermMode(mode);
+          }}
+          workDir={workDir}
+          onEscape={() => {
+            if (isStreaming) {
+              abortControllerRef.current?.abort();
+            }
+          }}
+        />
+      </Box>
     </Box>
   );
 }

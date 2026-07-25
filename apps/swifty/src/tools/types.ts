@@ -61,8 +61,21 @@ export interface Tool {
   name: string;
   description: string;
   category: ToolCategory;
+
+  /**
+   * Whether to defer loading. A deferred tool does not appear in the initial
+   * tool list; the model must first pull its schema out via ToolSearch before
+   * it can call it.
+   *
+   * Only MCP tools are set to true. MCP is configured per project, a single
+   * server can easily expose dozens of tools with long schemas, and stuffing
+   * all of them into the initial tool list would eat up a large chunk of the
+   * context — especially since most of those tools won't be used in a given
+   * session. Built-in tools are a fixed few dozen, a controllable count;
+   * hiding them would only force the model into an extra ToolSearch round
+   * trip, so they are never deferred and always ship their full schema.
+   */
   deferred?: boolean;
-  system?: boolean;
 
   schema(): ToolSchema;
   execute(ctx: ToolContext, args: Record<string, unknown>): Promise<ToolResult>;

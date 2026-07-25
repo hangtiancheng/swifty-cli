@@ -21,6 +21,8 @@
  */
 
 /* eslint-disable @typescript-eslint/consistent-type-assertions */
+import { saveMessage, toolUsesToRecords, toolResultsToRecords } from "../session/session.js";
+import { REJECTED_TOOL_RESULT } from "../conversation/pairing.js";
 import type { LLMClient } from "../llm/client.js";
 import type { ConversationManager } from "../conversation/conversation.js";
 import type { ToolUseBlock, ToolResultBlock } from "../conversation/conversation.js";
@@ -37,7 +39,8 @@ import { RecoveryState } from "../compact/recovery.js";
 import { ContextTooLongError, RateLimitError } from "../llm/errors.js";
 import { getOrCreatePlanPath, planExists } from "../plan-file/plan-file.js";
 import { buildPlanModeReminder } from "../prompt/plan-mode.js";
-import { applyBudget, persistLargeResult } from "../tool-result/budget.js";
+import { coordinatorReminder } from "../prompt/coordinator.js";
+import { applyBudget, isSpillReadback, persistLargeResult } from "../tool-result/budget.js";
 import { readFile } from "node:fs/promises";
 import { asRecord, strArg } from "@/utils/index.js";
 import type { ToolSchema } from "@/tools/types.js";
@@ -47,7 +50,14 @@ import type { UsageInfo } from "@/llm/events.js";
 // value, then attempt a bounded number of multi-turn recoveries. Mirrors Go.
 const MAX_TOKENS_CEILING = 64000;
 const MAX_OUTPUT_TOKENS_RECOVERIES = 3;
-const MAX_OUTPUT_CHARS = 10000;
+// Tool output exceeding this threshold is spilled to disk rather than truncated
+// outright, to avoid losing critical information.
+// Per-result spill threshold before entering conversation history: once the
+// character count exceeds this value the full content is written to disk and
+// only a preview plus the file path is retained in history. Set to 50000
+// (rather than a smaller value) so the model can see enough content in one
+// pass without needing an extra ReadFile round-trip to view the full result.
+const MAX_OUTPUT_CHARS = 50000;
 
 export interface AgentConfig {
   client: LLMClient;
@@ -68,6 +78,10 @@ export interface AgentConfig {
   onLoopComplete?: (conversation: ConversationManager) => void;
   activeSkills?: Map<string, string>;
   toolFilter?: (name: string) => boolean;
+  // coordinatorActiveFn reports whether coordinator mode is currently active.
+  // Checked each turn alongside toolFilter so that dispatch guidance appears
+  // while tools are narrowed and disappears once the Team is torn down.
+  coordinatorActiveFn?: () => boolean;
   // Project instructions and memory content, need re-injection after compaction
   instructions?: string;
   memoryContent?: string;
@@ -102,6 +116,8 @@ export class Agent {
 
   private onPermissionRequest?: AgentConfig["onPermissionRequest"];
   private toolFilter?: (name: string) => boolean;
+  private coordinatorActiveFn?: () => boolean;
+
   activeSkills: Map<string, string>;
   private instructions: string;
   private memoryContent: string;
@@ -131,20 +147,17 @@ export class Agent {
     this.onPermissionRequest = config.onPermissionRequest;
     this.activeSkills = config.activeSkills ?? new Map<string, string>();
     this.toolFilter = config.toolFilter;
+    this.coordinatorActiveFn = config.coordinatorActiveFn;
     this.instructions = config.instructions ?? "";
     this.memoryContent = config.memoryContent ?? "";
     this.memoryRecallPromise = config.memoryRecallPromise;
   }
 
   async *run(): AsyncGenerator<AgentEvent> {
-    // Apply an active skill's allowed-tools filter to the schemas sent to the
-    // LLM. System tools always remain available. Mirrors Go currentToolSchemas.
+    // The filter is the sole authority — no exception branches.
     let toolSchemas = this.registry.getAllSchemas();
     if (this.toolFilter) {
-      toolSchemas = toolSchemas.filter((s) => {
-        const n = s.name;
-        return this.registry.get(n)?.system === true || this.toolFilter?.(n);
-      });
+      toolSchemas = toolSchemas.filter((s) => this.toolFilter?.(s.name));
     }
     const toolSchemaNames = this.registry.listTools().map((t) => t.name);
 
@@ -184,6 +197,15 @@ export class Agent {
           );
         }
 
+        // Coordinator mode: inject dispatch guidance while the tool set is narrowed.
+        // Delivered via system-reminder rather than the system prompt: in long
+        // sessions the initial constraint gets buried, so a per-turn reminder is
+        // needed to pull the model back. Also, the system prompt is a cached
+        // prefix — mutating it would invalidate the entire cache and re-incur cost.
+        if (this.coordinatorActiveFn?.()) {
+          this.conversation.addSystemReminder(coordinatorReminder(iteration));
+        }
+
         // Drain queued hook notifications and any external notifications (e.g. a
         // team mailbox) into system reminders for this turn.
         if (this.hookEngine) {
@@ -200,10 +222,10 @@ export class Agent {
         await this.fireLifecycle("turn_start");
         await this.fireLifecycle("pre_send");
 
-        // Layer 1: Trim oversized tool results in-place
-        applyBudget(this.conversation.getMessages(), this.workDir, this.sessionId);
-
-        // Layer 2: auto-compact when the window fills up
+        // Layer 1: auto-compact when the window fills up
+        // Tool results are already budget-processed at the time they enter
+        // history, so message sizes in the transcript are final — estimate
+        // tokens directly from them.
         const mc = await manageContext(
           this.conversation,
           this.client,
@@ -220,7 +242,6 @@ export class Agent {
         }
         if (mc.compacted) {
           // replaceWithCompacted
-          applyBudget(this.conversation.getMessages(), this.workDir, this.sessionId);
           this.conversation.injectLongTermMemory(this.instructions, this.memoryContent);
         }
 
@@ -292,8 +313,6 @@ export class Agent {
           // Self-heal: context too long → force-compact, then retry the turn.
           if (err instanceof ContextTooLongError) {
             try {
-              // Apply tool-result budget first, then auto-compact
-              applyBudget(this.conversation.getMessages(), this.workDir, this.sessionId);
               const result = await forceCompact(
                 this.conversation,
                 this.client,
@@ -337,6 +356,7 @@ export class Agent {
         if (this.abortSignal?.aborted) {
           if (fullText) {
             this.conversation.addAssistantFull(fullText, thinkingBlocks, []);
+            this.persistLastMessage();
           }
           yield { type: "loop_complete", stopReason: "interrupted" };
           return;
@@ -346,13 +366,14 @@ export class Agent {
 
         // Handle the max_tokens stop reason: escalate the output ceiling once,
         // then do up to N multi-turn recoveries before giving up. Each recovery
-        // re-prompts the model to resume from where it stopped. Mirrors Go.
+        // re-prompts the model to resume from where it stopped.
         if (stopReason === "max_tokens") {
           if (!maxTokensEscalated) {
             this.client.setMaxOutputTokens?.(MAX_TOKENS_CEILING);
             maxTokensEscalated = true;
             if (fullText) {
               this.conversation.addAssistantFull(fullText, thinkingBlocks, []);
+              this.persistLastMessage();
               if (lastUsage) {
                 this.conversation.recordUsageAnchor(
                   lastUsage.inputTokens,
@@ -370,6 +391,7 @@ export class Agent {
           } else if (outputRecoveries < MAX_OUTPUT_TOKENS_RECOVERIES) {
             outputRecoveries++;
             this.conversation.addAssistantFull(fullText, thinkingBlocks, []);
+            this.persistLastMessage();
             if (lastUsage) {
               this.conversation.recordUsageAnchor(
                 lastUsage.inputTokens,
@@ -394,6 +416,8 @@ export class Agent {
         }
 
         this.conversation.addAssistantFull(fullText, thinkingBlocks, toolUses);
+        this.persistLastMessage();
+
         if (lastUsage) {
           this.conversation.recordUsageAnchor(
             lastUsage.inputTokens,
@@ -410,7 +434,7 @@ export class Agent {
           }
 
           // Safety guard: bail out if the model keeps calling tools that don't
-          // exist — a sign it's stuck. Mirrors Go's consecutiveUnknown >= 3.
+          // exist — a sign it's stuck.
           for (const tu of toolUses) {
             if (this.registry.get(tu.toolName)) {
               consecutiveUnknown = 0;
@@ -426,21 +450,43 @@ export class Agent {
             return;
           }
 
+          // Readback results from spill files are exempt from spilling: if we
+          // re-spill content the model just read back into a preview, it will
+          // never see the full text and will loop between "read back" and "spill".
+          const exemptIds = new Set<string>();
+          for (const tu of toolUses) {
+            if (isSpillReadback(tu.toolName, tu.arguments, this.workDir, this.sessionId)) {
+              exemptIds.add(tu.toolUseId);
+            }
+          }
+
           const toolResults: ToolResultBlock[] = [];
           for (const r of results) {
             if (r.type === "tool_result") {
+              let content = r.output;
+              if (content.length > MAX_OUTPUT_CHARS && !exemptIds.has(r.toolId)) {
+                // Single result exceeds the limit: write to disk and replace with
+                // a preview. If the write fails the content is kept as-is; either
+                // way the aggregate budget need not retry, so both outcomes are
+                // marked exempt.
+                content = persistLargeResult(this.workDir, this.sessionId, r.toolId, r.output);
+                exemptIds.add(r.toolId);
+              }
               toolResults.push({
                 toolUseId: r.toolId,
-                content:
-                  r.output.length > MAX_OUTPUT_CHARS
-                    ? persistLargeResult(this.workDir, this.sessionId, r.toolId, r.output)
-                    : r.output,
+                content,
                 isError: r.isError,
               });
             }
           }
+          // Aggregate budget: results from a parallel tool batch land in a single
+          // message, so the per-result threshold alone cannot guard against a
+          // combined overflow. Process the entire batch before it enters history
+          // so the message is in its final form from the start.
+          applyBudget(toolResults, this.workDir, this.sessionId, exemptIds);
           const exitPlanCalled = toolUses.some((tu) => tu.toolName === "ExitPlanMode");
           this.conversation.addToolResultsMessage(toolResults);
+          this.persistLastMessage();
 
           // Non-blocking memory recall: check if prefetch is ready after tool execution
           if (this.memoryRecallPromise && !this.memoryRecallConsumed) {
@@ -480,7 +526,7 @@ export class Agent {
           }
           yield { type: "loop_complete", stopReason };
           // Fire-and-forget post-completion hook (e.g. background memory
-          // extraction). Mirrors Go's OnLoopComplete goroutine.
+          // extraction).
           if (this.onLoopComplete) {
             try {
               this.onLoopComplete(this.conversation);
@@ -510,7 +556,7 @@ export class Agent {
   }
 
   // Sleep for ms, resolving early with `true` if the abort signal fires during
-  // the wait (mirrors Go's select on ctx.Done()). Resolves `false` on timeout.
+  // the wait (ctx-aware). Resolves `false` on timeout.
   private interruptibleSleep(ms: number): Promise<boolean> {
     return new Promise((resolve) => {
       if (this.abortSignal?.aborted) {
@@ -615,7 +661,7 @@ export class Agent {
             type: "tool_result",
             toolName: tu.toolName,
             toolId: tu.toolUseId,
-            output: "Permission denied by user",
+            output: REJECTED_TOOL_RESULT,
             isError: true,
             elapsed: 0,
           });
@@ -698,10 +744,36 @@ export class Agent {
       }
     }
   }
+
+  /**
+   * Persist the most recently appended conversation message to the session log.
+   *
+   * Persistence lives in the main loop rather than in individual frontends: both
+   * the TUI and Web share the same recording path, ensuring intermediate assistant
+   * text and complete tool-call chains are captured for session restoration.
+   * Skipped when sessionId is empty (one-shot invocations, sub-agents).
+   */
+  private persistLastMessage(): void {
+    if (!this.workDir || !this.sessionId) {
+      return;
+    }
+    const msgs = this.conversation.getMessages();
+    if (msgs.length === 0) {
+      return;
+    }
+    const last = msgs[msgs.length - 1];
+    saveMessage(this.workDir, this.sessionId, {
+      role: last.role,
+      content: last.content,
+      timestamp: Math.floor(Date.now() / 1000),
+      ...(last.toolUses?.length ? { tool_uses: toolUsesToRecords(last.toolUses) } : {}),
+      ...(last.toolResults?.length ? { tool_results: toolResultsToRecords(last.toolResults) } : {}),
+    });
+  }
 }
 
 // parseRetryAfter converts a Retry-After header (seconds) into milliseconds,
-// defaulting to 5s when absent or unparsable. Mirrors Go parseRetryAfter.
+// defaulting to 5s when absent or unparsable.
 function parseRetryAfter(header?: string): number {
   if (!header) {
     return 5000;

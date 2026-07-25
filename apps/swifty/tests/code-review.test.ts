@@ -20,10 +20,39 @@
  * SOFTWARE.
  */
 
-import { describe, test, expect } from "vitest";
+import { describe, test, expect, beforeEach, afterEach } from "vitest";
 import { CodeReviewManager, createDefaultCodeReviewTeam } from "../src/code-review/manager.js";
 import { ReviewSession } from "../src/code-review/session.js";
 import { TeamManager } from "../src/teams/team.js";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+// The teams directory lives at <home>/.swifty/teams, so the tests redirect the
+// entire home directory to a temp dir to avoid leaving residue in the real
+// ~/.swifty/teams. os.homedir() reads USERPROFILE on Windows and HOME on other
+// platforms, so set both.
+let realHome: string | undefined;
+let realUserProfile: string | undefined;
+beforeEach(() => {
+  realHome = process.env.HOME;
+  realUserProfile = process.env.USERPROFILE;
+  const tmp = mkdtempSync(join(tmpdir(), "swifty-home-"));
+  process.env.HOME = tmp;
+  process.env.USERPROFILE = tmp;
+});
+afterEach(() => {
+  if (realHome === undefined) {
+    delete process.env.HOME;
+  } else {
+    process.env.HOME = realHome;
+  }
+  if (realUserProfile === undefined) {
+    delete process.env.USERPROFILE;
+  } else {
+    process.env.USERPROFILE = realUserProfile;
+  }
+});
 
 describe("CodeReviewManager", () => {
   const workDir = "/tmp/test-code-review";

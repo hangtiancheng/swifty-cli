@@ -45,7 +45,6 @@ interface ParsedTextMemory {
 
 /**
  * MemoryExtractor implements the background memory-extraction subagent.
- * Mirrors the Go extractor.go logic:
  * - Uses a child agent + tools (ReadFile/WriteFile/EditFile) instead of bare LLM calls
  * - Sends existing memory manifest to the LLM before extraction for deduplication
  * - turnsSinceLastExtraction throttling
@@ -138,7 +137,7 @@ export class MemoryExtractor {
     return entries.length > 0 ? entries.join("\n") : "";
   }
 
-  /** Build the extraction prompt (mirrors Go prompts.go) */
+  /** Build the extraction prompt */
   private buildExtractionPrompt(conversationSummary: string): string {
     const manifest = this.scanExistingMemories();
     const projectMemDir = join(this.workDir, ".swifty", "memory");

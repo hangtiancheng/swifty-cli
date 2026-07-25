@@ -34,7 +34,6 @@ export class ToolSearchTool implements Tool {
   name = "ToolSearch";
   description = "Search for and load deferred tools by name or keyword.";
   category: ToolCategory = "read";
-  system = true;
 
   private registry: ToolRegistry;
 

@@ -371,8 +371,7 @@ export class PermissionChecker {
 
     // Layer 0: plan-mode plan-file write exception.
     // Both WriteFile and EditFile targeting the plan file are allowed so the
-    // model can create and update its plan. Mirrors Go's category-level check
-    // against CategoryWrite (which covers both tools).
+    // model can create and update its plan.
     if (this.mode === "plan" && (toolName === "WriteFile" || toolName === "EditFile")) {
       const path = strArg(args, "file_path", "");
       if (path.includes(".swifty/plans/")) {

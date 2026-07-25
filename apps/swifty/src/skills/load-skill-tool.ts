@@ -22,22 +22,25 @@
 
 import type { Tool, ToolContext, ToolResult, ToolSchema } from "../tools/types.js";
 import type { SkillCatalog } from "./catalog.js";
-import type { SkillHost } from "./skill.js";
-import { runInline } from "./executor.js";
-import { strArg } from "@/utils/index.js";
+import type { SkillForkHost, SkillHost } from "./skill.js";
+import { runFork, runInline } from "./executor.js";
+import { asErrorString, strArg } from "@/utils/index.js";
 
 // On-demand skill activation: returns the full SOP body so it enters the
-// conversation as a regular message (progressive disclosure). Mirrors Go.
+// conversation as a regular message (progressive disclosure).
 export class LoadSkillTool implements Tool {
   name = "LoadSkill";
   description =
     "Activate a skill by name. Returns the full SOP body so you can follow its instructions. Use this when a task matches an available skill's description.";
   category = "read" as const;
-  system = true;
 
   constructor(
     private catalog: SkillCatalog,
     private host: SkillHost,
+    // Host for running isolated subagents; skills with mode: fork depend on it.
+    // When omitted (host has not integrated the subagent runtime), falls back to inline
+    // to ensure the tool remains available.
+    private forkHost?: SkillForkHost,
   ) {}
 
   schema(): ToolSchema {
@@ -57,7 +60,7 @@ export class LoadSkillTool implements Tool {
     };
   }
 
-  execute(ctx: ToolContext, args: Record<string, unknown>): Promise<ToolResult> {
+  async execute(ctx: ToolContext, args: Record<string, unknown>): Promise<ToolResult> {
     const name = strArg(args, "name");
     const skill = this.catalog.get(name);
     if (!skill) {
@@ -66,15 +69,31 @@ export class LoadSkillTool implements Tool {
           .list()
           .map((s) => s.name)
           .join(", ") || "(none)";
-      return Promise.resolve({
+      return {
         output: `Skill '${name}' not found. Available skills: ${available}`,
         isError: true,
-      });
+      };
     }
+
+    // Fork mode: the SOP body does not enter the main conversation; it is delegated to an
+    // isolated subagent for execution, and only the final result is returned. This ensures
+    // that model-initiated skill loading and user-invoked slash commands follow the same mode
+    // semantics — the declared isolation intent takes effect on both paths.
+    if (skill.meta.mode === "fork" && this.forkHost) {
+      try {
+        return { output: await runFork(skill, "", this.forkHost), isError: false };
+      } catch (err) {
+        return {
+          output: `Skill '${name}' fork execution failed: ${asErrorString(err)}`,
+          isError: true,
+        };
+      }
+    }
+
     const body = runInline(skill, "", this.host);
-    return Promise.resolve({
+    return {
       output: `Skill '${name}' activated.\n\n${body}`,
       isError: false,
-    });
+    };
   }
 }

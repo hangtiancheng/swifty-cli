@@ -63,8 +63,6 @@ export class AskUserQuestionTool implements Tool {
   Set "multiSelect: true" when choices are not mutually exclusive (single-choice), set "multiSelect: false" otherwise (multiple-choices).
   `;
 
-  system = true;
-
   category: ToolCategory = "read";
   constructor(private ask: Asker) {}
 

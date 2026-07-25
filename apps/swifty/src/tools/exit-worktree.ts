@@ -21,9 +21,6 @@
  */
 
 import { createChildLogger } from "../logger/index.js";
-
-const log = createChildLogger({ module: "tools" });
-
 import { asErrorString } from "../utils/index.js";
 import { hasWorktreeChanges, removeAgentWorktree } from "../worktree/worktree.js";
 import {
@@ -35,6 +32,7 @@ import {
 } from "./types.js";
 import { strArg } from "../utils/index.js";
 
+const log = createChildLogger({ module: "tools" });
 export class ExitWorktreeTool implements Tool {
   // Use a hardcoded string instead of ExitWorktreeTool.name.replace("Tool", "")
   // because class names are not stable after minification — bundlers like
@@ -43,7 +41,6 @@ export class ExitWorktreeTool implements Tool {
   description = "Exit and optionally cleanup a git worktree";
 
   category: ToolCategory = "write";
-  deferred = true;
 
   schema(): ToolSchema {
     const inputSchema = {

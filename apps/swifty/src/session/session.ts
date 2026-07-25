@@ -47,26 +47,70 @@ export const COMPACT_BOUNDARY = "compact_boundary";
 /** Session expiry days. Session files older than this will be automatically cleaned up. */
 const SESSION_EXPIRY_DAYS = 30;
 
+// Tool block fields on disk always use snake_case; the in-memory conversation layer still uses camelCase.
+// The conversion between the two is consolidated in boundary functions in this file (toolUsesToRecords / toRestored, etc.).
+
+/** Persisted form of a tool invocation. Stores a provider-agnostic internal representation rather than
+ *  any vendor-specific wire format, so sessions can be restored even after switching providers. */
+
+const ToolUseRecordSchema = z.object({
+  tool_use_id: z.string(),
+  tool_name: z.string(),
+  arguments: z.record(z.string(), z.unknown()).optional(),
+});
+export type ToolUseRecord = z.infer<typeof ToolUseRecordSchema>;
+
+/** Persisted form of a tool result, paired with a ToolUseRecord via tool_use_id. */
+const ToolResultRecordSchema = z.object({
+  tool_use_id: z.string(),
+  content: z.string(),
+  is_error: z.boolean().optional(),
+});
+
+export type ToolResultRecord = z.infer<typeof ToolResultRecordSchema>;
+
 const SessionMessageSchema = z.object({
   role: z.string(),
-  content: z.string().min(1),
-  timestamp: z.string(),
+  content: z.string().optional(),
+  timestamp: z.number(),
   type: z.string().optional(),
-  /** Tool call ID, used to verify the integrity of the tool_use/tool_result chain during restoration. */
-  toolUseId: z.string().optional(),
+  tool_uses: z.array(ToolUseRecordSchema).optional(),
+  tool_results: z.array(ToolResultRecordSchema).optional(),
 });
 
 export type SessionMessage = z.infer<typeof SessionMessageSchema>;
 
-// One inlined kept message stored inside a boundary record. We only store
-// role + text — consistent with how the rest of the session is persisted
-// (the .jsonl only ever holds text, never tool_use/tool_result blocks).
+// A recent message preserved verbatim when compaction occurs. Like SessionMessage, it carries tool blocks
+// so that the tool call chain remains intact when the session is restored after compaction.
 const KeptMessageSchema = z.object({
   role: z.string(),
   content: z.string(),
+  tool_uses: z.array(ToolUseRecordSchema).optional(),
+  tool_results: z.array(ToolResultRecordSchema).optional(),
 });
 
 export type KeptMessage = z.infer<typeof KeptMessageSchema>;
+
+/** Conversation-layer tool blocks (camelCase) → persisted records (snake_case); empty values are omitted. */
+export function toolUsesToRecords(
+  toolUses?: { toolUseId: string; toolName: string; arguments?: Record<string, unknown> }[],
+): ToolUseRecord[] {
+  return (toolUses ?? []).map((tu) => ({
+    tool_use_id: tu.toolUseId,
+    tool_name: tu.toolName,
+    ...(tu.arguments && Object.keys(tu.arguments).length ? { arguments: tu.arguments } : {}),
+  }));
+}
+
+export function toolResultsToRecords(
+  toolResults?: { toolUseId: string; content: string; isError?: boolean }[],
+): ToolResultRecord[] {
+  return (toolResults ?? []).map((tr) => ({
+    tool_use_id: tr.toolUseId,
+    content: tr.content,
+    ...(tr.isError ? { is_error: true } : {}),
+  }));
+}
 
 const CompactBoundaryPayloadSchema = z.object({
   summary: z.string(),
@@ -111,8 +155,7 @@ export function saveMessage(workDir: string, sessionId: string, msg: SessionMess
 // Append a compaction boundary to the session. The summary and the verbatim
 // kept tail are inlined into one COMPACT_BOUNDARY record. This is append-only:
 // the pre-boundary original messages stay in the file (they just won't be
-// replayed on resume — see rebuildFromSession). Mirrors the Go/Java boundary
-// record and the Python COMPACT_BOUNDARY RecordType.
+// replayed on resume — see rebuildFromSession).
 export function saveCompactBoundary(
   workDir: string,
   sessionId: string,
@@ -121,7 +164,7 @@ export function saveCompactBoundary(
   saveMessage(workDir, sessionId, {
     role: "system",
     content: JSON.stringify(payload),
-    timestamp: new Date().toISOString(),
+    timestamp: Math.floor(Date.now() / 1000),
     type: COMPACT_BOUNDARY,
   });
 }
@@ -144,7 +187,13 @@ export function loadSession(workDir: string, sessionId: string): SessionMessage[
       // (they pass the non-empty content check). Skip malformed or
       // empty-content ordinary messages rather than crashing the load.
       if (success) {
-        out.push(data);
+        const isEmpty =
+          !data.content && // empty content
+          !(data.tool_uses?.length ?? 0) && // empty tool uses
+          !(data.tool_results?.length ?? 0); // empty tool results
+        if (!isEmpty) {
+          out.push(data);
+        }
       } else {
         log.error({ err: error }, "session operation failed");
       }
@@ -162,6 +211,26 @@ export function loadSession(workDir: string, sessionId: string): SessionMessage[
 export interface RestoredMessage {
   role: "user" | "assistant";
   content: string;
+  // In-memory form uses camelCase, consistent with the conversation layer; converted from snake_case disk records
+  toolUses?: { toolUseId: string; toolName: string; arguments?: Record<string, unknown> }[];
+  toolResults?: { toolUseId: string; content: string; isError?: boolean }[];
+}
+
+/** Persisted records (snake_case) → in-memory tool blocks (camelCase), used to restore the call chain on session resume. */
+function recordsToCamelUses(recs?: ToolUseRecord[]) {
+  return recs?.map((tu) => ({
+    toolUseId: tu.tool_use_id,
+    toolName: tu.tool_name,
+    arguments: tu.arguments,
+  }));
+}
+
+function recordsToCamelResults(recs?: ToolResultRecord[]) {
+  return recs?.map((tr) => ({
+    toolUseId: tr.tool_use_id,
+    content: tr.content,
+    isError: tr.is_error,
+  }));
 }
 
 // Rebuild the conversation to replay on resume, honoring compaction boundaries.
@@ -189,7 +258,7 @@ export function rebuildFromSession(saved: SessionMessage[]): RestoredMessage[] {
     // Compacted state: summary + inlined keep, then post-boundary appends.
     let payload: CompactBoundaryPayload | null = null;
     try {
-      const payload_: unknown = JSON.parse(saved[lastBoundary].content);
+      const payload_: unknown = JSON.parse(saved[lastBoundary].content ?? "{}");
       payload = parse(CompactBoundaryPayloadSchema, payload_);
     } catch (err) {
       log.error({ err }, "session operation failed");
@@ -206,11 +275,21 @@ export function rebuildFromSession(saved: SessionMessage[]): RestoredMessage[] {
       }
       out.push({ role: "user", content: resumeSummary });
       for (const k of payload.keep) {
-        if (k.role === "user" || k.role === "assistant") {
-          if (k.content) {
-            out.push({ role: k.role, content: k.content });
-          }
+        if (
+          (k.role !== "user" && k.role !== "assistant") ||
+          (!k.content && // empty content
+            !(k.tool_uses?.length ?? 0) && // empty tool uses
+            !(k.tool_results?.length ?? 0)) // empty tool results
+        ) {
+          continue;
         }
+
+        out.push({
+          role: k.role,
+          content: k.content,
+          toolUses: recordsToCamelUses(k.tool_uses),
+          toolResults: recordsToCamelResults(k.tool_results),
+        });
       }
     }
     // Replay ordinary messages appended after the boundary (continuation turns).
@@ -219,10 +298,9 @@ export function rebuildFromSession(saved: SessionMessage[]): RestoredMessage[] {
       if (m.type === COMPACT_BOUNDARY) {
         continue;
       } // defensive; last() already found
-      if (m.role === "user" && m.content) {
-        out.push({ role: "user", content: m.content });
-      } else if (m.role === "assistant" && m.content) {
-        out.push({ role: "assistant", content: m.content });
+      const restored = toRestored(m);
+      if (restored) {
+        out.push(restored);
       }
     }
     return out;
@@ -230,13 +308,29 @@ export function rebuildFromSession(saved: SessionMessage[]): RestoredMessage[] {
 
   // No boundary → full replay (backward compatible).
   for (const m of saved) {
-    if (m.role === "user" && m.content) {
-      out.push({ role: "user", content: m.content });
-    } else if (m.role === "assistant" && m.content) {
-      out.push({ role: "assistant", content: m.content });
+    const restored = toRestored(m);
+    if (restored) {
+      out.push(restored);
     }
   }
   return out;
+}
+
+// Restore a single persisted record into a replayable message, including its tool blocks.
+// Messages containing only tool results have no text but must still be restored, otherwise the call chain breaks.
+function toRestored(m: SessionMessage): RestoredMessage | null {
+  if (m.role !== "user" && m.role !== "assistant") {
+    return null;
+  }
+  if (!m.content && !m.tool_uses?.length && !m.tool_results?.length) {
+    return null;
+  }
+  return {
+    role: m.role,
+    content: m.content ?? "",
+    toolUses: recordsToCamelUses(m.tool_uses),
+    toolResults: recordsToCamelResults(m.tool_results),
+  };
 }
 
 export function listSessions(workDir: string): SessionInfo[] {

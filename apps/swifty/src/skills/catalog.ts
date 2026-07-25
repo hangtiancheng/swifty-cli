@@ -31,6 +31,7 @@ import yaml from "js-yaml";
 import type { Skill, SkillMeta } from "./skill.js";
 import { parse, z } from "zod";
 import { loadBuiltins } from "./builtins.js";
+import { asRecord, strArg } from "@/utils/index.js";
 
 /**
  * Internal skill storage with source file path and load timestamp for hot reloading
@@ -205,7 +206,7 @@ export class SkillCatalog {
 
   /**
    * Gets a skill with hot reload support: automatically re-reads the file if it has been modified on disk.
-   * Aligns with the Go version's GetFull: re-reads the body on every call (hot reload),
+   * re-reads the body on every call (hot reload),
    * and retains the cached body if reading fails.
    */
   get(name: string): Skill | undefined {
@@ -231,7 +232,7 @@ export class SkillCatalog {
             };
             entry.loadedMtimeMs = currentMtime;
           }
-          // Retain the cached version if parsing fails (consistent with Go behavior)
+          // Retain the cached version if parsing fails — a single bad write should not cause a skill to vanish
         }
       } catch (err) {
         log.error({ err }, "skills operation failed");
@@ -245,6 +246,23 @@ export class SkillCatalog {
   has(name: string): boolean {
     return this.entries.has(name);
   }
+}
+
+/**
+ * Normalize the execution mode.
+ *
+ * Some agent ecosystems use `context: fork` to express "isolated execution", which is
+ * semantically equivalent to `mode: fork` here. Both forms are interchangeable, so
+ * externally sourced skills work without modification.
+ */
+function resolveMode(raw: unknown): "inline" | "fork" {
+  // raw.mode
+  const mode = strArg(asRecord(raw), "mode");
+  if (mode === "inline" || mode === "fork") {
+    return mode;
+  }
+  // raw.context
+  return strArg(asRecord(raw), "context") === "fork" ? "fork" : "inline";
 }
 
 const YamlFrontmatterSchema = z.looseObject({
@@ -279,7 +297,7 @@ function parseSkillFile(content: string): {
       meta: {
         name: data.name,
         description: data.description ?? "",
-        mode: data.mode ?? "inline",
+        mode: resolveMode(raw),
         model: data.model,
         forkContext: data.fork_context,
       },

@@ -21,7 +21,7 @@
  */
 
 /* eslint-disable @typescript-eslint/require-await */
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -33,6 +33,31 @@ import {
   ListTeamsTool,
 } from "../src/teams/tools.js";
 
+// The teams directory lives at <home>/.swifty/teams, so the tests redirect the
+// entire home directory to a temp dir to avoid leaving residue in the real
+// ~/.swifty/teams. os.homedir() reads USERPROFILE on Windows and HOME on other
+// platforms, so set both.
+let realHome: string | undefined;
+let realUserProfile: string | undefined;
+beforeEach(() => {
+  realHome = process.env.HOME;
+  realUserProfile = process.env.USERPROFILE;
+  const tmp = mkdtempSync(join(tmpdir(), "swifty-home-"));
+  process.env.HOME = tmp;
+  process.env.USERPROFILE = tmp;
+});
+afterEach(() => {
+  if (realHome === undefined) {
+    delete process.env.HOME;
+  } else {
+    process.env.HOME = realHome;
+  }
+  if (realUserProfile === undefined) {
+    delete process.env.USERPROFILE;
+  } else {
+    process.env.USERPROFILE = realUserProfile;
+  }
+});
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const workDir = () => mkdtempSync(join(tmpdir(), "swifty-team-"));
 
@@ -68,7 +93,7 @@ describe("teams orchestration", () => {
           {
             workDir: workDir(),
           },
-          { name: "t1" },
+          { team_name: "t1" },
         )
       ).output,
     ).toContain("created");
@@ -89,11 +114,7 @@ describe("teams orchestration", () => {
       {
         workDir: workDir(),
       },
-      {
-        team: "t1",
-        to: "w1",
-        message: "hi",
-      },
+      { to: "w1", content: "hi" },
     );
     expect(send.isError).toBe(false);
     expect(
@@ -137,11 +158,7 @@ describe("teams orchestration", () => {
           {
             workDir: workDir(),
           },
-          {
-            team: "nope",
-            to: "a",
-            message: "m",
-          },
+          { to: "a", content: "m" },
         )
       ).isError,
     ).toBe(true);

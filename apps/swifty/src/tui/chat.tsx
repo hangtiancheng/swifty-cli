@@ -84,7 +84,7 @@ interface ChatViewProps {
 /**
  * Incremental streaming Markdown rendering: Only re-parses the trailing incomplete chunk,
  * reusing the stable prefix cache.
- * Inspired by Claude Code's StreamingMarkdown design, reducing complexity from O(n²) to O(n).
+ * Stable-prefix cache hits reduce the overall complexity from O(n²) to O(n).
  */
 // ANSI escape sequence regex: Used to calculate the width of visible characters
 // eslint-disable-next-line no-control-regex
@@ -279,7 +279,7 @@ function TurnSummaryBlock(props: TurnSummaryBlockProps) {
   if (!thinkingDuration && toolSummary.length === 0) {
     return null;
   }
-
+  // Expand the details of every tool call by default, rather than showing only a one-line statistical summary
   return (
     <Box flexDirection="column" marginBottom={0}>
       {thinkingDuration !== undefined && thinkingDuration >= 1 && (

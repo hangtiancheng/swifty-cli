@@ -31,8 +31,7 @@ export class TaskCreateTool implements Tool {
   name = "TaskCreate";
   description = "Create a new task to track work.";
   category = "read" as const;
-  system = true;
-  deferred = true;
+
   private list: TaskList;
 
   constructor(list: TaskList) {
@@ -80,8 +79,7 @@ export class TaskGetTool implements Tool {
   name = "TaskGet";
   description = "Get a task by its ID.";
   category = "read" as const;
-  system = true;
-  deferred = true;
+
   private list: TaskList;
 
   constructor(list: TaskList) {
@@ -117,8 +115,7 @@ export class TaskListTool implements Tool {
   name = "TaskList";
   description = "List all tasks.";
   category = "read" as const;
-  system = true;
-  deferred = true;
+
   private list: TaskList;
 
   constructor(list: TaskList) {
@@ -149,8 +146,7 @@ export class TaskUpdateTool implements Tool {
   name = "TaskUpdate";
   description = "Update a task's status, subject, or other fields.";
   category = "read" as const;
-  system = true;
-  deferred = true;
+
   private list: TaskList;
 
   constructor(list: TaskList) {

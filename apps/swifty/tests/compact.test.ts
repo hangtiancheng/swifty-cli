@@ -42,6 +42,9 @@ function stubClient(summaryBody: string): {
 } {
   let lastPrompt = "";
   const client: LLMClient = {
+    setSystemPrompt(_prompt: string) {
+      /** noop */
+    },
     async *stream(conversation): AsyncGenerator<StreamEvent> {
       lastPrompt = conversation.getMessages()[0]?.content ?? "";
       yield { type: "text_delta", text: `<summary>${summaryBody}</summary>` };
@@ -60,7 +63,7 @@ describe("currentContextTokens (real-usage anchoring)", () => {
     conversation.addAssistantMessage("b".repeat(35)); // 35 chars
 
     // No anchor → identical to estimating the whole transcript.
-    const got = currentContextTokens(conversation, null);
+    const got = currentContextTokens(conversation, undefined);
     expect(got).toBe(estimateTokens(conversation));
     expect(got).toBe(estChars(70)); // 70 chars / 3.5 = 20
   });
@@ -193,7 +196,7 @@ describe("doCompact via forceCompact (keep recent verbatim)", () => {
 
     const { client, lastPrompt } = stubClient("THE SUMMARY BODY");
     const before = conversation.getMessages().length;
-    const { message: msg, boundary } = await forceCompact(conversation, client, null, []);
+    const { message: msg, boundary } = await forceCompact(conversation, client, null, [], []);
 
     // forceCompact returns the structured boundary the session owner persists:
     // the bare summary plus the verbatim kept tail inlined as role+text.
@@ -242,7 +245,7 @@ describe("doCompact via forceCompact (keep recent verbatim)", () => {
     conversation.addUserMessage("thanks");
 
     const { client } = stubClient("summary");
-    await forceCompact(conversation, client, null, []);
+    await forceCompact(conversation, client, null, [], []);
 
     const after = conversation.getMessages();
     const hasUse = after.some((m) => m.toolUses?.some((t) => t.toolUseId === "keep-tid"));
@@ -260,7 +263,7 @@ describe("doCompact via forceCompact (keep recent verbatim)", () => {
 
     const { client } = stubClient("should-not-be-used");
     const before = conversation.getMessages();
-    const { message: msg } = await forceCompact(conversation, client, null, []);
+    const { message: msg } = await forceCompact(conversation, client, null, [], []);
     const after = conversation.getMessages();
 
     // Everything is inside the kept tail → compaction skipped, transcript intact.

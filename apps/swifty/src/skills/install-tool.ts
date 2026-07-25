@@ -43,13 +43,11 @@ function nameFromFrontmatter(content: string): string {
 }
 
 // Installs a skill from a local file path or an https URL into
-// .swifty/skills/<name>/SKILL.md, then reloads the catalog. Mirrors Go's
-// InstallSkill tool.
+// .swifty/skills/<name>/SKILL.md, then reloads the catalog.
 export class InstallSkillTool implements Tool {
   name = "InstallSkill";
   description = "Install a skill from a local file path or an https URL into .swifty/skills.";
   category = "read" as const;
-  system = true;
 
   constructor(
     private workDir: string,

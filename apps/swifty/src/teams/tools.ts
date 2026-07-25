@@ -21,19 +21,25 @@
  */
 
 import { createChildLogger } from "../logger/index.js";
-
-const log = createChildLogger({ module: "teams" });
-
 import { asErrorString, strArg } from "@/utils/index.js";
 import type { Tool, ToolContext, ToolResult, ToolSchema } from "../tools/types.js";
-import type { TeamManager, RunAgent } from "./team.js";
+import type { TeamManager, RunAgent, Team } from "./team.js";
 import { getNameRegistry } from "./registry.js";
+import {
+  MSG_PLAN_APPROVAL_RESPONSE,
+  MSG_SHUTDOWN_REQUEST,
+  MSG_SHUTDOWN_RESPONSE,
+  MSG_TEXT,
+  planApprovalResponse,
+  shutdownRequest,
+  shutdownResponse,
+} from "./protocol.js";
 
+const log = createChildLogger({ module: "teams" });
 export class TeamCreateTool implements Tool {
   name = "TeamCreate";
   description = "Create a team for coordinating multiple agents.";
   category = "read" as const;
-  system = true;
   constructor(private mgr: TeamManager) {}
   schema(): ToolSchema {
     return {
@@ -42,35 +48,36 @@ export class TeamCreateTool implements Tool {
       input_schema: {
         type: "object",
         properties: {
-          name: {
-            type: "string",
-            description: "Team name",
-          },
+          team_name: { type: "string", description: "Name for the team" },
+          description: { type: "string", description: "What this team will work on" },
         },
-        required: ["name"],
+        required: ["team_name"],
       },
     };
   }
 
   async execute(ctx: ToolContext, args: Record<string, unknown>): Promise<ToolResult> {
-    const name = strArg(args, "name");
-    if (!name) {
-      return Promise.resolve({
-        output: "Error: name is required",
-        isError: true,
-      });
+    const requested = strArg(args, "team_name");
+    if (!requested) {
+      return Promise.resolve({ output: "Error: team_name is required", isError: true });
     }
-    if (this.mgr.get(name)) {
-      return Promise.resolve({
-        output: `Team '${name}' already exists.`,
-        isError: false,
-      });
+
+    // Auto-append a numeric suffix on name collision. Making the Lead come up with a
+    // unique name would be an unnecessary burden — it has no visibility into which teams
+    // already exist on disk.
+    let name = requested;
+    for (let i = 2; this.mgr.get(name); i++) {
+      name = `${requested}-${String(i)}`;
     }
-    this.mgr.create(name);
-    return Promise.resolve({
-      output: `Team '${name}' created.`,
+
+    const description = strArg(args, "description");
+    const team = this.mgr.create(name, undefined, { leadAgentId: "lead", description });
+    return {
+      output:
+        `Team '${team.name}' created (mode: ${team.mode}). ` +
+        `Use Agent tool with team_name='${team.name}' to add teammates.`,
       isError: false,
-    });
+    };
   }
 }
 
@@ -79,7 +86,6 @@ export class SpawnTeammateTool implements Tool {
   description =
     "Spawn a teammate in a team to work on a task in the background. Its result is delivered back to you on the team channel when it finishes.";
   category = "read" as const;
-  system = true;
   constructor(
     private mgr: TeamManager,
     private runAgent: RunAgent,
@@ -132,11 +138,23 @@ export class SendMessageTool implements Tool {
   name = "SendMessage";
   description = "Send a message to a teammate's mailbox. Use to='*' to broadcast to all teammates.";
   category = "read" as const;
-  system = true;
   constructor(
     private mgr: TeamManager,
     private senderName = "lead",
   ) {}
+
+  // Infer the sender's team: a teammate can look itself up in the roster; the Lead is
+  // not in the roster, so fall back to the current team (only one is active at a time).
+  private senderTeam(): Team | undefined {
+    const teams = this.mgr.list();
+    for (const t of teams) {
+      if (t.getMember(this.senderName)) {
+        return t;
+      }
+    }
+    return teams[0];
+  }
+
   schema(): ToolSchema {
     return {
       name: this.name,
@@ -144,28 +162,92 @@ export class SendMessageTool implements Tool {
       input_schema: {
         type: "object",
         properties: {
-          team: { type: "string" },
           to: {
             type: "string",
             description: "Teammate name, or '*' to broadcast",
           },
-          message: { type: "string" },
+          content: {
+            type: "string",
+            description:
+              "Message content. For shutdown_request this is the reason; for " +
+              "plan_approval_response this is your feedback when rejecting.",
+          },
+          type: {
+            type: "string",
+            enum: [
+              MSG_TEXT,
+              MSG_SHUTDOWN_REQUEST,
+              MSG_SHUTDOWN_RESPONSE,
+              MSG_PLAN_APPROVAL_RESPONSE,
+            ],
+            description:
+              "Message kind, defaults to 'text'. Use 'shutdown_request' to ask a teammate " +
+              "to wrap up (it replies with shutdown_response). Use 'plan_approval_response' " +
+              "to answer a teammate's plan, together with 'approve' and, when rejecting, " +
+              "feedback in 'content'.",
+          },
+          request_id: {
+            type: "string",
+            description:
+              "Required for plan_approval_response: copy the requestId from the teammate's " +
+              "plan approval request so it knows which plan you are answering.",
+          },
+          approve: {
+            type: "boolean",
+            description:
+              "Required for plan_approval_response: true to let the teammate start " +
+              "executing, false to send it back to revise.",
+          },
         },
-        required: ["team", "to", "message"],
+        required: ["to", "content"],
       },
     };
   }
 
   async execute(ctx: ToolContext, args: Record<string, unknown>): Promise<ToolResult> {
-    const team = strArg(args, "team");
     const to = strArg(args, "to");
-    const message = strArg(args, "message");
-    const t = this.mgr.get(team);
+    const message = strArg(args, "content");
+    const t = this.senderTeam();
     if (!t) {
-      return {
-        output: `Team '${team}' not found.`,
-        isError: true,
-      };
+      return { output: "No active team found for this sender.", isError: true };
+    }
+
+    // Structured messages use a dedicated channel: they carry a requestId and an
+    // explicit stance. Embedding them in free-form text would force the recipient to
+    // guess intent from natural language — regressing to "coordination by prose parsing".
+    const msgType = typeof args.type === "string" ? args.type : MSG_TEXT;
+    if (msgType !== MSG_TEXT) {
+      const requestId = typeof args.request_id === "string" ? args.request_id : "";
+      const approve = typeof args.approve === "boolean" ? args.approve : undefined;
+      let structured;
+      switch (msgType) {
+        case MSG_SHUTDOWN_REQUEST:
+          structured = shutdownRequest(this.senderName, message);
+          break;
+        case MSG_SHUTDOWN_RESPONSE:
+          if (approve === undefined) {
+            return { output: "shutdown_response requires 'approve'.", isError: true };
+          }
+          structured = shutdownResponse(this.senderName, requestId, approve, message);
+          break;
+        case MSG_PLAN_APPROVAL_RESPONSE:
+          if (!requestId || approve === undefined) {
+            return {
+              output: "plan_approval_response requires both 'request_id' and 'approve'.",
+              isError: true,
+            };
+          }
+          structured = planApprovalResponse(this.senderName, requestId, approve, message);
+          break;
+        default:
+          return { output: `Unsupported message type ${msgType}.`, isError: true };
+      }
+      const target = to === "lead" ? t.leadMailbox : t.getMember(to)?.mailbox;
+      if (!target) {
+        return { output: `Teammate '${to}' not found.`, isError: true };
+      }
+      await target.send(this.senderName, structured.text, structured);
+      return { output: `${msgType} sent to '${to}'.`, isError: false };
     }
     // Broadcast: send to all members in the team except the sender
     if (to === "*") {
@@ -205,7 +287,6 @@ export class ListTeamsTool implements Tool {
   name = "ListTeams";
   description = "List teams and their members.";
   category = "read" as const;
-  system = true;
   constructor(private mgr: TeamManager) {}
   schema(): ToolSchema {
     return {
@@ -246,7 +327,6 @@ export class TeamDeleteTool implements Tool {
   name = "TeamDelete";
   description = "Delete a team and stop its members.";
   category = "read" as const;
-  system = true;
   constructor(private mgr: TeamManager) {}
   schema(): ToolSchema {
     return {

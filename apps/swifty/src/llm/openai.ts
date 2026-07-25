@@ -24,6 +24,7 @@ import { createChildLogger } from "../logger/index.js";
 
 const log = createChildLogger({ module: "llm" });
 
+import { ensureToolPairing } from "../conversation/pairing.js";
 import OpenAI from "openai";
 import { getMaxOutputTokens, type ProviderConfig, resolveAPIKey } from "../config/config.js";
 import type { ConversationManager, Message } from "../conversation/conversation.js";
@@ -77,7 +78,8 @@ export class OpenAIClient implements LLMClient {
     toolSchemas: ToolSchema[],
     abortSignal?: AbortSignal,
   ): AsyncGenerator<StreamEvent> {
-    const messages = buildOpenAIInput(conversation.getMessages());
+    // Reconcile tool-call/result pairing before sending the request, for the same reasons as the Anthropic branch
+    const messages = buildOpenAIInput(ensureToolPairing(conversation.getMessages()));
 
     const input: OpenAI.Responses.ResponseCreateParamsStreaming["input"] = [];
     input.push({
@@ -415,7 +417,7 @@ export class OpenAICompatClient implements LLMClient {
         content: this.systemPrompt,
       },
 
-      ...buildChatCompletionMessages(conversation.getMessages()),
+      ...buildChatCompletionMessages(ensureToolPairing(conversation.getMessages())),
     ];
 
     const tools: OpenAI.ChatCompletionTool[] = toolSchemas.map((ts) => ({

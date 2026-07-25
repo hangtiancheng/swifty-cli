@@ -21,7 +21,7 @@
  */
 
 import { render } from "ink";
-import { loadConfig } from "./config/config.js";
+import { forkEnabled, loadConfig } from "./config/config.js";
 import { App } from "./tui/app.js";
 import { parseTeammateFlags, runTeammate } from "./teammate.js";
 import { asErrorString } from "./utils/index.js";
@@ -29,6 +29,18 @@ import { initLogger, closeLogger, logger } from "./logger/index.js";
 import { newSessionId } from "./session/session.js";
 import { parsePrintFlags, runPrintMode } from "./print-mode.js";
 import { installSyncOutput } from "./tui/sync-output.js";
+
+// The alt-screen escape sequence must be emitted before installSyncOutput, otherwise it will be
+// wrapped by BSU/ESU synchronization markers and rendered ineffective.
+// Also capture the original process.stdout.write to bypass the sync-output patch, ensuring the
+// exit escape sequence reaches the terminal directly after waitUntilExit resolves.
+const rawStdoutWrite = process.stdout.write.bind(process.stdout);
+// After entering alt-screen we must clear the screen and home the cursor: emitting only ?1049h
+// leaves the cursor at its pre-switch position (typically the terminal bottom), causing subsequent
+// TUI content to render downward from there, appearing pinned to the bottom of the screen.
+process.stdout.write("\x1b[?1049h\x1b[2J\x1b[H");
+// Set a companion global flag so the Ink renderer's internal clearTerminal skips replaying on the main screen.
+// globalThis.__swifty_altscreen__ = true;
 async function main() {
   const args = process.argv.slice(2);
 
@@ -82,6 +94,8 @@ async function main() {
       mcpServers: cfg.mcp_servers,
       hookConfigs: cfg.hooks,
       addr: remoteAddr,
+      enableCoordinatorMode: cfg.enable_coordinator_mode ?? false,
+      forkDisabled: !forkEnabled(cfg),
     });
     try {
       await srv.run();
@@ -107,10 +121,15 @@ async function main() {
       hooks={cfg.hooks}
       sandboxConfig={cfg.sandbox}
       enableCoordinatorMode={cfg.enable_coordinator_mode}
+      forkDisabled={!forkEnabled(cfg)}
     />,
     { exitOnCtrlC: false },
   );
   await instance.waitUntilExit();
+  // After Ink's exit() triggers waitUntilExit, emit the alt-screen teardown escape sequence to
+  // restore the user's primary terminal. Use the rawStdoutWrite captured before installSyncOutput
+  // to bypass BSU/ESU wrapping so the escape sequence reaches the terminal directly.
+  rawStdoutWrite("\x1b[?1049l");
 }
 
 main().catch((err: unknown) => {

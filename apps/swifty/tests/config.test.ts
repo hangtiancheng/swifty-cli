@@ -23,6 +23,7 @@
 /* eslint-disable @typescript-eslint/require-await */
 import { describe, it, expect, beforeEach } from "vitest";
 import {
+  forkEnabled,
   mergeConfig,
   getContextWindow,
   getContextWindowAsync,
@@ -243,6 +244,32 @@ describe("config", () => {
       };
       expect(resolveAPIKey(p)).toBe("sk-from-env");
       delete process.env.ANTHROPIC_API_KEY;
+    });
+  });
+
+  // enable_fork is on by default, and an explicit false in the config must
+  // actually turn it off. Storing it as a required boolean would make "unset"
+  // indistinguishable from "set to false", so the latter could never be disabled.
+  describe("enable_fork", () => {
+    const bare = (): AppConfig => ({ providers: [], mcp_servers: [], hooks: [] });
+
+    it("defaults to enabled when unset", () => {
+      expect(forkEnabled(bare())).toBe(true);
+    });
+
+    it("disables for real when set to false", () => {
+      expect(forkEnabled({ ...bare(), enable_fork: false })).toBe(false);
+      expect(forkEnabled({ ...bare(), enable_fork: true })).toBe(true);
+    });
+
+    it("does not override a previous layer's false when the next layer is unset", () => {
+      const result = mergeConfig({ ...bare(), enable_fork: false }, bare());
+      expect(forkEnabled(result)).toBe(false);
+    });
+
+    it("overrides the default when a later layer sets false", () => {
+      const result = mergeConfig(bare(), { ...bare(), enable_fork: false });
+      expect(forkEnabled(result)).toBe(false);
     });
   });
 
