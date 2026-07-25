@@ -71,7 +71,7 @@ export type ToolResultRecord = z.infer<typeof ToolResultRecordSchema>;
 
 const SessionMessageSchema = z.object({
   role: z.string(),
-  content: z.string().optional(),
+  content: z.string().default(""),
   timestamp: z.number(),
   type: z.string().optional(),
   tool_uses: z.array(ToolUseRecordSchema).optional(),
@@ -258,10 +258,9 @@ export function rebuildFromSession(saved: SessionMessage[]): RestoredMessage[] {
     // Compacted state: summary + inlined keep, then post-boundary appends.
     let payload: CompactBoundaryPayload | null = null;
     try {
-      const payload_: unknown = JSON.parse(saved[lastBoundary].content ?? "{}");
+      const payload_: unknown = JSON.parse(saved[lastBoundary].content);
       payload = parse(CompactBoundaryPayloadSchema, payload_);
-    } catch (err) {
-      log.error({ err }, "session operation failed");
+    } catch {
       payload = null;
     }
     if (payload) {
@@ -327,7 +326,7 @@ function toRestored(m: SessionMessage): RestoredMessage | null {
   }
   return {
     role: m.role,
-    content: m.content ?? "",
+    content: m.content,
     toolUses: recordsToCamelUses(m.tool_uses),
     toolResults: recordsToCamelResults(m.tool_results),
   };

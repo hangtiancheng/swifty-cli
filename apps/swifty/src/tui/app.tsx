@@ -934,11 +934,17 @@ export function App({
             if (m.toolUses?.length) {
               conv.addAssistantMessageWithTools(
                 m.content,
-                m.toolUses.map((tu) => ({ ...tu, arguments: tu.arguments ?? {} })),
+                m.toolUses.map((tu) => ({
+                  ...tu,
+                  arguments: tu.arguments ?? {},
+                })),
               );
             } else if (m.toolResults?.length) {
               conv.addToolResultsMessage(
-                m.toolResults.map((tr) => ({ ...tr, isError: tr.isError ?? false })),
+                m.toolResults.map((tr) => ({
+                  ...tr,
+                  isError: tr.isError ?? false,
+                })),
               );
             } else if (m.role === "user") {
               conv.addUserMessage(m.content);
@@ -1831,7 +1837,7 @@ export function App({
       <Box flexDirection="column" flexShrink={0}>
         <Text>
           <Text color="#a78bfa"> /\_/\ </Text>
-          <Text dimColor>MewCode v0.1.0</Text>
+          <Text dimColor>Swifty v0.1.0</Text>
         </Text>
         <Text>
           <Text color="#a78bfa">( o.o ) </Text>

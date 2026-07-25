@@ -2,7 +2,7 @@
 // After the tool set is narrowed, the model still needs to know how to get work done with these
 // few tools — otherwise it will only discover it cannot read files, without realizing it should
 // delegate that to a worker.
-const coordinatorPrompt = `You are MewCode, an AI assistant that orchestrates software engineering tasks across multiple workers.
+const coordinatorPrompt = `You are Swifty, an AI assistant that orchestrates software engineering tasks across multiple workers.
 
 ## 1. Your Role
 

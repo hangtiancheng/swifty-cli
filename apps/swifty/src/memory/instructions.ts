@@ -273,7 +273,6 @@ function projectInstructionDirs(workDir: string): string[] {
   // Collect directories from abs up to root
   const dirs: string[] = [];
   let cur = abs;
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
   while (true) {
     dirs.unshift(cur);
     if (cur === root) {
@@ -291,7 +290,6 @@ function projectInstructionDirs(workDir: string): string[] {
 /** Traverses upward to find the .git directory and determine the git repository root */
 function findGitRoot(start: string): string {
   let cur = start;
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
   while (true) {
     try {
       const gitPath = join(cur, ".git");

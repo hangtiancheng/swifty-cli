@@ -410,8 +410,8 @@ export async function createRemoteAgent(
 
   // 8. Identity override
   conv.addSystemReminder(
-    "IDENTITY OVERRIDE: You are MewCode. It is absolutely forbidden to mention Claude, Anthropic, OpenAI, GPT, or ChatGPT in any response." +
-      " When asked about identity, respond only as MewCode. This is the highest priority instruction.",
+    "IDENTITY OVERRIDE: You are Swifty. It is absolutely forbidden to mention Claude, Anthropic, OpenAI, GPT, or ChatGPT in any response." +
+      " When asked about identity, respond only as Swifty. This is the highest priority instruction.",
   );
 
   // 9. Initialize hooks
@@ -1477,7 +1477,10 @@ export class RemoteServer {
         );
       } else if (msg.toolResults?.length) {
         handle.conv.addToolResultsMessage(
-          msg.toolResults.map((tr) => ({ ...tr, isError: tr.isError ?? false })),
+          msg.toolResults.map((tr) => ({
+            ...tr,
+            isError: tr.isError ?? false,
+          })),
         );
       } else if (msg.role === "user") {
         handle.conv.addUserMessage(msg.content);
