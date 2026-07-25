@@ -90,11 +90,10 @@ export function detectEnvironment(workDir: string): EnvironmentContext {
 }
 
 export interface BuildOptions {
+  // Description text injected into the system prompt by the skill system.
+  // Project instructions and auto-memory are injected into the conversation
+  // as system-reminder messages by conversation.injectLongTermMemory instead.
   skillSection?: string;
-  // User-defined instructions (e.g., CLAUDE.md), injected into the system prompt
-  customInstructions?: string;
-  // Auto-memory content, injected into the system prompt
-  memorySection?: string;
 }
 
 export function buildSystemPrompt(env: EnvironmentContext, opts: BuildOptions = {}): string {
@@ -110,20 +109,6 @@ export function buildSystemPrompt(env: EnvironmentContext, opts: BuildOptions = 
 
   if (opts.skillSection) {
     b.add({ name: "Skills", priority: 90, content: opts.skillSection });
-  }
-
-  // Custom instructions (e.g., CLAUDE.md) take precedence over skills, but are lower than memory
-  if (opts.customInstructions) {
-    b.add({
-      name: "CustomInstructions",
-      priority: 95,
-      content: opts.customInstructions,
-    });
-  }
-
-  // Memory section comes last to ensure the model sees the latest persistent memory
-  if (opts.memorySection) {
-    b.add({ name: "Memory", priority: 100, content: opts.memorySection });
   }
 
   return b.build();
