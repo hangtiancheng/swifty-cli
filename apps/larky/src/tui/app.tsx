@@ -20,17 +20,20 @@
  * SOFTWARE.
  */
 
-// Main TUI application: daemon client + event-driven rendering with Static/dynamic split
+// Main TUI application: daemon client + event-driven rendering inside an
+// alt-screen scroll viewport (the app manages scrolling itself; there is no
+// terminal scrollback region under the alternate screen buffer).
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import { Box, Static, Text, useApp, useInput } from "ink";
+import { Box, Text, useApp, useInput, useStdout, measureElement, type DOMElement } from "ink";
 
 import { COLORS, ICONS } from "./styles.js";
 import { contextBarFill, contextBarColor } from "./theme.js";
-import { ChatView, CommittedMessage, type ChatMessage } from "./chat.js";
+import { ChatView, type ChatMessage } from "./chat.js";
 import { ToolDisplay, type ToolBlockInfo } from "./tool-display.js";
 import Spinner from "./spinner.js";
 import { InputBox, type Cmd } from "./input.js";
 import { PermissionDialog, type PermissionAction } from "./permission-dialog.js";
+import { enableMouseTracking, disableMouseTracking, parseWheel } from "./mouse.js";
 import { randomCompletionVerb } from "./verbs.js";
 
 import type { SocketClient } from "../core/transport/socket-client.js";
@@ -110,6 +113,7 @@ function isRecord(val: unknown): val is Record<string, unknown> {
 
 export function App({ _config, client }: AppProps): React.JSX.Element {
   const { exit } = useApp();
+  const { stdout } = useStdout();
   const [connected, setConnected] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [streamingText, setStreamingText] = useState("");
@@ -138,11 +142,9 @@ export function App({ _config, client }: AppProps): React.JSX.Element {
 
   const sessionIdRef = useRef<string | null>(null);
   const [sessionLabel, setSessionLabel] = useState("connecting...");
-  const committedIndexRef = useRef(0);
   const streamingTextRef = useRef("");
   const streamThrottleRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isMountedRef = useRef(true);
-  const headerPrintedRef = useRef(false);
   const lastRunIdRef = useRef<string | null>(null);
   const subagentStartTimes = useRef<Map<string, number>>(new Map());
   // tool_use_id -> {toolName, preview} recorded at permission.requested so the
@@ -218,11 +220,7 @@ export function App({ _config, client }: AppProps): React.JSX.Element {
         }
         const fullText = streamingTextRef.current;
         if (fullText) {
-          setMessages((prev) => {
-            const next = [...prev, { role: "assistant" as const, content: fullText }];
-            committedIndexRef.current = next.length;
-            return next;
-          });
+          setMessages((prev) => [...prev, { role: "assistant" as const, content: fullText }]);
         }
         streamingTextRef.current = "";
         setStreamingText("");
@@ -586,11 +584,7 @@ export function App({ _config, client }: AppProps): React.JSX.Element {
           }
           const pendingText = streamingTextRef.current;
           if (pendingText) {
-            setMessages((prev) => {
-              const next = [...prev, { role: "assistant" as const, content: pendingText }];
-              committedIndexRef.current = next.length;
-              return next;
-            });
+            setMessages((prev) => [...prev, { role: "assistant" as const, content: pendingText }]);
           }
           streamingTextRef.current = "";
           setStreamingText("");
@@ -620,24 +614,10 @@ export function App({ _config, client }: AppProps): React.JSX.Element {
     };
   }, [client, _config]);
 
-  // Print header banner once after the first successful connection.
-  // Mirrors apps/swifty/src/tui/app.tsx: use a ref guard so the banner is
-  // printed exactly once, and use console.log instead of
-  // process.stdout.write("\x1b[2J\x1b[H"...) — clearing the screen wipes
-  // Ink's rendered output and desyncs its internal line cursor, which
-  // previously caused the app not to render and the input box to appear
-  // twice on startup (every reconnect re-ran the clear+banner block).
-  useEffect(() => {
-    if (!connected || headerPrintedRef.current) {
-      return;
-    }
-    headerPrintedRef.current = true;
-    const p = COLORS.primary;
-    const d = COLORS.dim;
-    console.log(`\n${p(" /\\_/\\    ")}${d("Larky v" + version)}`);
-    console.log(`${p("( o.o )   ")}${d(_config.host + ":" + String(_config.port))}`);
-    console.log(`${p(" > ^ <    ")}${d(process.cwd())}\n`);
-  }, [connected, _config]);
+  // The brand header is drawn as a fixed component at the top of the render
+  // tree (see below): console.log writes to the terminal scrollback buffer,
+  // but the alt-screen has no scrollback region, so once the content grows the
+  // banner would be pushed off screen.
 
   const handleSubmit = useCallback(
     async (value: string) => {
@@ -738,59 +718,180 @@ export function App({ _config, client }: AppProps): React.JSX.Element {
     [permissionQueue, client],
   );
 
+  // ── Scroll viewport ─────────────────────────────────────────────────────
+  // The alt-screen has no native terminal scrollback region, so the message
+  // history is scrolled by the app itself: the outer box has a fixed height
+  // and clips overflow, while the inner box is shifted up by scrollTop lines
+  // (negative marginTop) — equivalent to "translate the content, then clip to
+  // the viewport".
+  const viewportRef = useRef<DOMElement | null>(null);
+  const contentRef = useRef<DOMElement | null>(null);
+  const [scrollTop, setScrollTop] = useState(0);
+  const [contentHeight, setContentHeight] = useState(0);
+  const [viewportHeight, setViewportHeight] = useState(0);
+  // Stick-to-bottom follow: auto-scroll to the latest content as it arrives;
+  // stop following once the user scrolls up manually.
+  const stickToBottomRef = useRef(true);
+
+  const maxScroll = Math.max(0, contentHeight - viewportHeight);
+
+  // Enable SGR mouse tracking so the wheel is reported as mouse sequences
+  // instead of being translated by the terminal into ↑/↓ that misfire the
+  // input history.
+  useEffect(() => {
+    enableMouseTracking(stdout);
+    return () => {
+      disableMouseTracking(stdout);
+    };
+  }, [stdout]);
+
+  // Measure the content and viewport heights once after each render, used to
+  // compute the scrollable range. Runs without a dependency list on purpose;
+  // the equality-guarded setters prevent an update loop.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (contentRef.current) {
+      const h = measureElement(contentRef.current).height;
+      setContentHeight((prev) => (prev === h ? prev : h));
+    }
+    if (viewportRef.current) {
+      const h = measureElement(viewportRef.current).height;
+      setViewportHeight((prev) => (prev === h ? prev : h));
+    }
+  });
+
+  // When the content grows: follow to the latest if stuck to the bottom;
+  // otherwise keep the current position, clamped to the valid range.
+  useEffect(() => {
+    setScrollTop((prev) => (stickToBottomRef.current ? maxScroll : Math.min(prev, maxScroll)));
+  }, [maxScroll]);
+
+  const scrollBy = useCallback(
+    (delta: number) => {
+      setScrollTop((prev) => {
+        const next = Math.max(0, Math.min(prev + delta, maxScroll));
+        stickToBottomRef.current = next >= maxScroll;
+        return next;
+      });
+    },
+    [maxScroll],
+  );
+
+  // The wheel and page keys drive scrolling. Mouse sequences never reach the
+  // input box (they are already filtered by SGR format inside InputBox).
+  useInput((input, key) => {
+    const wheel = parseWheel(input);
+    if (wheel) {
+      scrollBy(wheel === "up" ? -3 : 3);
+      return;
+    }
+    if (key.pageUp) {
+      scrollBy(-Math.max(1, viewportHeight - 2));
+    } else if (key.pageDown) {
+      scrollBy(Math.max(1, viewportHeight - 2));
+    }
+  });
+
   return (
-    <Box flexDirection="column" width="100%" height="100%">
-      <Box flexDirection="column" paddingTop={0} flexGrow={1}>
-        {/* Committed messages: written to terminal scrollback, never re-rendered */}
-        <Static
-          items={messages
-            .slice(0, committedIndexRef.current)
-            .map((msg, i) => ({ ...msg, _key: i }))}
-        >
-          {(item) => (
-            <CommittedMessage key={String(item._key)} message={item} expanded={toolsExpanded} />
-          )}
-        </Static>
+    <Box flexDirection="column" width="100%" height={Math.max(1, stdout.rows ?? 24)}>
+      {/* Top brand header: fixed and non-shrinking within the render tree, so it stays on screen even in long conversations */}
+      <Box flexDirection="column" flexShrink={0}>
+        <Text>
+          {COLORS.primary(" /\\_/\\    ")}
+          {COLORS.dim("Larky v" + version)}
+        </Text>
+        <Text>
+          {COLORS.primary("( o.o )   ")}
+          {COLORS.dim(_config.host + ":" + String(_config.port))}
+        </Text>
+        <Text>
+          {COLORS.primary(" > ^ <    ")}
+          {COLORS.dim(process.cwd())}
+        </Text>
+      </Box>
 
-        {/* Active content: streaming + new messages */}
-        <ChatView
-          messages={messages.slice(committedIndexRef.current)}
-          streamingText={isRunning ? streamingText : undefined}
-          expanded={toolsExpanded}
-        />
+      {/* Scroll viewport: fills the remaining middle space and clips overflow.
+          minHeight={0} is critical: the content box's flexShrink={0} would otherwise
+          push the viewport's minimum height up to the full content height, causing the
+          bottom input box — once it grows — to push the total height past the root
+          container and leave erase-misalignment artifacts. */}
+      <Box
+        ref={viewportRef}
+        flexGrow={1}
+        flexShrink={1}
+        minHeight={0}
+        flexDirection="column"
+        overflowY="hidden"
+      >
+        <Box ref={contentRef} flexDirection="column" flexShrink={0} marginTop={-scrollTop}>
+          {/* All messages live inside the render tree: scrolling is handled by the viewport, no longer relying on the terminal scrollback buffer */}
+          <ChatView
+            messages={messages}
+            streamingText={isRunning ? streamingText : undefined}
+            expanded={toolsExpanded}
+          />
 
-        {/* Real-time tool blocks */}
-        {activeTools.length > 0 && !permissionRequest ? <ToolDisplay tools={activeTools} /> : null}
+          {/* Real-time tool blocks */}
+          {activeTools.length > 0 && !permissionRequest ? (
+            <ToolDisplay tools={activeTools} />
+          ) : null}
 
-        {/* Spinner while running */}
-        {isRunning && !permissionRequest ? (
-          <Box paddingLeft={1} flexDirection="column">
-            <Spinner inputTokens={inputTokens} outputTokens={outputTokens} />
-          </Box>
+          {/* Spinner while running */}
+          {isRunning && !permissionRequest ? (
+            <Box paddingLeft={1} flexDirection="column">
+              <Spinner inputTokens={inputTokens} outputTokens={outputTokens} />
+            </Box>
+          ) : null}
+
+          {/* Context usage bar (Larky exclusive, preserved) */}
+          {contextPercent > 0 ? (
+            <Box paddingLeft={1}>
+              <Text dimColor>context </Text>
+              <Text color={contextBarColor(contextPercent)} bold={contextPercent >= 0.85}>
+                {contextBarFill(contextPercent)}
+              </Text>
+              <Text dimColor> {(contextPercent * 100).toFixed(1)}%</Text>
+            </Box>
+          ) : null}
+
+          {/* Connection status / errors */}
+          {connectionError ? (
+            <Box paddingLeft={1}>
+              <Text color="red">{connectionError}</Text>
+            </Box>
+          ) : null}
+
+          {/* Completion mark */}
+          {!isRunning && completionMark && !permissionRequest ? (
+            <Box paddingLeft={1}>
+              <Text dimColor>{completionMark}</Text>
+            </Box>
+          ) : null}
+        </Box>
+      </Box>
+
+      {/* Bottom region is fixed and non-shrinking: dialogs, status line, and the input box always render fully at the bottom of the screen */}
+      <Box flexDirection="column" flexShrink={0}>
+        {/* Permission dialog overlay */}
+        {permissionRequest ? (
+          <PermissionDialog
+            key={permissionRequest.toolUseId}
+            toolName={permissionRequest.toolName}
+            argsSummary={permissionRequest.argsSummary}
+            onComplete={(decision: PermissionAction) => {
+              void handlePermissionRespond(decision);
+            }}
+          />
         ) : null}
 
-        {/* Context usage bar (Larky exclusive, preserved) */}
-        {contextPercent > 0 ? (
+        {/* Ctrl+C hint */}
+        {ctrlCHint ? (
           <Box paddingLeft={1}>
-            <Text dimColor>context </Text>
-            <Text color={contextBarColor(contextPercent)} bold={contextPercent >= 0.85}>
-              {contextBarFill(contextPercent)}
+            <Text dimColor>
+              {isRunning
+                ? "Agent is running, waiting for it to finish..."
+                : "Press Ctrl+C again to exit."}
             </Text>
-            <Text dimColor> {(contextPercent * 100).toFixed(1)}%</Text>
-          </Box>
-        ) : null}
-
-        {/* Connection status / errors */}
-        {connectionError ? (
-          <Box paddingLeft={1}>
-            <Text color="red">{connectionError}</Text>
-          </Box>
-        ) : null}
-
-        {/* Completion mark */}
-        {!isRunning && completionMark && !permissionRequest ? (
-          <Box paddingLeft={1}>
-            <Text dimColor>{completionMark}</Text>
           </Box>
         ) : null}
 
@@ -802,52 +903,27 @@ export function App({ _config, client }: AppProps): React.JSX.Element {
           </Text>
         </Box>
 
-        <Text> </Text>
-      </Box>
-
-      {/* Permission dialog overlay */}
-      {permissionRequest ? (
-        <PermissionDialog
-          key={permissionRequest.toolUseId}
-          toolName={permissionRequest.toolName}
-          argsSummary={permissionRequest.argsSummary}
-          onComplete={(decision: PermissionAction) => {
-            void handlePermissionRespond(decision);
+        {/* Input box */}
+        <InputBox
+          onSubmit={(text) => {
+            void handleSubmit(text);
+          }}
+          disabled={isRunning || permissionRequest !== null || !connected}
+          history={promptHistory}
+          commands={commandsRef.current}
+          inputState={
+            connectionError ? "error" : isRunning || permissionRequest !== null ? "idle" : "focused"
+          }
+          permMode={permMode}
+          onModeChange={(mode) => {
+            setPermMode(mode);
+          }}
+          workDir={process.cwd()}
+          onEscape={() => {
+            // Escape during running does nothing (daemon-side run continues)
           }}
         />
-      ) : null}
-
-      {/* Ctrl+C hint */}
-      {ctrlCHint ? (
-        <Box paddingLeft={1}>
-          <Text dimColor>
-            {isRunning
-              ? "Agent is running, waiting for it to finish..."
-              : "Press Ctrl+C again to exit."}
-          </Text>
-        </Box>
-      ) : null}
-
-      {/* Input box */}
-      <InputBox
-        onSubmit={(text) => {
-          void handleSubmit(text);
-        }}
-        disabled={isRunning || permissionRequest !== null || !connected}
-        history={promptHistory}
-        commands={commandsRef.current}
-        inputState={
-          connectionError ? "error" : isRunning || permissionRequest !== null ? "idle" : "focused"
-        }
-        permMode={permMode}
-        onModeChange={(mode) => {
-          setPermMode(mode);
-        }}
-        workDir={process.cwd()}
-        onEscape={() => {
-          // Escape during running does nothing (daemon-side run continues)
-        }}
-      />
+      </Box>
     </Box>
   );
 }

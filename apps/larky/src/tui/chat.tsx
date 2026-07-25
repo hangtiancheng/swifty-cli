@@ -20,7 +20,7 @@
  * SOFTWARE.
  */
 
-// Chat rendering: streaming markdown, message blocks, and committed message wrapper
+// Chat rendering: streaming markdown and message blocks
 import chalk from "chalk";
 import { marked } from "marked";
 import { markedTerminal } from "@swifty.js/marked-terminal";
@@ -131,20 +131,6 @@ export function ChatView(props: ChatViewProps): React.JSX.Element {
           <StreamingText text={streamingText} />
         </Box>
       ) : null}
-    </Box>
-  );
-}
-
-interface CommitMessageProps {
-  message: ChatMessage;
-  expanded?: boolean;
-}
-
-export function CommittedMessage(props: CommitMessageProps): React.JSX.Element {
-  const { message, expanded = false } = props;
-  return (
-    <Box paddingLeft={1}>
-      <MessageBlock message={message} expanded={expanded} />
     </Box>
   );
 }

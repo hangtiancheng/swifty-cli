@@ -24,6 +24,14 @@
 const BSU = "\x1b[?2026h";
 const ESU = "\x1b[?2026l";
 
+// Captured at module load, before installSyncOutput() patches process.stdout.write.
+// Alt-screen enter/exit escape sequences must be written through this raw
+// reference: if they were wrapped in BSU/ESU synchronization markers they would
+// be rendered ineffective by some terminals.
+export const rawStdoutWrite: typeof process.stdout.write = process.stdout.write.bind(
+  process.stdout,
+);
+
 function isSyncOutputSupported(): boolean {
   if (process.env["TMUX"]) {
     return false;
@@ -79,7 +87,7 @@ export function installSyncOutput(): void {
     return;
   }
 
-  const originalWrite: typeof process.stdout.write = process.stdout.write.bind(process.stdout);
+  const originalWrite = rawStdoutWrite;
   let frameBuffer = "";
   let scheduled = false;
 
