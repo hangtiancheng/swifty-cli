@@ -30,34 +30,6 @@
 #
 # Supports: --uninstall, --version vX.Y.Z, --alpha, --beta, --rc, --canary, --nightly, --tag=NAME
 
-echo "
-⠀⠀⡜⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣾⢣⣖⠠⠛⣷⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⡷⠀⠉⢷⡀⠀⠈⢧⠱⡄⠀⠙⣿⣯⠀
-⠀⠀⡜⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣰⣷⠃⠈⢧⡃⢜⣧⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣏⠀⠀⠀⠙⢆⠀⠈⣷⢱⡀⠀⠘⢿⣇
-⠀⢰⠣⠀⠀⠀⠀⠀⠀⠀⠀⠀⣰⣿⠃⠀⠀⠀⢻⣄⣿⡄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣷⠶⠶⠶⠒⠋⠳⣄⠚⣧⢧⠀⠀⠀⢻
-⠀⢸⡐⠁⠀⠀⠀⠀⠀⠀⠀⣴⡟⠁⠀⢀⣠⣤⠖⠻⡄⣷⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢠⣏⠀⠀⠀⠀⠀⠀⠙⢮⡸⡞⣆⠀⠀⠀
-⠀⡒⣘⠀⠀⠀⠀⠀⠀⢤⣼⡿⠴⠶⠛⠛⠉⠀⡀⠀⠹⣾⡆⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣸⣡⣫⠗⠀⠀⠀⠀⠀⠈⠳⣿⣸⠀⠀⠀
-⠀⡱⠤⡁⠀⠀⠀⠀⢠⣾⠟⠀⠀⠀⢀⣠⠴⢋⢳⠀⠀⢹⣧⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢰⡟⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⣻⣇⠃⠀⠀
-⠀⣇⠒⡁⠀⠀⢀⣴⣻⠏⠀⠀⠀⠀⠉⠉⠉⠙⠚⠇⠀⠀⣿⡀⠀⠀⠀⠀⠀⠀⠀⠀⣰⣿⠃⣀⣠⣤⠤⢀⣀⣤⣶⣼⡄⢸⣿⡄⠀⠀
-⠀⡧⡉⡔⠀⢠⠞⡴⠃⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠹⡇⠀⠀⠀⠀⠀⠀⠀⣴⢿⣏⣩⣥⣴⣶⣿⣿⣿⣿⢿⣿⠀⣸⣿⡇⠀⠀
-⠰⣷⠡⡘⢄⣣⠞⠁⠀⠀⠀⣀⣀⣤⣤⠴⠶⠖⣦⡀⠀⠀⠈⣷⠀⠀⠀⠀⠀⢀⡾⢡⡾⣿⣿⣿⣿⣿⣿⠛⣿⡿⢠⡇⠀⣿⣚⣷⠀⠀
-⠸⣧⢃⣼⣞⣡⣤⣤⣤⣤⣴⣴⣾⣶⣶⣿⣶⣶⣶⡟⠀⠀⠀⢹⠀⠀⠀⢀⡴⢋⢔⡿⠹⠓⠀⣿⣿⣿⣿⠀⣿⡟⠈⠀⠄⣿⡜⣿⠀⠀
-⠘⡷⠋⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⠛⢻⣿⡟⢻⠛⠂⠀⠀⣸⠀⢀⡴⢋⠔⣡⠞⠀⠀⠀⠀⢿⣿⣿⣿⣤⣿⠃⠀⠠⠀⣿⢺⣽⡂⠀
-⢈⡷⠀⠈⢿⡄⠀⠀⢸⣿⣿⣿⣿⣿⠀⠈⣿⡇⠀⠀⠀⠀⠀⣿⠒⠭⣐⢡⡾⠋⠀⠀⠀⠀⠀⠸⣿⣿⣱⣿⠏⠀⠀⡀⠁⢻⡳⢾⡇⠀
-⠀⣿⠀⠀⠈⠳⠀⠀⠈⣿⣿⣿⣟⣿⣧⣴⣿⡇⠀⠀⠀⠀⢠⡟⢌⣱⠶⠋⠀⠀⠀⠀⠀⠀⠀⠀⠙⠛⠉⠁⠀⠀⠄⠀⠀⢸⣿⣹⡇⠀
-⠠⢹⡄⠀⠀⠀⠠⡀⠀⠘⣿⣿⣟⣧⡯⠿⡿⠁⠀⠀⠀⠀⡼⠗⠋⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⠀⢀⠀⢂⠁⠠⠈⠀⠸⣧⢻⡇⠀
-⠠⡙⡇⠀⡀⠁⠀⠈⠀⠀⠀⠀⠀⠀⠒⠂⠀⠀⡀⠀⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠁⠀⠠⠀⠂⠀⠂⠀⠁⠠⢸⣿⣹⡇⠀
-⠠⡑⢿⠀⠀⠀⠁⠠⠈⠀⠂⢀⠂⠄⡀⠄⠈⠀⠄⠀⠀⠀⣀⠀⠀⠀⣀⣠⣴⣶⣤⣤⡴⠋⠀⠀⠀⠀⠄⠀⠁⠀⠁⠠⢠⣿⣷⣹⠇⠀
-⠠⡑⢺⣧⠀⠁⠀⠄⠀⠂⠀⠄⠠⠀⠄⠀⠁⠄⠀⠀⠈⠀⢸⡿⣿⡟⣻⢛⠿⣿⣿⣿⡅⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣱⣿⢫⣷⣹⠃⠀
-⠀⡑⠢⣿⣧⡄⠀⠄⠀⠀⠁⠀⠀⠀⠄⠀⠄⠀⠀⠀⠀⠁⣿⠲⣍⠲⠥⣎⠳⣰⠹⣿⠆⠀⠀⠀⠀⠀⠀⠀⠀⣰⣾⡟⣼⢻⡧⣿⠀⠀
-⠀⢡⠃⡼⣿⣿⣶⣄⠠⠀⠀⢀⣤⠤⣤⣄⣀⠀⠠⠀⠀⠁⣿⠱⡎⢭⠓⣌⢣⢣⡝⣼⠃⠀⠀⠀⣀⡤⠶⠒⠛⣿⢧⡻⣜⣿⢳⡟⠀⠀
-⠀⢠⠃⠖⣹⣿⣿⣿⣿⣶⣤⣸⣧⣄⠀⠀⠉⠛⢦⡀⠀⠀⠘⣧⡝⣊⠷⡌⢖⢣⣼⠏⠀⣀⡴⠋⠁⠀⠀⣀⣴⡿⣣⢿⣼⣟⣳⡏⠀⠀
-⠀⠠⣉⠚⠤⣿⣿⣿⣿⣿⣿⣭⣛⣮⡝⢦⡀⠀⠈⢳⡄⠀⠀⠈⠙⠲⠷⠼⠟⠞⢁⣠⠞⠋⠀⠀⠀⣴⣯⣾⣿⣷⡹⣞⣾⢣⣿⠀⠀⠀
-⠀⠀⢢⠙⡰⡈⢿⣿⣿⣿⣿⣿⣿⣾⣿⣆⠃⠀⠀⠀⢻⡶⣤⣤⣄⣀⣀⣤⠶⠚⠉⠀⠀⠀⠀⣀⣴⣿⣿⣿⣿⣿⣿⣞⢧⣻⢏⠀⠀⠀
-⠀⠀⢠⠩⠔⣡⠊⢿⣿⣿⣿⣿⣿⣿⣿⣿⡇⠀⠀⠀⠀⠙⠷⢾⠾⠛⠉⠀⠀⠀⠀⠀⣀⣴⠞⢹⣿⣿⣿⣿⣿⡿⣫⠞⣧⣿⠂⠀⠀⠀
-⢄⡀⠀⢃⠎⢤⡉⢆⠻⣿⣿⣿⣿⣿⣿⣿⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣼⠟⠁⠀⣼⣿⣿⣿⣯⣷⣹⣵⣿⣿⢛⠀⠀⠀⠀
-⠢⠜⡐⢌⡸⢄⠚⡄⠣⢌⠻⣿⣿⣿⣿⡿⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣀⣴⠟⠁⠀⠀⢠⣟⣿⣿⣿⣿⣿⣿⣿⡿⢁⠂⠀⠀⠀⠀
-"
-
 set -euo pipefail
 
 # ── Config ─────────────────────────────────────────────────────────────
@@ -132,50 +104,107 @@ if [ -f "$CONFIG_FILE" ]; then
 else
 	mkdir -p "$CONFIG_DIR"
 	cat >"$CONFIG_FILE" <<'EOF'
-# Swifty global configuration (~/.swifty/config.yaml)
-# Permission mode: "default" | "acceptEdits" | "plan" | "bypassPermissions"
+# Copyright (c) 2026 hangtiancheng
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in
+# all copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+
+# Swifty project-level configuration (.swifty/config.yaml)
+#
+# Load order (later layers override earlier ones, see src/config/config.ts loadConfig):
+#   ~/.swifty/config.yml -> ~/.swifty/config.yaml -> ./.swifty/config.yml -> ./.swifty/config.yaml
+#   -> ./.swifty/config.local.yml -> ./.swifty/config.local.yaml
+# Merge semantics: `providers` replaced wholesale when the override layer is non-empty;
+# `permission_mode` overridden; `mcp_servers` merged by name; `hooks` appended;
+# `sandbox` shallow-merged; `enable_coordinator_mode` sticky once true.
+#
+# Schema source: src/config/config.ts (AppConfigSchema)
+
+# permission_mode — optional, string, default: "default"
+# One of: "default" | "acceptEdits" | "plan" | "bypassPermissions"
 permission_mode: bypassPermissions
 
-# LLM providers — at least one is required.
-# api_key is intentionally left empty; it falls back to the ANTHROPIC_API_KEY
-# (or OPENAI_API_KEY) environment variable at runtime.
+# providers — REQUIRED: at least one provider must be configured (after merging all layers).
 providers:
-  - name: anthropic
-    protocol: anthropic
-    base_url: https://api.deepseek.com/anthropic
-    model: "deepseek-v4-flash"
-    api_key: "sk-"
-    thinking: true
-    # max_output_tokens: 1000000
-    context_window: 1000000 # override the built-in lookup if needed
+  - name: anthropic # REQUIRED, string — unique provider name
+    protocol: anthropic # REQUIRED, enum: "anthropic" | "openai" | "openai-compat"
+    base_url: https://api.deepseek.com/anthropic # REQUIRED, string — API endpoint
+    model: "deepseek-v4-flash" # REQUIRED, string — model identifier
+    api_key:
+      "sk-" # optional, string, default: falls back to env var
+      #   (ANTHROPIC_API_KEY for protocol "anthropic",
+      #    OPENAI_API_KEY for "openai"/"openai-compat")
+    thinking: true # optional, boolean, default: false — enable extended thinking
+    context_window:
+      1000000 # optional, number, default: built-in lookup by model name
+      #   (claude -> 200000, gpt-4.1/1m -> 1000000, else 128000)
+    # max_output_tokens: 64000               # optional, number, default: 8192 (64000 when thinking: true)
 
   - name: openai-compat
-    # protocol: anthropic
     protocol: openai-compat
     base_url: https://api.deepseek.com
     model: "deepseek-v4-flash"
     api_key: "sk-"
     thinking: true
-    # max_output_tokens: 1000000 # override the default (8192, or 64000 with thinking)
-    context_window: 1000000 # override the built-in lookup if needed
+    context_window: 1000000
+    # max_output_tokens: 64000
 
-# MCP servers — optional, empty by default.
+# mcp_servers — optional, array, default: [] (no servers).
+# Each server needs either `command` (stdio transport) or `url` (http/sse transport).
 mcp_servers: []
-  # Example: filesystem MCP server
-  # - name: filesystem
-  #   command: npx
-  #   args: ["-y", "@modelcontextprotocol/server-filesystem", "."]
+  # - name: filesystem                       # REQUIRED, string — unique server name
+  #   command: npx                           # optional, string — executable; presence selects stdio transport
+  #   args: ["-y", "@modelcontextprotocol/server-filesystem", "."]  # optional, string array, default: []
+  #   env: { API_KEY: "your-api-key" }       # optional, map<string, string>, default: {} — extra env vars
+  #
+  # - name: remote-server
+  #   url: https://example.com/mcp           # optional, string — presence selects http/sse transport
+  #   transport: sse                         # optional, string — "sse" for SSE; any other value/omitted
+  #                                          #   uses streamable HTTP (only relevant with `url`)
+  #   headers: { Authorization: "Bearer x" } # optional, map<string, string>, default: {} — HTTP headers
 
-# Hooks — optional, empty by default.
+# hooks — optional, array, default: []. Appended across config layers (never replaced).
 hooks: []
-  # Example: lint after EditFile
-  # - id: lint-on-edit
-  #   event: post_tool_use
-  #   condition: 'tool == "EditFile"'
-  #   action:
-  #     type: command
-  #     command: npx eslint --fix "$SWIFTY_FILE_PATH"
-  #   on_error: ignore
+  # - id: lint-on-edit                       # optional, string — hook identifier
+  #   event: post_tool_use                   # REQUIRED, enum: session_start | session_end | turn_start |
+  #                                          #   turn_end | pre_send | post_receive | pre_tool_use |
+  #                                          #   post_tool_use | shutdown
+  #   condition: 'tool == "EditFile"'        # optional, string — expression filtering when the hook fires
+  #   action:                                # REQUIRED, object
+  #     type: command                        # REQUIRED, enum: command | prompt | http | agent
+  #     command: npx eslint --fix "$SWIFTY_FILE_PATH"  # required for type "command" (also accepted by "agent")
+  #     # prompt: "..."                      # required for type "prompt" and "agent"
+  #     # url: https://example.com/webhook   # required for type "http"
+  #     # method: POST                       # optional, string — HTTP method for type "http"
+  #   reject: false                          # optional, boolean, default: false — block the tool call
+  #                                          #   (only effective on pre_tool_use)
+  #   once: false                            # optional, boolean, default: false — fire at most once per session
+  #   async: false                           # optional, boolean, default: false — run without awaiting result
+  #   on_error: ignore                       # optional, string, default: "ignore" — error handling policy
+
+# sandbox — optional, object, default: sandbox disabled.
+# sandbox:
+#   enabled: false                           # optional, boolean, default: false — wrap Bash commands in a sandbox
+#   auto_allow: false                        # optional, boolean, default: false — auto-approve sandboxed commands
+#   network_enabled: true                    # optional, boolean, default: true — allow network inside the sandbox
+
+# enable_coordinator_mode — optional, boolean, default: false — enable multi-agent coordinator mode.
+# enable_coordinator_mode: false
 EOF
 	ok "Wrote default config to $CONFIG_FILE"
 fi
