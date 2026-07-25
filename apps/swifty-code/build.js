@@ -30,7 +30,7 @@ import { fileURLToPath } from "node:url";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const swiftyGoDir = resolve(__dirname, "../../../swifty.go");
-const swiftyCliDir = join(swiftyGoDir, "swifty_cli");
+const swiftyCliDir = join(swiftyGoDir, "swiftx");
 const buildSrcDir = join(swiftyCliDir, "build");
 const buildDestDir = join(__dirname, "build");
 
@@ -39,7 +39,7 @@ const buildDestDir = join(__dirname, "build");
  * @param {string} message
  */
 function fail(message) {
-  console.error(`[swifty-code] ${message}`);
+  console.error(`[swiftx] ${message}`);
   process.exit(1);
 }
 
@@ -50,7 +50,7 @@ function fail(message) {
  * @param {string} cwd
  */
 function run(command, args, cwd) {
-  console.log(`[swifty-code] $ ${command} ${args.join(" ")} (cwd: ${cwd})`);
+  console.log(`[swiftx] $ ${command} ${args.join(" ")} (cwd: ${cwd})`);
   const result = spawnSync(command, args, { cwd, stdio: "inherit" });
   if (result.error) {
     fail(`failed to run "${command}": ${result.error.message}`);
@@ -88,4 +88,4 @@ try {
   fail(`failed to copy build output: ${err instanceof Error ? err.message : String(err)}`);
 }
 
-console.log(`[swifty-code] build copied to ${buildDestDir}`);
+console.log(`[swiftx] build copied to ${buildDestDir}`);

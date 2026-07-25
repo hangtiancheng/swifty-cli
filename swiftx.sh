@@ -19,14 +19,14 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-# swifty.sh — Bootstrap installer for swifty CLI via npm global install.
+# swiftx.sh — Bootstrap installer for swiftx CLI via npm global install.
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/hangtiancheng/swifty-cli/main/swifty.sh | bash
-#   curl -fsSL https://raw.githubusercontent.com/hangtiancheng/swifty-cli/main/swifty.sh | bash -s -- --alpha
+#   curl -fsSL https://raw.githubusercontent.com/hangtiancheng/swifty-cli/main/swiftx.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/hangtiancheng/swifty-cli/main/swiftx.sh | bash -s -- --alpha
 #
 # Installs @swifty.js/swifty-code globally via npm. npm's `bin` field automatically
-# creates the `swifty` command on PATH. Requires Node.js >= 20.
+# creates the `swiftx` command on PATH. Requires Node.js >= 20.
 #
 # Supports: --uninstall, --version vX.Y.Z, --alpha, --beta, --rc, --canary, --nightly, --tag=NAME
 
@@ -61,8 +61,8 @@ for arg in "$@"; do
 		cat <<EOF
 Usage: install.sh [OPTIONS]
 
-  (default)    Install the latest stable swifty from npm
-  --uninstall  Uninstall swifty
+  (default)    Install the latest stable swiftx from npm
+  --uninstall  Uninstall swiftx
   --version=   Install a specific version (e.g. --version=0.1.0)
   --alpha      Install from the 'alpha' dist-tag
   --beta       Install from the 'beta' dist-tag
@@ -92,12 +92,12 @@ done
 if [ "$ACTION" = "uninstall" ]; then
 	info "Uninstalling $PACKAGE..."
 	npm uninstall -g "$PACKAGE"
-	ok "swifty uninstalled"
+	ok "swiftx uninstalled"
 	exit 0
 fi
 
 # ── Write default config (skip if it already exists) ─────────────────
-CONFIG_DIR="$HOME/.swifty"
+CONFIG_DIR="$HOME/.swiftx"
 CONFIG_FILE="$CONFIG_DIR/config.yaml"
 if [ -f "$CONFIG_FILE" ]; then
 	info "Config already exists at $CONFIG_FILE."
@@ -124,11 +124,11 @@ else
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-# Swifty project-level configuration (.swifty/config.yaml)
+# Swifty project-level configuration (.swiftx/config.yaml)
 #
 # Load order (later layers override earlier ones, see src/config/config.ts loadConfig):
-#   ~/.swifty/config.yml -> ~/.swifty/config.yaml -> ./.swifty/config.yml -> ./.swifty/config.yaml
-#   -> ./.swifty/config.local.yml -> ./.swifty/config.local.yaml
+#   ~/.swiftx/config.yml -> ~/.swiftx/config.yaml -> ./.swiftx/config.yml -> ./.swiftx/config.yaml
+#   -> ./.swiftx/config.local.yml -> ./.swiftx/config.local.yaml
 # Merge semantics: `providers` replaced wholesale when the override layer is non-empty;
 # `permission_mode` overridden; `mcp_servers` merged by name; `hooks` appended;
 # `sandbox` shallow-merged; `enable_coordinator_mode` sticky once true.
@@ -244,12 +244,12 @@ npm install -g "$PKG_VERSION" --registry=https://registry.npmjs.org/
 # ── Verify ────────────────────────────────────────────────────────────
 # npm global bin should be on PATH. If not, print the prefix/bin hint.
 NPM_BIN="$(npm config get prefix 2>/dev/null)/bin"
-if command -v swifty >/dev/null 2>&1; then
+if command -v swiftx >/dev/null 2>&1; then
 	ok "Swifty installed successfully"
 	SWIFTY_VERSION="$(npm ls -g "$PACKAGE" --depth=0 2>/dev/null | grep -o "$PACKAGE@[^ ]*" | head -n1 || true)"
 	[ -n "$SWIFTY_VERSION" ] && info "Installed: $SWIFTY_VERSION"
 else
-	warn "Installation completed but 'swifty' is not on your PATH."
+	warn "Installation completed but 'swiftx' is not on your PATH."
 	warn "Add npm's global bin to your shell profile (~/.bashrc / ~/.zshrc):"
 	warn "  export PATH=\"$NPM_BIN:\$PATH\""
 fi
