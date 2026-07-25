@@ -29,7 +29,7 @@ router.get("/sse", async (ctx) => {
 });
 
 router.post("/messages", async (ctx) => {
-  const sessionId = ctx.query.sessionId;
+  const sessionId = ctx.query["sessionId"];
   if (typeof sessionId !== "string") {
     ctx.status = 400;
     ctx.body = { error: "Unknown session" };
@@ -67,7 +67,7 @@ router.get("/mcp", async (ctx) => {
 app.use(router.routes())
 app.use(router.allowedMethods());
 
-const port = Number.parseInt(process.env.PORT || "3300", 10);
+const port = Number.parseInt(process.env["PORT"] || "3300", 10);
 app.listen(port, () => { 
   console.log(`MCP HTTP server listening on https://localhost:${port}`);
   console.log(`
