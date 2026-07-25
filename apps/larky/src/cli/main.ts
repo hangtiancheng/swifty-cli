@@ -28,7 +28,13 @@ import { getConfig } from "../core/config.js";
 import { setupLogging } from "../core/logging.js";
 import { cmdPing } from "../core/commands/ping.js";
 import { cmdVersion } from "./commands/version.js";
-import { cmdCoreStart, cmdCoreStop, cmdCoreStatus } from "./commands/core.js";
+import {
+  cmdCoreStart,
+  cmdCoreStop,
+  cmdCoreStatus,
+  ensureDaemonRunning,
+  stopDaemonOnExit,
+} from "./commands/core.js";
 import { cmdRun } from "./commands/run.js";
 import { cmdChat } from "./commands/chat.js";
 import { cmdTrace } from "./commands/trace.js";
@@ -39,7 +45,7 @@ function printHelp(): void {
   console.log(`larky ${version} - Larky CLI
 
 Usage:
-  larky <command> [options]
+  larky [command] [options]
 
 Commands:
   ping                Ping the core daemon
@@ -49,14 +55,15 @@ Commands:
   core status         Show daemon status
   run <goal>          Run a one_shot agent task
   chat                Start an interactive chat session
-  tui                 Launch the terminal UI
   trace [run_id]      Display daemon trace log
+  help                Show this help
 
 Options:
   --help, -h          Show this help
   --version, -V       Print version
 
 Examples:
+  larky
   larky ping
   larky core start
   larky run "Summarize the project README"
@@ -86,7 +93,7 @@ function readFlagValue(args: string[], flag: string): string | undefined {
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
 
-  if (args.length === 0 || args.includes("--help") || args.includes("-h")) {
+  if (args[0] === "help" || args.includes("--help") || args.includes("-h")) {
     printHelp();
     return;
   }
@@ -98,6 +105,16 @@ async function main(): Promise<void> {
 
   const config = getConfig();
   setupLogging(config);
+
+  // No command: launch the terminal UI, starting the daemon if needed.
+  // If this process spawned the daemon, shut it down when the TUI exits.
+  if (args.length === 0) {
+    const startedDaemon = await ensureDaemonRunning(config);
+    if (startedDaemon) stopDaemonOnExit(config);
+    await launchTUI();
+    return;
+  }
+
   const subcommand = args[0];
 
   switch (subcommand) {
@@ -142,10 +159,6 @@ async function main(): Promise<void> {
 
     case "chat":
       await cmdChat(config);
-      break;
-
-    case "tui":
-      await launchTUI();
       break;
 
     case "trace": {

@@ -21,4 +21,8 @@ swifty-cli.code-workspace
 brew install scc tokei
 scc .
 tokei .
+
+alias swifty="$HOME/github/swifty-cli/apps/swifty/dist/main.js"
+
+alias larky="$HOME/github/swifty-cli/apps/larky/dist/cli/main.js"
 ```

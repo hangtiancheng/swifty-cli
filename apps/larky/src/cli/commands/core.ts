@@ -107,6 +107,68 @@ export function cmdCoreStart(config: LarkyConfig): void {
   console.log(`started  pid=${String(child.pid)}  (${config.host}:${String(config.port)})`);
 }
 
+// Start the daemon if it is not reachable, then wait until it answers ping.
+// Returns true if this process spawned the daemon, false if it was already running.
+export async function ensureDaemonRunning(config: LarkyConfig): Promise<boolean> {
+  const outcome = await pingDaemon(config);
+  if (outcome.ok) return false;
+
+  cmdCoreStart(config);
+
+  for (let i = 0; i < 20; i++) {
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    const retry = await pingDaemon(config);
+    if (retry.ok) return true;
+  }
+
+  console.error(`Error: daemon did not become reachable at ${config.host}:${String(config.port)}`);
+  // Clean up the daemon we just spawned so it is not left orphaned
+  cmdCoreStop(config);
+  process.exit(1);
+}
+
+// Gracefully stop the daemon when this process terminates for any reason:
+// normal exit, termination signals, or crashes (uncaught exception/rejection).
+// Only called when this process spawned the daemon, so a daemon the user
+// started manually is left untouched.
+export function stopDaemonOnExit(config: LarkyConfig): void {
+  let done = false;
+  const stopOnce = (): void => {
+    if (done) return;
+    done = true;
+    try {
+      cmdCoreStop(config);
+    } catch {
+      // best effort: never let cleanup itself throw during shutdown
+    }
+  };
+
+  process.on("exit", stopOnce);
+
+  const signals: { name: NodeJS.Signals; code: number }[] = [
+    { name: "SIGINT", code: 130 },
+    { name: "SIGTERM", code: 143 },
+    { name: "SIGHUP", code: 129 },
+  ];
+  for (const { name, code } of signals) {
+    process.on(name, () => {
+      stopOnce();
+      process.exit(code);
+    });
+  }
+
+  process.on("uncaughtException", (error) => {
+    console.error(error);
+    stopOnce();
+    process.exit(1);
+  });
+  process.on("unhandledRejection", (reason) => {
+    console.error(reason);
+    stopOnce();
+    process.exit(1);
+  });
+}
+
 export function cmdCoreStop(_config: LarkyConfig): void {
   const pid = runningPid();
   if (!pid) {
