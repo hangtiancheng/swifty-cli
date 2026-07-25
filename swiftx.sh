@@ -25,7 +25,7 @@
 #   curl -fsSL https://raw.githubusercontent.com/hangtiancheng/swifty-cli/main/swiftx.sh | bash
 #   curl -fsSL https://raw.githubusercontent.com/hangtiancheng/swifty-cli/main/swiftx.sh | bash -s -- --alpha
 #
-# Installs @swifty.js/swifty-code globally via npm. npm's `bin` field automatically
+# Installs @swifty.js/swiftx globally via npm. npm's `bin` field automatically
 # creates the `swiftx` command on PATH. Requires Node.js >= 20.
 #
 # Supports: --uninstall, --version vX.Y.Z, --alpha, --beta, --rc, --canary, --nightly, --tag=NAME
@@ -33,7 +33,7 @@
 set -euo pipefail
 
 # ── Config ─────────────────────────────────────────────────────────────
-PACKAGE="@swifty.js/swifty-code"
+PACKAGE="@swifty.js/swiftx"
 NODE_MAJOR_MIN=20
 
 # ── Helpers ────────────────────────────────────────────────────────────

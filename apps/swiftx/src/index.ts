@@ -58,7 +58,7 @@ const binaryPath = join(__dirname, "..", "build", `swifty-${platformName}-${arch
 if (!existsSync(binaryPath)) {
   console.error(
     `[swifty] Missing binary: ${binaryPath}\n` +
-      "Reinstall: npm install -g @swifty.js/swifty-code@latest",
+      "Reinstall: npm install -g @swifty.js/swiftx@latest",
   );
   process.exit(1);
 }

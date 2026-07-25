@@ -21,7 +21,6 @@
  */
 
 // Tool input parameter schemas (Zod), aligned with the Input structs in source project internal/ai/tools/*
-// References the layered pattern from swifty-codegen server/src/ai/tools/file-tool-schemas.ts
 import { z } from "zod/v4";
 
 // get_current_time: no input parameters

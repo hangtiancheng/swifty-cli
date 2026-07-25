@@ -201,9 +201,6 @@ tsconfig.tsbuildinfo
 code-review*.md
 plan*.md
 swifty*.code-workspace
-apps/swifty-code-go/swifty
-apps/swifty-code-go/swiftyd
-apps/swifty-go/swifty
 
 target
 **/target

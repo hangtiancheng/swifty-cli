@@ -20,8 +20,6 @@
  * SOFTWARE.
  */
 
-// Wrap tools using Vercel AI SDK's tool(), following the pattern from swifty-codegen server/src/ai/tools/file-tools.ts
-// (swifty-codegen uses LangChain tools; here we switch to AI SDK tools)
 import { tool } from "ai";
 import {
   getCurrentTimeSchema,

@@ -19,21 +19,21 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-# larky.sh — Bootstrap installer for swifty-code CLI via npm global install.
+# larky.sh — Bootstrap installer for larky CLI via npm global install.
 #
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/hangtiancheng/swifty-cli/main/larky.sh | bash
 #   curl -fsSL https://raw.githubusercontent.com/hangtiancheng/swifty-cli/main/larky.sh | bash -s -- --alpha
 #
-# Installs @swifty.js/swifty-code globally via npm. npm's `bin` field automatically
-# creates the `swifty-code` command on PATH. Requires Node.js >= 20.
+# Installs @swifty.js/larky globally via npm. npm's `bin` field automatically
+# creates the `larky` command on PATH. Requires Node.js >= 20.
 #
 # Supports: --uninstall, --version vX.Y.Z, --alpha, --beta, --rc, --canary, --nightly, --tag=NAME
 
 set -euo pipefail
 
 # ── Config ─────────────────────────────────────────────────────────────
-PACKAGE="@swifty.js/swifty-code"
+PACKAGE="@swifty.js/larky"
 NODE_MAJOR_MIN=20
 
 # ── Helpers ────────────────────────────────────────────────────────────
@@ -61,8 +61,8 @@ for arg in "$@"; do
 		cat <<EOF
 Usage: larky.sh [OPTIONS]
 
-  (default)    Install the latest stable swifty-code from npm
-  --uninstall  Uninstall swifty-code
+  (default)    Install the latest stable larky from npm
+  --uninstall  Uninstall larky
   --version=   Install a specific version (e.g. --version=0.1.0)
   --alpha      Install from the 'alpha' dist-tag
   --beta       Install from the 'beta' dist-tag
@@ -92,7 +92,7 @@ done
 if [ "$ACTION" = "uninstall" ]; then
 	info "Uninstalling $PACKAGE..."
 	npm uninstall -g "$PACKAGE"
-	ok "swifty-code uninstalled"
+	ok "larky uninstalled"
 	exit 0
 fi
 
@@ -199,12 +199,12 @@ npm install -g "$PKG_VERSION" --registry=https://registry.npmjs.org/
 # ── Verify ────────────────────────────────────────────────────────────
 # npm global bin should be on PATH. If not, print the prefix/bin hint.
 NPM_BIN="$(npm config get prefix 2>/dev/null)/bin"
-if command -v swifty-code >/dev/null 2>&1; then
-	ok "swifty-code installed successfully"
+if command -v larky >/dev/null 2>&1; then
+	ok "larky installed successfully"
 	SWIFTY_VERSION="$(npm ls -g "$PACKAGE" --depth=0 2>/dev/null | grep -o "$PACKAGE@[^ ]*" | head -n1 || true)"
 	[ -n "$SWIFTY_VERSION" ] && info "Installed: $SWIFTY_VERSION"
 else
-	warn "Installation completed but 'swifty-code' is not on your PATH."
+	warn "Installation completed but 'larky' is not on your PATH."
 	warn "Add npm's global bin to your shell profile (~/.bashrc / ~/.zshrc):"
 	warn "  export PATH=\"$NPM_BIN:\$PATH\""
 fi

@@ -1,12 +1,12 @@
-# Swifty
+# Swiftx
 
-Swifty is a terminal-based AI coding agent. It provides an interactive TUI (terminal user interface) for conversing with large language models, executing code, manipulating files, and orchestrating multi-agent workflows, all from the command line.
+Swiftx is a terminal-based AI coding agent. It provides an interactive TUI (terminal user interface) for conversing with large language models, executing code, manipulating files, and orchestrating multi-agent workflows, all from the command line.
 
 ## Overview
 
-Swifty runs as a single CLI binary that connects to configurable LLM providers (Anthropic, OpenAI, or any OpenAI-compatible endpoint). It renders a rich terminal interface using React and Ink, giving you streaming responses, tool execution feedback, permission prompts, and slash commands in a single pane.
+Swiftx runs as a single CLI binary that connects to configurable LLM providers (Anthropic, OpenAI, or any OpenAI-compatible endpoint). It renders a rich terminal interface using React and Ink, giving you streaming responses, tool execution feedback, permission prompts, and slash commands in a single pane.
 
-Beyond interactive use, Swifty supports a non-interactive print mode for scripting, a remote mode that serves a browser-based chat UI over WebSocket, and a teammate mode that lets one lead agent coordinate multiple subagents working in parallel.
+Beyond interactive use, Swiftx supports a non-interactive print mode for scripting, a remote mode that serves a browser-based chat UI over WebSocket, and a teammate mode that lets one lead agent coordinate multiple subagents working in parallel.
 
 ## Features
 
@@ -29,10 +29,10 @@ Beyond interactive use, Swifty supports a non-interactive print mode for scripti
 
 ### Skills and Commands
 
-- Skill catalog with three-tier loading: built-in, user-global (~/.swifty/skills/), and project-level (.swifty/skills/)
+- Skill catalog with three-tier loading: built-in, user-global (~/.swiftx/skills/), and project-level (.swiftx/skills/)
 - Hot-reload support for skills edited on disk
 - Inline and fork execution modes for skills
-- Slash command system with built-in commands and user-defined commands from .swifty/commands/
+- Slash command system with built-in commands and user-defined commands from .swiftx/commands/
 - Skill installation from URLs
 
 ### Agent Orchestration
@@ -57,7 +57,7 @@ Beyond interactive use, Swifty supports a non-interactive print mode for scripti
 ## Installation
 
 ```bash
-npm install -g @swifty.js/swifty
+npm install -g @swiftx.js/swiftx
 ```
 
 Or run directly from the monorepo:
@@ -68,11 +68,11 @@ pnpm dev
 
 ## Configuration
 
-Swifty reads YAML configuration files from multiple locations, merged in order:
+Swiftx reads YAML configuration files from multiple locations, merged in order:
 
-1. ~/.swifty/config.yml or ~/.swifty/config.yaml
-2. .swifty/config.yml or .swifty/config.yaml (project root)
-3. .swifty/config.local.yml or .swifty/config.local.yaml (project root, gitignored)
+1. ~/.swiftx/config.yml or ~/.swiftx/config.yaml
+2. .swiftx/config.yml or .swiftx/config.yaml (project root)
+3. .swiftx/config.local.yml or .swiftx/config.local.yaml (project root, gitignored)
 
 At least one provider must be configured. Example config.yml:
 
@@ -126,7 +126,7 @@ API keys are resolved in this order: explicit api_key field, then environment va
 ### Interactive TUI Mode
 
 ```bash
-swifty
+swiftx
 ```
 
 Launches the terminal interface. If multiple providers are configured, a provider selection screen appears first.
@@ -134,8 +134,8 @@ Launches the terminal interface. If multiple providers are configured, a provide
 ### Print Mode (Non-Interactive)
 
 ```bash
-swifty -p "explain this codebase"
-swifty -p "fix the failing test" --output-format stream-json
+swiftx -p "explain this codebase"
+swiftx -p "fix the failing test" --output-format stream-json
 ```
 
 The -p flag sends a single prompt, runs the agent loop, and prints the result to stdout. Useful for scripting and CI pipelines.
@@ -143,8 +143,8 @@ The -p flag sends a single prompt, runs the agent loop, and prints the result to
 ### Remote Mode (Browser UI)
 
 ```bash
-swifty --remote            # listens on :18888
-swifty --remote :9000      # custom address
+swiftx --remote            # listens on :18888
+swiftx --remote :9000      # custom address
 ```
 
 Starts a Koa HTTP server and WebSocket bridge. The bundled React frontend is served at the configured address for browser-based interaction.
