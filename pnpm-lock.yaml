@@ -52,7 +52,7 @@ importers:
         specifier: ^12.0.5
         version: 12.0.5
       '@types/node':
-        specifier: 24.13.3
+        specifier: ^24.13.3
         version: 24.13.3
       playwright:
         specifier: ^1.62.0
@@ -435,6 +435,15 @@ importers:
         version: 4.3.2
       typescript:
         specifier: ^5.9.3
+        version: 5.9.3
+
+  apps/swifty-code:
+    devDependencies:
+      '@types/node':
+        specifier: 24.13.3
+        version: 24.13.3
+      typescript:
+        specifier: ^5.9.2
         version: 5.9.3
 
   glob-addon:

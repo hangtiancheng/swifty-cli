@@ -1,0 +1,28 @@
+{
+  "compilerOptions": {
+    "declaration": false, // 不输出 .d.ts
+    "declarationMap": false, // 不输出 .d.ts.map
+    "exactOptionalPropertyTypes": false,
+    "isolatedModules": true,
+    "lib": ["esnext"],
+    "module": "nodenext",
+    "moduleDetection": "force",
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitOverride": true,
+    "noImplicitReturns": true,
+    "noPropertyAccessFromIndexSignature": true,
+    "noUncheckedIndexedAccess": false,
+    "noUncheckedSideEffectImports": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "outDir": "./dist", // 输出目录
+    "removeComments": true, // 移除注释
+    "rootDir": "./src", // 源码目录
+    "skipLibCheck": true,
+    "sourceMap": false, // 不输出 .js.map
+    "strict": true,
+    "target": "esnext",
+    "types": ["node"],
+    "verbatimModuleSyntax": true // 纯类型导入必须使用 import type
+  }
+}

@@ -1,0 +1,257 @@
+#!/usr/bin/env bash
+# Copyright (c) 2026 hangtiancheng
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in
+# all copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+
+# swifty.sh — Bootstrap installer for swifty CLI via npm global install.
+#
+# Usage:
+#   curl -fsSL https://raw.githubusercontent.com/hangtiancheng/swifty-cli/main/swifty.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/hangtiancheng/swifty-cli/main/swifty.sh | bash -s -- --alpha
+#
+# Installs @swifty.js/swifty-code globally via npm. npm's `bin` field automatically
+# creates the `swifty` command on PATH. Requires Node.js >= 20.
+#
+# Supports: --uninstall, --version vX.Y.Z, --alpha, --beta, --rc, --canary, --nightly, --tag=NAME
+
+set -euo pipefail
+
+# ── Config ─────────────────────────────────────────────────────────────
+PACKAGE="@swifty.js/swifty-code"
+NODE_MAJOR_MIN=20
+
+# ── Helpers ────────────────────────────────────────────────────────────
+info() { printf '\033[36m[info]\033[0m  %s\n' "$*"; }
+warn() { printf '\033[33m[warn]\033[0m  %s\n' "$*"; }
+err() { printf '\033[31m[err]\033[0m  %s\n' "$*" >&2; }
+ok() { printf '\033[32m[ok]\033[0m  %s\n' "$*"; }
+
+# ── Parse args ─────────────────────────────────────────────────────────
+ACTION="install"
+VERSION=""
+TAG=""
+for arg in "$@"; do
+	case "$arg" in
+	--uninstall) ACTION="uninstall" ;;
+	--version=*) VERSION="${arg#--version=}" ;;
+	--alpha) TAG="alpha" ;;
+	--beta) TAG="beta" ;;
+	--rc) TAG="rc" ;;
+	--canary) TAG="canary" ;;
+	--nightly) TAG="nightly" ;;
+	--dev) TAG="dev" ;;
+	--tag=*) TAG="${arg#--tag=}" ;;
+	--help | -h)
+		cat <<EOF
+Usage: install.sh [OPTIONS]
+
+  (default)    Install the latest stable swifty from npm
+  --uninstall  Uninstall swifty
+  --version=   Install a specific version (e.g. --version=0.1.0)
+  --alpha      Install from the 'alpha' dist-tag
+  --beta       Install from the 'beta' dist-tag
+  --rc         Install from the 'rc' dist-tag
+  --canary     Install from the 'canary' dist-tag
+  --nightly    Install from the 'nightly' dist-tag
+  --dev        Install from the 'dev' dist-tag
+  --tag=NAME   Install from a custom npm dist-tag
+
+Examples:
+  curl -fsSL <url> | bash                           # latest stable
+  curl -fsSL <url> | bash -s -- --canary            # canary build
+  curl -fsSL <url> | bash -s -- --version=0.1.0     # specific version
+
+Requires Node.js >= $NODE_MAJOR_MIN and npm.
+EOF
+		exit 0
+		;;
+	*)
+		err "Unknown option: $arg"
+		exit 1
+		;;
+	esac
+done
+
+# ── Uninstall ──────────────────────────────────────────────────────────
+if [ "$ACTION" = "uninstall" ]; then
+	info "Uninstalling $PACKAGE..."
+	npm uninstall -g "$PACKAGE"
+	ok "swifty uninstalled"
+	exit 0
+fi
+
+# ── Write default config (skip if it already exists) ─────────────────
+CONFIG_DIR="$HOME/.swifty"
+CONFIG_FILE="$CONFIG_DIR/config.yaml"
+if [ -f "$CONFIG_FILE" ]; then
+	info "Config already exists at $CONFIG_FILE."
+else
+	mkdir -p "$CONFIG_DIR"
+	cat >"$CONFIG_FILE" <<'EOF'
+# Copyright (c) 2026 hangtiancheng
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in
+# all copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+
+# Swifty project-level configuration (.swifty/config.yaml)
+#
+# Load order (later layers override earlier ones, see src/config/config.ts loadConfig):
+#   ~/.swifty/config.yml -> ~/.swifty/config.yaml -> ./.swifty/config.yml -> ./.swifty/config.yaml
+#   -> ./.swifty/config.local.yml -> ./.swifty/config.local.yaml
+# Merge semantics: `providers` replaced wholesale when the override layer is non-empty;
+# `permission_mode` overridden; `mcp_servers` merged by name; `hooks` appended;
+# `sandbox` shallow-merged; `enable_coordinator_mode` sticky once true.
+#
+# Schema source: src/config/config.ts (AppConfigSchema)
+
+# permission_mode — optional, string, default: "default"
+# One of: "default" | "acceptEdits" | "plan" | "bypassPermissions"
+permission_mode: bypassPermissions
+
+# providers — REQUIRED: at least one provider must be configured (after merging all layers).
+providers:
+  - name: anthropic # REQUIRED, string — unique provider name
+    protocol: anthropic # REQUIRED, enum: "anthropic" | "openai" | "openai-compat"
+    base_url: https://api.deepseek.com/anthropic # REQUIRED, string — API endpoint
+    model: "deepseek-v4-flash" # REQUIRED, string — model identifier
+    api_key:
+      "sk-" # optional, string, default: falls back to env var
+      #   (ANTHROPIC_API_KEY for protocol "anthropic",
+      #    OPENAI_API_KEY for "openai"/"openai-compat")
+    thinking: true # optional, boolean, default: false — enable extended thinking
+    context_window:
+      1000000 # optional, number, default: built-in lookup by model name
+      #   (claude -> 200000, gpt-4.1/1m -> 1000000, else 128000)
+    # max_output_tokens: 64000               # optional, number, default: 8192 (64000 when thinking: true)
+
+  - name: openai-compat
+    protocol: openai-compat
+    base_url: https://api.deepseek.com
+    model: "deepseek-v4-flash"
+    api_key: "sk-"
+    thinking: true
+    context_window: 1000000
+    # max_output_tokens: 64000
+
+# mcp_servers — optional, array, default: [] (no servers).
+# Each server needs either `command` (stdio transport) or `url` (http/sse transport).
+mcp_servers: []
+  # - name: filesystem                       # REQUIRED, string — unique server name
+  #   command: npx                           # optional, string — executable; presence selects stdio transport
+  #   args: ["-y", "@modelcontextprotocol/server-filesystem", "."]  # optional, string array, default: []
+  #   env: { API_KEY: "your-api-key" }       # optional, map<string, string>, default: {} — extra env vars
+  #
+  # - name: remote-server
+  #   url: https://example.com/mcp           # optional, string — presence selects http/sse transport
+  #   transport: sse                         # optional, string — "sse" for SSE; any other value/omitted
+  #                                          #   uses streamable HTTP (only relevant with `url`)
+  #   headers: { Authorization: "Bearer x" } # optional, map<string, string>, default: {} — HTTP headers
+
+# hooks — optional, array, default: []. Appended across config layers (never replaced).
+hooks: []
+  # - id: lint-on-edit                       # optional, string — hook identifier
+  #   event: post_tool_use                   # REQUIRED, enum: session_start | session_end | turn_start |
+  #                                          #   turn_end | pre_send | post_receive | pre_tool_use |
+  #                                          #   post_tool_use | shutdown
+  #   condition: 'tool == "EditFile"'        # optional, string — expression filtering when the hook fires
+  #   action:                                # REQUIRED, object
+  #     type: command                        # REQUIRED, enum: command | prompt | http | agent
+  #     command: npx eslint --fix "$SWIFTY_FILE_PATH"  # required for type "command" (also accepted by "agent")
+  #     # prompt: "..."                      # required for type "prompt" and "agent"
+  #     # url: https://example.com/webhook   # required for type "http"
+  #     # method: POST                       # optional, string — HTTP method for type "http"
+  #   reject: false                          # optional, boolean, default: false — block the tool call
+  #                                          #   (only effective on pre_tool_use)
+  #   once: false                            # optional, boolean, default: false — fire at most once per session
+  #   async: false                           # optional, boolean, default: false — run without awaiting result
+  #   on_error: ignore                       # optional, string, default: "ignore" — error handling policy
+
+# sandbox — optional, object, default: sandbox disabled.
+# sandbox:
+#   enabled: false                           # optional, boolean, default: false — wrap Bash commands in a sandbox
+#   auto_allow: false                        # optional, boolean, default: false — auto-approve sandboxed commands
+#   network_enabled: true                    # optional, boolean, default: true — allow network inside the sandbox
+
+# enable_coordinator_mode — optional, boolean, default: false — enable multi-agent coordinator mode.
+# enable_coordinator_mode: false
+EOF
+	ok "Wrote default config to $CONFIG_FILE"
+fi
+
+# ── Check Node.js ─────────────────────────────────────────────────────
+if ! command -v node >/dev/null 2>&1; then
+	err "Node.js not found. Install Node.js >= $NODE_MAJOR_MIN first:"
+	err "  https://nodejs.org/  or  brew install node@20"
+	exit 1
+fi
+NODE_VERSION="$(node -p 'process.versions.node.split(".")[0]')"
+if [ "$NODE_VERSION" -lt "$NODE_MAJOR_MIN" ]; then
+	err "Node.js $NODE_VERSION detected, need >= $NODE_MAJOR_MIN. Please upgrade."
+	exit 1
+fi
+
+if ! command -v npm >/dev/null 2>&1; then
+	err "npm not found. It ships with Node.js — reinstall Node.js from https://nodejs.org/"
+	exit 1
+fi
+
+# ── Install ─────────────────────────────────────────────────────────
+# Priority: --version > --tag > --alpha/beta/rc/canary/nightly > latest.
+if [ -n "$VERSION" ]; then
+	# Strip leading 'v' if user passed v0.1.0
+	VERSION="${VERSION#v}"
+	PKG_VERSION="$PACKAGE@$VERSION"
+elif [ -n "$TAG" ]; then
+	PKG_VERSION="$PACKAGE@$TAG"
+else
+	PKG_VERSION="$PACKAGE@latest"
+fi
+
+info "Installing $PKG_VERSION globally..."
+npm install -g "$PKG_VERSION" --registry=https://registry.npmjs.org/
+
+# ── Verify ────────────────────────────────────────────────────────────
+# npm global bin should be on PATH. If not, print the prefix/bin hint.
+NPM_BIN="$(npm config get prefix 2>/dev/null)/bin"
+if command -v swifty >/dev/null 2>&1; then
+	ok "Swifty installed successfully"
+	SWIFTY_VERSION="$(npm ls -g "$PACKAGE" --depth=0 2>/dev/null | grep -o "$PACKAGE@[^ ]*" | head -n1 || true)"
+	[ -n "$SWIFTY_VERSION" ] && info "Installed: $SWIFTY_VERSION"
+else
+	warn "Installation completed but 'swifty' is not on your PATH."
+	warn "Add npm's global bin to your shell profile (~/.bashrc / ~/.zshrc):"
+	warn "  export PATH=\"$NPM_BIN:\$PATH\""
+fi
+
+ok 'Love & Peace, Enjoy Swifty!!!'
