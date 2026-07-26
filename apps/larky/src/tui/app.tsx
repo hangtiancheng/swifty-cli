@@ -34,8 +34,9 @@ import { CommandUsageTracker } from "../commands/usage-tracker.js";
 import * as historyMod from "../history/history.js";
 import type { Question } from "../tools/ask-user.js";
 import type { Snapshot } from "../file-history/file-history.js";
-import type { TeammateUIState } from "../teams/progress.js";
+import { TeammateUIStateSchema, type TeammateUIState } from "../teams/progress.js";
 import { strArg } from "../utils/index.js";
+import { z } from "zod";
 
 import type { SocketClient } from "../core/transport/socket-client.js";
 import { EventSchema, type Event } from "../core/bus/events.js";
@@ -62,10 +63,21 @@ interface Props {
   permissionMode?: string;
 }
 
-interface WireCommandInfo {
-  name: string;
-  description: string;
-}
+const WireCommandInfoSchema = z.object({
+  name: z.string(),
+  description: z.string().catch(""),
+});
+const WireCommandListSchema = z.array(WireCommandInfoSchema);
+type WireCommandInfo = z.infer<typeof WireCommandInfoSchema>;
+
+const WireSnapshotSchema = z
+  .object({
+    message_index: z.number().catch(0),
+    user_text: z.string().catch(""),
+    file_count: z.number().catch(0),
+    timestamp: z.string().catch(""),
+  })
+  .catch({ message_index: 0, user_text: "", file_count: 0, timestamp: "" });
 
 interface PermissionUiRequest {
   id: string;
@@ -458,9 +470,13 @@ export function App({ client, provider, permissionMode }: Props) {
           // Todos surface via TaskList tool output; no dedicated pane yet.
           break;
 
-        case "teammate.state":
-          setTeammateStates(event.states);
+        case "teammate.state": {
+          const state = z.array(TeammateUIStateSchema).safeParse(event.states);
+          if (state.success) {
+            setTeammateStates(state.data);
+          }
           break;
+        }
 
         case "subagent.progress":
           setSubagents((prev) => {
@@ -527,8 +543,9 @@ export function App({ client, provider, permissionMode }: Props) {
               persist: true,
             });
             sessionIdRef.current = typeof res.session_id === "string" ? res.session_id : "";
-            if (Array.isArray(res.commands)) {
-              setCommands(toInputCommands(res.commands as WireCommandInfo[]));
+            const commandList = WireCommandListSchema.safeParse(res.commands);
+            if (commandList.success) {
+              setCommands(toInputCommands(commandList.data));
             }
             const mode = typeof res.permission_mode === "string" ? res.permission_mode : "";
             if (isPermissionModeStr(mode)) {
@@ -676,18 +693,17 @@ export function App({ client, provider, permissionMode }: Props) {
         return;
       }
       const snapshots: Snapshot[] = raw.map((s) => {
-        const rec = s as Record<string, unknown>;
-        const fileCount = typeof rec.file_count === "number" ? rec.file_count : 0;
+        const rec = WireSnapshotSchema.parse(s);
         return {
-          messageIndex: typeof rec.message_index === "number" ? rec.message_index : 0,
-          userText: typeof rec.user_text === "string" ? rec.user_text : "",
+          messageIndex: rec.message_index,
+          userText: rec.user_text,
           backups: Object.fromEntries(
-            Array.from({ length: fileCount }, (_, i) => [
+            Array.from({ length: rec.file_count }, (_, i) => [
               `file-${String(i)}`,
-              { path: "", version: 0 },
+              { backupPath: "", version: 0, time: "" },
             ]),
           ),
-          timestamp: typeof rec.timestamp === "string" ? rec.timestamp : "",
+          timestamp: rec.timestamp,
         };
       });
       setRewindSnapshots(snapshots);

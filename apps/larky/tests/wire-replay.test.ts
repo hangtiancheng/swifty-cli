@@ -26,12 +26,22 @@
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import type net from "node:net";
+import net from "node:net";
 
 import { describe, expect, test } from "vitest";
 
 import { snapshotReplayLinesFromFile, handleEventSubscribe } from "../src/core/app.js";
 import { IpcEventBroadcaster } from "../src/core/transport/ipc-broadcaster.js";
+
+// Create mock socket for testing — uses real Socket instance for type safety
+function makeMockSocket(writes: string[]): net.Socket {
+  const socket = new net.Socket();
+  socket.write = (chunk: string | Uint8Array): boolean => {
+    writes.push(typeof chunk === "string" ? chunk : Buffer.from(chunk).toString());
+    return true;
+  };
+  return socket;
+}
 
 function writeEventsFile(lines: unknown[]): { dir: string; file: string } {
   const dir = mkdtempSync(path.join(tmpdir(), "larky-replay-"));
@@ -96,13 +106,7 @@ describe("replay snapshot", () => {
     try {
       const broadcaster = new IpcEventBroadcaster();
       const writes: string[] = [];
-      const fakeSocket = {
-        write: (chunk: string | Uint8Array): boolean => {
-          writes.push(typeof chunk === "string" ? chunk : Buffer.from(chunk).toString());
-          return true;
-        },
-        writableNeedDrain: false,
-      } as unknown as net.Socket;
+      const fakeSocket = makeMockSocket(writes);
 
       const result = await handleEventSubscribe(
         broadcaster,
@@ -135,12 +139,7 @@ describe("broadcaster session scope", () => {
   test("scope session:<id> filters other sessions", async () => {
     const broadcaster = new IpcEventBroadcaster();
     const writes: string[] = [];
-    const fakeSocket = {
-      write: (chunk: string | Uint8Array): boolean => {
-        writes.push(typeof chunk === "string" ? chunk : Buffer.from(chunk).toString());
-        return true;
-      },
-    } as unknown as net.Socket;
+    const fakeSocket = makeMockSocket(writes);
 
     broadcaster.subscribe(fakeSocket, ["*"], "session:s1");
 

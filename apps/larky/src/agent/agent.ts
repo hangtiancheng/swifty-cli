@@ -42,7 +42,7 @@ import { buildPlanModeReminder } from "../prompt/plan-mode.js";
 import { coordinatorReminder } from "../prompt/coordinator.js";
 import { applyBudget, isSpillReadback, persistLargeResult } from "../tool-result/budget.js";
 import { readFile } from "node:fs/promises";
-import { asErrorString, asRecord, strArg } from "@/utils/index.js";
+import { asRecord, strArg } from "@/utils/index.js";
 import type { ToolSchema } from "@/tools/types.js";
 import type { UsageInfo } from "@/llm/events.js";
 

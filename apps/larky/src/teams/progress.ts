@@ -21,32 +21,36 @@
  */
 
 import { strArg } from "@/utils/index.js";
+import { z } from "zod";
 
 // Tool activity description
-export interface ToolActivity {
-  toolName: string;
-  input: Record<string, unknown>;
-  activityDescription: string; // e.g. "Reading src/foo.ts"
-}
+export const ToolActivitySchema = z.object({
+  toolName: z.string(),
+  input: z.record(z.string(), z.unknown()),
+  activityDescription: z.string(), // e.g. "Reading src/foo.ts"
+});
+export type ToolActivity = z.infer<typeof ToolActivitySchema>;
 
-// Aggregate progress for one teammate
-export interface AgentProgress {
-  toolUseCount: number;
-  tokenCount: number;
-  lastActivity?: ToolActivity | undefined;
-  recentActivities: ToolActivity[]; // circular buffer, max 5
-}
+export const AgentProgressSchema = z.object({
+  toolUseCount: z.number(),
+  tokenCount: z.number(),
+  lastActivity: ToolActivitySchema.optional(),
+  recentActivities: z.array(ToolActivitySchema), // circular buffer, max 5
+});
+export type AgentProgress = z.infer<typeof AgentProgressSchema>;
 
 // Full teammate UI state
-export interface TeammateUIState {
-  name: string;
-  teamName: string;
-  status: "running" | "idle" | "completed" | "failed" | "stopped";
-  progress: AgentProgress;
-  startTime: number;
-  spinnerVerb: string;
-  lastMessage?: string; // last text sent to lead
-}
+export const TeammateUIStateSchema = z.object({
+  name: z.string(),
+  teamName: z.string(),
+  status: z.enum(["running", "idle", "completed", "failed", "stopped"]),
+  progress: AgentProgressSchema,
+  startTime: z.number(),
+  spinnerVerb: z.string(),
+  lastMessage: z.string().optional(),
+});
+
+export type TeammateUIState = z.infer<typeof TeammateUIStateSchema>;
 
 export function createProgress(): AgentProgress {
   return {

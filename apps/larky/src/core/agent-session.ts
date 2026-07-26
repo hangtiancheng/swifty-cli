@@ -101,7 +101,7 @@ import { createSandbox, type Sandbox } from "../sandbox/index.js";
 import * as sessionMod from "../session/session.js";
 import { expandAtRefs } from "../tui/at-expand.js";
 import { createChildLogger } from "../logger/index.js";
-import { asErrorString, strArg } from "../utils/index.js";
+import { asErrorString } from "../utils/index.js";
 
 import type { Event } from "./bus/events.js";
 import type { WirePlanChoice } from "./bus/commands.js";
@@ -783,7 +783,7 @@ export class AgentSession {
       const msg = asErrorString(err);
       const isAbort =
         controller.signal.aborted ||
-        strArg({ name: (err as Error | null)?.name ?? "" }, "name") === "AbortError" ||
+        (err instanceof Error && err.name === "AbortError") ||
         msg.includes("abort");
       if (isAbort) {
         stopReason = "interrupted";
