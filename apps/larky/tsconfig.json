@@ -1,23 +1,40 @@
 {
   "compilerOptions": {
-    "allowJs": true,
-    "declaration": true,
-    "exactOptionalPropertyTypes": true,
-    "forceConsistentCasingInFileNames": true,
-    "isolatedModules": true,
-    "module": "NodeNext",
-    "moduleResolution": "NodeNext",
-    "noImplicitOverride": true,
-    "noPropertyAccessFromIndexSignature": true,
-    // "noUncheckedIndexedAccess": true,
-    "sourceMap": true,
-    "outDir": "./dist",
+    // File Layout
     "rootDir": "./",
-    "skipLibCheck": true,
+    "outDir": "./dist",
+    "allowJs": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    // Environment Settings
+    "target": "esnext",
+    "lib": ["esnext"],
+    "types": ["node"],
+    // Other Outputs
+    "sourceMap": true,
+    "declaration": true,
+    "declarationMap": true,
+    // Stricter Typechecking Options
+    "noUncheckedIndexedAccess": false,
+    "exactOptionalPropertyTypes": false,
+    "paths": {
+      "@/*": ["./src/*"]
+    },
+    "forceConsistentCasingInFileNames": true,
+    // Recommended Options
     "strict": true,
-    "target": "ES2024",
+    "jsx": "react-jsx",
     "verbatimModuleSyntax": true,
-    "jsx": "react-jsx"
+    "isolatedModules": true,
+    "noUncheckedSideEffectImports": true,
+    "moduleDetection": "force",
+    "skipLibCheck": true,
+    "noEmit": true,
+    "incremental": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "plugins": []
   },
-  "exclude": ["dist", "node_modules", "eslint.config.js"]
+  "include": ["scripts", "src", "tests", "tsup.config.ts"],
+  "exclude": ["node_modules", "dist", "src/remote/fe"]
 }

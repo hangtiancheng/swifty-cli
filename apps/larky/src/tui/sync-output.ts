@@ -20,25 +20,19 @@
  * SOFTWARE.
  */
 
-// DEC 2026 synchronized output — eliminates tearing/flicker by batching stdout writes
-const BSU = "\x1b[?2026h";
-const ESU = "\x1b[?2026l";
+const BSU = "\x1b[?2026h"; // Begin Synchronized Update
+const ESU = "\x1b[?2026l"; // End Synchronized Update
 
-// Captured at module load, before installSyncOutput() patches process.stdout.write.
-// Alt-screen enter/exit escape sequences must be written through this raw
-// reference: if they were wrapped in BSU/ESU synchronization markers they would
-// be rendered ineffective by some terminals.
-export const rawStdoutWrite: typeof process.stdout.write = process.stdout.write.bind(
-  process.stdout,
-);
-
+/**
+ * Detects whether the current terminal supports DEC 2026 synchronized output.
+ */
 function isSyncOutputSupported(): boolean {
-  if (process.env["TMUX"]) {
+  if (process.env.TMUX) {
     return false;
   }
 
-  const termProgram = process.env["TERM_PROGRAM"];
-  const term = process.env["TERM"];
+  const termProgram = process.env.TERM_PROGRAM;
+  const term = process.env.TERM;
 
   if (
     termProgram === "iTerm.app" ||
@@ -52,7 +46,7 @@ function isSyncOutputSupported(): boolean {
     return true;
   }
 
-  if (term?.includes("kitty") || process.env["KITTY_WINDOW_ID"]) {
+  if (term?.includes("kitty") || process.env.KITTY_WINDOW_ID) {
     return true;
   }
   if (term === "xterm-ghostty") {
@@ -64,16 +58,16 @@ function isSyncOutputSupported(): boolean {
   if (term?.includes("alacritty")) {
     return true;
   }
-  if (process.env["ZED_TERM"]) {
+  if (process.env.ZED_TERM) {
     return true;
   }
-  if (process.env["WT_SESSION"]) {
+  if (process.env.WT_SESSION) {
     return true;
   }
 
-  const vteVersion = process.env["VTE_VERSION"];
+  const vteVersion = process.env.VTE_VERSION;
   if (vteVersion) {
-    const version = Number.parseInt(vteVersion, 10);
+    const version = parseInt(vteVersion, 10);
     if (version >= 6800) {
       return true;
     }
@@ -82,12 +76,20 @@ function isSyncOutputSupported(): boolean {
   return false;
 }
 
+/**
+ * Installs synchronized output by monkey-patching process.stdout.write.
+ * Uses queueMicrotask to batch all writes within the same synchronous frame
+ * into a single BSU/ESU-wrapped write.
+ *
+ * Ink's onRender is synchronous: multiple stdout.write calls within it occur
+ * in the same microtask and are naturally coalesced into a single BSU...ESU envelope.
+ */
 export function installSyncOutput(): void {
   if (!isSyncOutputSupported()) {
     return;
   }
 
-  const originalWrite = rawStdoutWrite;
+  const originalWrite: typeof process.stdout.write = process.stdout.write.bind(process.stdout);
   let frameBuffer = "";
   let scheduled = false;
 

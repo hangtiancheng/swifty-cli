@@ -20,13 +20,10 @@
  * SOFTWARE.
  */
 
-// TUI visual constants — Swifty-style chalk functions with amber accent
 import chalk from "chalk";
 
-chalk.level = 3;
-
 export const COLORS = {
-  primary: chalk.hex("#d4a017"),
+  primary: chalk.hex("#42b883"),
   white: chalk.bold.white,
   dim: chalk.dim,
   black: chalk.black,
@@ -34,10 +31,10 @@ export const COLORS = {
   warning: chalk.yellow,
   error: chalk.bold.red,
   muted: chalk.gray,
-  thinking: chalk.hex("#d4a017ee"),
+  thinking: chalk.hex("#42b883ee"),
   tool: chalk.cyan,
   user: chalk.bold.blue,
-  assistant: chalk.bold.hex("#d4a017"),
+  assistant: chalk.bold.hex("#42b883"),
 } as const;
 
 export const ICONS = {
@@ -46,13 +43,21 @@ export const ICONS = {
   tool: "⏺",
   success: "✓",
   error: "✗",
-  arrow: "→",
+  arrow: "→" satisfies "→" | "←",
   dot: "·",
 } as const;
 
+export const CMD_COLORS = {
+  local: "⚙",
+  local_ui: "⚙",
+  skill_fork: "★",
+  prompt: "◇",
+} as const;
+
+// TODO: Migrate to green theme color.
 export const BORDER_COLORS = {
   idle: "gray",
-  focused: "#d4a017",
-  agent: "#fbbf24",
+  focused: "#a78bfa",
+  agent: "#a855f6",
   error: "red",
 } as const;

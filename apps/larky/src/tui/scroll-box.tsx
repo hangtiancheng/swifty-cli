@@ -20,8 +20,6 @@
  * SOFTWARE.
  */
 
-// ScrollBox: placeholder for future virtual scrolling.
-// In alt-screen mode Ink manages the render area automatically.
 import { forwardRef, useImperativeHandle } from "react";
 import { Box } from "ink";
 
@@ -35,6 +33,9 @@ interface Props {
   stickyScroll?: boolean;
 }
 
+// Simplified ScrollBox: In alt-screen mode, Ink automatically manages the rendering area.
+// When content overflows the viewport, clearTerminal only affects the alt-screen (no flickering).
+// Custom scrolling is not yet implemented; it will be enhanced later with virtual scrolling and mouse events.
 export const ScrollBox = forwardRef<ScrollBoxHandle, Props>(function ScrollBox({ children }, ref) {
   useImperativeHandle(
     ref,

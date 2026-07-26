@@ -20,35 +20,33 @@
  * SOFTWARE.
  */
 
-// Renders structured diff text as colored lines:
-// lines starting with "+ " are green, "- " are red, others (context/summary) are dimmed.
 import { Box, Text } from "ink";
 
-interface DiffLinesProps {
-  text: string;
-}
-
-export function DiffLines({ text }: DiffLinesProps): React.JSX.Element {
+/**
+ * Renders the line-numbered diff text produced by buildDiff() as colored lines:
+ * lines starting with "+ " are green, "- " are red, others (context/summary lines) are dimmed.
+ */
+export function DiffLines({ text }: { text: string }) {
   const lines = text.split("\n");
   return (
     <Box flexDirection="column">
       {lines.map((line, i) => {
         if (line.startsWith("+ ")) {
           return (
-            <Text key={String(i)} color="green">
+            <Text key={i} color="green">
               {line}
             </Text>
           );
         }
         if (line.startsWith("- ")) {
           return (
-            <Text key={String(i)} color="red">
+            <Text key={i} color="red">
               {line}
             </Text>
           );
         }
         return (
-          <Text key={String(i)} dimColor>
+          <Text key={i} dimColor>
             {line}
           </Text>
         );

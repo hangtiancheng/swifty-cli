@@ -7,12 +7,15 @@
 - TCP loopback `127.0.0.1:5520` (override via `LARKY_HOST` / `LARKY_PORT`)
 - Each message is one `\n`-terminated JSON line (NDJSON)
 - Commands use JSON-RPC 2.0 (client → server); Events use `kind=event` envelope (server → client)
+- Interaction requests (`permission.requested`, `ask_user.requested`, `plan.requested`) carry an `id` that the client answers via the matching `*.respond` RPC
 
 ## Commands
 
-All commands are sent as JSON-RPC 2.0 requests. The `type` field inside `params` is used for routing.
+All commands are sent as JSON-RPC 2.0 requests; `method` selects the handler.
 
-### PingCommand
+## `core.ping`
+
+### Request params
 
 | Field    | Type     | Required |
 | -------- | -------- | -------- |
@@ -38,20 +41,7 @@ All commands are sent as JSON-RPC 2.0 requests. The `type` field inside `params`
 }
 ```
 
-**Example:**
-
-```json
-{
-  "jsonrpc": "2.0",
-  "id": "example-1",
-  "method": "core.ping",
-  "params": {
-    "client": "cli/0.0.1"
-  }
-}
-```
-
-### PongResult
+### Result
 
 | Field            | Type      | Required |
 | ---------------- | --------- | -------- |
@@ -81,26 +71,13 @@ All commands are sent as JSON-RPC 2.0 requests. The `type` field inside `params`
 }
 ```
 
-**Example:**
+## `core.status`
 
-```json
-{
-  "jsonrpc": "2.0",
-  "id": "example-1",
-  "result": {
-    "server_version": "0.2.0",
-    "uptime_ms": 12,
-    "received_at": "2026-05-16T10:00:00.001Z"
-  }
-}
-```
-
-### AgentRunCommand
+### Request params
 
 | Field  | Type     | Required |
 | ------ | -------- | -------- |
 | `type` | `string` | yes      |
-| `goal` | `string` | yes      |
 
 ```json
 {
@@ -108,65 +85,55 @@ All commands are sent as JSON-RPC 2.0 requests. The `type` field inside `params`
   "type": "object",
   "properties": {
     "type": {
-      "default": "agent.run",
+      "default": "core.status",
       "type": "string",
-      "const": "agent.run"
-    },
-    "goal": {
-      "type": "string"
+      "const": "core.status"
     }
   },
-  "required": ["type", "goal"],
+  "required": ["type"],
   "additionalProperties": false
 }
 ```
 
-**Example:**
+### Result
 
-```json
-{
-  "jsonrpc": "2.0",
-  "id": "example-2",
-  "method": "agent.run",
-  "params": {
-    "goal": "Summarize the main sections of README.md"
-  }
-}
-```
-
-### AgentRunResult
-
-| Field    | Type     | Required |
-| -------- | -------- | -------- |
-| `run_id` | `string` | yes      |
+| Field             | Type      | Required |
+| ----------------- | --------- | -------- |
+| `server_version`  | `string`  | yes      |
+| `uptime_ms`       | `integer` | yes      |
+| `cwd`             | `string`  | yes      |
+| `active_sessions` | `integer` | yes      |
 
 ```json
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "properties": {
-    "run_id": {
+    "server_version": {
       "type": "string"
+    },
+    "uptime_ms": {
+      "type": "integer",
+      "minimum": -9007199254740991,
+      "maximum": 9007199254740991
+    },
+    "cwd": {
+      "type": "string"
+    },
+    "active_sessions": {
+      "type": "integer",
+      "minimum": -9007199254740991,
+      "maximum": 9007199254740991
     }
   },
-  "required": ["run_id"],
+  "required": ["server_version", "uptime_ms", "cwd", "active_sessions"],
   "additionalProperties": false
 }
 ```
 
-**Example:**
+## `event.subscribe`
 
-```json
-{
-  "jsonrpc": "2.0",
-  "id": "example-2",
-  "result": {
-    "run_id": "20260516-100000-abc123"
-  }
-}
-```
-
-### EventSubscribeCommand
+### Request params
 
 | Field             | Type     | Required |
 | ----------------- | -------- | -------- | --- |
@@ -212,22 +179,7 @@ All commands are sent as JSON-RPC 2.0 requests. The `type` field inside `params`
 }
 ```
 
-**Example:**
-
-```json
-{
-  "jsonrpc": "2.0",
-  "id": "example-3",
-  "method": "event.subscribe",
-  "params": {
-    "topics": ["run.*", "step.*", "tool.*", "llm.token"],
-    "scope": "global",
-    "replay_from_run": null
-  }
-}
-```
-
-### EventSubscribeResult
+### Result
 
 | Field             | Type      | Required |
 | ----------------- | --------- | -------- |
@@ -254,26 +206,15 @@ All commands are sent as JSON-RPC 2.0 requests. The `type` field inside `params`
 }
 ```
 
-**Example:**
+## `session.create`
 
-```json
-{
-  "jsonrpc": "2.0",
-  "id": "example-3",
-  "result": {
-    "subscription_id": "sub-abc123",
-    "replayed_count": 0
-  }
-}
-```
+### Request params
 
-### SessionCreateCommand
-
-| Field   | Type     | Required |
-| ------- | -------- | -------- |
-| `type`  | `string` | yes      |
-| `mode`  | `string` | yes      |
-| `title` | `string` | yes      |
+| Field             | Type      | Required |
+| ----------------- | --------- | -------- | --- |
+| `type`            | `string`  | yes      |
+| `permission_mode` | `string   | null`    | yes |
+| `persist`         | `boolean` | yes      |
 
 ```json
 {
@@ -285,41 +226,36 @@ All commands are sent as JSON-RPC 2.0 requests. The `type` field inside `params`
       "type": "string",
       "const": "session.create"
     },
-    "mode": {
-      "default": "chat",
-      "type": "string",
-      "enum": ["one_shot", "chat"]
+    "permission_mode": {
+      "default": null,
+      "anyOf": [
+        {
+          "type": "string",
+          "enum": ["default", "acceptEdits", "plan", "bypassPermissions"]
+        },
+        {
+          "type": "null"
+        }
+      ]
     },
-    "title": {
-      "default": "",
-      "type": "string"
+    "persist": {
+      "default": true,
+      "type": "boolean"
     }
   },
-  "required": ["type", "mode", "title"],
+  "required": ["type", "permission_mode", "persist"],
   "additionalProperties": false
 }
 ```
 
-**Example:**
+### Result
 
-```json
-{
-  "jsonrpc": "2.0",
-  "id": "example-4",
-  "method": "session.create",
-  "params": {
-    "mode": "chat",
-    "title": ""
-  }
-}
-```
-
-### SessionCreateResult
-
-| Field        | Type     | Required |
-| ------------ | -------- | -------- |
-| `session_id` | `string` | yes      |
-| `status`     | `string` | yes      |
+| Field             | Type     | Required |
+| ----------------- | -------- | -------- |
+| `session_id`      | `string` | yes      |
+| `cwd`             | `string` | yes      |
+| `permission_mode` | `string` | yes      |
+| `commands`        | `array`  | yes      |
 
 ```json
 {
@@ -329,30 +265,170 @@ All commands are sent as JSON-RPC 2.0 requests. The `type` field inside `params`
     "session_id": {
       "type": "string"
     },
-    "status": {
+    "cwd": {
+      "type": "string"
+    },
+    "permission_mode": {
       "type": "string",
-      "enum": ["active", "waiting_for_input", "closed"]
+      "enum": ["default", "acceptEdits", "plan", "bypassPermissions"]
+    },
+    "commands": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "default": "",
+            "type": "string"
+          }
+        },
+        "required": ["name", "description"],
+        "additionalProperties": false
+      }
     }
   },
-  "required": ["session_id", "status"],
+  "required": ["session_id", "cwd", "permission_mode", "commands"],
   "additionalProperties": false
 }
 ```
 
-**Example:**
+## `session.list`
+
+### Request params
+
+| Field  | Type     | Required |
+| ------ | -------- | -------- |
+| `type` | `string` | yes      |
 
 ```json
 {
-  "jsonrpc": "2.0",
-  "id": "example-4",
-  "result": {
-    "session_id": "session-abc123def456",
-    "status": "active"
-  }
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "type": {
+      "default": "session.list",
+      "type": "string",
+      "const": "session.list"
+    }
+  },
+  "required": ["type"],
+  "additionalProperties": false
 }
 ```
 
-### SessionSendMessageCommand
+### Result
+
+| Field      | Type    | Required |
+| ---------- | ------- | -------- |
+| `sessions` | `array` | yes      |
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "sessions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "first_message": {
+            "type": "string"
+          },
+          "message_count": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "mod_time": {
+            "type": "string"
+          }
+        },
+        "required": ["id", "first_message", "message_count", "mod_time"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["sessions"],
+  "additionalProperties": false
+}
+```
+
+## `session.resume`
+
+### Request params
+
+| Field        | Type     | Required |
+| ------------ | -------- | -------- |
+| `type`       | `string` | yes      |
+| `session_id` | `string` | yes      |
+| `resume_id`  | `string` | yes      |
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "type": {
+      "default": "session.resume",
+      "type": "string",
+      "const": "session.resume"
+    },
+    "session_id": {
+      "type": "string"
+    },
+    "resume_id": {
+      "type": "string"
+    }
+  },
+  "required": ["type", "session_id", "resume_id"],
+  "additionalProperties": false
+}
+```
+
+### Result
+
+| Field      | Type    | Required |
+| ---------- | ------- | -------- |
+| `messages` | `array` | yes      |
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "messages": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "role": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string"
+          }
+        },
+        "required": ["role", "content"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["messages"],
+  "additionalProperties": false
+}
+```
+
+## `session.send_message`
+
+### Request params
 
 | Field        | Type     | Required |
 | ------------ | -------- | -------- |
@@ -382,21 +458,7 @@ All commands are sent as JSON-RPC 2.0 requests. The `type` field inside `params`
 }
 ```
 
-**Example:**
-
-```json
-{
-  "jsonrpc": "2.0",
-  "id": "example-5",
-  "method": "session.sendMessage",
-  "params": {
-    "session_id": "session-abc123def456",
-    "content": "Summarize README.md"
-  }
-}
-```
-
-### SessionSendMessageResult
+### Result
 
 | Field    | Type     | Required |
 | -------- | -------- | -------- |
@@ -416,72 +478,9 @@ All commands are sent as JSON-RPC 2.0 requests. The `type` field inside `params`
 }
 ```
 
-**Example:**
+## `session.close`
 
-```json
-{
-  "jsonrpc": "2.0",
-  "id": "example-5",
-  "result": {
-    "run_id": "20260516-100000-abc123"
-  }
-}
-```
-
-### SessionGetHistoryCommand
-
-| Field        | Type     | Required |
-| ------------ | -------- | -------- |
-| `type`       | `string` | yes      |
-| `session_id` | `string` | yes      |
-
-```json
-{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "type": "object",
-  "properties": {
-    "type": {
-      "default": "session.get_history",
-      "type": "string",
-      "const": "session.get_history"
-    },
-    "session_id": {
-      "type": "string"
-    }
-  },
-  "required": ["type", "session_id"],
-  "additionalProperties": false
-}
-```
-
-### SessionGetHistoryResult
-
-| Field      | Type    | Required |
-| ---------- | ------- | -------- |
-| `messages` | `array` | yes      |
-
-```json
-{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "type": "object",
-  "properties": {
-    "messages": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "propertyNames": {
-          "type": "string"
-        },
-        "additionalProperties": {}
-      }
-    }
-  },
-  "required": ["messages"],
-  "additionalProperties": false
-}
-```
-
-### SessionCloseCommand
+### Request params
 
 | Field        | Type     | Required |
 | ------------ | -------- | -------- |
@@ -507,23 +506,565 @@ All commands are sent as JSON-RPC 2.0 requests. The `type` field inside `params`
 }
 ```
 
-### SessionCloseResult
+### Result
 
-| Field    | Type     | Required |
-| -------- | -------- | -------- |
-| `status` | `string` | yes      |
+| Field | Type      | Required |
+| ----- | --------- | -------- |
+| `ok`  | `boolean` | yes      |
 
 ```json
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "properties": {
-    "status": {
-      "type": "string",
-      "enum": ["active", "waiting_for_input", "closed"]
+    "ok": {
+      "default": true,
+      "type": "boolean"
     }
   },
-  "required": ["status"],
+  "required": ["ok"],
+  "additionalProperties": false
+}
+```
+
+## `run.cancel`
+
+### Request params
+
+| Field        | Type     | Required |
+| ------------ | -------- | -------- |
+| `type`       | `string` | yes      |
+| `session_id` | `string` | yes      |
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "type": {
+      "default": "run.cancel",
+      "type": "string",
+      "const": "run.cancel"
+    },
+    "session_id": {
+      "type": "string"
+    }
+  },
+  "required": ["type", "session_id"],
+  "additionalProperties": false
+}
+```
+
+### Result
+
+| Field       | Type      | Required |
+| ----------- | --------- | -------- |
+| `ok`        | `boolean` | yes      |
+| `cancelled` | `boolean` | yes      |
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "ok": {
+      "default": true,
+      "type": "boolean"
+    },
+    "cancelled": {
+      "default": false,
+      "type": "boolean"
+    }
+  },
+  "required": ["ok", "cancelled"],
+  "additionalProperties": false
+}
+```
+
+## `permission.respond`
+
+### Request params
+
+| Field      | Type     | Required |
+| ---------- | -------- | -------- |
+| `type`     | `string` | yes      |
+| `id`       | `string` | yes      |
+| `response` | `string` | yes      |
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "type": {
+      "default": "permission.respond",
+      "type": "string",
+      "const": "permission.respond"
+    },
+    "id": {
+      "type": "string"
+    },
+    "response": {
+      "type": "string",
+      "enum": ["allow", "deny", "allowAlways"]
+    }
+  },
+  "required": ["type", "id", "response"],
+  "additionalProperties": false
+}
+```
+
+### Result
+
+| Field | Type      | Required |
+| ----- | --------- | -------- |
+| `ok`  | `boolean` | yes      |
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "ok": {
+      "default": true,
+      "type": "boolean"
+    }
+  },
+  "required": ["ok"],
+  "additionalProperties": false
+}
+```
+
+## `ask_user.respond`
+
+### Request params
+
+| Field     | Type     | Required |
+| --------- | -------- | -------- |
+| `type`    | `string` | yes      |
+| `id`      | `string` | yes      |
+| `answers` | `object` | yes      |
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "type": {
+      "default": "ask_user.respond",
+      "type": "string",
+      "const": "ask_user.respond"
+    },
+    "id": {
+      "type": "string"
+    },
+    "answers": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string"
+      },
+      "additionalProperties": {
+        "type": "string"
+      }
+    }
+  },
+  "required": ["type", "id", "answers"],
+  "additionalProperties": false
+}
+```
+
+### Result
+
+| Field | Type      | Required |
+| ----- | --------- | -------- |
+| `ok`  | `boolean` | yes      |
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "ok": {
+      "default": true,
+      "type": "boolean"
+    }
+  },
+  "required": ["ok"],
+  "additionalProperties": false
+}
+```
+
+## `plan.respond`
+
+### Request params
+
+| Field      | Type     | Required |
+| ---------- | -------- | -------- |
+| `type`     | `string` | yes      |
+| `id`       | `string` | yes      |
+| `choice`   | `string` | yes      |
+| `feedback` | `string` | yes      |
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "type": {
+      "default": "plan.respond",
+      "type": "string",
+      "const": "plan.respond"
+    },
+    "id": {
+      "type": "string"
+    },
+    "choice": {
+      "type": "string",
+      "enum": ["yolo", "manual", "feedback"]
+    },
+    "feedback": {
+      "default": "",
+      "type": "string"
+    }
+  },
+  "required": ["type", "id", "choice", "feedback"],
+  "additionalProperties": false
+}
+```
+
+### Result
+
+| Field | Type      | Required |
+| ----- | --------- | -------- |
+| `ok`  | `boolean` | yes      |
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "ok": {
+      "default": true,
+      "type": "boolean"
+    }
+  },
+  "required": ["ok"],
+  "additionalProperties": false
+}
+```
+
+## `mode.set`
+
+### Request params
+
+| Field        | Type     | Required |
+| ------------ | -------- | -------- |
+| `type`       | `string` | yes      |
+| `session_id` | `string` | yes      |
+| `mode`       | `string` | yes      |
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "type": {
+      "default": "mode.set",
+      "type": "string",
+      "const": "mode.set"
+    },
+    "session_id": {
+      "type": "string"
+    },
+    "mode": {
+      "type": "string",
+      "enum": ["default", "acceptEdits", "plan", "bypassPermissions"]
+    }
+  },
+  "required": ["type", "session_id", "mode"],
+  "additionalProperties": false
+}
+```
+
+### Result
+
+| Field  | Type      | Required |
+| ------ | --------- | -------- |
+| `ok`   | `boolean` | yes      |
+| `mode` | `string`  | yes      |
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "ok": {
+      "default": true,
+      "type": "boolean"
+    },
+    "mode": {
+      "type": "string",
+      "enum": ["default", "acceptEdits", "plan", "bypassPermissions"]
+    }
+  },
+  "required": ["ok", "mode"],
+  "additionalProperties": false
+}
+```
+
+## `command.run`
+
+### Request params
+
+| Field        | Type     | Required |
+| ------------ | -------- | -------- |
+| `type`       | `string` | yes      |
+| `session_id` | `string` | yes      |
+| `input`      | `string` | yes      |
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "type": {
+      "default": "command.run",
+      "type": "string",
+      "const": "command.run"
+    },
+    "session_id": {
+      "type": "string"
+    },
+    "input": {
+      "type": "string"
+    }
+  },
+  "required": ["type", "session_id", "input"],
+  "additionalProperties": false
+}
+```
+
+### Result
+
+| Field      | Type      | Required |
+| ---------- | --------- | -------- |
+| `accepted` | `boolean` | yes      |
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "accepted": {
+      "default": true,
+      "type": "boolean"
+    }
+  },
+  "required": ["accepted"],
+  "additionalProperties": false
+}
+```
+
+## `command.list`
+
+### Request params
+
+| Field        | Type     | Required |
+| ------------ | -------- | -------- |
+| `type`       | `string` | yes      |
+| `session_id` | `string` | yes      |
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "type": {
+      "default": "command.list",
+      "type": "string",
+      "const": "command.list"
+    },
+    "session_id": {
+      "type": "string"
+    }
+  },
+  "required": ["type", "session_id"],
+  "additionalProperties": false
+}
+```
+
+### Result
+
+| Field      | Type    | Required |
+| ---------- | ------- | -------- |
+| `commands` | `array` | yes      |
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "commands": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "default": "",
+            "type": "string"
+          }
+        },
+        "required": ["name", "description"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["commands"],
+  "additionalProperties": false
+}
+```
+
+## `rewind.list`
+
+### Request params
+
+| Field        | Type     | Required |
+| ------------ | -------- | -------- |
+| `type`       | `string` | yes      |
+| `session_id` | `string` | yes      |
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "type": {
+      "default": "rewind.list",
+      "type": "string",
+      "const": "rewind.list"
+    },
+    "session_id": {
+      "type": "string"
+    }
+  },
+  "required": ["type", "session_id"],
+  "additionalProperties": false
+}
+```
+
+### Result
+
+| Field       | Type    | Required |
+| ----------- | ------- | -------- |
+| `snapshots` | `array` | yes      |
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "snapshots": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "index": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "message_index": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "user_text": {
+            "type": "string"
+          },
+          "file_count": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "timestamp": {
+            "type": "string"
+          }
+        },
+        "required": ["index", "message_index", "user_text", "file_count", "timestamp"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["snapshots"],
+  "additionalProperties": false
+}
+```
+
+## `rewind.apply`
+
+### Request params
+
+| Field        | Type      | Required |
+| ------------ | --------- | -------- |
+| `type`       | `string`  | yes      |
+| `session_id` | `string`  | yes      |
+| `index`      | `integer` | yes      |
+| `mode`       | `string`  | yes      |
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "type": {
+      "default": "rewind.apply",
+      "type": "string",
+      "const": "rewind.apply"
+    },
+    "session_id": {
+      "type": "string"
+    },
+    "index": {
+      "type": "integer",
+      "minimum": -9007199254740991,
+      "maximum": 9007199254740991
+    },
+    "mode": {
+      "default": "both",
+      "type": "string",
+      "enum": ["both", "files", "conversation"]
+    }
+  },
+  "required": ["type", "session_id", "index", "mode"],
+  "additionalProperties": false
+}
+```
+
+### Result
+
+| Field     | Type      | Required |
+| --------- | --------- | -------- |
+| `ok`      | `boolean` | yes      |
+| `message` | `string`  | yes      |
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "ok": {
+      "default": true,
+      "type": "boolean"
+    },
+    "message": {
+      "default": "",
+      "type": "string"
+    }
+  },
+  "required": ["ok", "message"],
   "additionalProperties": false
 }
 ```
@@ -562,31 +1103,18 @@ Events pushed from daemon to subscribed clients over the same TCP connection.
 }
 ```
 
-**Example:**
+## Events
 
-```json
-{
-  "kind": "event",
-  "event": {
-    "type": "step.started",
-    "run_id": "20260516-100000-abc123",
-    "step": 1,
-    "timestamp": "2026-05-16T10:00:00.001Z"
-  }
-}
-```
+Events are written to the run's `events.jsonl` and forwarded over IPC to matching subscribers (topic globs via picomatch; scope `global`, `session:<id>`, or `run:<id>`).
 
-## IPC Events
-
-Events sent over the IPC socket (daemon → client).
-
-### CoreStartedEvent
+### `core.started`
 
 | Field         | Type     | Required |
 | ------------- | -------- | -------- |
 | `type`        | `string` | yes      |
 | `listen_addr` | `string` | yes      |
 | `version`     | `string` | yes      |
+| `timestamp`   | `string` | yes      |
 
 ```json
 {
@@ -603,616 +1131,27 @@ Events sent over the IPC socket (daemon → client).
     },
     "version": {
       "type": "string"
-    }
-  },
-  "required": ["type", "listen_addr", "version"],
-  "additionalProperties": false
-}
-```
-
-## Run Events
-
-Events written to `runs/<run_id>/events.jsonl` and forwarded over IPC to subscribed clients.
-
-### RunStartedEvent
-
-| Field       | Type     | Required |
-| ----------- | -------- | -------- |
-| `type`      | `string` | yes      |
-| `run_id`    | `string` | yes      |
-| `goal`      | `string` | yes      |
-| `timestamp` | `string` | yes      |
-
-```json
-{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "type": "object",
-  "properties": {
-    "type": {
-      "default": "run.started",
-      "type": "string",
-      "const": "run.started"
-    },
-    "run_id": {
-      "type": "string"
-    },
-    "goal": {
-      "type": "string"
     },
     "timestamp": {
       "type": "string"
     }
   },
-  "required": ["type", "run_id", "goal", "timestamp"],
+  "required": ["type", "listen_addr", "version", "timestamp"],
   "additionalProperties": false
 }
 ```
 
-**Example:**
+### `log.line`
 
-```json
-{
-  "type": "run.started",
-  "run_id": "20260516-100000-abc123",
-  "goal": "Summarize README.md",
-  "timestamp": "2026-05-16T10:00:00.001Z"
-}
-```
-
-### RunFinishedEvent
-
-| Field       | Type      | Required |
-| ----------- | --------- | -------- | --- |
-| `type`      | `string`  | yes      |
-| `run_id`    | `string`  | yes      |
-| `status`    | `string`  | yes      |
-| `reason`    | `string   | null`    | yes |
-| `steps`     | `integer` | yes      |
-| `timestamp` | `string`  | yes      |
-
-```json
-{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "type": "object",
-  "properties": {
-    "type": {
-      "default": "run.finished",
-      "type": "string",
-      "const": "run.finished"
-    },
-    "run_id": {
-      "type": "string"
-    },
-    "status": {
-      "type": "string"
-    },
-    "reason": {
-      "default": null,
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ]
-    },
-    "steps": {
-      "type": "integer",
-      "minimum": -9007199254740991,
-      "maximum": 9007199254740991
-    },
-    "timestamp": {
-      "type": "string"
-    }
-  },
-  "required": ["type", "run_id", "status", "reason", "steps", "timestamp"],
-  "additionalProperties": false
-}
-```
-
-**Example:**
-
-```json
-{
-  "type": "run.finished",
-  "run_id": "20260516-100000-abc123",
-  "status": "success",
-  "reason": null,
-  "steps": 2,
-  "timestamp": "2026-05-16T10:00:00.001Z"
-}
-```
-
-### StepStartedEvent
-
-| Field       | Type      | Required |
-| ----------- | --------- | -------- |
-| `type`      | `string`  | yes      |
-| `run_id`    | `string`  | yes      |
-| `step`      | `integer` | yes      |
-| `timestamp` | `string`  | yes      |
-
-```json
-{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "type": "object",
-  "properties": {
-    "type": {
-      "default": "step.started",
-      "type": "string",
-      "const": "step.started"
-    },
-    "run_id": {
-      "type": "string"
-    },
-    "step": {
-      "type": "integer",
-      "minimum": -9007199254740991,
-      "maximum": 9007199254740991
-    },
-    "timestamp": {
-      "type": "string"
-    }
-  },
-  "required": ["type", "run_id", "step", "timestamp"],
-  "additionalProperties": false
-}
-```
-
-**Example:**
-
-```json
-{
-  "type": "step.started",
-  "run_id": "20260516-100000-abc123",
-  "step": 1,
-  "timestamp": "2026-05-16T10:00:00.001Z"
-}
-```
-
-### StepFinishedEvent
-
-| Field       | Type      | Required |
-| ----------- | --------- | -------- |
-| `type`      | `string`  | yes      |
-| `run_id`    | `string`  | yes      |
-| `step`      | `integer` | yes      |
-| `timestamp` | `string`  | yes      |
-
-```json
-{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "type": "object",
-  "properties": {
-    "type": {
-      "default": "step.finished",
-      "type": "string",
-      "const": "step.finished"
-    },
-    "run_id": {
-      "type": "string"
-    },
-    "step": {
-      "type": "integer",
-      "minimum": -9007199254740991,
-      "maximum": 9007199254740991
-    },
-    "timestamp": {
-      "type": "string"
-    }
-  },
-  "required": ["type", "run_id", "step", "timestamp"],
-  "additionalProperties": false
-}
-```
-
-**Example:**
-
-```json
-{
-  "type": "step.finished",
-  "run_id": "20260516-100000-abc123",
-  "step": 1,
-  "timestamp": "2026-05-16T10:00:00.001Z"
-}
-```
-
-### ToolUseStartedEvent
-
-| Field         | Type     | Required |
-| ------------- | -------- | -------- |
-| `type`        | `string` | yes      |
-| `run_id`      | `string` | yes      |
-| `tool_use_id` | `string` | yes      |
-| `tool_name`   | `string` | yes      |
-| `params`      | `object` | yes      |
-| `timestamp`   | `string` | yes      |
-
-```json
-{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "type": "object",
-  "properties": {
-    "type": {
-      "default": "tool.call_started",
-      "type": "string",
-      "const": "tool.call_started"
-    },
-    "run_id": {
-      "type": "string"
-    },
-    "tool_use_id": {
-      "type": "string"
-    },
-    "tool_name": {
-      "type": "string"
-    },
-    "params": {
-      "type": "object",
-      "propertyNames": {
-        "type": "string"
-      },
-      "additionalProperties": {}
-    },
-    "timestamp": {
-      "type": "string"
-    }
-  },
-  "required": ["type", "run_id", "tool_use_id", "tool_name", "params", "timestamp"],
-  "additionalProperties": false
-}
-```
-
-**Example:**
-
-```json
-{
-  "type": "tool.call_started",
-  "run_id": "20260516-100000-abc123",
-  "tool_use_id": "tool_use_01",
-  "tool_name": "read_file",
-  "params": {
-    "path": "README.md"
-  },
-  "timestamp": "2026-05-16T10:00:00.001Z"
-}
-```
-
-### ToolUseFinishedEvent
-
-| Field         | Type      | Required |
-| ------------- | --------- | -------- |
-| `type`        | `string`  | yes      |
-| `run_id`      | `string`  | yes      |
-| `tool_use_id` | `string`  | yes      |
-| `tool_name`   | `string`  | yes      |
-| `elapsed_ms`  | `integer` | yes      |
-| `output`      | `string`  | yes      |
-| `timestamp`   | `string`  | yes      |
-
-```json
-{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "type": "object",
-  "properties": {
-    "type": {
-      "default": "tool.call_finished",
-      "type": "string",
-      "const": "tool.call_finished"
-    },
-    "run_id": {
-      "type": "string"
-    },
-    "tool_use_id": {
-      "type": "string"
-    },
-    "tool_name": {
-      "type": "string"
-    },
-    "elapsed_ms": {
-      "type": "integer",
-      "minimum": -9007199254740991,
-      "maximum": 9007199254740991
-    },
-    "output": {
-      "default": "",
-      "type": "string"
-    },
-    "timestamp": {
-      "type": "string"
-    }
-  },
-  "required": ["type", "run_id", "tool_use_id", "tool_name", "elapsed_ms", "output", "timestamp"],
-  "additionalProperties": false
-}
-```
-
-**Example:**
-
-```json
-{
-  "type": "tool.call_finished",
-  "run_id": "20260516-100000-abc123",
-  "tool_use_id": "tool_use_01",
-  "tool_name": "read_file",
-  "elapsed_ms": 3,
-  "timestamp": "2026-05-16T10:00:00.001Z"
-}
-```
-
-### ToolUseFailedEvent
-
-| Field           | Type      | Required |
-| --------------- | --------- | -------- |
-| `type`          | `string`  | yes      |
-| `run_id`        | `string`  | yes      |
-| `tool_use_id`   | `string`  | yes      |
-| `tool_name`     | `string`  | yes      |
-| `error_class`   | `string`  | yes      |
-| `error_message` | `string`  | yes      |
-| `elapsed_ms`    | `integer` | yes      |
-| `attempt`       | `integer` | yes      |
-| `timestamp`     | `string`  | yes      |
-
-```json
-{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "type": "object",
-  "properties": {
-    "type": {
-      "default": "tool.call_failed",
-      "type": "string",
-      "const": "tool.call_failed"
-    },
-    "run_id": {
-      "type": "string"
-    },
-    "tool_use_id": {
-      "type": "string"
-    },
-    "tool_name": {
-      "type": "string"
-    },
-    "error_class": {
-      "type": "string"
-    },
-    "error_message": {
-      "type": "string"
-    },
-    "elapsed_ms": {
-      "type": "integer",
-      "minimum": -9007199254740991,
-      "maximum": 9007199254740991
-    },
-    "attempt": {
-      "default": 1,
-      "type": "integer",
-      "minimum": -9007199254740991,
-      "maximum": 9007199254740991
-    },
-    "timestamp": {
-      "type": "string"
-    }
-  },
-  "required": [
-    "type",
-    "run_id",
-    "tool_use_id",
-    "tool_name",
-    "error_class",
-    "error_message",
-    "elapsed_ms",
-    "attempt",
-    "timestamp"
-  ],
-  "additionalProperties": false
-}
-```
-
-**Example:**
-
-```json
-{
-  "type": "tool.call_failed",
-  "run_id": "20260516-100000-abc123",
-  "tool_use_id": "tool_use_02",
-  "tool_name": "read_file",
-  "error_class": "runtime_error",
-  "error_message": "file not found",
-  "elapsed_ms": 1,
-  "attempt": 1,
-  "timestamp": "2026-05-16T10:00:00.001Z"
-}
-```
-
-### LlmModelSelectedEvent
-
-| Field       | Type     | Required |
-| ----------- | -------- | -------- |
-| `type`      | `string` | yes      |
-| `run_id`    | `string` | yes      |
-| `model`     | `string` | yes      |
-| `strategy`  | `string` | yes      |
-| `timestamp` | `string` | yes      |
-
-```json
-{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "type": "object",
-  "properties": {
-    "type": {
-      "default": "llm.model_selected",
-      "type": "string",
-      "const": "llm.model_selected"
-    },
-    "run_id": {
-      "type": "string"
-    },
-    "model": {
-      "type": "string"
-    },
-    "strategy": {
-      "type": "string"
-    },
-    "timestamp": {
-      "type": "string"
-    }
-  },
-  "required": ["type", "run_id", "model", "strategy", "timestamp"],
-  "additionalProperties": false
-}
-```
-
-**Example:**
-
-```json
-{
-  "type": "llm.model_selected",
-  "run_id": "20260516-100000-abc123",
-  "model": "claude-sonnet-4-6",
-  "strategy": "static",
-  "timestamp": "2026-05-16T10:00:00.001Z"
-}
-```
-
-### LlmTokenEvent
-
-| Field       | Type     | Required |
-| ----------- | -------- | -------- |
-| `type`      | `string` | yes      |
-| `run_id`    | `string` | yes      |
-| `token`     | `string` | yes      |
-| `timestamp` | `string` | yes      |
-
-```json
-{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "type": "object",
-  "properties": {
-    "type": {
-      "default": "llm.token",
-      "type": "string",
-      "const": "llm.token"
-    },
-    "run_id": {
-      "type": "string"
-    },
-    "token": {
-      "type": "string"
-    },
-    "timestamp": {
-      "type": "string"
-    }
-  },
-  "required": ["type", "run_id", "token", "timestamp"],
-  "additionalProperties": false
-}
-```
-
-**Example:**
-
-```json
-{
-  "type": "llm.token",
-  "run_id": "20260516-100000-abc123",
-  "token": "The ",
-  "timestamp": "2026-05-16T10:00:00.001Z"
-}
-```
-
-### LlmUsageEvent
-
-| Field                         | Type      | Required |
-| ----------------------------- | --------- | -------- |
-| `type`                        | `string`  | yes      |
-| `run_id`                      | `string`  | yes      |
-| `input_tokens`                | `integer` | yes      |
-| `output_tokens`               | `integer` | yes      |
-| `cache_read_input_tokens`     | `integer` | yes      |
-| `cache_creation_input_tokens` | `integer` | yes      |
-| `context_percent`             | `number`  | yes      |
-| `timestamp`                   | `string`  | yes      |
-
-```json
-{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "type": "object",
-  "properties": {
-    "type": {
-      "default": "llm.usage",
-      "type": "string",
-      "const": "llm.usage"
-    },
-    "run_id": {
-      "type": "string"
-    },
-    "input_tokens": {
-      "type": "integer",
-      "minimum": -9007199254740991,
-      "maximum": 9007199254740991
-    },
-    "output_tokens": {
-      "type": "integer",
-      "minimum": -9007199254740991,
-      "maximum": 9007199254740991
-    },
-    "cache_read_input_tokens": {
-      "type": "integer",
-      "minimum": -9007199254740991,
-      "maximum": 9007199254740991
-    },
-    "cache_creation_input_tokens": {
-      "type": "integer",
-      "minimum": -9007199254740991,
-      "maximum": 9007199254740991
-    },
-    "context_percent": {
-      "default": 0,
-      "type": "number"
-    },
-    "timestamp": {
-      "type": "string"
-    }
-  },
-  "required": [
-    "type",
-    "run_id",
-    "input_tokens",
-    "output_tokens",
-    "cache_read_input_tokens",
-    "cache_creation_input_tokens",
-    "context_percent",
-    "timestamp"
-  ],
-  "additionalProperties": false
-}
-```
-
-**Example:**
-
-```json
-{
-  "type": "llm.usage",
-  "run_id": "20260516-100000-abc123",
-  "input_tokens": 512,
-  "output_tokens": 48,
-  "cache_read_input_tokens": 490,
-  "cache_creation_input_tokens": 0,
-  "timestamp": "2026-05-16T10:00:00.001Z"
-}
-```
-
-### LogLineEvent
-
-| Field       | Type     | Required |
-| ----------- | -------- | -------- |
-| `type`      | `string` | yes      |
-| `run_id`    | `string` | yes      |
-| `level`     | `string` | yes      |
-| `source`    | `string` | yes      |
-| `message`   | `string` | yes      |
-| `timestamp` | `string` | yes      |
+| Field        | Type     | Required |
+| ------------ | -------- | -------- |
+| `type`       | `string` | yes      |
+| `session_id` | `string` | yes      |
+| `run_id`     | `string` | yes      |
+| `level`      | `string` | yes      |
+| `source`     | `string` | yes      |
+| `message`    | `string` | yes      |
+| `timestamp`  | `string` | yes      |
 
 ```json
 {
@@ -1224,7 +1163,12 @@ Events written to `runs/<run_id>/events.jsonl` and forwarded over IPC to subscri
       "type": "string",
       "const": "log.line"
     },
+    "session_id": {
+      "default": "",
+      "type": "string"
+    },
     "run_id": {
+      "default": "",
       "type": "string"
     },
     "level": {
@@ -1240,33 +1184,18 @@ Events written to `runs/<run_id>/events.jsonl` and forwarded over IPC to subscri
       "type": "string"
     }
   },
-  "required": ["type", "run_id", "level", "source", "message", "timestamp"],
+  "required": ["type", "session_id", "run_id", "level", "source", "message", "timestamp"],
   "additionalProperties": false
 }
 ```
 
-**Example:**
-
-```json
-{
-  "type": "log.line",
-  "run_id": "20260516-100000-abc123",
-  "level": "INFO",
-  "source": "larky.core.loop",
-  "message": "step 1 started",
-  "timestamp": "2026-05-16T10:00:00.001Z"
-}
-```
-
-## Session Events
-
-### SessionCreatedEvent
+### `session.created`
 
 | Field        | Type     | Required |
 | ------------ | -------- | -------- |
 | `type`       | `string` | yes      |
 | `session_id` | `string` | yes      |
-| `mode`       | `string` | yes      |
+| `cwd`        | `string` | yes      |
 | `timestamp`  | `string` | yes      |
 
 ```json
@@ -1282,160 +1211,19 @@ Events written to `runs/<run_id>/events.jsonl` and forwarded over IPC to subscri
     "session_id": {
       "type": "string"
     },
-    "mode": {
+    "cwd": {
       "type": "string"
     },
     "timestamp": {
       "type": "string"
     }
   },
-  "required": ["type", "session_id", "mode", "timestamp"],
+  "required": ["type", "session_id", "cwd", "timestamp"],
   "additionalProperties": false
 }
 ```
 
-**Example:**
-
-```json
-{
-  "type": "session.created",
-  "session_id": "session-abc123def456",
-  "mode": "chat",
-  "timestamp": "2026-05-16T10:00:00.001Z"
-}
-```
-
-### SessionMessageReceivedEvent
-
-| Field        | Type     | Required |
-| ------------ | -------- | -------- |
-| `type`       | `string` | yes      |
-| `session_id` | `string` | yes      |
-| `content`    | `string` | yes      |
-| `timestamp`  | `string` | yes      |
-
-```json
-{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "type": "object",
-  "properties": {
-    "type": {
-      "default": "session.message_received",
-      "type": "string",
-      "const": "session.message_received"
-    },
-    "session_id": {
-      "type": "string"
-    },
-    "content": {
-      "type": "string"
-    },
-    "timestamp": {
-      "type": "string"
-    }
-  },
-  "required": ["type", "session_id", "content", "timestamp"],
-  "additionalProperties": false
-}
-```
-
-**Example:**
-
-```json
-{
-  "type": "session.message_received",
-  "session_id": "session-abc123def456",
-  "content": "Summarize README.md",
-  "timestamp": "2026-05-16T10:00:00.001Z"
-}
-```
-
-### SessionWaitingForInputEvent
-
-| Field         | Type     | Required |
-| ------------- | -------- | -------- |
-| `type`        | `string` | yes      |
-| `session_id`  | `string` | yes      |
-| `last_run_id` | `string` | yes      |
-| `timestamp`   | `string` | yes      |
-
-```json
-{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "type": "object",
-  "properties": {
-    "type": {
-      "default": "session.waiting_for_input",
-      "type": "string",
-      "const": "session.waiting_for_input"
-    },
-    "session_id": {
-      "type": "string"
-    },
-    "last_run_id": {
-      "type": "string"
-    },
-    "timestamp": {
-      "type": "string"
-    }
-  },
-  "required": ["type", "session_id", "last_run_id", "timestamp"],
-  "additionalProperties": false
-}
-```
-
-**Example:**
-
-```json
-{
-  "type": "session.waiting_for_input",
-  "session_id": "session-abc123def456",
-  "last_run_id": "20260516-100000-abc123",
-  "timestamp": "2026-05-16T10:00:00.001Z"
-}
-```
-
-### SessionResumedEvent
-
-| Field        | Type     | Required |
-| ------------ | -------- | -------- |
-| `type`       | `string` | yes      |
-| `session_id` | `string` | yes      |
-| `timestamp`  | `string` | yes      |
-
-```json
-{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "type": "object",
-  "properties": {
-    "type": {
-      "default": "session.resumed",
-      "type": "string",
-      "const": "session.resumed"
-    },
-    "session_id": {
-      "type": "string"
-    },
-    "timestamp": {
-      "type": "string"
-    }
-  },
-  "required": ["type", "session_id", "timestamp"],
-  "additionalProperties": false
-}
-```
-
-**Example:**
-
-```json
-{
-  "type": "session.resumed",
-  "session_id": "session-abc123def456",
-  "timestamp": "2026-05-16T10:00:00.001Z"
-}
-```
-
-### SessionClosedEvent
+### `session.closed`
 
 | Field        | Type     | Required |
 | ------------ | -------- | -------- |
@@ -1465,23 +1253,1152 @@ Events written to `runs/<run_id>/events.jsonl` and forwarded over IPC to subscri
 }
 ```
 
-**Example:**
+### `run.started`
+
+| Field        | Type     | Required |
+| ------------ | -------- | -------- |
+| `type`       | `string` | yes      |
+| `session_id` | `string` | yes      |
+| `run_id`     | `string` | yes      |
+| `content`    | `string` | yes      |
+| `timestamp`  | `string` | yes      |
 
 ```json
 {
-  "type": "session.closed",
-  "session_id": "session-abc123def456",
-  "timestamp": "2026-05-16T10:00:00.001Z"
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "type": {
+      "default": "run.started",
+      "type": "string",
+      "const": "run.started"
+    },
+    "session_id": {
+      "type": "string"
+    },
+    "run_id": {
+      "type": "string"
+    },
+    "content": {
+      "type": "string"
+    },
+    "timestamp": {
+      "type": "string"
+    }
+  },
+  "required": ["type", "session_id", "run_id", "content", "timestamp"],
+  "additionalProperties": false
+}
+```
+
+### `agent.stream_text`
+
+| Field        | Type     | Required |
+| ------------ | -------- | -------- |
+| `type`       | `string` | yes      |
+| `session_id` | `string` | yes      |
+| `run_id`     | `string` | yes      |
+| `text`       | `string` | yes      |
+| `timestamp`  | `string` | yes      |
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "type": {
+      "default": "agent.stream_text",
+      "type": "string",
+      "const": "agent.stream_text"
+    },
+    "session_id": {
+      "type": "string"
+    },
+    "run_id": {
+      "type": "string"
+    },
+    "text": {
+      "type": "string"
+    },
+    "timestamp": {
+      "type": "string"
+    }
+  },
+  "required": ["type", "session_id", "run_id", "text", "timestamp"],
+  "additionalProperties": false
+}
+```
+
+### `agent.thinking_text`
+
+| Field        | Type     | Required |
+| ------------ | -------- | -------- |
+| `type`       | `string` | yes      |
+| `session_id` | `string` | yes      |
+| `run_id`     | `string` | yes      |
+| `text`       | `string` | yes      |
+| `timestamp`  | `string` | yes      |
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "type": {
+      "default": "agent.thinking_text",
+      "type": "string",
+      "const": "agent.thinking_text"
+    },
+    "session_id": {
+      "type": "string"
+    },
+    "run_id": {
+      "type": "string"
+    },
+    "text": {
+      "type": "string"
+    },
+    "timestamp": {
+      "type": "string"
+    }
+  },
+  "required": ["type", "session_id", "run_id", "text", "timestamp"],
+  "additionalProperties": false
+}
+```
+
+### `agent.thinking_complete`
+
+| Field        | Type     | Required |
+| ------------ | -------- | -------- |
+| `type`       | `string` | yes      |
+| `session_id` | `string` | yes      |
+| `run_id`     | `string` | yes      |
+| `thinking`   | `string` | yes      |
+| `timestamp`  | `string` | yes      |
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "type": {
+      "default": "agent.thinking_complete",
+      "type": "string",
+      "const": "agent.thinking_complete"
+    },
+    "session_id": {
+      "type": "string"
+    },
+    "run_id": {
+      "type": "string"
+    },
+    "thinking": {
+      "type": "string"
+    },
+    "timestamp": {
+      "type": "string"
+    }
+  },
+  "required": ["type", "session_id", "run_id", "thinking", "timestamp"],
+  "additionalProperties": false
+}
+```
+
+### `agent.tool_use`
+
+| Field        | Type     | Required |
+| ------------ | -------- | -------- |
+| `type`       | `string` | yes      |
+| `session_id` | `string` | yes      |
+| `run_id`     | `string` | yes      |
+| `tool_id`    | `string` | yes      |
+| `tool_name`  | `string` | yes      |
+| `args`       | `object` | yes      |
+| `timestamp`  | `string` | yes      |
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "type": {
+      "default": "agent.tool_use",
+      "type": "string",
+      "const": "agent.tool_use"
+    },
+    "session_id": {
+      "type": "string"
+    },
+    "run_id": {
+      "type": "string"
+    },
+    "tool_id": {
+      "type": "string"
+    },
+    "tool_name": {
+      "type": "string"
+    },
+    "args": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string"
+      },
+      "additionalProperties": {}
+    },
+    "timestamp": {
+      "type": "string"
+    }
+  },
+  "required": ["type", "session_id", "run_id", "tool_id", "tool_name", "args", "timestamp"],
+  "additionalProperties": false
+}
+```
+
+### `agent.tool_result`
+
+| Field        | Type      | Required |
+| ------------ | --------- | -------- |
+| `type`       | `string`  | yes      |
+| `session_id` | `string`  | yes      |
+| `run_id`     | `string`  | yes      |
+| `tool_id`    | `string`  | yes      |
+| `tool_name`  | `string`  | yes      |
+| `output`     | `string`  | yes      |
+| `is_error`   | `boolean` | yes      |
+| `elapsed_ms` | `integer` | yes      |
+| `timestamp`  | `string`  | yes      |
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "type": {
+      "default": "agent.tool_result",
+      "type": "string",
+      "const": "agent.tool_result"
+    },
+    "session_id": {
+      "type": "string"
+    },
+    "run_id": {
+      "type": "string"
+    },
+    "tool_id": {
+      "type": "string"
+    },
+    "tool_name": {
+      "type": "string"
+    },
+    "output": {
+      "type": "string"
+    },
+    "is_error": {
+      "default": false,
+      "type": "boolean"
+    },
+    "elapsed_ms": {
+      "type": "integer",
+      "minimum": -9007199254740991,
+      "maximum": 9007199254740991
+    },
+    "timestamp": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "type",
+    "session_id",
+    "run_id",
+    "tool_id",
+    "tool_name",
+    "output",
+    "is_error",
+    "elapsed_ms",
+    "timestamp"
+  ],
+  "additionalProperties": false
+}
+```
+
+### `agent.turn_complete`
+
+| Field        | Type      | Required |
+| ------------ | --------- | -------- |
+| `type`       | `string`  | yes      |
+| `session_id` | `string`  | yes      |
+| `run_id`     | `string`  | yes      |
+| `turn`       | `integer` | yes      |
+| `timestamp`  | `string`  | yes      |
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "type": {
+      "default": "agent.turn_complete",
+      "type": "string",
+      "const": "agent.turn_complete"
+    },
+    "session_id": {
+      "type": "string"
+    },
+    "run_id": {
+      "type": "string"
+    },
+    "turn": {
+      "type": "integer",
+      "minimum": -9007199254740991,
+      "maximum": 9007199254740991
+    },
+    "timestamp": {
+      "type": "string"
+    }
+  },
+  "required": ["type", "session_id", "run_id", "turn", "timestamp"],
+  "additionalProperties": false
+}
+```
+
+### `agent.loop_complete`
+
+| Field         | Type      | Required |
+| ------------- | --------- | -------- |
+| `type`        | `string`  | yes      |
+| `session_id`  | `string`  | yes      |
+| `run_id`      | `string`  | yes      |
+| `stop_reason` | `string`  | yes      |
+| `total_turns` | `integer` | yes      |
+| `elapsed_ms`  | `integer` | yes      |
+| `timestamp`   | `string`  | yes      |
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "type": {
+      "default": "agent.loop_complete",
+      "type": "string",
+      "const": "agent.loop_complete"
+    },
+    "session_id": {
+      "type": "string"
+    },
+    "run_id": {
+      "type": "string"
+    },
+    "stop_reason": {
+      "type": "string"
+    },
+    "total_turns": {
+      "type": "integer",
+      "minimum": -9007199254740991,
+      "maximum": 9007199254740991
+    },
+    "elapsed_ms": {
+      "type": "integer",
+      "minimum": -9007199254740991,
+      "maximum": 9007199254740991
+    },
+    "timestamp": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "type",
+    "session_id",
+    "run_id",
+    "stop_reason",
+    "total_turns",
+    "elapsed_ms",
+    "timestamp"
+  ],
+  "additionalProperties": false
+}
+```
+
+### `agent.usage`
+
+| Field                         | Type      | Required |
+| ----------------------------- | --------- | -------- |
+| `type`                        | `string`  | yes      |
+| `session_id`                  | `string`  | yes      |
+| `run_id`                      | `string`  | yes      |
+| `input_tokens`                | `integer` | yes      |
+| `output_tokens`               | `integer` | yes      |
+| `cache_read_input_tokens`     | `integer` | yes      |
+| `cache_creation_input_tokens` | `integer` | yes      |
+| `timestamp`                   | `string`  | yes      |
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "type": {
+      "default": "agent.usage",
+      "type": "string",
+      "const": "agent.usage"
+    },
+    "session_id": {
+      "type": "string"
+    },
+    "run_id": {
+      "type": "string"
+    },
+    "input_tokens": {
+      "type": "integer",
+      "minimum": -9007199254740991,
+      "maximum": 9007199254740991
+    },
+    "output_tokens": {
+      "type": "integer",
+      "minimum": -9007199254740991,
+      "maximum": 9007199254740991
+    },
+    "cache_read_input_tokens": {
+      "default": 0,
+      "type": "integer",
+      "minimum": -9007199254740991,
+      "maximum": 9007199254740991
+    },
+    "cache_creation_input_tokens": {
+      "default": 0,
+      "type": "integer",
+      "minimum": -9007199254740991,
+      "maximum": 9007199254740991
+    },
+    "timestamp": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "type",
+    "session_id",
+    "run_id",
+    "input_tokens",
+    "output_tokens",
+    "cache_read_input_tokens",
+    "cache_creation_input_tokens",
+    "timestamp"
+  ],
+  "additionalProperties": false
+}
+```
+
+### `agent.retry`
+
+| Field        | Type      | Required |
+| ------------ | --------- | -------- |
+| `type`       | `string`  | yes      |
+| `session_id` | `string`  | yes      |
+| `run_id`     | `string`  | yes      |
+| `reason`     | `string`  | yes      |
+| `delay_ms`   | `integer` | yes      |
+| `timestamp`  | `string`  | yes      |
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "type": {
+      "default": "agent.retry",
+      "type": "string",
+      "const": "agent.retry"
+    },
+    "session_id": {
+      "type": "string"
+    },
+    "run_id": {
+      "type": "string"
+    },
+    "reason": {
+      "type": "string"
+    },
+    "delay_ms": {
+      "type": "integer",
+      "minimum": -9007199254740991,
+      "maximum": 9007199254740991
+    },
+    "timestamp": {
+      "type": "string"
+    }
+  },
+  "required": ["type", "session_id", "run_id", "reason", "delay_ms", "timestamp"],
+  "additionalProperties": false
+}
+```
+
+### `agent.compact`
+
+| Field        | Type     | Required |
+| ------------ | -------- | -------- |
+| `type`       | `string` | yes      |
+| `session_id` | `string` | yes      |
+| `run_id`     | `string` | yes      |
+| `message`    | `string` | yes      |
+| `timestamp`  | `string` | yes      |
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "type": {
+      "default": "agent.compact",
+      "type": "string",
+      "const": "agent.compact"
+    },
+    "session_id": {
+      "type": "string"
+    },
+    "run_id": {
+      "type": "string"
+    },
+    "message": {
+      "type": "string"
+    },
+    "timestamp": {
+      "type": "string"
+    }
+  },
+  "required": ["type", "session_id", "run_id", "message", "timestamp"],
+  "additionalProperties": false
+}
+```
+
+### `agent.error`
+
+| Field        | Type     | Required |
+| ------------ | -------- | -------- |
+| `type`       | `string` | yes      |
+| `session_id` | `string` | yes      |
+| `run_id`     | `string` | yes      |
+| `message`    | `string` | yes      |
+| `timestamp`  | `string` | yes      |
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "type": {
+      "default": "agent.error",
+      "type": "string",
+      "const": "agent.error"
+    },
+    "session_id": {
+      "type": "string"
+    },
+    "run_id": {
+      "type": "string"
+    },
+    "message": {
+      "type": "string"
+    },
+    "timestamp": {
+      "type": "string"
+    }
+  },
+  "required": ["type", "session_id", "run_id", "message", "timestamp"],
+  "additionalProperties": false
+}
+```
+
+### `permission.requested`
+
+| Field        | Type     | Required |
+| ------------ | -------- | -------- |
+| `type`       | `string` | yes      |
+| `id`         | `string` | yes      |
+| `session_id` | `string` | yes      |
+| `run_id`     | `string` | yes      |
+| `tool_name`  | `string` | yes      |
+| `args`       | `object` | yes      |
+| `reason`     | `string` | yes      |
+| `timestamp`  | `string` | yes      |
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "type": {
+      "default": "permission.requested",
+      "type": "string",
+      "const": "permission.requested"
+    },
+    "id": {
+      "type": "string"
+    },
+    "session_id": {
+      "type": "string"
+    },
+    "run_id": {
+      "default": "",
+      "type": "string"
+    },
+    "tool_name": {
+      "type": "string"
+    },
+    "args": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string"
+      },
+      "additionalProperties": {}
+    },
+    "reason": {
+      "default": "",
+      "type": "string"
+    },
+    "timestamp": {
+      "type": "string"
+    }
+  },
+  "required": ["type", "id", "session_id", "run_id", "tool_name", "args", "reason", "timestamp"],
+  "additionalProperties": false
+}
+```
+
+### `permission.resolved`
+
+| Field        | Type     | Required |
+| ------------ | -------- | -------- |
+| `type`       | `string` | yes      |
+| `id`         | `string` | yes      |
+| `session_id` | `string` | yes      |
+| `response`   | `string` | yes      |
+| `source`     | `string` | yes      |
+| `timestamp`  | `string` | yes      |
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "type": {
+      "default": "permission.resolved",
+      "type": "string",
+      "const": "permission.resolved"
+    },
+    "id": {
+      "type": "string"
+    },
+    "session_id": {
+      "type": "string"
+    },
+    "response": {
+      "type": "string"
+    },
+    "source": {
+      "default": "client",
+      "type": "string",
+      "enum": ["client", "timeout", "disconnect"]
+    },
+    "timestamp": {
+      "type": "string"
+    }
+  },
+  "required": ["type", "id", "session_id", "response", "source", "timestamp"],
+  "additionalProperties": false
+}
+```
+
+### `ask_user.requested`
+
+| Field        | Type     | Required |
+| ------------ | -------- | -------- |
+| `type`       | `string` | yes      |
+| `id`         | `string` | yes      |
+| `session_id` | `string` | yes      |
+| `run_id`     | `string` | yes      |
+| `questions`  | `array`  | yes      |
+| `timestamp`  | `string` | yes      |
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "type": {
+      "default": "ask_user.requested",
+      "type": "string",
+      "const": "ask_user.requested"
+    },
+    "id": {
+      "type": "string"
+    },
+    "session_id": {
+      "type": "string"
+    },
+    "run_id": {
+      "default": "",
+      "type": "string"
+    },
+    "questions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "question": {
+            "type": "string"
+          },
+          "header": {
+            "type": "string"
+          },
+          "options": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "label": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string"
+                }
+              },
+              "required": ["label"],
+              "additionalProperties": false
+            }
+          },
+          "multiSelect": {
+            "default": false,
+            "type": "boolean"
+          }
+        },
+        "required": ["question", "header", "options", "multiSelect"],
+        "additionalProperties": false
+      }
+    },
+    "timestamp": {
+      "type": "string"
+    }
+  },
+  "required": ["type", "id", "session_id", "run_id", "questions", "timestamp"],
+  "additionalProperties": false
+}
+```
+
+### `ask_user.resolved`
+
+| Field        | Type     | Required |
+| ------------ | -------- | -------- |
+| `type`       | `string` | yes      |
+| `id`         | `string` | yes      |
+| `session_id` | `string` | yes      |
+| `timestamp`  | `string` | yes      |
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "type": {
+      "default": "ask_user.resolved",
+      "type": "string",
+      "const": "ask_user.resolved"
+    },
+    "id": {
+      "type": "string"
+    },
+    "session_id": {
+      "type": "string"
+    },
+    "timestamp": {
+      "type": "string"
+    }
+  },
+  "required": ["type", "id", "session_id", "timestamp"],
+  "additionalProperties": false
+}
+```
+
+### `plan.requested`
+
+| Field        | Type     | Required |
+| ------------ | -------- | -------- |
+| `type`       | `string` | yes      |
+| `id`         | `string` | yes      |
+| `session_id` | `string` | yes      |
+| `plan_text`  | `string` | yes      |
+| `timestamp`  | `string` | yes      |
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "type": {
+      "default": "plan.requested",
+      "type": "string",
+      "const": "plan.requested"
+    },
+    "id": {
+      "type": "string"
+    },
+    "session_id": {
+      "type": "string"
+    },
+    "plan_text": {
+      "default": "",
+      "type": "string"
+    },
+    "timestamp": {
+      "type": "string"
+    }
+  },
+  "required": ["type", "id", "session_id", "plan_text", "timestamp"],
+  "additionalProperties": false
+}
+```
+
+### `plan.resolved`
+
+| Field        | Type     | Required |
+| ------------ | -------- | -------- |
+| `type`       | `string` | yes      |
+| `id`         | `string` | yes      |
+| `session_id` | `string` | yes      |
+| `choice`     | `string` | yes      |
+| `timestamp`  | `string` | yes      |
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "type": {
+      "default": "plan.resolved",
+      "type": "string",
+      "const": "plan.resolved"
+    },
+    "id": {
+      "type": "string"
+    },
+    "session_id": {
+      "type": "string"
+    },
+    "choice": {
+      "type": "string"
+    },
+    "timestamp": {
+      "type": "string"
+    }
+  },
+  "required": ["type", "id", "session_id", "choice", "timestamp"],
+  "additionalProperties": false
+}
+```
+
+### `mode.changed`
+
+| Field        | Type     | Required |
+| ------------ | -------- | -------- |
+| `type`       | `string` | yes      |
+| `session_id` | `string` | yes      |
+| `mode`       | `string` | yes      |
+| `timestamp`  | `string` | yes      |
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "type": {
+      "default": "mode.changed",
+      "type": "string",
+      "const": "mode.changed"
+    },
+    "session_id": {
+      "type": "string"
+    },
+    "mode": {
+      "type": "string"
+    },
+    "timestamp": {
+      "type": "string"
+    }
+  },
+  "required": ["type", "session_id", "mode", "timestamp"],
+  "additionalProperties": false
+}
+```
+
+### `todo.updated`
+
+| Field        | Type     | Required |
+| ------------ | -------- | -------- |
+| `type`       | `string` | yes      |
+| `session_id` | `string` | yes      |
+| `todos`      | `array`  | yes      |
+| `timestamp`  | `string` | yes      |
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "type": {
+      "default": "todo.updated",
+      "type": "string",
+      "const": "todo.updated"
+    },
+    "session_id": {
+      "type": "string"
+    },
+    "todos": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "propertyNames": {
+          "type": "string"
+        },
+        "additionalProperties": {}
+      }
+    },
+    "timestamp": {
+      "type": "string"
+    }
+  },
+  "required": ["type", "session_id", "todos", "timestamp"],
+  "additionalProperties": false
+}
+```
+
+### `teammate.state`
+
+| Field        | Type     | Required |
+| ------------ | -------- | -------- |
+| `type`       | `string` | yes      |
+| `session_id` | `string` | yes      |
+| `states`     | `array`  | yes      |
+| `timestamp`  | `string` | yes      |
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "type": {
+      "default": "teammate.state",
+      "type": "string",
+      "const": "teammate.state"
+    },
+    "session_id": {
+      "type": "string"
+    },
+    "states": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "propertyNames": {
+          "type": "string"
+        },
+        "additionalProperties": {}
+      }
+    },
+    "timestamp": {
+      "type": "string"
+    }
+  },
+  "required": ["type", "session_id", "states", "timestamp"],
+  "additionalProperties": false
+}
+```
+
+### `subagent.progress`
+
+| Field         | Type     | Required |
+| ------------- | -------- | -------- |
+| `type`        | `string` | yes      |
+| `session_id`  | `string` | yes      |
+| `task_id`     | `string` | yes      |
+| `description` | `string` | yes      |
+| `status`      | `string` | yes      |
+| `detail`      | `string` | yes      |
+| `timestamp`   | `string` | yes      |
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "type": {
+      "default": "subagent.progress",
+      "type": "string",
+      "const": "subagent.progress"
+    },
+    "session_id": {
+      "type": "string"
+    },
+    "task_id": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string"
+    },
+    "detail": {
+      "default": "",
+      "type": "string"
+    },
+    "timestamp": {
+      "type": "string"
+    }
+  },
+  "required": ["type", "session_id", "task_id", "description", "status", "detail", "timestamp"],
+  "additionalProperties": false
+}
+```
+
+### `system.message`
+
+| Field        | Type     | Required |
+| ------------ | -------- | -------- |
+| `type`       | `string` | yes      |
+| `session_id` | `string` | yes      |
+| `message`    | `string` | yes      |
+| `timestamp`  | `string` | yes      |
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "type": {
+      "default": "system.message",
+      "type": "string",
+      "const": "system.message"
+    },
+    "session_id": {
+      "type": "string"
+    },
+    "message": {
+      "type": "string"
+    },
+    "timestamp": {
+      "type": "string"
+    }
+  },
+  "required": ["type", "session_id", "message", "timestamp"],
+  "additionalProperties": false
+}
+```
+
+### `command.done`
+
+| Field        | Type     | Required |
+| ------------ | -------- | -------- |
+| `type`       | `string` | yes      |
+| `session_id` | `string` | yes      |
+| `timestamp`  | `string` | yes      |
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "type": {
+      "default": "command.done",
+      "type": "string",
+      "const": "command.done"
+    },
+    "session_id": {
+      "type": "string"
+    },
+    "timestamp": {
+      "type": "string"
+    }
+  },
+  "required": ["type", "session_id", "timestamp"],
+  "additionalProperties": false
+}
+```
+
+### `ui.clear`
+
+| Field        | Type     | Required |
+| ------------ | -------- | -------- |
+| `type`       | `string` | yes      |
+| `session_id` | `string` | yes      |
+| `timestamp`  | `string` | yes      |
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "type": {
+      "default": "ui.clear",
+      "type": "string",
+      "const": "ui.clear"
+    },
+    "session_id": {
+      "type": "string"
+    },
+    "timestamp": {
+      "type": "string"
+    }
+  },
+  "required": ["type", "session_id", "timestamp"],
+  "additionalProperties": false
+}
+```
+
+### `replay.message`
+
+| Field        | Type     | Required |
+| ------------ | -------- | -------- |
+| `type`       | `string` | yes      |
+| `session_id` | `string` | yes      |
+| `role`       | `string` | yes      |
+| `content`    | `string` | yes      |
+| `timestamp`  | `string` | yes      |
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "type": {
+      "default": "replay.message",
+      "type": "string",
+      "const": "replay.message"
+    },
+    "session_id": {
+      "type": "string"
+    },
+    "role": {
+      "type": "string"
+    },
+    "content": {
+      "type": "string"
+    },
+    "timestamp": {
+      "type": "string"
+    }
+  },
+  "required": ["type", "session_id", "role", "content", "timestamp"],
+  "additionalProperties": false
 }
 ```
 
 ## Error Codes
 
-| Code   | Name              | Meaning                               |
-| ------ | ----------------- | ------------------------------------- |
-| -32700 | Parse Error       | Invalid JSON received                 |
-| -32600 | Invalid Request   | Missing required JSON-RPC fields      |
-| -32601 | Method Not Found  | Unknown method                        |
-| -32602 | Invalid Params    | Parameter validation failed           |
-| -32603 | Internal Error    | Handler raised an unhandled exception |
-| -32000 | Application Error | e.g. another run already in progress  |
+| Code   | Name              | Meaning                                       |
+| ------ | ----------------- | --------------------------------------------- |
+| -32700 | Parse Error       | Invalid JSON received                         |
+| -32600 | Invalid Request   | Missing required JSON-RPC fields              |
+| -32601 | Method Not Found  | Unknown method                                |
+| -32602 | Invalid Params    | Parameter validation failed                   |
+| -32603 | Internal Error    | Handler raised an unhandled exception         |
+| -32010 | Session Not Found | Unknown session_id                            |
+| -32012 | Session Busy      | A run is already in progress for this session |

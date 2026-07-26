@@ -84,17 +84,19 @@ function makeRunStarted(runId = "r1"): Event {
   return {
     type: "run.started",
     run_id: runId,
-    goal: "test",
+    session_id: "s1",
+    content: "test",
     timestamp: "2026-01-01T00:00:00Z",
   };
 }
 
-// Create StepStartedEvent for testing
-function makeStepStarted(runId = "r1"): Event {
+// Create TurnCompleteEvent for testing
+function makeTurnComplete(runId = "r1"): Event {
   return {
-    type: "step.started",
+    type: "agent.turn_complete",
+    session_id: "s1",
     run_id: runId,
-    step: 1,
+    turn: 1,
     timestamp: "2026-01-01T00:00:00Z",
   };
 }
@@ -151,14 +153,14 @@ describe("IpcEventBroadcaster", () => {
     expect(getWriteCallCount(socket)).toBe(0);
   });
 
-  // Feature: Verify topic glob "step.*" matches step.started but not run.started
+  // Feature: Verify topic glob "agent.*" matches agent.turn_complete but not run.started
   // Design: Publish both event types to same broadcaster, assert write called only once
-  test("topic glob matches step but not run", async () => {
+  test("topic glob matches agent but not run", async () => {
     const broadcaster = new IpcEventBroadcaster();
     const socket = makeMockSocket();
-    broadcaster.subscribe(socket, ["step.*"]);
+    broadcaster.subscribe(socket, ["agent.*"]);
 
-    await broadcaster.handle(makeStepStarted());
+    await broadcaster.handle(makeTurnComplete());
     await broadcaster.handle(makeRunStarted());
     await flushTasks(); // B-10: deliveries are queued per socket
 

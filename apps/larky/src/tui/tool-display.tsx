@@ -20,15 +20,14 @@
  * SOFTWARE.
  */
 
-// ToolDisplay: real-time tool execution blocks (loading spinner + result)
 import { Box, Text } from "ink";
 import { COLORS, ICONS } from "./styles.js";
+import { strArg } from "@/utils/index.js";
 import { DiffLines } from "./diff-render.js";
 import { isDiffTool } from "./is-diff-tool.js";
 
 export interface ToolBlockInfo {
   toolName: string;
-  toolUseId?: string;
   args: Record<string, unknown>;
   output?: string;
   isError?: boolean;
@@ -44,35 +43,7 @@ interface ToolDisplayProps {
   tools: ToolBlockInfo[];
 }
 
-function strArg(args: Record<string, unknown>, key: string): string {
-  const val = args[key];
-  return typeof val === "string" ? val : "";
-}
-
-function truncate(s: string, max: number): string {
-  return s.length > max ? s.slice(0, max) + "…" : s;
-}
-
-function formatArgs(args: Record<string, unknown>): string {
-  if (args["command"]) {
-    return truncate(strArg(args, "command"), 80);
-  }
-  if (args["file_path"]) {
-    return truncate(strArg(args, "file_path"), 80);
-  }
-  if (args["pattern"]) {
-    return truncate(strArg(args, "pattern"), 80);
-  }
-  if (args["path"]) {
-    return truncate(strArg(args, "path"), 80);
-  }
-  if (args["goal"]) {
-    return truncate(strArg(args, "goal"), 80);
-  }
-  return "";
-}
-
-function ToolBlock(props: ToolBlockProps): React.JSX.Element {
+function ToolBlock(props: ToolBlockProps) {
   const { tool } = props;
   const argSummary = formatArgs(tool.args);
   if (tool.loading) {
@@ -80,23 +51,23 @@ function ToolBlock(props: ToolBlockProps): React.JSX.Element {
       <Box>
         <Text>
           <Text color="magenta">●</Text> {COLORS.tool(tool.toolName)}
-          {argSummary ? <Text dimColor> {argSummary}</Text> : null}
+          {argSummary ? <Text dimColor>{argSummary}</Text> : null}
         </Text>
       </Box>
     );
   }
 
   const icon = tool.isError ? COLORS.error(ICONS.error) : COLORS.success(ICONS.success);
-  const timeStr = tool.elapsed !== undefined ? `(${(tool.elapsed / 1000).toFixed(1)}s)` : "";
+  const timeStr = tool.elapsed !== undefined ? `(${tool.elapsed.toFixed(1)}s)` : "";
 
   return (
     <Box flexDirection="column">
       <Text>
         {icon} {COLORS.tool(tool.toolName)}
         {argSummary ? <Text dimColor> {argSummary}</Text> : null}
-        <Text dimColor> {timeStr}</Text>
+        <Text dimColor>{timeStr}</Text>
       </Text>
-      {tool.output ? (
+      {tool.output && (
         <Box paddingLeft={2} marginBottom={0}>
           {isDiffTool(tool.toolName) ? (
             <DiffLines text={tool.output} />
@@ -106,12 +77,12 @@ function ToolBlock(props: ToolBlockProps): React.JSX.Element {
             </Text>
           )}
         </Box>
-      ) : null}
+      )}
     </Box>
   );
 }
 
-export function ToolDisplay(props: ToolDisplayProps): React.JSX.Element | null {
+export function ToolDisplay(props: ToolDisplayProps) {
   const { tools } = props;
   if (tools.length === 0) {
     return null;
@@ -119,8 +90,27 @@ export function ToolDisplay(props: ToolDisplayProps): React.JSX.Element | null {
   return (
     <Box flexDirection="column" paddingLeft={1}>
       {tools.map((tool, idx) => (
-        <ToolBlock key={String(idx)} tool={tool} />
+        <ToolBlock key={idx} tool={tool} />
       ))}
     </Box>
   );
+}
+
+// export default ToolDisplay;
+
+function formatArgs(args: Record<string, unknown>): string {
+  if (args.command) {
+    return truncate(strArg(args, "command"), 80);
+  }
+  if (args.file_path) {
+    return truncate(strArg(args, "file_path"), 80);
+  }
+  if (args.pattern) {
+    return truncate(strArg(args, "pattern"), 80);
+  }
+  return "";
+}
+
+function truncate(s: string, max: number): string {
+  return s.length > max ? s.slice(0, max) + "…" : s;
 }

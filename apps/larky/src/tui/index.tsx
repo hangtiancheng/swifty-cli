@@ -1,0 +1,62 @@
+/**
+ * Copyright (c) 2026 hangtiancheng
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+ */
+
+// TUI launcher used by the client process (cli/main.ts and dev.ts).
+// Connects a SocketClient to the daemon, enters the alt screen, installs the
+// BSU/ESU sync-output patch, renders the Ink App, and restores the primary
+// screen on exit.
+import { render } from "ink";
+import { loadConfig } from "../config/config.js";
+import { getConfig } from "../core/config.js";
+import { SocketClient } from "../core/transport/socket-client.js";
+import { initLogger } from "../logger/index.js";
+import { newSessionId } from "../session/session.js";
+import { App } from "./app.js";
+import { installSyncOutput } from "./sync-output.js";
+
+export async function launchTUI(): Promise<void> {
+  const cfg = loadConfig();
+  if (cfg.providers.length === 0) {
+    throw new Error("no LLM providers configured (.larky/config.yaml)");
+  }
+  const larkyCfg = getConfig();
+  const client = new SocketClient(larkyCfg.host, larkyCfg.port);
+
+  // The alt-screen escape sequence must be emitted before installSyncOutput,
+  // otherwise it gets wrapped by BSU/ESU markers and rendered ineffective.
+  // Capture the raw write so the exit sequence bypasses the sync-output patch.
+  const rawStdoutWrite = process.stdout.write.bind(process.stdout);
+  // After entering alt-screen, clear and home the cursor: ?1049h alone leaves
+  // the cursor at its pre-switch position, pinning output to the bottom.
+  process.stdout.write("\x1b[?1049h\x1b[2J\x1b[H");
+
+  initLogger({ sessionId: newSessionId(), mode: "tui" });
+
+  installSyncOutput();
+  const instance = render(
+    <App client={client} provider={cfg.providers[0]} permissionMode={cfg.permission_mode} />,
+    { exitOnCtrlC: false },
+  );
+  await instance.waitUntilExit();
+  client.close();
+  rawStdoutWrite("\x1b[?1049l");
+}

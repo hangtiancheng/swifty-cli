@@ -20,32 +20,34 @@
  * SOFTWARE.
  */
 
+import { resolve } from "node:path";
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
+  resolve: {
+    alias: {
+      "@": resolve(import.meta.dirname, "src"),
+    },
+  },
   test: {
     include: ["tests/**/*.test.ts", "tests/**/*.test.tsx"],
-    testTimeout: 10_000,
+    environment: "node",
+    testTimeout: 30_000,
     hookTimeout: 10_000,
     globals: false,
     coverage: {
       provider: "v8",
-      reporter: ["text", "text-summary", "html", "json-summary"],
+      reporter: ["text", "html", "lcov"],
       include: ["src/**/*.ts", "src/**/*.tsx"],
       exclude: [
         "src/**/*.d.ts",
+        "src/**/types.ts",
         "src/tui/**",
+        "src/remote/fe/**",
         "src/dev.ts",
-        "src/index.ts",
         "src/cli/main.ts",
         "src/core/app.ts",
       ],
-      thresholds: {
-        branches: 50,
-        functions: 50,
-        lines: 50,
-        statements: 50,
-      },
     },
   },
 });

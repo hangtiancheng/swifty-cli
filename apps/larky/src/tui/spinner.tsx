@@ -20,17 +20,15 @@
  * SOFTWARE.
  */
 
-// Loading spinner with random verb + token/elapsed stats
 import { useEffect, useRef, useState } from "react";
+import { randomVerb } from "./verbs.js";
 import InkSpinner from "ink-spinner";
 import { Text } from "ink";
 import React from "react";
 
-import { randomVerb } from "./verbs.js";
-
 function formatTokens(n: number): string {
-  if (n >= 1_000_000) {
-    return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1000000) {
+    return `${(n / 1000000).toFixed(1)}M`;
   }
   if (n >= 1000) {
     return `${(n / 1000).toFixed(1)}K`;
@@ -44,7 +42,7 @@ interface SpinnerProps {
   outputTokens?: number;
 }
 
-function Spinner(props: SpinnerProps): React.JSX.Element {
+function Spinner(props: SpinnerProps) {
   const { label, inputTokens = 0, outputTokens = 0 } = props;
   const [elapsed, setElapsed] = useState(0);
   const verbRef = useRef(label ?? randomVerb());

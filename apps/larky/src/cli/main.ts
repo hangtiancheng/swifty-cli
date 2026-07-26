@@ -20,10 +20,14 @@
  * SOFTWARE.
  */
 
-// larky CLI entry: parse subcommands and dispatch execution
+// CLI entry point (client process). Mode dispatch mirrors larky main.tsx:
+//   larky                 → TUI (starts daemon if needed, connects over TCP)
+//   larky -p "<prompt>"   → print mode (in-process agent, no daemon)
+//   larky --teammate ...  → teammate subprocess entry (tmux/iterm team backends)
+//   larky --remote [addr] → Koa+WS remote server (in-process agent)
+//   larky ping|version|core start|stop|status|trace ...
 import process from "node:process";
 
-import { version } from "../version.js";
 import { getConfig } from "../core/config.js";
 import { setupLogging } from "../core/logging.js";
 import { cmdPing } from "../core/commands/ping.js";
@@ -35,65 +39,97 @@ import {
   ensureDaemonRunning,
   stopDaemonOnExit,
 } from "./commands/core.js";
-import { cmdRun } from "./commands/run.js";
-import { cmdChat } from "./commands/chat.js";
 import { cmdTrace } from "./commands/trace.js";
-import { launchTUI } from "../tui/index.js";
 
-// Print help information
-function printHelp(): void {
-  console.log(`larky ${version} - Larky CLI
+import { forkEnabled, loadConfig } from "../config/config.js";
+import { parseTeammateFlags, runTeammate } from "../teammate.js";
+import { parsePrintFlags, runPrintMode } from "../print-mode.js";
+import { initLogger, closeLogger, logger } from "../logger/index.js";
+import { newSessionId } from "../session/session.js";
+import { asErrorString } from "../utils/index.js";
 
-Usage:
-  larky [command] [options]
-
-Commands:
-  ping                Ping the core daemon
-  version             Print version
-  core start          Start the core daemon
-  core stop           Stop the core daemon
-  core status         Show daemon status
-  run <goal>          Run a one_shot agent task
-  chat                Start an interactive chat session
-  trace [run_id]      Display daemon trace log
-  help                Show this help
-
-Options:
-  --help, -h          Show this help
-  --version, -V       Print version
-
-Examples:
-  larky
-  larky ping
-  larky core start
-  larky run "Summarize the project README"
-  larky chat
-  larky trace --layer llm`);
-}
-
-// Valid values for trace --layer
 const VALID_TRACE_LAYERS = ["ipc", "event", "llm"];
 
-// Read the value following a flag (e.g. --layer ipc).
-// Exits with code 1 if the flag is present but the value is missing or looks
-// like another flag (starts with "-").
-function readFlagValue(args: string[], flag: string): string | undefined {
-  const idx = args.indexOf(flag);
-  if (idx < 0) return undefined;
-  const value = args[idx + 1];
-  if (value === undefined || value.startsWith("-")) {
-    console.error(`Error: ${flag} requires a value`);
-    printHelp();
-    process.exit(1);
-  }
-  return value;
+function printHelp(): void {
+  console.log(`larky — dual-process CLI coding agent
+
+Usage:
+  larky                       Launch the TUI (starts the daemon if needed)
+  larky -p "<prompt>"         Print mode: run one prompt non-interactively
+  larky --remote [addr]       Serve the browser UI (default :18888)
+  larky ping                  Ping the daemon
+  larky version               Print version
+  larky core start|stop|status  Manage the daemon
+  larky trace [run_id] [--layer ipc|event|llm] [--raw] [--follow]`);
 }
 
-// Parse command-line arguments and dispatch to corresponding subcommand
+function readFlagValue(args: string[], flag: string): string | undefined {
+  const idx = args.indexOf(flag);
+  if (idx >= 0 && idx + 1 < args.length) return args[idx + 1];
+  return undefined;
+}
+
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
 
-  if (args[0] === "help" || args.includes("--help") || args.includes("-h")) {
+  // Teammate subprocess entry (spawned by tmux/iterm team backends).
+  const teammateArgs = parseTeammateFlags(args);
+  if (teammateArgs) {
+    try {
+      await runTeammate(teammateArgs);
+    } catch (err) {
+      console.error(`teammate: ${asErrorString(err)}`);
+      process.exit(1);
+    }
+    return;
+  }
+
+  // Print mode: in-process one-shot agent run (no daemon round-trip).
+  const printArgs = parsePrintFlags(args);
+  if (printArgs) {
+    try {
+      await runPrintMode(printArgs);
+    } catch (err) {
+      console.error(`Error: ${asErrorString(err)}`);
+      process.exit(1);
+    }
+    return;
+  }
+
+  // Remote mode: Koa HTTP + WebSocket server hosting the browser frontend.
+  if (args.includes("--remote")) {
+    let remoteAddr = ":18888";
+    const idx = args.indexOf("--remote");
+    if (idx + 1 < args.length && !args[idx + 1].startsWith("-")) {
+      remoteAddr = args[idx + 1];
+    }
+    let cfg;
+    try {
+      cfg = loadConfig();
+    } catch (err) {
+      console.error(`Error: ${asErrorString(err)}`);
+      process.exit(1);
+    }
+    const { RemoteServer } = await import("../remote/server.js");
+    initLogger({ sessionId: newSessionId(), mode: "remote" });
+    const srv = new RemoteServer({
+      providers: cfg.providers,
+      mcpServers: cfg.mcp_servers,
+      hookConfigs: cfg.hooks,
+      addr: remoteAddr,
+      enableCoordinatorMode: cfg.enable_coordinator_mode ?? false,
+      forkDisabled: !forkEnabled(cfg),
+    });
+    try {
+      await srv.run();
+    } catch (err) {
+      console.error(`Remote server error: ${asErrorString(err)}`);
+      process.exit(1);
+    }
+    return;
+  }
+
+  if (args.includes("--help") || args.includes("-h")) {
     printHelp();
     return;
   }
@@ -111,8 +147,9 @@ async function main(): Promise<void> {
   if (args.length === 0) {
     const startedDaemon = await ensureDaemonRunning(config);
     if (startedDaemon) stopDaemonOnExit(config);
+    const { launchTUI } = await import("../tui/index.js");
     await launchTUI();
-    return;
+    process.exit(0);
   }
 
   const subcommand = args[0];
@@ -145,21 +182,6 @@ async function main(): Promise<void> {
       }
       break;
     }
-
-    case "run": {
-      const goal = args.slice(1).join(" ");
-      if (!goal) {
-        console.error("Error: run command requires a goal argument");
-        console.error("Usage: larky run <goal>");
-        process.exit(1);
-      }
-      await cmdRun(goal, config);
-      break;
-    }
-
-    case "chat":
-      await cmdChat(config);
-      break;
 
     case "trace": {
       // First positional (non-flag) argument after "trace" is the run_id
@@ -197,8 +219,26 @@ async function main(): Promise<void> {
   }
 }
 
+// Flush larky logs on exit.
+process.on("exit", closeLogger);
+
+process.on("unhandledRejection", (reason) => {
+  console.error("unhandled rejection:", reason);
+  logger.fatal({ err: reason }, "unhandled rejection");
+  process.exit(1);
+});
+
+process.on("uncaughtException", (err) => {
+  console.error("uncaught exception:", err);
+  logger.fatal({ err }, "uncaught exception");
+  process.exit(1);
+});
+
 const isDirectRun = process.argv[1].endsWith("/main.ts") || process.argv[1].endsWith("/main.js");
 
 if (isDirectRun) {
-  void main();
+  main().catch((err: unknown) => {
+    console.error(err);
+    process.exit(1);
+  });
 }

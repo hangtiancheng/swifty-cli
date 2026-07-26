@@ -20,193 +20,540 @@
  * SOFTWARE.
  */
 
-// larky-core daemon entry: load config, start TCP server, register handlers, wait for shutdown signal
-import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
-import type net from "node:net";
+// larky-core daemon: hosts the full larky agent stack behind a TCP JSON-RPC
+// server. Clients (TUI / print mode) drive sessions via RPCs and receive
+// progress through the event stream (with per-run events.jsonl replay).
+import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
+import { randomUUID } from "node:crypto";
+import type net from "node:net";
 
 import picomatch from "picomatch";
 
+import { getConfig, expandUser } from "./config.js";
+import { setupLogging } from "./logging.js";
 import { version } from "../version.js";
-import { eventsFile } from "./runs.js";
+import { EventBus } from "./events/bus.js";
+import { SocketServer, getConnectionWriter } from "./transport/socket-server.js";
+import { IpcEventBroadcaster } from "./transport/ipc-broadcaster.js";
+import { TraceWriter } from "./trace/writer.js";
+import { makeEventTrace } from "./trace/record.js";
+import { HandlerError, isRecord } from "./bus/envelope.js";
 import {
-  AgentRunCommandSchema,
-  AgentRunResultSchema,
+  PingCommandSchema,
+  CoreStatusCommandSchema,
   EventSubscribeCommandSchema,
   EventSubscribeResultSchema,
-  PermissionRespondCommandSchema,
-  PermissionRespondResultSchema,
-  PongResultSchema,
-  SessionCloseCommandSchema,
-  SessionCloseResultSchema,
-  SessionCompactCommandSchema,
   SessionCreateCommandSchema,
-  SessionCreateResultSchema,
-  SessionGetHistoryCommandSchema,
-  SessionGetHistoryResultSchema,
+  SessionListCommandSchema,
+  SessionResumeCommandSchema,
   SessionSendMessageCommandSchema,
-  SessionSendMessageResultSchema,
+  SessionCloseCommandSchema,
+  RunCancelCommandSchema,
+  PermissionRespondCommandSchema,
+  AskUserRespondCommandSchema,
+  PlanRespondCommandSchema,
+  ModeSetCommandSchema,
+  CommandRunCommandSchema,
+  CommandListCommandSchema,
+  RewindListCommandSchema,
+  RewindApplyCommandSchema,
+  type WirePlanChoice,
 } from "./bus/commands.js";
-import { getConfig, expandUser } from "./config.js";
 import type { Event } from "./bus/events.js";
-import { EventBus } from "./events/bus.js";
-import { setupLogging } from "./logging.js";
-import { McpServerManager } from "./mcp/server.js";
-import { PermissionManager } from "./permissions/manager.js";
-import { newRunId } from "./runs.js";
-import { SessionManager } from "./session/manager.js";
-import { SessionStore } from "./session/store.js";
-import { getConnectionWriter, SocketServer } from "./transport/socket-server.js";
-import { IpcEventBroadcaster } from "./transport/ipc-broadcaster.js";
-import { makeEventTrace } from "./trace/record.js";
-import { TraceWriter } from "./trace/writer.js";
-import { AgentRunner } from "./runner.js";
-import { AnthropicProvider } from "./llm/provider.js";
 
-function now(): string {
+import { AgentSession, type InteractionBroker } from "./agent-session.js";
+import { loadConfig as loadLarkyConfig, forkEnabled } from "../config/config.js";
+import type { AppConfig } from "../config/config.js";
+import type { Decision, PermissionMode } from "../permissions/checker.js";
+import type { Question } from "../tools/ask-user.js";
+import * as sessionMod from "../session/session.js";
+import { initLogger } from "../logger/index.js";
+
+const SESSION_NOT_FOUND = -32010;
+const SESSION_BUSY = -32012;
+
+function nowIso(): string {
   return new Date().toISOString();
 }
 
-// Type guard: narrow unknown to Record<string, unknown>
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
+// Events for a run are persisted here for replay_from_run.
+function runEventsPath(workDir: string, runId: string): string {
+  return path.join(workDir, ".larky", "daemon", "runs", runId, "events.jsonl");
+}
+
+interface PendingPermission {
+  sessionId: string;
+  resolve: (r: "allow" | "deny" | "allowAlways") => void;
+}
+
+interface PendingAsk {
+  sessionId: string;
+  resolve: (answers: Record<string, string>) => void;
+}
+
+interface PendingPlan {
+  sessionId: string;
+  resolve: (r: { choice: WirePlanChoice; feedback: string }) => void;
+  reject: (e: Error) => void;
 }
 
 export class CoreApp {
-  private _startTime = performance.now();
   private _bus = new EventBus();
   private _broadcaster: IpcEventBroadcaster | null = null;
   private _trace: TraceWriter | null = null;
-  private _sessions: SessionManager | null = null;
-  private _permissionManager: PermissionManager | null = null;
-  private _mcpManager: McpServerManager | null = null;
-  private _runningRuns = new Set<Promise<unknown>>();
-  private _abortController = new AbortController();
+  private _startTime = 0;
+  private _workDir = process.cwd();
+  private _larkyConfig: AppConfig | null = null;
+  private _sessions = new Map<string, AgentSession>();
 
-  // Handle core.ping request
-  private async _pingHandler(params: Record<string, unknown>): Promise<unknown> {
-    await Promise.resolve();
-    console.debug(`ping from ${String(params["client"])}`);
-    const uptimeMs = Math.round(performance.now() - this._startTime);
-    return PongResultSchema.parse({
-      server_version: version,
-      uptime_ms: uptimeMs,
-      received_at: now(),
-    });
+  private _pendingPermissions = new Map<string, PendingPermission>();
+  private _pendingAsks = new Map<string, PendingAsk>();
+  private _pendingPlans = new Map<string, PendingPlan>();
+
+  private _teammatePollTimer: ReturnType<typeof setInterval> | null = null;
+  private _lastTeammateStates = "";
+
+  // -- Event emission -------------------------------------------------------
+
+  private emit(event: Event): void {
+    void this._bus.publish(event);
   }
 
-  // Write EventBus events to trace log
-  private async _traceEventHandler(event: Event): Promise<void> {
-    await Promise.resolve();
-    if (!this._trace) return;
-    const runId = "run_id" in event ? event.run_id : null;
-    this._trace.emit(makeEventTrace(runId, { ...event }));
-  }
-
-  // agent.run handler
-  private async _agentRunHandler(params: Record<string, unknown>): Promise<unknown> {
-    if (!this._sessions) throw new Error("sessions not initialized");
-    const cmd = AgentRunCommandSchema.parse(params);
-    const session = await this._sessions.create("one_shot", cmd.goal.slice(0, 40));
-    const rid = newRunId();
-    const runPromise = this._sessions.sendMessage(session.id, cmd.goal, rid);
-    this._runningRuns.add(runPromise);
-    void runPromise.finally(() => this._runningRuns.delete(runPromise));
-    return AgentRunResultSchema.parse({ run_id: rid });
-  }
-
-  // session.create handler
-  private async _sessionCreateHandler(params: Record<string, unknown>): Promise<unknown> {
-    if (!this._sessions) throw new Error("sessions not initialized");
-    const cmd = SessionCreateCommandSchema.parse(params);
-    const session = await this._sessions.create(cmd.mode, cmd.title);
-    return SessionCreateResultSchema.parse({
-      session_id: session.id,
-      status: session.status,
-    });
-  }
-
-  // session.send_message handler
-  private async _sessionSendHandler(params: Record<string, unknown>): Promise<unknown> {
-    if (!this._sessions) throw new Error("sessions not initialized");
-    const cmd = SessionSendMessageCommandSchema.parse(params);
-    const rid = await this._sessions.sendMessage(cmd.session_id, cmd.content);
-    return SessionSendMessageResultSchema.parse({ run_id: rid });
-  }
-
-  // session.get_history handler
-  private _sessionHistoryHandler(params: Record<string, unknown>): unknown {
-    if (!this._sessions) throw new Error("sessions not initialized");
-    const cmd = SessionGetHistoryCommandSchema.parse(params);
-    const messages = this._sessions.getHistory(cmd.session_id);
-    return SessionGetHistoryResultSchema.parse({ messages });
-  }
-
-  // session.close handler
-  private async _sessionCloseHandler(params: Record<string, unknown>): Promise<unknown> {
-    if (!this._sessions) throw new Error("sessions not initialized");
-    const cmd = SessionCloseCommandSchema.parse(params);
-    await this._sessions.close(cmd.session_id);
-    return SessionCloseResultSchema.parse({ status: "closed" });
-  }
-
-  // permission.respond handler
-  private async _permissionRespondHandler(params: Record<string, unknown>): Promise<unknown> {
-    await Promise.resolve();
-    const cmd = PermissionRespondCommandSchema.parse(params);
-    console.log(
-      `permission.respond received tool_use_id=${cmd.tool_use_id} decision=${cmd.decision}`,
-    );
-    if (!this._permissionManager) {
-      console.error("permission.respond: PermissionManager not initialized");
-      return PermissionRespondResultSchema.parse({ ok: true });
+  // Persist run-scoped events for replay, then broadcast.
+  private _persistEvent(event: Event): void {
+    const runId = "run_id" in event ? event.run_id : "";
+    if (!runId) return;
+    const p = runEventsPath(this._workDir, runId);
+    try {
+      mkdirSync(path.dirname(p), { recursive: true });
+      appendFileSync(p, JSON.stringify(event) + "\n", "utf-8");
+    } catch {
+      // best-effort persistence; replay simply misses these lines
     }
-    this._permissionManager.respond(cmd.tool_use_id, cmd.decision);
-    return PermissionRespondResultSchema.parse({ ok: true });
   }
 
-  // session.compact handler
-  private async _sessionCompactHandler(params: Record<string, unknown>): Promise<unknown> {
-    if (!this._sessions) throw new Error("sessions not initialized");
-    const cmd = SessionCompactCommandSchema.parse(params);
-    const result = await this._sessions.compact(cmd.session_id, cmd.focus);
+  // -- Interaction broker -----------------------------------------------------
+
+  private _broker: InteractionBroker = {
+    requestPermission: (session, toolName, args, decision: Decision) => {
+      const id = `perm-${randomUUID().slice(0, 8)}`;
+      return new Promise<"allow" | "deny" | "allowAlways">((resolve) => {
+        this._pendingPermissions.set(id, {
+          sessionId: session.id,
+          resolve: (r) => {
+            resolve(r);
+          },
+        });
+        this.emit({
+          type: "permission.requested",
+          id,
+          session_id: session.id,
+          run_id: session.currentRunId ?? "",
+          tool_name: toolName,
+          args,
+          reason: decision.reason,
+          timestamp: nowIso(),
+        });
+      });
+    },
+    askUser: (session, questions: Question[]) => {
+      const id = `ask-${randomUUID().slice(0, 8)}`;
+      return new Promise<Record<string, string>>((resolve) => {
+        this._pendingAsks.set(id, { sessionId: session.id, resolve });
+        this.emit({
+          type: "ask_user.requested",
+          id,
+          session_id: session.id,
+          run_id: session.currentRunId ?? "",
+          questions: questions.map((q) => ({
+            question: q.question,
+            header: q.header,
+            options: q.options.map((o) => ({
+              label: o.label,
+              ...(o.description !== undefined ? { description: o.description } : {}),
+            })),
+            multiSelect: q.multiSelect,
+          })),
+          timestamp: nowIso(),
+        });
+      });
+    },
+    requestPlanApproval: (session, planText: string) => {
+      const id = `plan-${randomUUID().slice(0, 8)}`;
+      return new Promise<{ choice: WirePlanChoice; feedback: string }>((resolve, reject) => {
+        this._pendingPlans.set(id, {
+          sessionId: session.id,
+          resolve,
+          reject,
+        });
+        this.emit({
+          type: "plan.requested",
+          id,
+          session_id: session.id,
+          plan_text: planText,
+          timestamp: nowIso(),
+        });
+      });
+    },
+  };
+
+  // Cancel all pending interactions (e.g. last client disconnected).
+  private _cancelAllInteractions(): void {
+    for (const [id, pending] of this._pendingPermissions) {
+      pending.resolve("deny");
+      this.emit({
+        type: "permission.resolved",
+        id,
+        session_id: pending.sessionId,
+        response: "deny",
+        source: "disconnect",
+        timestamp: nowIso(),
+      });
+    }
+    this._pendingPermissions.clear();
+    for (const [id, pending] of this._pendingAsks) {
+      pending.resolve({});
+      this.emit({
+        type: "ask_user.resolved",
+        id,
+        session_id: pending.sessionId,
+        timestamp: nowIso(),
+      });
+    }
+    this._pendingAsks.clear();
+    for (const [id, pending] of this._pendingPlans) {
+      pending.reject(new Error("client disconnected"));
+      this.emit({
+        type: "plan.resolved",
+        id,
+        session_id: pending.sessionId,
+        choice: "cancelled",
+        timestamp: nowIso(),
+      });
+    }
+    this._pendingPlans.clear();
+  }
+
+  // -- Session helpers ----------------------------------------------------------
+
+  private _getSession(sessionId: string): AgentSession {
+    const session = this._sessions.get(sessionId);
+    if (!session) {
+      throw new HandlerError(SESSION_NOT_FOUND, `session not found: ${sessionId}`);
+    }
+    return session;
+  }
+
+  private _requireLarkyConfig(): AppConfig {
+    this._larkyConfig ??= loadLarkyConfig();
+    if (this._larkyConfig.providers.length === 0) {
+      throw new HandlerError(-32020, "no LLM providers configured (.larky/config.yaml)");
+    }
+    return this._larkyConfig;
+  }
+
+  // -- RPC handlers ---------------------------------------------------------
+
+  private _pingHandler(params: Record<string, unknown>): Promise<unknown> {
+    PingCommandSchema.parse({ ...params, type: "core.ping" });
+    return Promise.resolve({
+      server_version: version,
+      uptime_ms: Math.round(performance.now() - this._startTime),
+      received_at: nowIso(),
+    });
+  }
+
+  private _statusHandler(params: Record<string, unknown>): Promise<unknown> {
+    CoreStatusCommandSchema.parse({ ...params, type: "core.status" });
+    return Promise.resolve({
+      server_version: version,
+      uptime_ms: Math.round(performance.now() - this._startTime),
+      cwd: this._workDir,
+      active_sessions: this._sessions.size,
+    });
+  }
+
+  private async _sessionCreateHandler(params: Record<string, unknown>): Promise<unknown> {
+    const cmd = SessionCreateCommandSchema.parse({
+      ...params,
+      type: "session.create",
+    });
+    const cfg = this._requireLarkyConfig();
+
+    const permissionMode: PermissionMode | undefined =
+      cmd.permission_mode ??
+      (isPermissionMode(cfg.permission_mode) ? cfg.permission_mode : undefined);
+
+    const session = await AgentSession.create({
+      provider: cfg.providers[0],
+      workDir: this._workDir,
+      hooks: cfg.hooks,
+      mcpServers: cfg.mcp_servers,
+      sandboxConfig: cfg.sandbox,
+      enableCoordinatorMode: cfg.enable_coordinator_mode ?? false,
+      forkDisabled: !forkEnabled(cfg),
+      ...(permissionMode ? { permissionMode } : {}),
+      persist: cmd.persist,
+      emit: (e) => {
+        this.emit(e);
+      },
+      broker: this._broker,
+    });
+    this._sessions.set(session.id, session);
+    this.emit({
+      type: "session.created",
+      session_id: session.id,
+      cwd: this._workDir,
+      timestamp: nowIso(),
+    });
     return {
-      summary_tokens: result.summaryTokens,
-      saved_tokens: result.savedTokens,
+      session_id: session.id,
+      cwd: this._workDir,
+      permission_mode: session.permMode,
+      commands: session.listCommands(),
     };
   }
 
-  // event.subscribe handler
-  // B-11: snapshot replay lines synchronously, subscribe synchronously (no
-  // await gap), then write the snapshot out — see handleEventSubscribe
-  private _subscribeHandler(params: Record<string, unknown>): Promise<unknown> {
-    const cmd = EventSubscribeCommandSchema.parse(params);
-    const writer = getConnectionWriter();
-    if (!this._broadcaster) throw new Error("broadcaster not initialized");
-    return handleEventSubscribe(this._broadcaster, writer, cmd);
+  private _sessionListHandler(params: Record<string, unknown>): Promise<unknown> {
+    SessionListCommandSchema.parse({ ...params, type: "session.list" });
+    const sessions = sessionMod.listSessions(this._workDir).map((s) => ({
+      id: s.id,
+      first_message: s.firstMessage,
+      message_count: s.messageCount,
+      mod_time: s.modTime.toISOString(),
+    }));
+    return Promise.resolve({ sessions });
   }
 
-  // Start the daemon
+  private _sessionResumeHandler(params: Record<string, unknown>): Promise<unknown> {
+    const cmd = SessionResumeCommandSchema.parse({
+      ...params,
+      type: "session.resume",
+    });
+    const session = this._getSession(cmd.session_id);
+    if (session.isRunning) {
+      throw new HandlerError(SESSION_BUSY, "cannot resume while a run is in progress");
+    }
+    try {
+      const messages = session.resumeFrom(cmd.resume_id);
+      return Promise.resolve({ messages });
+    } catch (err) {
+      throw new HandlerError(SESSION_NOT_FOUND, err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  private _sessionSendHandler(params: Record<string, unknown>): Promise<unknown> {
+    const cmd = SessionSendMessageCommandSchema.parse({
+      ...params,
+      type: "session.send_message",
+    });
+    const session = this._getSession(cmd.session_id);
+    const runId = session.startRun(cmd.content);
+    return Promise.resolve({ run_id: runId });
+  }
+
+  private async _sessionCloseHandler(params: Record<string, unknown>): Promise<unknown> {
+    const cmd = SessionCloseCommandSchema.parse({
+      ...params,
+      type: "session.close",
+    });
+    const session = this._getSession(cmd.session_id);
+    this._sessions.delete(cmd.session_id);
+    await session.close();
+    return { ok: true };
+  }
+
+  private _runCancelHandler(params: Record<string, unknown>): Promise<unknown> {
+    const cmd = RunCancelCommandSchema.parse({ ...params, type: "run.cancel" });
+    const session = this._getSession(cmd.session_id);
+    const cancelled = session.cancel();
+    return Promise.resolve({ ok: true, cancelled });
+  }
+
+  private _permissionRespondHandler(params: Record<string, unknown>): Promise<unknown> {
+    const cmd = PermissionRespondCommandSchema.parse({
+      ...params,
+      type: "permission.respond",
+    });
+    const pending = this._pendingPermissions.get(cmd.id);
+    if (pending) {
+      this._pendingPermissions.delete(cmd.id);
+      pending.resolve(cmd.response);
+      this.emit({
+        type: "permission.resolved",
+        id: cmd.id,
+        session_id: pending.sessionId,
+        response: cmd.response,
+        source: "client",
+        timestamp: nowIso(),
+      });
+    }
+    // Unknown/duplicate ids are idempotently ignored (first response wins).
+    return Promise.resolve({ ok: true });
+  }
+
+  private _askRespondHandler(params: Record<string, unknown>): Promise<unknown> {
+    const cmd = AskUserRespondCommandSchema.parse({
+      ...params,
+      type: "ask_user.respond",
+    });
+    const pending = this._pendingAsks.get(cmd.id);
+    if (pending) {
+      this._pendingAsks.delete(cmd.id);
+      pending.resolve(cmd.answers);
+      this.emit({
+        type: "ask_user.resolved",
+        id: cmd.id,
+        session_id: pending.sessionId,
+        timestamp: nowIso(),
+      });
+    }
+    return Promise.resolve({ ok: true });
+  }
+
+  private _planRespondHandler(params: Record<string, unknown>): Promise<unknown> {
+    const cmd = PlanRespondCommandSchema.parse({
+      ...params,
+      type: "plan.respond",
+    });
+    const pending = this._pendingPlans.get(cmd.id);
+    if (pending) {
+      this._pendingPlans.delete(cmd.id);
+      pending.resolve({ choice: cmd.choice, feedback: cmd.feedback });
+      this.emit({
+        type: "plan.resolved",
+        id: cmd.id,
+        session_id: pending.sessionId,
+        choice: cmd.choice,
+        timestamp: nowIso(),
+      });
+    }
+    return Promise.resolve({ ok: true });
+  }
+
+  private _modeSetHandler(params: Record<string, unknown>): Promise<unknown> {
+    const cmd = ModeSetCommandSchema.parse({ ...params, type: "mode.set" });
+    const session = this._getSession(cmd.session_id);
+    session.setMode(cmd.mode);
+    return Promise.resolve({ ok: true, mode: session.permMode });
+  }
+
+  private _commandRunHandler(params: Record<string, unknown>): Promise<unknown> {
+    const cmd = CommandRunCommandSchema.parse({
+      ...params,
+      type: "command.run",
+    });
+    const session = this._getSession(cmd.session_id);
+    // Fire-and-forget: command output streams as system.message/command.done.
+    void session.runCommand(cmd.input).catch((err: unknown) => {
+      session.systemMessage(`Command failed: ${err instanceof Error ? err.message : String(err)}`);
+      session.commandDone();
+    });
+    return Promise.resolve({ accepted: true });
+  }
+
+  private _commandListHandler(params: Record<string, unknown>): Promise<unknown> {
+    const cmd = CommandListCommandSchema.parse({
+      ...params,
+      type: "command.list",
+    });
+    const session = this._getSession(cmd.session_id);
+    return Promise.resolve({ commands: session.listCommands() });
+  }
+
+  private _rewindListHandler(params: Record<string, unknown>): Promise<unknown> {
+    const cmd = RewindListCommandSchema.parse({
+      ...params,
+      type: "rewind.list",
+    });
+    const session = this._getSession(cmd.session_id);
+    const snapshots = session.getSnapshots().map((s, index) => ({
+      index,
+      message_index: s.messageIndex,
+      user_text: s.userText,
+      file_count: Object.keys(s.backups).length,
+      timestamp: s.timestamp,
+    }));
+    return Promise.resolve({ snapshots });
+  }
+
+  private _rewindApplyHandler(params: Record<string, unknown>): Promise<unknown> {
+    const cmd = RewindApplyCommandSchema.parse({
+      ...params,
+      type: "rewind.apply",
+    });
+    const session = this._getSession(cmd.session_id);
+    try {
+      const message = session.rewind(cmd.index, cmd.mode);
+      session.systemMessage(message);
+      return Promise.resolve({ ok: true, message });
+    } catch (err) {
+      throw new HandlerError(-32602, err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  private _subscribeHandler(params: Record<string, unknown>): Promise<unknown> {
+    const cmd = EventSubscribeCommandSchema.parse({
+      ...params,
+      type: "event.subscribe",
+    });
+    const writer = getConnectionWriter();
+    if (!this._broadcaster) throw new Error("broadcaster not initialized");
+    return handleEventSubscribe(this._broadcaster, writer, cmd, (runId, topics) =>
+      snapshotReplayLines(this._workDir, runId, topics),
+    );
+  }
+
+  // -- Teammate state polling ------------------------------------------------
+
+  private _startTeammatePolling(): void {
+    this._teammatePollTimer = setInterval(() => {
+      for (const session of this._sessions.values()) {
+        const states = session.teamManager.getAllTeammateStates();
+        const serialized = JSON.stringify(states);
+        if (serialized === this._lastTeammateStates) continue;
+        this._lastTeammateStates = serialized;
+        this.emit({
+          type: "teammate.state",
+          session_id: session.id,
+          // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+          states: states.map((s) => ({ ...s }) as unknown as Record<string, unknown>),
+          timestamp: nowIso(),
+        });
+      }
+    }, 500);
+  }
+
+  // -- Daemon lifecycle -----------------------------------------------------------
+
   async run(): Promise<void> {
     this._startTime = performance.now();
     const config = getConfig();
     const logger = setupLogging(config);
+
+    // larky file logger (used by all migrated business modules)
+    initLogger({ sessionId: sessionMod.newSessionId(), mode: "remote" });
 
     // Trace
     if (config.trace.enabled) {
       const tracePath = expandUser(config.trace.file);
       this._trace = new TraceWriter(tracePath);
       this._trace.start();
-      this._bus.subscribe((e) => this._traceEventHandler(e));
+      this._bus.subscribe((e) => {
+        // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+        this._trace?.emit(
+          makeEventTrace("run_id" in e ? e.run_id : null, e as unknown as Record<string, unknown>),
+        );
+        return Promise.resolve();
+      });
     }
 
-    // Permission
-    const policyPath = path.join(homedir(), ".larky", "policy.toml");
-    this._permissionManager = new PermissionManager({
-      policyFile: policyPath,
-      timeoutS: config.permission.timeoutS,
+    // Run-scoped event persistence (for replay_from_run)
+    this._bus.subscribe((e) => {
+      this._persistEvent(e);
+      return Promise.resolve();
     });
 
     // Broadcaster
@@ -217,64 +564,37 @@ export class CoreApp {
       }
     });
 
-    // Session
-    const sessionsRoot = path.join(homedir(), ".larky", "sessions");
-    const store = new SessionStore(sessionsRoot);
-
-    // LLM provider for compaction
-    const provider = new AnthropicProvider(config.llm.defaultModel, undefined, {
-      apiKey: config.llm.apiKey,
-      baseUrl: config.llm.baseUrl,
-    });
-
-    // MCP
-    this._mcpManager = new McpServerManager();
-    if (config.mcp.servers.length > 0) {
-      await this._mcpManager.startAll(config.mcp.servers);
-    }
-
-    this._sessions = new SessionManager(
-      store,
-      () =>
-        new AgentRunner(config, {
-          bus: this._bus,
-          ...(this._trace ? { trace: this._trace } : {}),
-          ...(this._permissionManager ? { permissionManager: this._permissionManager } : {}),
-          ...(this._mcpManager ? { mcpManager: this._mcpManager } : {}),
-          signal: this._abortController.signal,
-        }),
-      this._bus,
-      provider,
-    );
-
     // Server
     const server = new SocketServer(config.host, config.port, {
       ...(this._trace ? { trace: this._trace } : {}),
-      // Clean up broadcaster subscriptions when a client disconnects,
-      // otherwise dead sockets accumulate in the subscription list.
-      onDisconnect: (socket) => {
+      onDisconnect: (socket: net.Socket) => {
         // Order matters: unsubscribe first so subscriptionCount() reflects
         // the post-disconnect state before we decide whether to cancel.
         this._broadcaster?.unsubscribe(socket);
-        // B-3: if the last subscriber is gone, nobody is left to answer
-        // pending permission requests — cancel them all instead of letting
-        // the agent freeze until the permission timeout. With multiple
-        // clients (e.g. a TUI plus a CLI) remaining subscribers can still
-        // answer, so we keep the requests pending.
+        // B-3: nobody left to answer pending interactions → cancel them all
+        // instead of letting agents freeze forever.
         if (this._broadcaster?.subscriptionCount() === 0) {
-          this._permissionManager?.cancelAll("client_disconnected");
+          this._cancelAllInteractions();
         }
       },
     });
     server.register("core.ping", (p) => this._pingHandler(p));
-    server.register("agent.run", (p) => this._agentRunHandler(p));
+    server.register("core.status", (p) => this._statusHandler(p));
     server.register("event.subscribe", (p) => this._subscribeHandler(p));
     server.register("session.create", (p) => this._sessionCreateHandler(p));
+    server.register("session.list", (p) => this._sessionListHandler(p));
+    server.register("session.resume", (p) => this._sessionResumeHandler(p));
     server.register("session.send_message", (p) => this._sessionSendHandler(p));
-    server.register("session.get_history", (p) => Promise.resolve(this._sessionHistoryHandler(p)));
     server.register("session.close", (p) => this._sessionCloseHandler(p));
+    server.register("run.cancel", (p) => this._runCancelHandler(p));
     server.register("permission.respond", (p) => this._permissionRespondHandler(p));
-    server.register("session.compact", (p) => this._sessionCompactHandler(p));
+    server.register("ask_user.respond", (p) => this._askRespondHandler(p));
+    server.register("plan.respond", (p) => this._planRespondHandler(p));
+    server.register("mode.set", (p) => this._modeSetHandler(p));
+    server.register("command.run", (p) => this._commandRunHandler(p));
+    server.register("command.list", (p) => this._commandListHandler(p));
+    server.register("rewind.list", (p) => this._rewindListHandler(p));
+    server.register("rewind.apply", (p) => this._rewindApplyHandler(p));
 
     let addr: string;
     try {
@@ -294,6 +614,14 @@ export class CoreApp {
       process.exit(1);
     }
     logger.info(`larky-core ${version} listening addr=${addr}`);
+    this.emit({
+      type: "core.started",
+      listen_addr: addr,
+      version,
+      timestamp: nowIso(),
+    });
+
+    this._startTeammatePolling();
 
     // Wait for SIGINT/SIGTERM
     let shutdownResolve: (() => void) | undefined;
@@ -301,7 +629,6 @@ export class CoreApp {
       shutdownResolve = resolve;
     });
     const onSignal = (): void => {
-      this._abortController.abort();
       shutdownResolve?.();
     };
     process.on("SIGINT", onSignal);
@@ -310,22 +637,12 @@ export class CoreApp {
     await shutdownPromise;
 
     logger.info("shutting down");
-
-    // Wait for running agent runs to complete (with 5s timeout)
-    if (this._runningRuns.size > 0) {
-      await Promise.race([
-        Promise.allSettled(this._runningRuns),
-        new Promise<void>((resolve) =>
-          setTimeout(() => {
-            resolve();
-          }, 5000),
-        ),
-      ]);
+    if (this._teammatePollTimer) clearInterval(this._teammatePollTimer);
+    this._cancelAllInteractions();
+    for (const session of this._sessions.values()) {
+      await session.close().catch(() => undefined);
     }
-
-    if (this._mcpManager) {
-      await this._mcpManager.stopAll();
-    }
+    this._sessions.clear();
     await server.stop();
     if (this._trace) await this._trace.stop();
 
@@ -334,57 +651,29 @@ export class CoreApp {
   }
 }
 
-// Return the full path to the events.jsonl file for a given run ID
-// Resolves relative paths against the larky working directory
-function eventsFilePath(runId: string): string {
-  const rel = eventsFile(runId);
-  return path.resolve(rel);
+function isPermissionMode(mode: string | undefined): mode is PermissionMode {
+  return (
+    mode !== undefined && ["default", "acceptEdits", "plan", "bypassPermissions"].includes(mode)
+  );
 }
 
-// Check whether an event type matches any of the subscribed topic patterns
-// Uses picomatch with the same semantics as IpcEventBroadcaster so replayed
-// events and live subscriptions match identically (e.g. "run.*", "*", "tool.call_*")
+// -- event.subscribe replay helpers (kept from the original architecture) --------
+
 function matchTopic(eventType: string, matchers: picomatch.Matcher[]): boolean {
   return matchers.some((m) => m(eventType));
 }
 
-// Synchronously snapshot matching replay lines (event envelopes, one JSON line
-// each, "\n"-terminated) from the run's events.jsonl history file.
+// Synchronously snapshot matching replay lines from a run's events.jsonl.
 // Fully synchronous so callers can subscribe immediately after snapshotting
 // without an await gap (B-11).
-export function snapshotReplayLines(runId: string, topics: string[]): string[] {
-  let eventsPath = eventsFilePath(runId);
-
-  // Fallback: search under ~/.larky/sessions/*/runs/{runId}/events.jsonl
-  if (!existsSync(eventsPath)) {
-    const sessionsDir = path.join(homedir(), ".larky", "sessions");
-    if (existsSync(sessionsDir)) {
-      try {
-        const sessionIds = readdirSync(sessionsDir);
-        for (const sessionId of sessionIds) {
-          const candidate = path.join(sessionsDir, sessionId, "runs", runId, "events.jsonl");
-          if (existsSync(candidate)) {
-            eventsPath = candidate;
-            break;
-          }
-        }
-      } catch {
-        // Ignore errors reading sessions directory
-      }
-    }
-  }
-
-  return snapshotReplayLinesFromFile(eventsPath, topics);
+export function snapshotReplayLines(workDir: string, runId: string, topics: string[]): string[] {
+  return snapshotReplayLinesFromFile(runEventsPath(workDir, runId), topics);
 }
 
-// Synchronously read an events.jsonl file and return the topic-matching
-// event envelope lines ("\n"-terminated); empty array on any read error
 export function snapshotReplayLinesFromFile(eventsPath: string, topics: string[]): string[] {
   if (!existsSync(eventsPath)) return [];
 
-  // Compile topic matchers once (same picomatch semantics as IpcEventBroadcaster)
   const matchers = topics.map((t) => picomatch(t));
-
   const out: string[] = [];
   try {
     const content = readFileSync(eventsPath, "utf-8");
@@ -393,10 +682,9 @@ export function snapshotReplayLinesFromFile(eventsPath: string, topics: string[]
       try {
         const parsed: unknown = JSON.parse(line);
         if (!isRecord(parsed)) continue;
-        const event = parsed;
-        const eventType = typeof event["type"] === "string" ? event["type"] : "";
+        const eventType = typeof parsed["type"] === "string" ? parsed["type"] : "";
         if (!matchTopic(eventType, matchers)) continue;
-        out.push(JSON.stringify({ kind: "event", event }) + "\n");
+        out.push(JSON.stringify({ kind: "event", event: parsed }) + "\n");
       } catch {
         // Skip malformed JSON lines
       }
@@ -408,28 +696,22 @@ export function snapshotReplayLinesFromFile(eventsPath: string, topics: string[]
 }
 
 // event.subscribe implementation, extracted for testability.
-// B-11: take a synchronous snapshot of the replay lines first, then subscribe
-// synchronously (no await gap between snapshot and subscribe), and only then
-// write the snapshot to the socket. Events published after the subscription is
-// registered are therefore never lost. Note: live events arriving while the
-// snapshot is being written out may interleave with replay lines — acceptable
-// for a personal tool.
+// B-11: snapshot replay lines synchronously, subscribe synchronously (no await
+// gap between snapshot and subscribe), then write the snapshot out. Events
+// published after the subscription is registered are therefore never lost.
 export async function handleEventSubscribe(
   broadcaster: IpcEventBroadcaster,
   writer: net.Socket,
   cmd: { topics: string[]; scope: string; replay_from_run: string | null },
-  snapshotFn: (runId: string, topics: string[]) => string[] = snapshotReplayLines,
+  snapshotFn: (runId: string, topics: string[]) => string[],
 ): Promise<unknown> {
-  // 1. Synchronous snapshot of history
   let replayLines: string[] = [];
   if (cmd.replay_from_run !== null) {
     replayLines = snapshotFn(cmd.replay_from_run, cmd.topics);
   }
 
-  // 2. Synchronous subscribe — live events from here on are delivered
   const subId = broadcaster.subscribe(writer, cmd.topics, cmd.scope);
 
-  // 3. Write the snapshot out (may await drain under backpressure)
   for (const line of replayLines) {
     writer.write(line);
   }

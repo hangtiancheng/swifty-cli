@@ -20,7 +20,6 @@
  * SOFTWARE.
  */
 
-// Spinner verb pools — adds personality to the loading indicator
 const spinnerVerbs = [
   "Accomplishing",
   "Architecting",
@@ -126,7 +125,7 @@ const spinnerVerbs = [
 ];
 
 export function randomVerb(): string {
-  return spinnerVerbs[Math.floor(Math.random() * spinnerVerbs.length)] ?? "Working";
+  return spinnerVerbs[Math.floor(Math.random() * spinnerVerbs.length)];
 }
 
 const completionVerbs = [
@@ -153,5 +152,5 @@ const completionVerbs = [
 ];
 
 export function randomCompletionVerb(): string {
-  return completionVerbs[Math.floor(Math.random() * completionVerbs.length)] ?? "Worked";
+  return completionVerbs[Math.floor(Math.random() * completionVerbs.length)];
 }

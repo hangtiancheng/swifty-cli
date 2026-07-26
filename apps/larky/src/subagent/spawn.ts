@@ -1,0 +1,127 @@
+/**
+ * Copyright (c) 2026 hangtiancheng
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+ */
+
+import type { LLMClient } from "../llm/client.js";
+import { createClient } from "../llm/client.js";
+import { resolveModelId } from "../llm/model-resolver.js";
+import { ConversationManager } from "../conversation/conversation.js";
+import { buildSystemPrompt, detectEnvironment } from "../prompt/builder.js";
+import type { ToolRegistry } from "../tools/registry.js";
+import { PermissionChecker } from "../permissions/checker.js";
+import { Agent } from "../agent/agent.js";
+import type { AgentDefinition } from "./definition.js";
+import type { ProviderConfig } from "../config/config.js";
+import { filterToolsForAgent } from "./tool-filter.js";
+
+export type AgentEventSink = (event: {
+  type: string;
+  toolName?: string;
+  args?: Record<string, unknown>;
+  usage?: { inputTokens: number; outputTokens: number };
+  text?: string;
+}) => void;
+
+export async function spawnSubagent(
+  definition: AgentDefinition,
+  prompt: string,
+  parentClient: LLMClient,
+  parentRegistry: ToolRegistry,
+  parentProvider: ProviderConfig,
+  workDir: string,
+  onProgress?: (p: { turn?: number; lastTool?: string }) => void,
+  onEvent?: AgentEventSink,
+  modelOverride?: string,
+  checkerOverride?: PermissionChecker,
+): Promise<string> {
+  // Determine the model: call-level override > definition-level model > parent Agent's model
+
+  const effectiveModel = modelOverride ?? definition.model;
+  const resolvedModel = effectiveModel ? resolveModelId(effectiveModel) : parentProvider.model;
+  const env = detectEnvironment(workDir);
+  env.model = resolvedModel;
+  const systemPrompt = definition.systemPromptOverride ?? buildSystemPrompt(env);
+  const client: LLMClient = effectiveModel
+    ? await createClient({ ...parentProvider, model: resolvedModel }, systemPrompt)
+    : parentClient;
+
+  // Build the subagent tool registry through multi-layer filtering
+  const registry = filterToolsForAgent(
+    parentRegistry,
+    definition.tools,
+    definition.disallowedTools,
+    false, // isAsync — spawnSubagent currently on the synchronous path
+  );
+  // When a teammate runs in plan mode, the checker is created and held by the team layer:
+  // after approval passes, the mode must be switched back to default in place. If the checker
+  // were only instantiated here, the team layer would have no handle to modify it.
+  const permMode = definition.permissionMode ?? "acceptEdits";
+  const checker = checkerOverride ?? new PermissionChecker(workDir, permMode);
+  const conversation = new ConversationManager();
+  conversation.addUserMessage(prompt);
+
+  const agent = new Agent({
+    client,
+    registry,
+    checker,
+    conversation,
+    workDir,
+    maxIterations: definition.maxTurns ?? 200,
+  });
+
+  let output = "";
+  let turn = 0;
+  for await (const event of agent.run()) {
+    switch (event.type) {
+      case "stream_text":
+        output += event.text;
+        break;
+      case "tool_use":
+        onProgress?.({ lastTool: event.toolName });
+        onEvent?.({
+          type: "tool_use",
+          toolName: event.toolName,
+          args: event.args,
+        });
+        break;
+      case "usage":
+        onEvent?.({
+          type: "usage",
+          usage: {
+            inputTokens: event.usage.inputTokens,
+            outputTokens: event.usage.outputTokens,
+          },
+        });
+        break;
+      case "turn_complete":
+        onProgress?.({ turn: ++turn });
+        break;
+      case "loop_complete":
+        return output || "[No output]";
+      case "error":
+        return output
+          ? `${output}\n\n[Error: ${event.error.message}]`
+          : `Error: ${event.error.message}`;
+    }
+  }
+
+  return output || "[No output]";
+}

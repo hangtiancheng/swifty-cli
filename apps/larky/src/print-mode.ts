@@ -1,0 +1,310 @@
+/**
+ * Copyright (c) 2026 hangtiancheng
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+ */
+
+import { forkEnabled, loadConfig } from "./config/config.js";
+import { getContextWindow, getMaxOutputTokens } from "./config/config.js";
+import { createClient } from "./llm/client.js";
+import { ConversationManager } from "./conversation/conversation.js";
+import { buildSystemPrompt, detectEnvironment } from "./prompt/builder.js";
+import { ToolRegistry } from "./tools/registry.js";
+import { ReadFileTool } from "./tools/read-file.js";
+import { BashTool } from "./tools/bash.js";
+import { GlobTool } from "./tools/glob.js";
+import { GrepTool } from "./tools/grep.js";
+import { WriteFileTool } from "./tools/write-file.js";
+import { EditFileTool } from "./tools/edit-file.js";
+import { ToolSearchTool } from "./tools/tool-search.js";
+import { PermissionChecker } from "./permissions/checker.js";
+import { Agent } from "./agent/agent.js";
+import type { AgentEvent } from "./agent/events.js";
+import { FileStateCache } from "./tools/file-state-cache.js";
+import { AgentTool } from "./subagent/agent-tool.js";
+import { spawnSubagent } from "./subagent/spawn.js";
+import { BUILTIN_AGENTS } from "./subagent/definition.js";
+import { TeamManager } from "./teams/team.js";
+import { TeamCreateTool, SendMessageTool, TeamDeleteTool } from "./teams/tools.js";
+import { TaskStopTool } from "./teams/task-stop.js";
+import { SyntheticOutputTool } from "./tools/synthetic-output.js";
+import { coordinatorToolFilter, coordinatorActive } from "./teams/coordinator.js";
+
+/** Supported output formats for -p (print) mode. */
+type OutputFormat = "text" | "stream-json";
+
+/** Parsed arguments for -p mode. */
+export interface PrintArgs {
+  prompt: string;
+  outputFormat: OutputFormat;
+}
+
+/**
+ * Parses -p related command-line flags.
+ * Returns null when -p mode is not active.
+ */
+export function parsePrintFlags(args: string[]): PrintArgs | null {
+  const idx = args.indexOf("-p");
+  if (idx === -1) {
+    return null;
+  }
+
+  const prompt = args[idx + 1];
+  if (!prompt) {
+    console.error("Error: -p requires a prompt argument");
+    process.exit(1);
+  }
+
+  // Parse --output-format (defaults to "text")
+  let outputFormat: OutputFormat = "text";
+  const fmtIdx = args.indexOf("--output-format");
+  if (fmtIdx !== -1 && args[fmtIdx + 1]) {
+    const fmt = args[fmtIdx + 1];
+    if (fmt === "stream-json") {
+      outputFormat = "stream-json";
+    } else if (fmt !== "text") {
+      console.error(`Error: unknown output format '${fmt}', expected 'text' or 'stream-json'`);
+      process.exit(1);
+    }
+  }
+
+  return { prompt, outputFormat };
+}
+
+/**
+ * Runs the Agent non-interactively and writes the result to stdout.
+ * - text mode: emits only the model's text response
+ * - stream-json mode: emits one JSON line per event
+ */
+export async function runPrintMode(args: PrintArgs): Promise<void> {
+  const startTime = Date.now();
+  const workDir = process.cwd();
+
+  // Load configuration
+  const cfg = loadConfig();
+  const provider = cfg.providers[0];
+
+  // Build system prompt
+  const env = detectEnvironment(workDir);
+  env.model = provider.model;
+  const systemPrompt = buildSystemPrompt(env);
+
+  // Create LLM client
+  const client = await createClient(provider, systemPrompt);
+
+  // Create tool registry and register core tools
+  const registry = new ToolRegistry();
+  registry.register(new ReadFileTool());
+  registry.register(new BashTool());
+  registry.register(new GlobTool());
+  registry.register(new GrepTool());
+  registry.register(new WriteFileTool());
+  registry.register(new EditFileTool());
+  registry.register(new ToolSearchTool(registry));
+
+  // Team tools are also available in -p mode, allowing the Lead to assemble a team and delegate
+  // tasks within a single non-interactive execution
+  const teamManager = new TeamManager(workDir);
+  registry.register(new TeamCreateTool(teamManager));
+  registry.register(new SendMessageTool(teamManager));
+  registry.register(new TeamDeleteTool(teamManager));
+  registry.register(new TaskStopTool(teamManager));
+  registry.register(new SyntheticOutputTool());
+
+  const agentTool = new AgentTool(
+    workDir,
+    registry,
+    (def, prompt, _bg, modelOverride, workDirOverride) =>
+      spawnSubagent(
+        def,
+        prompt,
+        client,
+        registry,
+        provider,
+        workDirOverride ?? workDir,
+        undefined,
+        undefined,
+        modelOverride,
+      ),
+  );
+  agentTool.forkDisabled = !forkEnabled(cfg);
+  agentTool.setTeamManager(
+    teamManager,
+    (teamRegistry, teamChecker) => (task, onEvent) =>
+      spawnSubagent(
+        BUILTIN_AGENTS[0],
+        task,
+        client,
+        teamRegistry,
+        provider,
+        workDir,
+        undefined,
+        onEvent,
+        undefined,
+        teamChecker,
+      ),
+  );
+  registry.register(agentTool);
+
+  // Create conversation manager and add user message
+  const conv = new ConversationManager();
+  conv.addUserMessage(args.prompt);
+
+  // bypassPermissions mode: auto-approve all permission requests
+  const checker = new PermissionChecker(workDir, "bypassPermissions");
+
+  // Create Agent
+  const agent = new Agent({
+    client,
+    registry,
+    checker,
+    conversation: conv,
+    workDir,
+    fileStateCache: new FileStateCache(),
+    contextWindow: getContextWindow(provider),
+    maxOutput: getMaxOutputTokens(provider),
+    // Teammate completion reports land in the Lead's inbox; drained each turn as a system-reminder delivered to the Lead
+    notificationFn: () => teamManager.drainLeads(),
+    toolFilter: coordinatorToolFilter(cfg.enable_coordinator_mode ?? false),
+    coordinatorActiveFn: () => coordinatorActive(cfg.enable_coordinator_mode ?? false),
+  });
+
+  // Statistics
+  let resultText = "";
+  let numTurns = 0;
+  const toolCalls: { tool: string; elapsed: number }[] = [];
+  const totalUsage = { inputTokens: 0, outputTokens: 0 };
+
+  // Consume the Agent event stream
+  for await (const event of agent.run()) {
+    if (args.outputFormat === "stream-json") {
+      emitStreamJson(event);
+    } else {
+      // text mode: emit only streamed text
+      if (event.type === "stream_text") {
+        process.stdout.write(event.text);
+      }
+    }
+
+    // Collect statistics
+    switch (event.type) {
+      case "stream_text":
+        resultText += event.text;
+        break;
+      case "tool_use":
+        toolCalls.push({ tool: event.toolName, elapsed: 0 });
+        break;
+      case "tool_result":
+        // Update elapsed time for the most recent matching tool call
+        for (let i = toolCalls.length - 1; i >= 0; i--) {
+          if (toolCalls[i].tool === event.toolName && toolCalls[i].elapsed === 0) {
+            toolCalls[i].elapsed = event.elapsed;
+            break;
+          }
+        }
+        break;
+      case "turn_complete":
+        numTurns++;
+        break;
+      case "usage":
+        totalUsage.inputTokens += event.usage.inputTokens;
+        totalUsage.outputTokens += event.usage.outputTokens;
+        break;
+      case "error":
+        if (args.outputFormat === "text") {
+          console.error(`\nError: ${event.error.message}`);
+        }
+        break;
+    }
+  }
+
+  const durationMs = Date.now() - startTime;
+
+  // text mode: ensure trailing newline
+  if (args.outputFormat === "text" && resultText && !resultText.endsWith("\n")) {
+    process.stdout.write("\n");
+  }
+
+  // stream-json mode: emit final summary
+  if (args.outputFormat === "stream-json") {
+    const resultLine = {
+      type: "result",
+      result: resultText,
+      duration_ms: durationMs,
+      num_turns: numTurns,
+      tool_calls: toolCalls,
+      usage: totalUsage,
+    };
+    console.log(JSON.stringify(resultLine));
+  }
+}
+
+/**
+ * Emits an Agent event as a single JSON line to stdout (stream-json format).
+ */
+function emitStreamJson(event: AgentEvent): void {
+  switch (event.type) {
+    case "tool_use":
+      console.log(
+        JSON.stringify({
+          type: "tool_use",
+          tool_name: event.toolName,
+          tool_id: event.toolId,
+          args: event.args,
+        }),
+      );
+      break;
+
+    case "tool_result":
+      console.log(
+        JSON.stringify({
+          type: "tool_result",
+          tool_name: event.toolName,
+          output: event.output,
+          is_error: event.isError,
+          elapsed: event.elapsed,
+        }),
+      );
+      break;
+
+    case "usage":
+      console.log(
+        JSON.stringify({
+          type: "usage",
+          input_tokens: event.usage.inputTokens,
+          output_tokens: event.usage.outputTokens,
+        }),
+      );
+      break;
+
+    case "error":
+      console.log(
+        JSON.stringify({
+          type: "error",
+          message: event.error.message,
+        }),
+      );
+      break;
+
+    // stream_text, thinking_text, etc. are not emitted in stream-json mode
+    // (text content is aggregated into the final result summary)
+    default:
+      break;
+  }
+}

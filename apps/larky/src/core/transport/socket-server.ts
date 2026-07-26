@@ -198,6 +198,14 @@ export class SocketServer {
       socket.destroy();
     });
 
+    // The readline Interface re-emits stream errors (e.g. ECONNRESET from an
+    // abrupt client disconnect) as its own "error" event; without a listener
+    // that crashes the whole daemon.
+    rl.on("error", () => {
+      cleanup();
+      socket.destroy();
+    });
+
     socket.on("error", () => {
       cleanup();
       rl.close();

@@ -1,281 +1,47 @@
-# Larky RUNBOOK
+# larky RUNBOOK
 
-Operations and troubleshooting guide for the Larky daemon.
+Operational notes for the dual-process larky agent.
 
----
+## Processes
 
-## Daemon Lifecycle
+| Process             | Entry              | Role                                                            |
+| ------------------- | ------------------ | --------------------------------------------------------------- |
+| daemon `larky-core` | `dist/core/app.js` | Full larky agent stack, TCP JSON-RPC server on `127.0.0.1:5520` |
+| client `larky`      | `dist/cli/main.js` | TUI / print / teammate / remote modes                           |
 
-### Start the Daemon
+## Lifecycle
 
-```bash
-larky core start          # Start in background
-pnpm dev:core              # Start in foreground (development)
-```
-
-The daemon listens on `127.0.0.1:5520` by default. It creates a PID file at `~/.larky/larky-core.pid`.
-
-### Check Daemon Status
-
-```bash
-larky core status
-larky ping
-# → pong server=0.0.1 uptime=1234ms latency=2ms
-```
-
-### Stop the Daemon
-
-```bash
-larky core stop           # Graceful shutdown (SIGTERM)
-kill "$(cat ~/.larky/larky-core.pid)"   # Manual fallback
-```
-
-On shutdown, the daemon:
-
-1. Aborts all running agent runs via `AbortController`
-2. Waits up to 5 seconds for runs to settle
-3. Closes all MCP server connections
-4. Stops the TCP server
-5. Flushes the trace writer
-
-### Port Conflict Resolution
-
-```bash
-# Check what's using the port
-lsof -i :5520
-
-# Use a different port
-LARKY_PORT=8000 larky core start
-```
-
----
+- `larky` (no args) pings the daemon; if unreachable it spawns `node dist/core/app.js` detached, writes the PID to `~/.larky/larky-core.pid`, and waits for ping (250ms × 20). A daemon started this way is stopped when the TUI exits; a manually started daemon is left running.
+- `larky core start|stop|status` manages the daemon explicitly. `stop` verifies the PID's command line via `ps` before killing (PID-reuse guard, B-12).
+- Emergency: `node kill.mjs` kills all larky processes.
 
 ## Configuration
 
-### 5-Tier Priority Chain (later tiers override earlier ones)
+- larky config (providers, hooks, MCP, sandbox, permission_mode): `~/.larky/config.yaml` → project `.larky/config.yaml` → `.larky/config.local.yml`.
+- larky infra config (host/port/logging/trace): `~/.larky/config.toml`, project `.larky/config.toml`, `.env`, `LARKY_*` env vars (`LARKY_HOST`, `LARKY_PORT`, `LARKY_LOG_LEVEL`, `LARKY_LOG_FILE`, `LARKY_TRACE_*`).
 
-1. **Built-in defaults** (hardcoded)
-2. **Global TOML** (`~/.larky/config.toml`)
-3. **Project-local TOML** (`.larky/config.toml`)
-4. **dotenv** (`.env` file in current directory)
-5. **Environment variables** (`LARKY_*` prefix)
+## State on disk
 
-### TOML Validation
+| Path                                                | Contents                                    |
+| --------------------------------------------------- | ------------------------------------------- |
+| `<workdir>/.larky/sessions/*.jsonl`                 | conversation persistence (larky-compatible) |
+| `<workdir>/.larky/file-history/`                    | rewind checkpoints                          |
+| `<workdir>/.larky/daemon/runs/<runId>/events.jsonl` | wire events for `replay_from_run`           |
+| `<workdir>/.larky/skills/`, `.larky/commands/`      | skills and user slash commands              |
+| `~/.larky/larky-core.pid`                           | daemon PID file                             |
+| `~/.larky/logs/core.log`                            | daemon log (10MB × 5 rotation)              |
+| `~/.larky/traces/daemon.jsonl`                      | NDJSON wire trace (`larky trace`)           |
 
-Unknown keys and type mismatches cause immediate exit with a descriptive error:
+## Debugging
 
-```
-Config error: Unknown [core] keys: hostname
-Config error: core.port must be an integer
-Config error: compaction.auto_threshold must be between 0 and 1
-```
+- `larky trace --layer ipc --follow` — live wire traffic (commands, responses, pushes).
+- `larky ping` / `larky core status` — health.
+- Daemon stderr goes to the log file; in dev (`pnpm dev`) stderr is inherited by the terminal.
+- Reconnect recovery: the TUI resubscribes with `replay_from_run=<last run id>`; replayed lines come from the run's `events.jsonl`.
 
-### Environment Variables
+## Known behaviors
 
-| Variable                          | Default                        | Description                                           |
-| --------------------------------- | ------------------------------ | ----------------------------------------------------- |
-| `ANTHROPIC_API_KEY`               | (required)                     | Anthropic API key                                     |
-| `ANTHROPIC_BASE_URL`              | (SDK default)                  | Override API base URL                                 |
-| `LARKY_CONFIG`                    | `~/.larky/config.toml`         | Path to TOML config file                              |
-| `LARKY_HOST`                      | `127.0.0.1`                    | Daemon bind host                                      |
-| `LARKY_PORT`                      | `5520`                         | Daemon bind port                                      |
-| `LARKY_LOG_LEVEL`                 | `INFO`                         | Log level (DEBUG / INFO / WARN / ERROR)               |
-| `LARKY_LOG_FILE`                  | `~/.larky/logs/core.log`       | Log file path                                         |
-| `LARKY_LOG_FORMAT`                | `text`                         | Log format (text / json)                              |
-| `LARKY_MAX_STEPS`                 | `20`                           | Maximum agent loop steps                              |
-| `LARKY_LLM_DEFAULT_MODEL`         | `claude-sonnet-4-6`            | Default LLM model                                     |
-| `LARKY_TRACE_ENABLED`             | `true`                         | Enable/disable tracing                                |
-| `LARKY_TRACE_FILE`                | `~/.larky/traces/daemon.jsonl` | Trace file path                                       |
-| `LARKY_TRACE_INCLUDE_LLM_PAYLOAD` | `true`                         | Include full LLM payloads in traces                   |
-| `LARKY_PERMISSION_TIMEOUT_S`      | `60`                           | Permission prompt timeout (seconds)                   |
-| `LARKY_COMPACT_THRESHOLD`         | `0.0`                          | Auto-compaction threshold (0.0 = disabled, 0.8 = 80%) |
-| `LARKY_COMPACT_TOOL_LIMIT`        | `8000`                         | Tool result truncation limit (chars)                  |
-| `LARKY_COMPACT_TOOL_KEEP`         | `4000`                         | Tool result keep size (chars)                         |
-
----
-
-## Error Codes
-
-### Session Errors
-
-| Code   | Name                   | Cause                              | Resolution                                 |
-| ------ | ---------------------- | ---------------------------------- | ------------------------------------------ |
-| -32010 | SESSION_NOT_FOUND      | Session ID does not exist          | Create a new session with `session.create` |
-| -32011 | SESSION_CLOSED         | Session is already closed          | Create a new session                       |
-| -32012 | SESSION_BUSY           | Another message is being processed | Wait for the current run to finish         |
-| -32020 | PROVIDER_NOT_AVAILABLE | No LLM provider configured         | Set `ANTHROPIC_API_KEY`                    |
-| -32021 | COMPACTION_FAILED      | LLM-driven compaction failed       | Retry `/compact` or check API key          |
-
-### JSON-RPC Standard Errors
-
-| Code   | Name             | Cause                                  |
-| ------ | ---------------- | -------------------------------------- |
-| -32700 | PARSE_ERROR      | Malformed JSON in request line         |
-| -32600 | INVALID_REQUEST  | JSON-RPC envelope validation failed    |
-| -32601 | METHOD_NOT_FOUND | Unknown method name                    |
-| -32602 | INVALID_PARAMS   | Parameter validation failed (ZodError) |
-| -32603 | INTERNAL_ERROR   | Unhandled exception in handler         |
-
----
-
-## Troubleshooting
-
-### Connection Refused
-
-```
-error: core not running (127.0.0.1:5520)
-```
-
-The daemon is not running. Start it with `larky core start` or `pnpm dev:core`.
-
-### Permission Timeout
-
-If a permission prompt is not answered within `LARKY_PERMISSION_TIMEOUT_S` (default 60s), the tool invocation fails with `permission_denied` and decision `timeout`. The agent receives an error and may retry or choose an alternative approach.
-
-To resolve:
-
-- Increase `LARKY_PERMISSION_TIMEOUT_S` for longer prompts
-- Respond to permission prompts promptly in the TUI
-- Use `always_allow` to pre-approve trusted tools
-
-### MCP Server Startup Failure
-
-MCP server failures are non-fatal — the daemon starts without the failed server's tools. Check the log for:
-
-```
-mcp: server 'my-server' failed to start, skipping
-```
-
-Common causes:
-
-- `command` not found or not executable
-- MCP server process exits immediately
-- Network unreachable for TCP transport
-- Protocol version mismatch
-
-Debug with:
-
-```bash
-LARKY_LOG_LEVEL=DEBUG larky core start
-# Watch for "mcp stderr:" lines in the log
-```
-
-### LLM API Errors
-
-The Anthropic provider retries up to 3 times on transient network errors (ECONNRESET, ECONNREFUSED, ETIMEDOUT, EPIPE, EAI_AGAIN) with 1s/2s/4s backoff. After exhausting retries, the run fails with `llm_error`.
-
-Common causes:
-
-- Invalid API key → `ANTHROPIC_API_KEY` not set or expired
-- Rate limiting → Wait and retry
-- Network issues → Check connectivity to Anthropic API
-
----
-
-## Tracing
-
-The trace log is written to `~/.larky/traces/daemon.jsonl` in NDJSON format.
-
-### Trace Directions
-
-| Direction     | Color   | Meaning                                     |
-| ------------- | ------- | ------------------------------------------- |
-| `CLIENT→CORE` | cyan    | Client sent a command to the daemon         |
-| `CORE→CLIENT` | yellow  | Daemon sent a response or event to a client |
-| `CORE`        | green   | Internal daemon operation                   |
-| `CORE→LLM`    | magenta | LLM API request                             |
-| `LLM→CORE`    | blue    | LLM API response                            |
-
-### Trace Layers
-
-| Layer   | Description                     |
-| ------- | ------------------------------- |
-| `ipc`   | JSON-RPC commands and responses |
-| `event` | EventBus pub/sub events         |
-| `llm`   | LLM API interactions            |
-
-### Trace Kinds
-
-| Kind           | Layer | Description                  |
-| -------------- | ----- | ---------------------------- |
-| `command`      | ipc   | Incoming JSON-RPC request    |
-| `response`     | ipc   | Successful JSON-RPC response |
-| `error`        | ipc   | JSON-RPC error response      |
-| `push`         | ipc   | Event pushed to subscriber   |
-| `event`        | event | Internal EventBus event      |
-| `api_call`     | llm   | LLM API request              |
-| `api_response` | llm   | LLM API response             |
-
-### Using `larky trace`
-
-```bash
-larky trace                          # View all trace records
-larky trace --follow                 # Tail mode (live updates)
-larky trace --raw                    # Raw NDJSON output (for piping)
-larky trace --layer llm              # Filter by layer (ipc / event / llm)
-larky trace --direction CORE→LLM     # Filter by direction
-larky trace run-abc123               # Filter by run ID
-```
-
----
-
-## Session and Compaction
-
-### Session Modes
-
-- `one_shot`: Single-goal execution. Session closes automatically after the agent completes.
-- `chat`: Multi-turn interactive sessions. Messages persist to `thread.jsonl` across turns.
-
-### Manual Compaction
-
-In the TUI, type `/compact` to trigger context compaction. This:
-
-1. Sends the full conversation history to the LLM for summarization
-2. Replaces the thread with `[summary, acknowledgment]`
-3. Backs up the original thread to `thread_<timestamp>.jsonl.bak`
-4. Writes a summary file to `summary_<timestamp>.md`
-
-### Auto-Compaction
-
-Set `LARKY_COMPACT_THRESHOLD` (or `compaction.auto_threshold` in TOML) to a value between 0.0 and 1.0. When the context usage percentage exceeds this threshold after a tool-use step, compaction triggers automatically.
-
-- `0.0` (default): Auto-compaction disabled — use manual `/compact`
-- `0.8`: Compact when context reaches 80% of the model's window
-
-### Context Waterline
-
-The TUI status bar shows the current context percentage. The color changes based on usage:
-
-- `< 70%`: Normal (dim)
-- `70%–85%`: Warning (yellow)
-- `> 85%`: Critical (red) — compaction recommended
-
----
-
-## Data Directories
-
-| Path                                    | Purpose                                                               |
-| --------------------------------------- | --------------------------------------------------------------------- |
-| `~/.larky/config.toml`                  | Global configuration                                                  |
-| `~/.larky/policy.toml`                  | Persistent permission policies                                        |
-| `~/.larky/sessions/`                    | Session data: `meta.json`, `thread.jsonl`, `notes.md`, `summary_*.md` |
-| `~/.larky/sessions/{sid}/runs/{runId}/` | Per-run event logs (`events.jsonl`)                                   |
-| `~/.larky/traces/daemon.jsonl`          | Trace log (NDJSON)                                                    |
-| `~/.larky/logs/core.log`                | Application log (Pino)                                                |
-| `~/.larky/context.md`                   | Global context injected into agent system prompts                     |
-| `~/.larky/larky-core.pid`               | Daemon PID file                                                       |
-| `.larky/config.toml`                    | Project-local configuration                                           |
-| `.larky/context.md`                     | Project-local context                                                 |
-
----
-
-## Development
-
-```bash
-pnpm typecheck          # tsc --noEmit
-pnpm lint               # eslint --fix
-pnpm test               # vitest run
-pnpm format             # oxfmt --write
-pnpm qa                 # All of the above combined
-pnpm doc                # Regenerate WIRE_PROTOCOL.md
-```
+- If the last subscribed client disconnects, the daemon cancels all pending permission/ask-user/plan requests as "deny" so agent runs never hang (B-3).
+- Slow clients get a per-socket serial write queue; a dead socket is dropped without blocking others (B-10).
+- `event.subscribe` snapshots replay lines synchronously before subscribing, so no events are lost in the gap (B-11).
+- Sending a new message while a run is streaming interrupts the current run first (steering).

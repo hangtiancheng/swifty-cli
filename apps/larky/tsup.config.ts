@@ -20,9 +20,13 @@
  * SOFTWARE.
  */
 
+import { copyFileSync, cpSync, readFileSync } from "node:fs";
 import { builtinModules } from "node:module";
-import { readFileSync } from "node:fs";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import { defineConfig, type Options } from "tsup";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
 const pkg = JSON.parse(readFileSync(new URL("./package.json", import.meta.url), "utf-8")) as {
@@ -31,6 +35,9 @@ const pkg = JSON.parse(readFileSync(new URL("./package.json", import.meta.url), 
 
 const cliBanner = [
   "#!/usr/bin/env node",
+  // Provide a real `require` for bundled CJS modules (e.g. signal-exit)
+  // that call require("assert") etc. esbuild's CJS-to-ESM shim checks
+  // `typeof require !== "undefined"` and will use this instead of throwing.
   'import { createRequire as __larkyCreateRequire } from "node:module";',
   "const require = __larkyCreateRequire(import.meta.url);",
 ].join("\n");
@@ -42,12 +49,21 @@ const coreBanner = [
   "const require = __larkyCreateRequire(import.meta.url);",
 ].join("\n");
 
+// Both version macros are injected: kept larky-branded sources read
+// __LARKY_VERSION__ while larky infra reads __LARKY_VERSION__.
+const defines = {
+  __LARKY_VERSION__: JSON.stringify(pkg.version),
+  __LARKY_VERSION__: JSON.stringify(pkg.version),
+};
+
 function externalizePlugin(): NonNullable<Options["esbuildPlugins"]> {
   const builtinRe = new RegExp(`^(${builtinModules.join("|")})(/.*)?$`);
   return [
     {
       name: "externalize-node-builtins-and-optional",
       setup(build) {
+        // CJS deps (e.g. signal-exit) use bare require("assert") which esbuild
+        // can't shim in ESM output — externalize all Node.js built-ins
         build.onResolve({ filter: builtinRe }, (args) => ({
           path: args.path,
           external: true,
@@ -60,38 +76,57 @@ function externalizePlugin(): NonNullable<Options["esbuildPlugins"]> {
           contents: "export default {};",
           loader: "js",
         }));
+        // @swifty.js/glob-addon is a C++ N-API addon (.node binary). esbuild
+        // cannot bundle binaries — externalize it so build never breaks.
+        build.onResolve({ filter: /@larky\.js\/glob-addon/ }, (args) => ({
+          path: args.path,
+          external: true,
+        }));
       },
     },
   ];
 }
 
+const shared: Options = {
+  format: ["esm"],
+  platform: "node",
+  target: "node20",
+  outDir: "dist",
+  splitting: false,
+  sourcemap: true,
+  noExternal: [/.*/],
+  define: defines,
+  tsconfig: "tsconfig.json",
+  esbuildPlugins: externalizePlugin(),
+};
+
 export default defineConfig([
   {
+    ...shared,
     entry: { "cli/main": "src/cli/main.ts" },
-    format: ["esm"],
-    platform: "node",
-    target: "node20",
-    outDir: "dist",
     clean: true,
-    splitting: false,
-    sourcemap: true,
     banner: { js: cliBanner },
-    noExternal: [/.*/],
-    define: { __LARKY_VERSION__: JSON.stringify(pkg.version) },
-    esbuildPlugins: externalizePlugin(),
   },
   {
+    ...shared,
     entry: { "core/app": "src/core/app.ts" },
-    format: ["esm"],
-    platform: "node",
-    target: "node20",
-    outDir: "dist",
     clean: false,
-    splitting: false,
-    sourcemap: true,
     banner: { js: coreBanner },
-    noExternal: [/.*/],
-    define: { __LARKY_VERSION__: JSON.stringify(pkg.version) },
-    esbuildPlugins: externalizePlugin(),
+    onSuccess: async () => {
+      // Runtime assets are built by `prebuild` (see package.json) before tsup
+      // runs. Both bundles embed glob-wasm, which resolves release.wasm via
+      // new URL("release.wasm", import.meta.url) — so the assets must sit
+      // next to BOTH entry bundles (cli runs print/teammate/remote in-process).
+      const wasmSrc = join(__dirname, "../glob-wasm/build/release.wasm");
+      const addonSrc = join(__dirname, "../glob-addon/build/Release/glob_addon.node");
+      for (const dir of ["dist/cli", "dist/core"]) {
+        copyFileSync(wasmSrc, join(__dirname, dir, "release.wasm"));
+        cpSync(join(__dirname, "src/skills/builtin"), join(__dirname, dir, "builtin"), {
+          recursive: true,
+        });
+        copyFileSync(addonSrc, join(__dirname, dir, "glob_addon.node"));
+      }
+      console.log("copied release.wasm, builtin/, glob_addon.node -> dist/{cli,core}/");
+    },
   },
 ]);

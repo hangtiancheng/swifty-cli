@@ -20,172 +20,556 @@
  * SOFTWARE.
  */
 
-// Main TUI application: daemon client + event-driven rendering inside an
-// alt-screen scroll viewport (the app manages scrolling itself; there is no
-// terminal scrollback region under the alternate screen buffer).
-import React, { useState, useEffect, useCallback, useRef } from "react";
+// TUI App: thin socket client for the larky-core daemon. All agent state
+// (LLM, tools, permissions, sessions) lives daemon-side; this component
+// renders the event stream and answers interaction requests via RPCs.
+// Local-only concerns: prompt history, @-file completion, scrolling, theme.
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Box, Text, useApp, useInput, useStdout, measureElement, type DOMElement } from "ink";
 
-import { COLORS, ICONS } from "./styles.js";
-import { contextBarFill, contextBarColor } from "./theme.js";
-import { ChatView, type ChatMessage } from "./chat.js";
+import type { ProviderConfig } from "../config/config.js";
+import type { PermissionMode } from "../permissions/checker.js";
+import type { Command } from "../commands/commands.js";
+import { CommandUsageTracker } from "../commands/usage-tracker.js";
+import * as historyMod from "../history/history.js";
+import type { Question } from "../tools/ask-user.js";
+import type { Snapshot } from "../file-history/file-history.js";
+import type { TeammateUIState } from "../teams/progress.js";
+import { strArg } from "../utils/index.js";
+
+import { SocketClient } from "../core/transport/socket-client.js";
+import { EventSchema, type Event } from "../core/bus/events.js";
+
+import RewindDialog, { type RewindAction } from "./rewind-dialog.js";
+import { PermissionDialog, type PermissionAction } from "./permission-dialog.js";
+import { AskUserDialog } from "./ask-user-dialog.js";
+import { PlanApprovalDialog, type PlanChoice } from "./plan-approval.js";
+import { TeammateSpinnerTree } from "./teammate-spinner-tree.js";
+import { TeamStatus } from "./team-status.js";
+import { TeamsDialog } from "./teams-dialog.js";
+import { enableMouseTracking, disableMouseTracking, parseWheel } from "./mouse.js";
+import { InputBox } from "./input.js";
+import { ChatView, type ChatMessage, type ToolSummaryItem } from "./chat.js";
 import { ToolDisplay, type ToolBlockInfo } from "./tool-display.js";
 import Spinner from "./spinner.js";
-import { InputBox, type Cmd } from "./input.js";
-import { PermissionDialog, type PermissionAction } from "./permission-dialog.js";
-import { enableMouseTracking, disableMouseTracking, parseWheel } from "./mouse.js";
+import { ICONS } from "./styles.js";
 import { randomCompletionVerb } from "./verbs.js";
+import { version } from "./version.js";
 
-import type { SocketClient } from "../core/transport/socket-client.js";
-import type { LarkyConfig } from "../core/config.js";
-import { SkillLoader } from "../core/skills/loader.js";
-import { version } from "../version.js";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
-
-interface AppProps {
-  readonly _config: LarkyConfig;
-  readonly client: SocketClient;
+interface Props {
+  client: SocketClient;
+  provider: ProviderConfig;
+  permissionMode?: string;
 }
 
-// Build command list for slash completion: builtin + skills
-function buildCommands(): Cmd[] {
-  const loader = new SkillLoader();
-  const skills = loader.listAllSkills();
-  const cmds: Cmd[] = [
-    {
-      name: "compact",
-      description: "Compress conversation context",
-      aliases: [],
-    },
-  ];
-  for (const s of skills) {
-    cmds.push({ name: s.name, description: s.description, aliases: [] });
-  }
-  return cmds;
+interface WireCommandInfo {
+  name: string;
+  description: string;
 }
 
-// History persistence (local file, no core dependency)
-const HISTORY_FILE = `${process.env["HOME"] ?? ""}/.larky/tui-history.json`;
-
-function loadHistory(): string[] {
-  try {
-    if (existsSync(HISTORY_FILE)) {
-      const raw = readFileSync(HISTORY_FILE, "utf-8");
-      const parsed: unknown = JSON.parse(raw);
-      if (Array.isArray(parsed)) {
-        return parsed.filter((x): x is string => typeof x === "string");
-      }
-    }
-  } catch {
-    // ignore
-  }
-  return [];
+interface PermissionUiRequest {
+  id: string;
+  toolName: string;
+  argsSummary: string;
+  reason: string;
 }
 
-function saveHistory(entry: string): void {
-  try {
-    const dir = dirname(HISTORY_FILE);
-    if (!existsSync(dir)) {
-      mkdirSync(dir, { recursive: true });
-    }
-    const existing = loadHistory();
-    const next = [...existing, entry].slice(-200);
-    writeFileSync(HISTORY_FILE, JSON.stringify(next), "utf-8");
-  } catch {
-    // ignore
-  }
+interface AskUiRequest {
+  id: string;
+  questions: Question[];
 }
 
-function str(data: Record<string, unknown>, key: string): string {
-  const val = data[key];
-  return typeof val === "string" ? val : "";
+interface PlanUiRequest {
+  id: string;
 }
 
-function num(data: Record<string, unknown>, key: string): number {
-  const val = data[key];
-  return typeof val === "number" ? val : 0;
+const truncate = (s: string, max: number): string => (s.length > max ? s.slice(0, max) + "…" : s);
+
+function formatToolArgs(args: Record<string, unknown>): string {
+  if (args.command) return truncate(strArg(args, "command"), 80);
+  if (args.file_path) return truncate(strArg(args, "file_path"), 80);
+  if (args.pattern) return truncate(strArg(args, "pattern"), 80);
+  return "";
 }
 
-function isRecord(val: unknown): val is Record<string, unknown> {
-  return typeof val === "object" && val !== null;
+function isPermissionModeStr(mode: string): mode is PermissionMode {
+  return ["default", "acceptEdits", "plan", "bypassPermissions"].includes(mode);
 }
 
-export function App({ _config, client }: AppProps): React.JSX.Element {
+// Wire command list → Command[] stubs for the InputBox autocomplete.
+function toInputCommands(infos: WireCommandInfo[]): Command[] {
+  return infos.map((c) => ({
+    name: c.name,
+    aliases: [],
+    type: "local",
+    description: c.description,
+    handler: () => "",
+  }));
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export function App({ client, provider, permissionMode }: Props) {
   const { exit } = useApp();
   const { stdout } = useStdout();
-  const [connected, setConnected] = useState(false);
+
+  const workDir = process.cwd();
+  const historyDir = `${workDir}/.larky`;
+
+  // -- Rendering state ------------------------------------------------------
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [streamingText, setStreamingText] = useState("");
-  const [isRunning, setIsRunning] = useState(false);
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [completionMark, setCompletionMark] = useState<string | null>(null);
   const [activeTools, setActiveTools] = useState<ToolBlockInfo[]>([]);
   const [inputTokens, setInputTokens] = useState(0);
   const [outputTokens, setOutputTokens] = useState(0);
-  const [totalTokens, setTotalTokens] = useState(0);
-  const [contextPercent, setContextPercent] = useState(0);
-  const [completionMark, setCompletionMark] = useState<string | null>(null);
-  // Pending permission requests as a FIFO queue: multiple permission.requested
-  // events no longer overwrite each other; the head is displayed first.
-  const [permissionQueue, setPermissionQueue] = useState<
-    {
-      toolName: string;
-      argsSummary: string;
-      toolUseId: string;
-    }[]
-  >([]);
-  const permissionRequest = permissionQueue[0] ?? null;
-  const [permMode, setPermMode] = useState<string>("default");
-  const [connectionError, setConnectionError] = useState<string | null>(null);
-  const [ctrlCHint, setCtrlCHint] = useState(false);
-  const [promptHistory, setPromptHistory] = useState<string[]>(loadHistory);
+  const [error, setError] = useState<string | null>(null);
+  const [connected, setConnected] = useState(false);
+  const [promptHistory, setPromptHistory] = useState<string[]>([]);
+  const [commands, setCommands] = useState<Command[]>([]);
   const [toolsExpanded, setToolsExpanded] = useState(false);
+  const [teammateStates, setTeammateStates] = useState<TeammateUIState[]>([]);
+  const [teamsDialogOpen, setTeamsDialogOpen] = useState(false);
+  const [subagents, setSubagents] = useState<{ id: string; label: string; detail: string }[]>([]);
 
-  const sessionIdRef = useRef<string | null>(null);
-  const [sessionLabel, setSessionLabel] = useState("connecting...");
-  const streamingTextRef = useRef("");
-  const streamThrottleRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const isMountedRef = useRef(true);
-  const lastRunIdRef = useRef<string | null>(null);
-  const subagentStartTimes = useRef<Map<string, number>>(new Map());
-  // tool_use_id -> {toolName, preview} recorded at permission.requested so the
-  // granted/denied history line can include tool name + param preview.
-  const permissionInfoRef = useRef<Map<string, { toolName: string; preview: string }>>(new Map());
-
-  const commandsRef = useRef<Cmd[]>(buildCommands());
-
-  // Ctrl+C double-tap exit logic (Swifty-style)
-  const ctrlCCountRef = useRef(0);
-  const ctrlCTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Ctrl+O toggles tool expansion
-  useInput((input, key) => {
-    if (key.ctrl && input === "o") {
-      setToolsExpanded((e) => !e);
-    }
+  const [permMode, setPermMode] = useState<PermissionMode>(() => {
+    if (process.env.LARKY_BYPASS_PERMISSIONS === "1") return "bypassPermissions";
+    if (permissionMode && isPermissionModeStr(permissionMode)) return permissionMode;
+    return "default";
   });
 
+  // Interaction dialogs
+  const [permissionQueue, setPermissionQueue] = useState<PermissionUiRequest[]>([]);
+  const [askRequest, setAskRequest] = useState<AskUiRequest | null>(null);
+  const [planRequest, setPlanRequest] = useState<PlanUiRequest | null>(null);
+  const [rewindDialogActive, setRewindDialogActive] = useState(false);
+  const [rewindSnapshots, setRewindSnapshots] = useState<Snapshot[]>([]);
+
+  // -- Refs -------------------------------------------------------------------
+  const sessionIdRef = useRef<string>("");
+  const lastRunIdRef = useRef<string | null>(null);
+  const isStreamingRef = useRef(false);
+  useEffect(() => {
+    isStreamingRef.current = isStreaming;
+  }, [isStreaming]);
+
+  const streamStartRef = useRef(0);
+  const streamingTextRef = useRef("");
+  const fullTextRef = useRef("");
+  const streamThrottleRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const committedIndexRef = useRef(0);
+  const usageTrackerRef = useRef(new CommandUsageTracker(workDir));
+
+  // Per-turn accumulators for the folded turn_summary display.
+  const turnThinkingTextRef = useRef("");
+  const turnThinkingStartRef = useRef(0);
+  const turnThinkingDurationRef = useRef(0);
+  const turnToolCallsRef = useRef<ToolSummaryItem[]>([]);
+  const pendingToolArgsRef = useRef(new Map<string, string>());
+
+  const resetTurnAccumulators = () => {
+    turnThinkingTextRef.current = "";
+    turnThinkingStartRef.current = 0;
+    turnThinkingDurationRef.current = 0;
+    turnToolCallsRef.current = [];
+    pendingToolArgsRef.current.clear();
+  };
+
+  const pushSystem = useCallback((content: string) => {
+    setMessages((prev) => [...prev, { role: "system", content }]);
+  }, []);
+
+  // -- RPC helpers ------------------------------------------------------------
+
+  const sendCommand = useCallback(
+    async (method: string, params: Record<string, unknown>): Promise<Record<string, unknown>> => {
+      return client.sendCommand(method, params);
+    },
+    [client],
+  );
+
+  const rpc = useCallback(
+    (method: string, params: Record<string, unknown>) => {
+      sendCommand(method, params).catch((err: unknown) => {
+        pushSystem(`RPC ${method} failed: ${err instanceof Error ? err.message : String(err)}`);
+      });
+    },
+    [sendCommand, pushSystem],
+  );
+
+  // -- Event handling ----------------------------------------------------------
+
+  const flushStreamThrottle = () => {
+    if (streamThrottleRef.current) {
+      clearTimeout(streamThrottleRef.current);
+      streamThrottleRef.current = null;
+    }
+  };
+
+  const handleEvent = useCallback(
+    (raw: Record<string, unknown>) => {
+      const parsed = EventSchema.safeParse(raw);
+      if (!parsed.success) return; // unknown event types are forward-compatible noise
+      const event: Event = parsed.data;
+
+      // Session filtering: ignore events for other sessions.
+      if ("session_id" in event && event.session_id && sessionIdRef.current) {
+        if (event.session_id !== sessionIdRef.current) return;
+      }
+
+      switch (event.type) {
+        case "run.started":
+          lastRunIdRef.current = event.run_id;
+          streamStartRef.current = Date.now();
+          setCompletionMark(null);
+          setError(null);
+          setIsStreaming(true);
+          setStreamingText("");
+          fullTextRef.current = "";
+          streamingTextRef.current = "";
+          break;
+
+        case "agent.stream_text":
+          fullTextRef.current += event.text;
+          streamingTextRef.current = fullTextRef.current;
+          // Throttled streaming: flush within 50ms to reduce re-render churn
+          streamThrottleRef.current ??= setTimeout(() => {
+            setStreamingText(streamingTextRef.current);
+            streamThrottleRef.current = null;
+          }, 50);
+          break;
+
+        case "agent.thinking_text":
+          if (!turnThinkingStartRef.current) {
+            turnThinkingStartRef.current = Date.now();
+          }
+          turnThinkingTextRef.current += event.text;
+          break;
+
+        case "agent.thinking_complete":
+          if (turnThinkingStartRef.current) {
+            turnThinkingDurationRef.current = (Date.now() - turnThinkingStartRef.current) / 1000;
+          }
+          break;
+
+        case "agent.tool_use": {
+          const argsSummary = formatToolArgs(event.args);
+          pendingToolArgsRef.current.set(`${event.tool_name}:${event.tool_id}`, argsSummary);
+          setActiveTools((prev) => [
+            ...prev,
+            { toolName: event.tool_name, args: event.args, loading: true },
+          ]);
+          break;
+        }
+
+        case "agent.tool_result": {
+          const argsSummary =
+            pendingToolArgsRef.current.get(`${event.tool_name}:${event.tool_id}`) ?? "";
+          setActiveTools((prev) =>
+            prev.map((t) =>
+              t.toolName === event.tool_name && t.loading
+                ? {
+                    ...t,
+                    output: event.output,
+                    isError: event.is_error,
+                    elapsed: event.elapsed_ms,
+                    loading: false,
+                  }
+                : t,
+            ),
+          );
+          turnToolCallsRef.current.push({
+            toolName: event.tool_name,
+            argsSummary,
+            output: event.output,
+            isError: event.is_error,
+            elapsed: event.elapsed_ms,
+          });
+          break;
+        }
+
+        case "agent.usage":
+          setInputTokens((prev) => prev + event.input_tokens);
+          setOutputTokens((prev) => prev + event.output_tokens);
+          break;
+
+        case "agent.compact":
+          pushSystem(`⊙ ${event.message}`);
+          break;
+
+        case "agent.retry":
+          pushSystem(
+            `↻ ${event.reason}${event.delay_ms ? ` (waiting ${String(Math.round(event.delay_ms / 1000))}s)` : ""}`,
+          );
+          break;
+
+        case "agent.turn_complete": {
+          flushStreamThrottle();
+          setStreamingText("");
+          fullTextRef.current = "";
+          streamingTextRef.current = "";
+          setActiveTools([]);
+          const hasTurnContent = turnThinkingTextRef.current || turnToolCallsRef.current.length > 0;
+          if (hasTurnContent) {
+            const summary: ChatMessage = {
+              role: "turn_summary",
+              content: turnThinkingTextRef.current,
+              thinkingDuration:
+                turnThinkingDurationRef.current > 0 ? turnThinkingDurationRef.current : undefined,
+              toolSummary:
+                turnToolCallsRef.current.length > 0 ? [...turnToolCallsRef.current] : undefined,
+            };
+            setMessages((prev) => {
+              const next = [...prev, summary];
+              committedIndexRef.current = next.length;
+              return next;
+            });
+          }
+          resetTurnAccumulators();
+          break;
+        }
+
+        case "agent.loop_complete": {
+          flushStreamThrottle();
+          setStreamingText("");
+          const fullText = fullTextRef.current;
+          fullTextRef.current = "";
+          streamingTextRef.current = "";
+          if (fullText) {
+            const suffix = event.stop_reason === "interrupted" ? "\n\n*[cancelled]*" : "";
+            setMessages((prev) => {
+              const next = [...prev, { role: "assistant" as const, content: fullText + suffix }];
+              committedIndexRef.current = next.length;
+              return next;
+            });
+          } else {
+            setMessages((prev) => {
+              committedIndexRef.current = prev.length;
+              return prev;
+            });
+          }
+          setActiveTools([]);
+          resetTurnAccumulators();
+          setIsStreaming(false);
+          const elapsed = Math.floor((Date.now() - streamStartRef.current) / 1000);
+          setCompletionMark(`✻ ${randomCompletionVerb()} for ${String(elapsed)}s`);
+          break;
+        }
+
+        case "agent.error":
+          setError(event.message);
+          pushSystem(`Error: ${event.message}`);
+          break;
+
+        case "system.message":
+          pushSystem(event.message);
+          break;
+
+        case "command.done":
+          break;
+
+        case "ui.clear":
+          setMessages([]);
+          committedIndexRef.current = 0;
+          setInputTokens(0);
+          setOutputTokens(0);
+          setCompletionMark(null);
+          break;
+
+        case "replay.message":
+          setMessages((prev) => {
+            const next: ChatMessage[] = [
+              ...prev,
+              {
+                role: event.role === "user" ? ("user" as const) : ("assistant" as const),
+                content: event.content,
+              },
+            ];
+            committedIndexRef.current = next.length;
+            return next;
+          });
+          break;
+
+        case "mode.changed":
+          if (isPermissionModeStr(event.mode)) {
+            setPermMode(event.mode);
+          }
+          break;
+
+        case "permission.requested": {
+          const req: PermissionUiRequest = {
+            id: event.id,
+            toolName: event.tool_name,
+            argsSummary: formatToolArgs(event.args),
+            reason: event.reason,
+          };
+          setPermissionQueue((prev) => (prev.some((p) => p.id === req.id) ? prev : [...prev, req]));
+          break;
+        }
+
+        case "permission.resolved":
+          setPermissionQueue((prev) => prev.filter((p) => p.id !== event.id));
+          break;
+
+        case "ask_user.requested": {
+          const questions: Question[] = event.questions.map((q) => ({
+            question: q.question,
+            header: q.header,
+            options: q.options.map((o) => ({
+              label: o.label,
+              ...(o.description !== undefined ? { description: o.description } : {}),
+            })),
+            multiSelect: q.multiSelect,
+          }));
+          setAskRequest({ id: event.id, questions });
+          break;
+        }
+
+        case "ask_user.resolved":
+          setAskRequest((prev) => (prev && prev.id === event.id ? null : prev));
+          break;
+
+        case "plan.requested":
+          setPlanRequest({ id: event.id });
+          break;
+
+        case "plan.resolved":
+          setPlanRequest((prev) => (prev && prev.id === event.id ? null : prev));
+          break;
+
+        case "todo.updated":
+          // Todos surface via TaskList tool output; no dedicated pane yet.
+          break;
+
+        case "teammate.state":
+          // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+          setTeammateStates(event.states as unknown as TeammateUIState[]);
+          break;
+
+        case "subagent.progress":
+          setSubagents((prev) => {
+            if (event.status === "done") {
+              return prev.filter((s) => s.id !== event.task_id);
+            }
+            const existing = prev.find((s) => s.id === event.task_id);
+            if (existing) {
+              return prev.map((s) => (s.id === event.task_id ? { ...s, detail: event.detail } : s));
+            }
+            return [
+              ...prev,
+              {
+                id: event.task_id,
+                label: event.description,
+                detail: event.detail,
+              },
+            ];
+          });
+          break;
+
+        default:
+          break;
+      }
+    },
+    [pushSystem],
+  );
+
+  // -- Connection loop -----------------------------------------------------------
+
+  const handleEventRef = useRef(handleEvent);
+  useEffect(() => {
+    handleEventRef.current = handleEvent;
+  }, [handleEvent]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    // Register the event handler once; it persists across reconnections.
+    client.onEvent((event) => {
+      handleEventRef.current(event);
+      return Promise.resolve();
+    });
+
+    const loop = async () => {
+      while (!cancelled) {
+        try {
+          await client.connect();
+        } catch {
+          await sleep(2000);
+          continue;
+        }
+        setConnected(true);
+        try {
+          await client.sendCommand("event.subscribe", {
+            topics: ["*"],
+            scope: "global",
+            replay_from_run: lastRunIdRef.current,
+          });
+          if (!sessionIdRef.current) {
+            const res = await client.sendCommand("session.create", {
+              permission_mode:
+                permissionMode && isPermissionModeStr(permissionMode) ? permissionMode : null,
+              persist: true,
+            });
+            sessionIdRef.current = typeof res.session_id === "string" ? res.session_id : "";
+            if (Array.isArray(res.commands)) {
+              // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+              setCommands(toInputCommands(res.commands as WireCommandInfo[]));
+            }
+            const mode = typeof res.permission_mode === "string" ? res.permission_mode : "";
+            if (isPermissionModeStr(mode)) {
+              setPermMode(mode);
+            }
+          }
+        } catch (err) {
+          setError(`daemon setup failed: ${err instanceof Error ? err.message : String(err)}`);
+        }
+
+        await client.waitForDisconnect();
+        if (cancelled) break;
+        setConnected(false);
+        // Clear transient run state; pending dialogs are daemon-side cancelled.
+        setIsStreaming(false);
+        setActiveTools([]);
+        setPermissionQueue([]);
+        setAskRequest(null);
+        setPlanRequest(null);
+        pushSystem("(disconnected from daemon — reconnecting…)");
+        await sleep(2000);
+      }
+    };
+    void loop();
+
+    setPromptHistory(historyMod.load(historyDir));
+
+    return () => {
+      cancelled = true;
+      client.close();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // -- Keyboard shortcuts ----------------------------------------------------
+
+  const ctrlCCountRef = useRef(0);
+  const ctrlCTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [ctrlCHint, setCtrlCHint] = useState(false);
   useInput((input, key) => {
     if (key.ctrl && input === "c") {
-      if (isRunning) {
-        // daemon-side run cannot be interrupted from TUI; hint to wait
-        setCtrlCHint(true);
-        if (ctrlCTimerRef.current) {
-          clearTimeout(ctrlCTimerRef.current);
-        }
-        ctrlCTimerRef.current = setTimeout(() => {
-          setCtrlCHint(false);
-        }, 2000);
+      if (isStreaming && sessionIdRef.current) {
+        rpc("run.cancel", { session_id: sessionIdRef.current });
+        ctrlCCountRef.current = 0;
         return;
       }
       ctrlCCountRef.current += 1;
       if (ctrlCCountRef.current >= 2) {
-        void closeAndExit();
+        exit();
         return;
       }
       setCtrlCHint(true);
-      if (ctrlCTimerRef.current) {
-        clearTimeout(ctrlCTimerRef.current);
-      }
+      if (ctrlCTimerRef.current) clearTimeout(ctrlCTimerRef.current);
       ctrlCTimerRef.current = setTimeout(() => {
         ctrlCCountRef.current = 0;
         setCtrlCHint(false);
@@ -193,551 +577,168 @@ export function App({ _config, client }: AppProps): React.JSX.Element {
     }
   });
 
-  const closeAndExit = useCallback(async () => {
-    if (sessionIdRef.current) {
-      try {
-        await client.sendCommand("session.close", {
-          session_id: sessionIdRef.current,
-        });
-      } catch {
-        // best effort
-      }
+  useInput((input, key) => {
+    if (key.ctrl && input === "o") {
+      setToolsExpanded((e) => !e);
     }
-    client.close();
-    exit();
-  }, [client, exit]);
+  });
 
-  // Register event handler ONCE (persists across reconnections)
-  useEffect(() => {
-    client.onEvent((event) => {
-      const eventType = str(event, "type");
-
-      // Flush streaming text helper
-      const flushStream = (): void => {
-        if (streamThrottleRef.current) {
-          clearTimeout(streamThrottleRef.current);
-          streamThrottleRef.current = null;
-        }
-        const fullText = streamingTextRef.current;
-        if (fullText) {
-          setMessages((prev) => [...prev, { role: "assistant" as const, content: fullText }]);
-        }
-        streamingTextRef.current = "";
-        setStreamingText("");
-      };
-
-      switch (eventType) {
-        case "run.started": {
-          setCompletionMark(null);
-          setIsRunning(true);
-          setActiveTools([]);
-          setTotalTokens(0);
-          // Clear any residual streaming text (e.g. resume after reconnect)
-          if (streamThrottleRef.current) {
-            clearTimeout(streamThrottleRef.current);
-            streamThrottleRef.current = null;
-          }
-          streamingTextRef.current = "";
-          setStreamingText("");
-          const runId = str(event, "run_id");
-          if (runId) {
-            lastRunIdRef.current = runId;
-          }
-          const goal = str(event, "goal");
-          if (goal) {
-            const preview = goal.length > 80 ? goal.slice(0, 80) + "…" : goal;
-            setMessages((prev) => [...prev, { role: "system", content: `goal: ${preview}` }]);
-          }
-          break;
-        }
-
-        case "run.finished": {
-          flushStream();
-          setIsRunning(false);
-          setActiveTools([]);
-          setContextPercent(0);
-          const elapsed = num(event, "elapsed_ms");
-          if (elapsed > 0) {
-            setCompletionMark(
-              `✻ ${randomCompletionVerb()} for ${String(Math.round(elapsed / 1000))}s`,
-            );
-          } else {
-            setCompletionMark(`✻ ${randomCompletionVerb()}`);
-          }
-          break;
-        }
-
-        case "step.started": {
-          const step = num(event, "step");
-          setMessages((prev) => [
-            ...prev,
-            { role: "system", content: `── step ${String(step)} ──` },
-          ]);
-          break;
-        }
-
-        case "llm.token": {
-          const token = str(event, "token");
-          streamingTextRef.current += token;
-          streamThrottleRef.current ??= setTimeout(() => {
-            setStreamingText(streamingTextRef.current);
-            streamThrottleRef.current = null;
-          }, 50);
-          break;
-        }
-
-        case "llm.model_selected": {
-          const model = str(event, "model");
-          setMessages((prev) => [...prev, { role: "system", content: `model: ${model}` }]);
-          break;
-        }
-
-        case "llm.usage": {
-          const inTok = num(event, "input_tokens");
-          const outTok = num(event, "output_tokens");
-          const ctxPct = num(event, "context_percent");
-          setInputTokens((t) => t + inTok);
-          setOutputTokens((t) => t + outTok);
-          setTotalTokens((t) => t + inTok + outTok);
-          setContextPercent(ctxPct);
-          break;
-        }
-
-        case "session.message_received": {
-          const content = str(event, "content");
-          // Deduplicate: handleSubmit already added the user message locally
-          // for immediate feedback. Skip if the last message matches.
-          setMessages((prev) => {
-            const last = prev[prev.length - 1];
-            if (last?.role === "user" && last?.content === content) {
-              return prev;
-            }
-            return [...prev, { role: "user" as const, content }];
-          });
-          break;
-        }
-
-        case "tool.call_started": {
-          const toolName = str(event, "tool_name");
-          const toolUseId = str(event, "tool_use_id");
-          const paramsRaw = event["params"];
-          const params = isRecord(paramsRaw) ? paramsRaw : {};
-          setActiveTools((prev) => [...prev, { toolName, toolUseId, args: params, loading: true }]);
-          break;
-        }
-
-        case "tool.call_finished": {
-          const toolName = str(event, "tool_name");
-          const toolUseId = str(event, "tool_use_id");
-          const output = str(event, "output");
-          const elapsedMs = num(event, "elapsed_ms");
-          setActiveTools((prev) =>
-            prev.map((t) =>
-              t.toolUseId === toolUseId ? { ...t, output, elapsed: elapsedMs, loading: false } : t,
-            ),
-          );
-          // Tool completed: drop any stale pending permission request for it
-          setPermissionQueue((prev) => prev.filter((r) => r.toolUseId !== toolUseId));
-          permissionInfoRef.current.delete(toolUseId);
-          // Also commit as a tool_result message
-          setMessages((prev) => [
-            ...prev,
-            {
-              role: "tool_result",
-              toolName,
-              content: output,
-              elapsed: elapsedMs,
-            },
-          ]);
-          break;
-        }
-
-        case "tool.call_failed": {
-          const toolName = str(event, "tool_name");
-          const toolUseId = str(event, "tool_use_id");
-          const errorMessage = str(event, "error_message");
-          const elapsedMs = num(event, "elapsed_ms");
-          setActiveTools((prev) =>
-            prev.map((t) =>
-              t.toolUseId === toolUseId
-                ? {
-                    ...t,
-                    output: errorMessage,
-                    isError: true,
-                    elapsed: elapsedMs,
-                    loading: false,
-                  }
-                : t,
-            ),
-          );
-          // Tool failed (possibly permission timeout): drop stale pending request
-          setPermissionQueue((prev) => prev.filter((r) => r.toolUseId !== toolUseId));
-          permissionInfoRef.current.delete(toolUseId);
-          setMessages((prev) => [
-            ...prev,
-            {
-              role: "tool_result",
-              toolName,
-              content: errorMessage,
-              isError: true,
-              elapsed: elapsedMs,
-            },
-          ]);
-          break;
-        }
-
-        case "permission.requested": {
-          const toolName = str(event, "tool_name");
-          const paramsPreview = str(event, "param_preview");
-          const toolUseId = str(event, "tool_use_id");
-          permissionInfoRef.current.set(toolUseId, {
-            toolName,
-            preview: paramsPreview,
-          });
-          setPermissionQueue((prev) =>
-            prev.some((r) => r.toolUseId === toolUseId)
-              ? prev
-              : [...prev, { toolName, argsSummary: paramsPreview, toolUseId }],
-          );
-          break;
-        }
-
-        case "permission.granted":
-        case "permission.denied": {
-          const decision = str(event, "decision");
-          const toolUseId = str(event, "tool_use_id");
-          const granted = eventType === "permission.granted";
-          // Remove from queue (covers daemon-side timeouts / external responses)
-          setPermissionQueue((prev) => prev.filter((r) => r.toolUseId !== toolUseId));
-          const info = permissionInfoRef.current.get(toolUseId);
-          permissionInfoRef.current.delete(toolUseId);
-          const preview = info?.preview
-            ? info.preview.length > 80
-              ? info.preview.slice(0, 80) + "…"
-              : info.preview
-            : "";
-          const context = info ? ` ${info.toolName}${preview ? ` \`${preview}\`` : ""}` : "";
-          setMessages((prev) => [
-            ...prev,
-            {
-              role: "system",
-              content: `${granted ? "✓" : "✗"} permission${context} → ${decision}`,
-            },
-          ]);
-          break;
-        }
-
-        case "session.waiting_for_input": {
-          flushStream();
-          setIsRunning(false);
-          setActiveTools([]);
-          setPermissionQueue([]);
-          break;
-        }
-
-        case "session.created": {
-          break;
-        }
-
-        case "session.closed": {
-          setIsRunning(false);
-          break;
-        }
-
-        case "context.compacted": {
-          setContextPercent(0);
-          const originalTokens = num(event, "original_tokens");
-          const summaryTokens = num(event, "summary_tokens");
-          const saved = Math.max(0, originalTokens - summaryTokens);
-          setMessages((prev) => [
-            ...prev,
-            {
-              role: "system",
-              content: `↻ compacted (saved ${String(saved)} tokens: ${String(originalTokens)} → ${String(summaryTokens)})`,
-            },
-          ]);
-          break;
-        }
-
-        case "subagent.started": {
-          const runId = str(event, "run_id");
-          const ts = Date.parse(str(event, "timestamp"));
-          if (runId) {
-            subagentStartTimes.current.set(runId, Number.isNaN(ts) ? Date.now() : ts);
-          }
-          const description = str(event, "description");
-          const shortId = runId ? ` [${runId.slice(0, 8)}]` : "";
-          setMessages((prev) => [
-            ...prev,
-            { role: "system", content: `↳ subagent${shortId}: ${description}` },
-          ]);
-          break;
-        }
-
-        case "subagent.finished": {
-          const runId = str(event, "run_id");
-          const status = str(event, "status");
-          const startTime = subagentStartTimes.current.get(runId);
-          let durationStr = "";
-          if (startTime !== undefined) {
-            subagentStartTimes.current.delete(runId);
-            const endTs = Date.parse(str(event, "timestamp"));
-            const elapsedMs = (Number.isNaN(endTs) ? Date.now() : endTs) - startTime;
-            if (elapsedMs >= 0) {
-              durationStr = ` (${(elapsedMs / 1000).toFixed(1)}s)`;
-            }
-          }
-          setMessages((prev) => [
-            ...prev,
-            {
-              role: "system",
-              content: `↳ subagent done: ${status}${durationStr}`,
-            },
-          ]);
-          break;
-        }
-
-        case "skill.invoked": {
-          const skillName = str(event, "skill_name");
-          const args = str(event, "arguments");
-          setMessages((prev) => [
-            ...prev,
-            { role: "system", content: `→ skill: /${skillName} ${args}` },
-          ]);
-          break;
-        }
-
-        case "log.line": {
-          const level = (str(event, "level") || "INFO").toUpperCase();
-          const message = str(event, "message");
-          // DEBUG stays dropped for noise reduction; INFO and above are
-          // rendered (system role renders dim, matching the old TUI).
-          if (level !== "DEBUG") {
-            setMessages((prev) => [...prev, { role: "system", content: `[${level}] ${message}` }]);
-          }
-          break;
-        }
-
-        default: {
-          // Ignore unknown event types to avoid noise
-          break;
-        }
-      }
-      return Promise.resolve();
-    });
-  }, [client]);
-
-  // Connect to daemon with auto-reconnect
-  useEffect(() => {
-    isMountedRef.current = true;
-
-    const runConnectionLoop = async (): Promise<void> => {
-      while (isMountedRef.current) {
-        try {
-          await client.connect();
-          setConnected(true);
-          setConnectionError(null);
-
-          // Subscribe to event topics
-          const subscribeParams: Record<string, unknown> = {
-            topics: [
-              "run.*",
-              "step.*",
-              "tool.*",
-              "llm.*",
-              "permission.*",
-              "session.*",
-              "subagent.*",
-              "context.*",
-              "log.*",
-              "skill.*",
-            ],
-            scope: "global",
-          };
-          if (lastRunIdRef.current) {
-            subscribeParams["replay_from_run"] = lastRunIdRef.current;
-          }
-          await client.sendCommand("event.subscribe", subscribeParams);
-
-          // Create or resume session
-          if (!sessionIdRef.current) {
-            const result = await client.sendCommand("session.create", {
-              mode: "chat",
-              title: "TUI Session",
-            });
-            const sid = result["session_id"];
-            if (typeof sid === "string") {
-              sessionIdRef.current = sid;
-              setSessionLabel(sid.slice(0, 16));
-            }
-          }
-
-          await client.waitForDisconnect();
-
-          setConnected(false);
-          setConnectionError("disconnected, retrying…");
-          // Reset transient state so the UI does not keep a stale permission
-          // dialog or a forever-spinning run across the disconnect.
-          if (streamThrottleRef.current) {
-            clearTimeout(streamThrottleRef.current);
-            streamThrottleRef.current = null;
-          }
-          const pendingText = streamingTextRef.current;
-          if (pendingText) {
-            setMessages((prev) => [...prev, { role: "assistant" as const, content: pendingText }]);
-          }
-          streamingTextRef.current = "";
-          setStreamingText("");
-          setPermissionQueue([]);
-          permissionInfoRef.current.clear();
-          setActiveTools([]);
-          setIsRunning(false);
-          client.close();
-        } catch (error) {
-          const errorMsg = error instanceof Error ? error.message : String(error);
-          setConnected(false);
-          setConnectionError(errorMsg);
-          client.close();
-        }
-
-        await new Promise<void>((resolve) => {
-          setTimeout(resolve, 2000);
-        });
-      }
-    };
-
-    void runConnectionLoop();
-
-    return () => {
-      isMountedRef.current = false;
-      client.close();
-    };
-  }, [client, _config]);
-
-  // The brand header is drawn as a fixed component at the top of the render
-  // tree (see below): console.log writes to the terminal scrollback buffer,
-  // but the alt-screen has no scrollback region, so once the content grows the
-  // banner would be pushed off screen.
-
-  const handleSubmit = useCallback(
-    async (value: string) => {
-      if (!value.trim() || !connected) return;
-      if (!sessionIdRef.current) {
-        return;
-      }
-
-      const trimmed = value.trim();
-
-      // Save to prompt history
-      if (trimmed && !trimmed.startsWith("/")) {
-        saveHistory(trimmed);
-        setPromptHistory((prev) => [...prev, trimmed]);
-      }
-
-      // /compact command
-      if (trimmed === "/compact" || trimmed.startsWith("/compact ")) {
-        setIsRunning(true);
-        try {
-          const focus = trimmed.startsWith("/compact ") ? trimmed.slice(8).trim() : "";
-          const result = await client.sendCommand("session.compact", {
-            session_id: sessionIdRef.current,
-            focus,
-          });
-          const summaryTokens = num(result, "summary_tokens");
-          const savedTokens = num(result, "saved_tokens");
-          const originalTokens = summaryTokens + savedTokens;
-          setMessages((prev) => [
-            ...prev,
-            {
-              role: "system",
-              content: `↻ compacted (saved ${String(savedTokens)} tokens: ${String(originalTokens)} → ${String(summaryTokens)})`,
-            },
-          ]);
-          setContextPercent(0);
-        } catch (error) {
-          setMessages((prev) => [
-            ...prev,
-            {
-              role: "system",
-              content: `Compact failed: ${error instanceof Error ? error.message : String(error)}`,
-            },
-          ]);
-        }
-        setIsRunning(false);
-        return;
-      }
-
-      // Normal message submission — show user message immediately
-      setMessages((prev) => [...prev, { role: "user", content: trimmed }]);
-      setIsRunning(true);
-      setCompletionMark(null);
-      setActiveTools([]);
-      streamingTextRef.current = "";
-      setStreamingText("");
-
-      try {
-        await client.sendCommand("session.send_message", {
-          session_id: sessionIdRef.current,
-          content: trimmed,
-        });
-      } catch (error) {
-        setMessages((prev) => [
-          ...prev,
-          {
-            role: "system",
-            content: `Error: ${error instanceof Error ? error.message : String(error)}`,
-          },
-        ]);
-        setIsRunning(false);
+  useInput(
+    (input, key) => {
+      if (key.ctrl && input === "t" && !isStreaming) {
+        setTeamsDialogOpen((prev) => !prev);
       }
     },
-    [connected, client],
+    { isActive: !teamsDialogOpen },
   );
 
-  const handlePermissionRespond = useCallback(
-    async (decision: PermissionAction) => {
-      const current = permissionQueue[0];
-      if (!current) return;
-      // Dequeue: the next pending request (if any) becomes visible
-      setPermissionQueue((prev) => prev.filter((r) => r.toolUseId !== current.toolUseId));
+  // -- Submission -------------------------------------------------------------
+
+  const submittingRef = useRef(false);
+
+  const handleSubmit = async (text: string) => {
+    if (submittingRef.current) return;
+    submittingRef.current = true;
+    try {
+      historyMod.append(historyDir, text);
+      setPromptHistory((prev) => [...prev, text]);
+
+      if (!sessionIdRef.current) {
+        setError("Not connected to daemon yet");
+        return;
+      }
+
+      if (text.startsWith("/")) {
+        const name = text.slice(1).split(/\s+/)[0];
+        usageTrackerRef.current.record(name);
+
+        // Client-side commands
+        if (name === "quit" || name === "exit" || name === "q") {
+          exit();
+          return;
+        }
+        if (name === "rewind") {
+          await openRewindDialog();
+          return;
+        }
+        // Everything else runs daemon-side.
+        setMessages((prev) => [...prev, { role: "user", content: text }]);
+        rpc("command.run", { session_id: sessionIdRef.current, input: text });
+        return;
+      }
+
+      setMessages((prev) => [...prev, { role: "user", content: text }]);
+      setError(null);
+      // Immediate optimistic streaming state; run.started confirms.
+      streamStartRef.current = Date.now();
+      setCompletionMark(null);
+      setIsStreaming(true);
+      setStreamingText("");
       try {
-        await client.sendCommand("permission.respond", {
-          tool_use_id: current.toolUseId,
-          decision,
+        await sendCommand("session.send_message", {
+          session_id: sessionIdRef.current,
+          content: text,
         });
-      } catch (error) {
-        setMessages((prev) => [
-          ...prev,
-          {
-            role: "system",
-            content: `Permission respond failed: ${error instanceof Error ? error.message : String(error)}`,
-          },
-        ]);
+      } catch (err) {
+        setIsStreaming(false);
+        setError(err instanceof Error ? err.message : String(err));
+      }
+    } finally {
+      submittingRef.current = false;
+    }
+  };
+
+  const openRewindDialog = async () => {
+    try {
+      const res = await sendCommand("rewind.list", {
+        session_id: sessionIdRef.current,
+      });
+      const raw = Array.isArray(res.snapshots) ? res.snapshots : [];
+      if (raw.length === 0) {
+        pushSystem("No checkpoints to rewind to.");
+        return;
+      }
+      const snapshots: Snapshot[] = raw.map((s) => {
+        // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+        const rec = s as Record<string, unknown>;
+        const fileCount = typeof rec.file_count === "number" ? rec.file_count : 0;
+        return {
+          messageIndex: typeof rec.message_index === "number" ? rec.message_index : 0,
+          userText: typeof rec.user_text === "string" ? rec.user_text : "",
+          backups: Object.fromEntries(
+            Array.from({ length: fileCount }, (_, i) => [
+              `file-${String(i)}`,
+              { path: "", version: 0 },
+            ]),
+          ),
+          timestamp: typeof rec.timestamp === "string" ? rec.timestamp : "",
+          // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+        } as unknown as Snapshot;
+      });
+      setRewindSnapshots(snapshots);
+      setRewindDialogActive(true);
+    } catch (err) {
+      pushSystem(`Rewind failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+
+  const handleRewindAction = useCallback(
+    (action: RewindAction) => {
+      setRewindDialogActive(false);
+      if (action.type === "cancel") return;
+      const mode =
+        action.type === "code_and_conversation"
+          ? "both"
+          : action.type === "code_only"
+            ? "files"
+            : "conversation";
+      rpc("rewind.apply", {
+        session_id: sessionIdRef.current,
+        index: action.snapshotIndex,
+        mode,
+      });
+    },
+    [rpc],
+  );
+
+  const handlePlanApproval = useCallback(
+    (choice: PlanChoice, feedback?: string) => {
+      const req = planRequest;
+      setPlanRequest(null);
+      if (!req) return;
+      rpc("plan.respond", { id: req.id, choice, feedback: feedback ?? "" });
+    },
+    [planRequest, rpc],
+  );
+
+  const handlePermissionComplete = useCallback(
+    (id: string, action: PermissionAction) => {
+      setPermissionQueue((prev) => prev.filter((p) => p.id !== id));
+      rpc("permission.respond", { id, response: action });
+    },
+    [rpc],
+  );
+
+  const handleModeChange = useCallback(
+    (mode: PermissionMode) => {
+      setPermMode(mode);
+      if (sessionIdRef.current) {
+        rpc("mode.set", { session_id: sessionIdRef.current, mode });
       }
     },
-    [permissionQueue, client],
+    [rpc],
   );
 
   // ── Scroll viewport ─────────────────────────────────────────────────────
-  // The alt-screen has no native terminal scrollback region, so the message
-  // history is scrolled by the app itself: the outer box has a fixed height
-  // and clips overflow, while the inner box is shifted up by scrollTop lines
-  // (negative marginTop) — equivalent to "translate the content, then clip to
-  // the viewport".
   const viewportRef = useRef<DOMElement | null>(null);
   const contentRef = useRef<DOMElement | null>(null);
   const [scrollTop, setScrollTop] = useState(0);
   const [contentHeight, setContentHeight] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(0);
-  // Stick-to-bottom follow: auto-scroll to the latest content as it arrives;
-  // stop following once the user scrolls up manually.
   const stickToBottomRef = useRef(true);
 
   const maxScroll = Math.max(0, contentHeight - viewportHeight);
 
-  // Enable SGR mouse tracking so the wheel is reported as mouse sequences
-  // instead of being translated by the terminal into ↑/↓ that misfire the
-  // input history.
   useEffect(() => {
     enableMouseTracking(stdout);
     return () => {
@@ -745,10 +746,6 @@ export function App({ _config, client }: AppProps): React.JSX.Element {
     };
   }, [stdout]);
 
-  // Measure the content and viewport heights once after each render, used to
-  // compute the scrollable range. Runs without a dependency list on purpose;
-  // the equality-guarded setters prevent an update loop.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (contentRef.current) {
       const h = measureElement(contentRef.current).height;
@@ -760,8 +757,6 @@ export function App({ _config, client }: AppProps): React.JSX.Element {
     }
   });
 
-  // When the content grows: follow to the latest if stuck to the bottom;
-  // otherwise keep the current position, clamped to the valid range.
   useEffect(() => {
     setScrollTop((prev) => (stickToBottomRef.current ? maxScroll : Math.min(prev, maxScroll)));
   }, [maxScroll]);
@@ -777,8 +772,6 @@ export function App({ _config, client }: AppProps): React.JSX.Element {
     [maxScroll],
   );
 
-  // The wheel and page keys drive scrolling. Mouse sequences never reach the
-  // input box (they are already filtered by SGR format inside InputBox).
   useInput((input, key) => {
     const wheel = parseWheel(input);
     if (wheel) {
@@ -792,29 +785,33 @@ export function App({ _config, client }: AppProps): React.JSX.Element {
     }
   });
 
+  const activePermission = permissionQueue[0] ?? null;
+
   return (
     <Box flexDirection="column" width="100%" height={Math.max(1, stdout.rows ?? 24)}>
-      {/* Top brand header: fixed and non-shrinking within the render tree, so it stays on screen even in long conversations */}
+      {/* Top brand header */}
       <Box flexDirection="column" flexShrink={0}>
         <Text>
-          {COLORS.primary(" /\\_/\\    ")}
-          {COLORS.dim("Larky v" + version)}
+          <Text color="#a78bfa"> /\_/\ </Text>
+          <Text dimColor>
+            Larky v{version}
+            {connected ? "" : "  (connecting…)"}
+          </Text>
         </Text>
         <Text>
-          {COLORS.primary("( o.o )   ")}
-          {COLORS.dim(_config.host + ":" + String(_config.port))}
+          <Text color="#a78bfa">( o.o ) </Text>
+          <Text dimColor>{provider.model || provider.name}</Text>
         </Text>
         <Text>
-          {COLORS.primary(" > ^ <    ")}
-          {COLORS.dim(process.cwd())}
+          <Text color="#a78bfa">
+            {" "}
+            {">"} ^ {"<"}{" "}
+          </Text>
+          <Text dimColor>{workDir}</Text>
         </Text>
       </Box>
 
-      {/* Scroll viewport: fills the remaining middle space and clips overflow.
-          minHeight={0} is critical: the content box's flexShrink={0} would otherwise
-          push the viewport's minimum height up to the full content height, causing the
-          bottom input box — once it grows — to push the total height past the root
-          container and leave erase-misalignment artifacts. */}
+      {/* Scroll viewport */}
       <Box
         ref={viewportRef}
         flexGrow={1}
@@ -824,103 +821,137 @@ export function App({ _config, client }: AppProps): React.JSX.Element {
         overflowY="hidden"
       >
         <Box ref={contentRef} flexDirection="column" flexShrink={0} marginTop={-scrollTop}>
-          {/* All messages live inside the render tree: scrolling is handled by the viewport, no longer relying on the terminal scrollback buffer */}
           <ChatView
             messages={messages}
-            streamingText={isRunning ? streamingText : undefined}
+            streamingText={isStreaming ? streamingText : undefined}
             expanded={toolsExpanded}
           />
 
-          {/* Real-time tool blocks */}
-          {activeTools.length > 0 && !permissionRequest ? (
-            <ToolDisplay tools={activeTools} />
-          ) : null}
+          {activeTools.length > 0 && !askRequest && <ToolDisplay tools={activeTools} />}
 
-          {/* Spinner while running */}
-          {isRunning && !permissionRequest ? (
+          {subagents.length > 0 && !askRequest && (
+            <Box flexDirection="column" paddingLeft={1}>
+              {subagents.map((s) => (
+                <Text key={s.id} color="magenta">
+                  {ICONS.dot} {s.label} subagent
+                  {s.detail ? ` · ${s.detail}` : ""}
+                </Text>
+              ))}
+            </Box>
+          )}
+
+          {isStreaming && !askRequest && (
             <Box paddingLeft={1} flexDirection="column">
               <Spinner inputTokens={inputTokens} outputTokens={outputTokens} />
+              {teammateStates.length > 0 && (
+                <TeammateSpinnerTree
+                  teammates={teammateStates}
+                  leaderTokens={inputTokens + outputTokens}
+                />
+              )}
             </Box>
-          ) : null}
-
-          {/* Context usage bar (Larky exclusive, preserved) */}
-          {contextPercent > 0 ? (
+          )}
+          {!isStreaming && teammateStates.some((t) => t.status === "running") && (
             <Box paddingLeft={1}>
-              <Text dimColor>context </Text>
-              <Text color={contextBarColor(contextPercent)} bold={contextPercent >= 0.85}>
-                {contextBarFill(contextPercent)}
-              </Text>
-              <Text dimColor> {(contextPercent * 100).toFixed(1)}%</Text>
+              <TeammateSpinnerTree teammates={teammateStates} />
             </Box>
-          ) : null}
+          )}
 
-          {/* Connection status / errors */}
-          {connectionError ? (
+          {error && (
             <Box paddingLeft={1}>
-              <Text color="red">{connectionError}</Text>
+              <Text color="red">{error}</Text>
             </Box>
-          ) : null}
+          )}
 
-          {/* Completion mark */}
-          {!isRunning && completionMark && !permissionRequest ? (
+          {!isStreaming && completionMark && !askRequest && !activePermission && (
             <Box paddingLeft={1}>
               <Text dimColor>{completionMark}</Text>
             </Box>
-          ) : null}
+          )}
         </Box>
       </Box>
 
-      {/* Bottom region is fixed and non-shrinking: dialogs, status line, and the input box always render fully at the bottom of the screen */}
+      {/* Bottom fixed region: dialogs + input */}
       <Box flexDirection="column" flexShrink={0}>
-        {/* Permission dialog overlay */}
-        {permissionRequest ? (
-          <PermissionDialog
-            key={permissionRequest.toolUseId}
-            toolName={permissionRequest.toolName}
-            argsSummary={permissionRequest.argsSummary}
-            onComplete={(decision: PermissionAction) => {
-              void handlePermissionRespond(decision);
+        {planRequest && <PlanApprovalDialog onSelect={handlePlanApproval} />}
+
+        {rewindDialogActive && (
+          <RewindDialog
+            snapshots={rewindSnapshots}
+            onComplete={handleRewindAction}
+            onCancel={() => {
+              setRewindDialogActive(false);
             }}
           />
-        ) : null}
+        )}
 
-        {/* Ctrl+C hint */}
-        {ctrlCHint ? (
+        {activePermission && (
+          <PermissionDialog
+            toolName={activePermission.toolName}
+            argsSummary={activePermission.argsSummary}
+            reason={activePermission.reason}
+            onComplete={(action: PermissionAction) => {
+              handlePermissionComplete(activePermission.id, action);
+            }}
+          />
+        )}
+
+        {askRequest && (
+          <AskUserDialog
+            questions={askRequest.questions}
+            onComplete={(answers) => {
+              const req = askRequest;
+              setAskRequest(null);
+              rpc("ask_user.respond", { id: req.id, answers });
+            }}
+          />
+        )}
+
+        {teamsDialogOpen && (
+          <TeamsDialog
+            teammates={teammateStates}
+            onClose={() => {
+              setTeamsDialogOpen(false);
+            }}
+            onKill={() => {
+              // Teams management runs daemon-side; direct kill not yet wired.
+            }}
+            onShutdown={() => {
+              // Teams management runs daemon-side; direct shutdown not yet wired.
+            }}
+          />
+        )}
+
+        {ctrlCHint && (
           <Box paddingLeft={1}>
-            <Text dimColor>
-              {isRunning
-                ? "Agent is running, waiting for it to finish..."
-                : "Press Ctrl+C again to exit."}
-            </Text>
+            <Text dimColor>Press Ctrl+C again to exit.</Text>
           </Box>
-        ) : null}
-
-        {/* Session info line */}
-        <Box paddingLeft={1}>
-          <Text dimColor>
-            {ICONS.dot} {connected ? "connected" : "disconnected"} {ICONS.dot} {sessionLabel}
-            {totalTokens > 0 ? ` ${ICONS.dot} ${String(totalTokens)} tokens` : ""}
-          </Text>
-        </Box>
-
-        {/* Input box */}
+        )}
+        <TeamStatus
+          count={teammateStates.filter((t) => t.status === "running" || t.status === "idle").length}
+        />
         <InputBox
-          onSubmit={(text) => {
+          onSubmit={(text: string) => {
             void handleSubmit(text);
           }}
-          disabled={isRunning || permissionRequest !== null || !connected}
+          disabled={rewindDialogActive || activePermission !== null || askRequest !== null}
           history={promptHistory}
-          commands={commandsRef.current}
+          commands={commands}
+          usageTracker={usageTrackerRef.current}
           inputState={
-            connectionError ? "error" : isRunning || permissionRequest !== null ? "idle" : "focused"
+            error
+              ? "error"
+              : isStreaming || rewindDialogActive || activePermission
+                ? "idle"
+                : "focused"
           }
           permMode={permMode}
-          onModeChange={(mode) => {
-            setPermMode(mode);
-          }}
-          workDir={process.cwd()}
+          onModeChange={handleModeChange}
+          workDir={workDir}
           onEscape={() => {
-            // Escape during running does nothing (daemon-side run continues)
+            if (isStreamingRef.current && sessionIdRef.current) {
+              rpc("run.cancel", { session_id: sessionIdRef.current });
+            }
           }}
         />
       </Box>

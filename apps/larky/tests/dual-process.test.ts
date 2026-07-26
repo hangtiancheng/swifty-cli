@@ -20,26 +20,24 @@
  * SOFTWARE.
  */
 
-// Dual-process integration test: agent.run command, event broadcast, multi-client
-// Tests the IPC layer between client and daemon without requiring a real LLM
+// Feature: dual-process integration — spawn the real daemon (tsx src/core/app.ts)
+// and exercise core.ping / core.status / event.subscribe over real TCP.
+// LLM-dependent RPCs (session.create → createClient) are exercised in the
+// manual smoke flow, not here, to keep CI hermetic.
+import { spawn, type ChildProcess } from "node:child_process";
 import net from "node:net";
+import path from "node:path";
 
-import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { afterAll, beforeAll, describe, expect, test } from "vitest";
 
-import { EventBus } from "../src/core/events/bus.js";
-import { SocketServer } from "../src/core/transport/socket-server.js";
 import { SocketClient } from "../src/core/transport/socket-client.js";
-import {
-  AgentRunCommandSchema,
-  AgentRunResultSchema,
-  EventSubscribeResultSchema,
-} from "../src/core/bus/commands.js";
-import { newRunId } from "../src/core/runs.js";
+
+const HOST = "127.0.0.1";
 
 function freePort(): Promise<number> {
   return new Promise((resolve) => {
     const s = net.createServer();
-    s.listen(0, "127.0.0.1", () => {
+    s.listen(0, HOST, () => {
       const addr = s.address();
       const port = typeof addr === "object" && addr !== null ? addr.port : 0;
       s.close(() => {
@@ -49,105 +47,114 @@ function freePort(): Promise<number> {
   });
 }
 
-describe("dual process integration", () => {
-  let server: SocketServer;
-  let port: number;
-  let bus: EventBus;
-
-  beforeEach(async () => {
-    port = await freePort();
-    bus = new EventBus();
-
-    server = new SocketServer("127.0.0.1", port);
-
-    // Register event.subscribe handler
-    server.register("event.subscribe", (_params) => {
-      const subId = `sub-${String(Math.random()).slice(2, 8)}`;
-      return Promise.resolve(
-        EventSubscribeResultSchema.parse({
-          subscription_id: subId,
-          replayed_count: 0,
-        }),
-      );
-    });
-
-    // Register agent.run handler (simulates async run start)
-    server.register("agent.run", async (params) => {
-      const cmd = AgentRunCommandSchema.parse(params);
-      const rid = newRunId();
-
-      await bus.publish({
-        type: "run.started",
-        run_id: rid,
-        goal: cmd.goal,
-        timestamp: new Date().toISOString(),
+async function waitForPort(port: number, timeoutMs = 15_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const ok = await new Promise<boolean>((resolve) => {
+      const sock = net.createConnection(port, HOST, () => {
+        sock.destroy();
+        resolve(true);
       });
-
-      return AgentRunResultSchema.parse({ run_id: rid });
+      sock.on("error", () => {
+        resolve(false);
+      });
     });
+    if (ok) return;
+    await new Promise((r) => setTimeout(r, 200));
+  }
+  throw new Error("daemon did not become reachable");
+}
 
-    await server.start();
+describe("dual-process daemon", () => {
+  let daemon: ChildProcess;
+  let port: number;
+
+  beforeAll(async () => {
+    port = await freePort();
+    const appRoot = path.resolve(import.meta.dirname, "..");
+    daemon = spawn(process.execPath, ["--import", "tsx", "src/core/app.ts"], {
+      cwd: appRoot,
+      env: {
+        ...process.env,
+        LARKY_PORT: String(port),
+        LARKY_LOG_FILE: "",
+        LARKY_TRACE_ENABLED: "0",
+      },
+      stdio: ["ignore", "ignore", "pipe"],
+    });
+    await waitForPort(port);
+  }, 30_000);
+
+  afterAll(() => {
+    daemon.kill("SIGTERM");
   });
 
-  afterEach(async () => {
-    await server.stop();
-  });
-
-  // Feature: agent.run returns non-empty run_id
-  // Design: Use SocketClient to send agent.run, verify run_id in response
-  test("agent.run returns run_id", async () => {
-    const client = new SocketClient("127.0.0.1", port);
+  test("core.ping round-trip", async () => {
+    const client = new SocketClient(HOST, port);
     await client.connect();
-
     try {
-      const result = await client.sendCommand("agent.run", { goal: "hello" });
-      expect(result["run_id"]).toBeDefined();
-      expect(typeof result["run_id"]).toBe("string");
-      const runId = result["run_id"];
-      if (typeof runId === "string") {
-        expect(runId.length).toBeGreaterThan(0);
-      }
+      const result = await client.sendCommand("core.ping", { client: "test" });
+      expect(typeof result.server_version).toBe("string");
+      expect(typeof result.uptime_ms).toBe("number");
     } finally {
       client.close();
     }
   });
 
-  // Feature: Unknown command returns METHOD_NOT_FOUND (-32601)
-  // Design: Send unregistered method, verify error thrown
-  test("unknown command returns error", async () => {
-    const client = new SocketClient("127.0.0.1", port);
+  test("core.status reports zero sessions", async () => {
+    const client = new SocketClient(HOST, port);
     await client.connect();
-
     try {
-      await expect(client.sendCommand("nonexistent.method", {})).rejects.toThrow();
+      const result = await client.sendCommand("core.status", {});
+      expect(result.active_sessions).toBe(0);
+      expect(typeof result.cwd).toBe("string");
     } finally {
       client.close();
     }
   });
 
-  // Feature: Multiple pings work correctly over same connection
-  // Design: Send several ping commands sequentially, verify all return pong
-  test("multiple sequential commands work", async () => {
-    server.register("core.ping", () =>
-      Promise.resolve({
-        server_version: "0.0.1",
-        uptime_ms: 100,
-        received_at: new Date().toISOString(),
-      }),
-    );
-
-    const client = new SocketClient("127.0.0.1", port);
+  test("event.subscribe returns subscription id", async () => {
+    const client = new SocketClient(HOST, port);
     await client.connect();
-
     try {
-      const r1 = await client.sendCommand("core.ping", {});
-      expect(r1["server_version"]).toBe("0.0.1");
+      const result = await client.sendCommand("event.subscribe", {
+        topics: ["agent.*", "run.*"],
+        scope: "global",
+        replay_from_run: null,
+      });
+      expect(String(result.subscription_id)).toMatch(/^sub-/);
+      expect(result.replayed_count).toBe(0);
+    } finally {
+      client.close();
+    }
+  });
 
-      const r2 = await client.sendCommand("core.ping", {});
-      expect(r2["server_version"]).toBe("0.0.1");
+  test("unknown session id returns SESSION_NOT_FOUND", async () => {
+    const client = new SocketClient(HOST, port);
+    await client.connect();
+    try {
+      await expect(
+        client.sendCommand("run.cancel", { session_id: "sess-nope" }),
+      ).rejects.toMatchObject({ code: -32010 });
+    } finally {
+      client.close();
+    }
+  });
 
-      const r3 = await client.sendCommand("core.ping", {});
-      expect(r3["server_version"]).toBe("0.0.1");
+  test("abrupt client disconnect does not kill the daemon", async () => {
+    // Raw socket destroyed mid-connection (regression: readline ECONNRESET crash)
+    const raw = net.createConnection(port, HOST);
+    await new Promise<void>((resolve) => raw.once("connect", resolve));
+    raw.write('{"jsonrpc":"2.0","id":"x","method":"core.ping","params":{"client":"t"}}\n');
+    raw.destroy();
+
+    await new Promise((r) => setTimeout(r, 300));
+
+    const client = new SocketClient(HOST, port);
+    await client.connect();
+    try {
+      const result = await client.sendCommand("core.ping", { client: "still-alive" });
+      expect(typeof result.server_version).toBe("string");
     } finally {
       client.close();
     }

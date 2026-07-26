@@ -124,7 +124,7 @@ describe("SocketClient", () => {
     await broadcaster.handle({
       type: "session.created",
       session_id: "test-session",
-      mode: "chat",
+      cwd: "/tmp",
       timestamp: new Date().toISOString(),
     });
 

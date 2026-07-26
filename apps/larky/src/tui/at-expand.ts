@@ -20,66 +20,41 @@
  * SOFTWARE.
  */
 
-// @file-mention autocomplete helper: scan workdir for files (UI completion only)
-import { readdirSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { createChildLogger } from "../logger/index.js";
 
-// Directories to skip during file scanning (mirrors Swifty's SKIP_DIRS)
-const SKIP_DIRS = new Set([
-  "node_modules",
-  ".git",
-  ".svn",
-  ".hg",
-  "dist",
-  "build",
-  "out",
-  ".next",
-  ".nuxt",
-  ".cache",
-  ".turbo",
-  ".vercel",
-  "coverage",
-  ".larky",
-  ".venv",
-  "__pycache__",
-  ".mypy_cache",
-  ".pytest_cache",
-]);
+const log = createChildLogger({ module: "tui" });
 
-export function scanWorkdirFiles(root: string, max = 2000): string[] {
-  const out: string[] = [];
-  const walk = (dir: string, rel: string): void => {
-    if (out.length >= max) {
-      return;
+import { readFileSync, statSync } from "node:fs";
+import { isAbsolute, join } from "node:path";
+
+const MAX_INLINE_BYTES = 100_000;
+
+// Expand @path references in a user message by inlining the referenced files'
+// contents (resolved relative to workDir). Tokens that don't resolve to a small
+// readable file are left untouched.
+export function expandAtRefs(text: string, workDir: string): string {
+  const refs = [...text.matchAll(/(?:^|\s)@([^\s]+)/g)].map((m) => m[1]);
+  if (refs.length === 0) {
+    return text;
+  }
+
+  let appendix = "";
+  const seen = new Set<string>();
+  for (const ref of refs) {
+    if (seen.has(ref)) {
+      continue;
     }
-    let names: string[];
+    seen.add(ref);
+    const p = isAbsolute(ref) ? ref : join(workDir, ref);
     try {
-      names = readdirSync(dir);
-    } catch {
-      return;
+      const st = statSync(p);
+      if (st.isFile() && st.size <= MAX_INLINE_BYTES) {
+        appendix += `\n\n<file path="${ref}">\n${readFileSync(p, "utf-8")}\n</file>`;
+      }
+    } catch (err) {
+      log.error({ err }, "tui operation failed");
+      // not a readable file → leave the @token as literal text
     }
-    for (const name of names) {
-      if (out.length >= max) {
-        return;
-      }
-      if (name.startsWith(".") || SKIP_DIRS.has(name)) {
-        continue;
-      }
-      const full = join(dir, name);
-      const relPath = rel ? `${rel}/${name}` : name;
-      let isDir = false;
-      try {
-        isDir = statSync(full).isDirectory();
-      } catch {
-        continue;
-      }
-      if (isDir) {
-        walk(full, relPath);
-      } else {
-        out.push(relPath);
-      }
-    }
-  };
-  walk(root, "");
-  return out;
+  }
+  return appendix ? text + appendix : text;
 }

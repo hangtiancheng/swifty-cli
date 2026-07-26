@@ -1,0 +1,310 @@
+/**
+ * Copyright (c) 2026 hangtiancheng
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+ */
+
+import { createChildLogger } from "../logger/index.js";
+
+const log = createChildLogger({ module: "skills" });
+
+import { readdirSync, readFileSync, existsSync, statSync } from "node:fs";
+import { join } from "node:path";
+import { homedir } from "node:os";
+import yaml from "js-yaml";
+import type { Skill, SkillMeta } from "./skill.js";
+import { parse, z } from "zod";
+import { loadBuiltins } from "./builtins.js";
+import { asRecord, strArg } from "@/utils/index.js";
+
+/**
+ * Internal skill storage with source file path and load timestamp for hot reloading
+ *
+ */
+interface CatalogEntry {
+  skill: Skill;
+  /** Absolute path to SKILL.md, used for re-reading during hot reloading */
+  filePath: string;
+
+  /** File modification time (ms) when last loaded. 0 indicates a built-in skill that requires no reloading */
+  loadedMtimeMs: number;
+}
+
+export class SkillCatalog {
+  private entries = new Map<string, CatalogEntry>();
+  private workDir = "";
+  private dirModTimes = new Map<string, number>();
+
+  load(workDir: string): void {
+    this.workDir = workDir;
+    // Three-tier loading: later tiers override same-named skills from earlier tiers:
+    // Tier 1: Built-in skills (currently empty)
+    for (const skill of loadBuiltins()) {
+      this.entries.set(skill.meta.name, {
+        skill,
+        filePath: "",
+        loadedMtimeMs: 0,
+      });
+    }
+
+    // Tier 2: User-global ~/.larky/skills/
+    // Tier 3: Project-level $workDir/.larky/skills/ (highest priority)
+    const dirs = [
+      join(homedir(), ".trae", "skills"),
+      join(homedir(), ".claude", "skills"),
+      join(homedir(), ".github", "skills"),
+      join(homedir(), ".larky", "skills"),
+      join(workDir, ".trae", "skills"),
+      join(workDir, ".claude", "skills"),
+      join(workDir, ".github", "skills"),
+      join(workDir, ".larky", "skills"),
+    ];
+
+    for (const dir of dirs) {
+      if (!existsSync(dir)) {
+        continue;
+      }
+
+      this.scanDirectory(dir);
+    }
+
+    this.snapshotDirModTimes();
+  }
+
+  /**
+   * Check whether a skill directory mtime has changed (a skill was added or deleted).
+   * Edits to existing skill files are handled by lazy re-reading in get().
+   */
+  needsReload(): boolean {
+    for (const [dir, recorded] of this.dirModTimes) {
+      try {
+        const current = statSync(dir).mtimeMs;
+        if (current !== recorded) {
+          return true;
+        }
+      } catch {
+        if (recorded !== 0) {
+          return true;
+        }
+      }
+    }
+    const dirs = this.skillDirPaths();
+    for (const dir of dirs) {
+      if (!this.dirModTimes.has(dir)) {
+        try {
+          statSync(dir);
+          return true;
+        } catch {
+          // Directory still does not exist
+        }
+      }
+    }
+    return false;
+  }
+
+  reload(): void {
+    this.entries.clear();
+    this.load(this.workDir);
+  }
+
+  private snapshotDirModTimes(): void {
+    this.dirModTimes.clear();
+    for (const dir of this.skillDirPaths()) {
+      try {
+        this.dirModTimes.set(dir, statSync(dir).mtimeMs);
+      } catch {
+        this.dirModTimes.set(dir, 0);
+      }
+    }
+  }
+
+  private skillDirPaths(): string[] {
+    return [
+      join(homedir(), ".larky", "skills"),
+      ...(this.workDir ? [join(this.workDir, ".larky", "skills")] : []),
+    ];
+  }
+
+  private scanDirectory(dir: string) {
+    let dirEntries: string[];
+    try {
+      dirEntries = readdirSync(dir);
+    } catch (err) {
+      log.error({ err }, "skills operation failed");
+      return;
+    }
+
+    for (const entry of dirEntries) {
+      const fullPath = join(dir, entry);
+      const stat = statSync(fullPath);
+
+      if (stat.isDirectory()) {
+        const skillFile = join(fullPath, "SKILL.md");
+        if (existsSync(skillFile)) {
+          this.loadSkill(skillFile, fullPath, true);
+        }
+      }
+      // else if (entry.endsWith(".md") && entry !== "SKILL.md") {
+      //   this.loadSkill(fullPath, dir, false);
+      // }
+    }
+  }
+  private loadSkill(filePath: string, sourceDir: string, isDirectory: boolean) {
+    try {
+      const raw = readFileSync(filePath, "utf-8");
+      const parsed = parseSkillFile(raw);
+      if (!parsed) {
+        return;
+      }
+
+      const skill: Skill = {
+        meta: parsed.meta,
+        body: parsed.body,
+        sourceDir,
+        isDirectory,
+      };
+
+      // Record file modification time for subsequent hot reload detection
+      let mtimeMs = 0;
+      try {
+        mtimeMs = statSync(filePath).mtimeMs;
+      } catch (err) {
+        log.error({ err }, "skills operation failed");
+        // Fail gracefully if timestamp cannot be retrieved
+      }
+
+      this.entries.set(skill.meta.name, {
+        skill,
+        filePath,
+        loadedMtimeMs: mtimeMs,
+      });
+    } catch (err) {
+      log.error({ err }, "skills operation failed");
+      // Skip invalid skill
+    }
+  }
+
+  list(): SkillMeta[] {
+    return [...this.entries.values()].map((e) => e.skill.meta);
+  }
+
+  /**
+   * Gets a skill with hot reload support: automatically re-reads the file if it has been modified on disk.
+   * re-reads the body on every call (hot reload),
+   * and retains the cached body if reading fails.
+   */
+  get(name: string): Skill | undefined {
+    const entry = this.entries.get(name);
+    if (!entry) {
+      return undefined;
+    }
+
+    // Attempt hot reload: check if the file has been modified
+    if (entry.filePath && entry.loadedMtimeMs > 0) {
+      try {
+        const currentMtime = statSync(entry.filePath).mtimeMs;
+        if (currentMtime > entry.loadedMtimeMs) {
+          // File has been modified, re-read it
+          const raw = readFileSync(entry.filePath, "utf-8");
+          const parsed = parseSkillFile(raw);
+          if (parsed) {
+            entry.skill = {
+              meta: parsed.meta,
+              body: parsed.body,
+              sourceDir: entry.skill.sourceDir,
+              isDirectory: entry.skill.isDirectory,
+            };
+            entry.loadedMtimeMs = currentMtime;
+          }
+          // Retain the cached version if parsing fails — a single bad write should not cause a skill to vanish
+        }
+      } catch (err) {
+        log.error({ err }, "skills operation failed");
+        // Retain the cached version if reading fails
+      }
+    }
+
+    return entry.skill;
+  }
+
+  has(name: string): boolean {
+    return this.entries.has(name);
+  }
+}
+
+/**
+ * Normalize the execution mode.
+ *
+ * Some agent ecosystems use `context: fork` to express "isolated execution", which is
+ * semantically equivalent to `mode: fork` here. Both forms are interchangeable, so
+ * externally sourced skills work without modification.
+ */
+function resolveMode(raw: unknown): "inline" | "fork" {
+  // raw.mode
+  const mode = strArg(asRecord(raw), "mode");
+  if (mode === "inline" || mode === "fork") {
+    return mode;
+  }
+  // raw.context
+  return strArg(asRecord(raw), "context") === "fork" ? "fork" : "inline";
+}
+
+const YamlFrontmatterSchema = z.looseObject({
+  name: z.string(),
+  description: z.string().optional(),
+  allowed_tools: z.array(z.string()).optional(),
+  mode: z.enum(["inline", "fork"]).optional(),
+  model: z.string().optional(),
+  fork_context: z.enum(["full", "none", "recent"]).optional(),
+});
+
+function parseSkillFile(content: string): {
+  meta: SkillMeta;
+  body: string;
+} | null {
+  if (!content.startsWith("---")) {
+    return null;
+  }
+
+  const endIdx = content.indexOf("---", 3);
+  if (endIdx === -1) {
+    return null;
+  }
+
+  const frontmatter = content.slice(3, endIdx).trim();
+  const body = content.slice(endIdx + 3).trim();
+
+  try {
+    const raw: unknown = yaml.load(frontmatter);
+    const data = parse(YamlFrontmatterSchema, raw);
+    return {
+      meta: {
+        name: data.name,
+        description: data.description ?? "",
+        mode: resolveMode(raw),
+        model: data.model,
+        forkContext: data.fork_context,
+      },
+      body,
+    };
+  } catch (err) {
+    log.error({ err }, "skills operation failed");
+    return null;
+  }
+}

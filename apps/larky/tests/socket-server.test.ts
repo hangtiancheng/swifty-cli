@@ -29,7 +29,6 @@ import { afterEach, describe, expect, test } from "vitest";
 
 import { SocketServer, getConnectionWriter } from "../src/core/transport/socket-server.js";
 import { IpcEventBroadcaster } from "../src/core/transport/ipc-broadcaster.js";
-import { PermissionManager } from "../src/core/permissions/manager.js";
 import { isRecord } from "../src/core/bus/envelope.js";
 
 // Get a random available port
@@ -321,103 +320,10 @@ describe("SocketServer", () => {
     await broadcaster.handle({
       type: "run.started",
       run_id: "r1",
-      goal: "test",
+      session_id: "s1",
+      content: "test",
       timestamp: "2026-01-01T00:00:00Z",
     });
     expect(writes.length).toBe(0);
-  });
-
-  // Feature (B-3): when the LAST subscribed client disconnects, pending
-  // permission requests are cancelled (deny_once) instead of freezing the
-  // agent until the permission timeout; with other subscribers remaining
-  // the requests stay pending
-  // Design: wire onDisconnect exactly as CoreApp does (unsubscribe first,
-  // then cancelAll when subscriptionCount() === 0), subscribe two real TCP
-  // clients, start a pending checkAndWait, disconnect them one by one
-  test("last client disconnect cancels pending permission requests", async () => {
-    const port = await freePort();
-    const broadcaster = new IpcEventBroadcaster();
-    const manager = new PermissionManager({ timeoutS: 30 });
-
-    const disconnectResolvers: (() => void)[] = [];
-    const disconnectPromises = [0, 1].map(
-      (i) =>
-        new Promise<void>((resolve) => {
-          disconnectResolvers[i] = resolve;
-        }),
-    );
-    let disconnectCount = 0;
-
-    server = new SocketServer("127.0.0.1", port, {
-      // Same wiring as CoreApp.run(): unsubscribe must run first so
-      // subscriptionCount() reflects the post-disconnect state
-      onDisconnect: (socket) => {
-        broadcaster.unsubscribe(socket);
-        if (broadcaster.subscriptionCount() === 0) {
-          manager.cancelAll("client_disconnected");
-        }
-        disconnectResolvers[disconnectCount]?.();
-        disconnectCount++;
-      },
-    });
-    server.register("event.subscribe", () => {
-      const writer = getConnectionWriter();
-      const subId = broadcaster.subscribe(writer, ["*"], "global");
-      return Promise.resolve({ subscription_id: subId, replayed_count: 0 });
-    });
-    await server.start();
-
-    // Connect + subscribe a client over real TCP, resolving on the response
-    const subscribeClient = async (id: string): Promise<net.Socket> => {
-      const client = net.createConnection(port, "127.0.0.1");
-      await new Promise<void>((resolve) => client.once("connect", resolve));
-      const gotResponse = new Promise<void>((resolve) => {
-        client.once("data", () => {
-          resolve();
-        });
-      });
-      client.write(
-        JSON.stringify({
-          jsonrpc: "2.0",
-          id,
-          method: "event.subscribe",
-          params: { topics: ["*"], scope: "global" },
-        }) + "\n",
-      );
-      await gotResponse;
-      return client;
-    };
-    const clientA = await subscribeClient("sub-a");
-    const clientB = await subscribeClient("sub-b");
-    expect(broadcaster.subscriptionCount()).toBe(2);
-
-    // Start a permission request that stays pending (nobody responds)
-    const pending = manager.checkAndWait(
-      "tool-use-b3-1",
-      "bash",
-      { command: "echo hi" },
-      "session-1",
-      () => Promise.resolve(),
-    );
-
-    // First client disconnects: another subscriber remains → still pending
-    clientA.destroy();
-    await disconnectPromises[0];
-    const settledEarly = await Promise.race([
-      pending.then(() => true),
-      new Promise<boolean>((resolve) =>
-        setTimeout(() => {
-          resolve(false);
-        }, 50),
-      ),
-    ]);
-    expect(settledEarly).toBe(false);
-
-    // Last client disconnects: request is cancelled as deny_once
-    clientB.destroy();
-    await disconnectPromises[1];
-    const [allowed, decision] = await pending;
-    expect(allowed).toBe(false);
-    expect(decision).toBe("deny_once");
   });
 });

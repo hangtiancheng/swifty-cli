@@ -100,10 +100,11 @@ export class IpcEventBroadcaster {
   async handle(event: Event): Promise<void> {
     const eventType = event.type;
     const runId = "run_id" in event ? event.run_id : undefined;
+    const sessionId = "session_id" in event ? event.session_id : undefined;
 
     for (const sub of [...this._subscriptions]) {
       if (!this._matchesTopic(eventType, sub.matchers)) continue;
-      if (!this._matchesScope(runId, sub.scope)) continue;
+      if (!this._matchesScope(runId, sessionId, sub.scope)) continue;
 
       sub.writeQueue = sub.writeQueue
         .then(() => this._deliver(sub, event, eventType, runId))
@@ -170,10 +171,15 @@ export class IpcEventBroadcaster {
     return matchers.some((m) => m(eventType));
   }
 
-  // Check if the event's run_id matches the subscription scope
-  private _matchesScope(runId: string | undefined, scope: string): boolean {
+  // Check if the event's run_id / session_id matches the subscription scope
+  private _matchesScope(
+    runId: string | undefined,
+    sessionId: string | undefined,
+    scope: string,
+  ): boolean {
     if (scope === "global") return true;
     if (scope.startsWith("run:")) return runId === scope.slice(4);
+    if (scope.startsWith("session:")) return sessionId === scope.slice(8);
     return false;
   }
 }
