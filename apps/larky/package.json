@@ -48,6 +48,7 @@
     "dev": "tsx ./src/dev.ts",
     "dev:core": "tsx ./src/core/app.ts",
     "dev:tui": "tsx ./src/tui/bootstrap.ts",
+    "preview": "tsx ./src/cli/main.ts",
     "prepublishOnly": "pnpm build",
     "add:user": "npm adduser --registry=https://registry.npmjs.org/",
     "publish:latest": "npm publish --access public --registry=https://registry.npmjs.org/",
