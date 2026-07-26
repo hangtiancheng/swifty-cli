@@ -91,9 +91,12 @@ export class CoreApp {
   private _larkyConfig: AppConfig | null = null;
   private _sessions = new Map<string, AgentSession>();
 
-  private _hub = new InteractionHub((e) => {
-    this.emit(e);
-  });
+  private _hub = new InteractionHub(
+    (e) => {
+      this.emit(e);
+    },
+    () => (this._broadcaster?.subscriptionCount() ?? 0) > 0,
+  );
 
   private _teammatePollTimer: ReturnType<typeof setInterval> | null = null;
   // Per-session cache: a single shared string would make two sessions with

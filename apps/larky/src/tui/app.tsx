@@ -40,7 +40,7 @@ import { z } from "zod";
 
 import { IpcError, type SocketClient } from "../core/transport/socket-client.js";
 import { EventSchema, type Event } from "../core/bus/events.js";
-import { isStaleRunEvent } from "./run-filter.js";
+import { advanceReplayCursor, isStaleRunEvent } from "./run-filter.js";
 
 import RewindDialog, { type RewindAction } from "./rewind-dialog.js";
 import { PermissionDialog, type PermissionAction } from "./permission-dialog.js";
@@ -282,17 +282,12 @@ export function App({ client, provider, permissionMode, onSessionChange }: Props
       // daemon persists every non-empty-run_id line schema-agnostically, so
       // unknown (future) event types must still advance the cursor or a
       // reconnect would replay already-applied events.
-      const rawRunId = typeof raw.run_id === "string" ? raw.run_id : "";
-      const rawSession = typeof raw.session_id === "string" ? raw.session_id : "";
-      if (rawRunId) {
-        if (raw.type === "run.started") {
-          if (sessionIdRef.current && rawSession === sessionIdRef.current) {
-            replayedCountRef.current = 1; // run.started is the run's first line
-          }
-        } else if (rawRunId === lastRunIdRef.current) {
-          replayedCountRef.current += 1;
-        }
-      }
+      replayedCountRef.current = advanceReplayCursor(
+        raw,
+        sessionIdRef.current,
+        lastRunIdRef.current,
+        replayedCountRef.current,
+      );
 
       const parsed = EventSchema.safeParse(raw);
       if (!parsed.success) {

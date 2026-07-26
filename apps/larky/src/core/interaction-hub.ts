@@ -79,7 +79,15 @@ export class InteractionHub {
   private pendingAsks = new Map<string, PendingAsk>();
   private pendingPlans = new Map<string, PendingPlan>();
 
-  constructor(private emit: (event: Event) => void) {}
+  /**
+   * hasSubscribers: when nobody is connected a new request would hang
+   * forever (B-3 only sweeps entries that existed at disconnect time), so
+   * requests raised afterwards short-circuit with disconnect semantics.
+   */
+  constructor(
+    private emit: (event: Event) => void,
+    private hasSubscribers: () => boolean = () => true,
+  ) {}
 
   get pendingCounts(): { permissions: number; asks: number; plans: number } {
     return {
@@ -100,7 +108,7 @@ export class InteractionHub {
   ): Promise<PermissionResponse> {
     const id = `perm-${randomUUID().slice(0, 8)}`;
     return new Promise<PermissionResponse>((resolve) => {
-      if (signal?.aborted) {
+      if (signal?.aborted || !this.hasSubscribers()) {
         resolve("deny");
         return;
       }
@@ -136,7 +144,7 @@ export class InteractionHub {
   ): Promise<Record<string, string>> {
     const id = `ask-${randomUUID().slice(0, 8)}`;
     return new Promise<Record<string, string>>((resolve, reject) => {
-      if (signal?.aborted) {
+      if (signal?.aborted || !this.hasSubscribers()) {
         reject(new Error("interrupted"));
         return;
       }
@@ -181,7 +189,7 @@ export class InteractionHub {
   ): Promise<{ choice: WirePlanChoice; feedback: string }> {
     const id = `plan-${randomUUID().slice(0, 8)}`;
     return new Promise<{ choice: WirePlanChoice; feedback: string }>((resolve, reject) => {
-      if (signal?.aborted) {
+      if (signal?.aborted || !this.hasSubscribers()) {
         reject(new Error("interrupted"));
         return;
       }

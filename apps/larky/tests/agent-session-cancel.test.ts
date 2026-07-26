@@ -274,6 +274,48 @@ describe("agent-session cancel & steering", () => {
     await waitFor(() => !session.isRunning);
   });
 
+  it("an Esc-cancelled queued run does not pollute the conversation (mid-3)", async () => {
+    const harness = makeSessionHarness();
+    const client = new GateClient(["stuck", "hang"]);
+    const session = await createSession(harness, client);
+
+    session.startRun("one");
+    await waitFor(() => client.started.length === 1);
+    const run2 = session.startRun("two");
+
+    expect(session.cancel()).toBe(true); // withdraw the queued message
+    client.releaseStuck();
+
+    await waitFor(() =>
+      harness.events.some((e) => e.type === "agent.loop_complete" && e.run_id === run2),
+    );
+    // The withdrawn message must not be in the conversation.
+    expect(userMessages(session)).toEqual(["one"]);
+  });
+
+  it("a pre-loop failure still closes the run with a terminal event (mid-2)", async () => {
+    const harness = makeSessionHarness();
+    const client = new GateClient([[END]]);
+    const session = await createSession(harness, client);
+
+    // Simulate ENOSPC-class failure in the pre-loop section.
+    session.conv.addUserMessage = () => {
+      throw new Error("boom: disk full");
+    };
+    const runId = session.startRun("hello");
+
+    await waitFor(() =>
+      harness.events.some((e) => e.type === "agent.loop_complete" && e.run_id === runId),
+    );
+    expect(
+      harness.events.some(
+        (e) => e.type === "agent.error" && e.run_id === runId && e.message.includes("boom"),
+      ),
+    ).toBe(true);
+    expect(client.started.length).toBe(0); // never reached the LLM
+    await waitFor(() => !session.isRunning);
+  });
+
   it("a superseded queued run emits a terminal loop_complete (L-5)", async () => {
     const harness = makeSessionHarness();
     const client = new GateClient(["stuck", "hang", "hang"]);
@@ -300,6 +342,58 @@ describe("agent-session cancel & steering", () => {
     expect(userMessages(session)).toEqual(["one", "two", "three"]);
   });
 
+  it("permission requests carry the run's live abort signal (P0-2 wiring)", async () => {
+    const events: Event[] = [];
+    const captured: { signal?: AbortSignal }[] = [];
+    const broker: InteractionBroker = {
+      requestPermission: (_s, _tool, _args, _decision, signal) =>
+        new Promise((resolve) => {
+          captured.push({ signal });
+          if (signal?.aborted) {
+            resolve("deny");
+            return;
+          }
+          signal?.addEventListener(
+            "abort",
+            () => {
+              resolve("deny");
+            },
+            { once: true },
+          );
+        }),
+      askUser: () => Promise.resolve({}),
+      requestPlanApproval: () => Promise.reject(new Error("unused")),
+    };
+    const harness: ReturnType<typeof makeSessionHarness> = {
+      events,
+      planPending: [],
+      broker,
+      emit: (e: Event) => events.push(e),
+    };
+    const toolCall: StreamEvent = {
+      type: "tool_call_complete",
+      toolId: "tu-1",
+      toolName: "WriteFile",
+      arguments: { file_path: "/tmp/larky-perm-test.txt", content: "x" },
+    };
+    const client = new GateClient([[toolCall, END], "hang"]);
+    const session = await createSession(harness, client);
+
+    session.startRun("write something");
+    await waitFor(() => captured.length === 1);
+    expect(captured[0].signal).toBeDefined();
+    expect(captured[0].signal?.aborted).toBe(false);
+
+    // Esc: the pending permission must settle via the signal, unblocking the loop.
+    expect(session.cancel()).toBe(true);
+    expect(captured[0].signal?.aborted).toBe(true);
+    await waitFor(() =>
+      harness.events.some(
+        (e) => e.type === "agent.loop_complete" && e.stop_reason === "interrupted",
+      ),
+    );
+  });
+
   it("busy guard blocks conversation-rewriting commands while running (P1-9)", async () => {
     const harness = makeSessionHarness();
     const client = new GateClient(["hang"]);
@@ -323,6 +417,19 @@ describe("agent-session cancel & steering", () => {
     ).toBe(true);
 
     session.cancel();
+  });
+
+  it("/clear keeps the identity override reminder (L-4)", async () => {
+    const harness = makeSessionHarness();
+    const client = new GateClient([]);
+    const session = await createSession(harness, client);
+
+    const countIdentity = () =>
+      session.conv.getMessages().filter((m) => m.content.includes("IDENTITY OVERRIDE")).length;
+    expect(countIdentity()).toBe(1);
+
+    await session.runCommand("/clear");
+    expect(countIdentity()).toBe(1); // survived the conversation rebuild
   });
 
   it("cancel during plan approval settles the pending approval (P0-3)", async () => {
@@ -461,6 +568,22 @@ describe("interaction hub abort awareness (P0-2)", () => {
     hub.cancelForSession("sess-other");
     await expect(p2).resolves.toBe("deny");
     expect(hub.pendingCounts.permissions).toBe(0);
+  });
+
+  it("requests raised with no connected client settle immediately (mid-1)", async () => {
+    const events: Event[] = [];
+    const hub = new InteractionHub(
+      (e) => {
+        events.push(e);
+      },
+      () => false, // nobody connected
+    );
+    const sessionRef = { id: "sess-test", currentRunId: "run-test" };
+
+    await expect(hub.requestPermission(sessionRef, "Bash", {}, DECISION)).resolves.toBe("deny");
+    await expect(hub.askUser(sessionRef, [])).rejects.toThrow("interrupted");
+    await expect(hub.requestPlanApproval(sessionRef, "plan")).rejects.toThrow("interrupted");
+    expect(hub.pendingCounts).toEqual({ permissions: 0, asks: 0, plans: 0 });
   });
 
   it("pre-aborted signal short-circuits without creating a pending entry", async () => {

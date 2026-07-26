@@ -2,7 +2,7 @@
 import { describe, it, expect } from "vitest";
 
 import type { Event } from "../src/core/bus/events.js";
-import { isStaleRunEvent } from "../src/tui/run-filter.js";
+import { advanceReplayCursor, isStaleRunEvent } from "../src/tui/run-filter.js";
 
 const TS = "2026-07-26T00:00:00.000Z";
 
@@ -74,5 +74,42 @@ describe("isStaleRunEvent", () => {
       timestamp: TS,
     };
     expect(isStaleRunEvent(systemMessage, "run-new")).toBe(false);
+  });
+});
+
+describe("advanceReplayCursor", () => {
+  const SESS = "sess-1";
+
+  it("resets to 1 on our session's run.started (line 1 of the run file)", () => {
+    const raw = { type: "run.started", session_id: SESS, run_id: "run-a" };
+    expect(advanceReplayCursor(raw, SESS, null, 7)).toBe(1);
+  });
+
+  it("ignores run.started of other sessions and of the unknown-session window", () => {
+    const raw = { type: "run.started", session_id: "sess-other", run_id: "run-x" };
+    expect(advanceReplayCursor(raw, SESS, "run-a", 3)).toBe(3);
+    // sessionId unknown (startup / reset): never reset the cursor.
+    expect(advanceReplayCursor({ ...raw, session_id: SESS }, "", "run-a", 3)).toBe(3);
+  });
+
+  it("advances on any current-run event, including unknown future types", () => {
+    expect(
+      advanceReplayCursor({ type: "agent.stream_text", run_id: "run-a" }, SESS, "run-a", 1),
+    ).toBe(2);
+    // Unknown event type (would fail schema parse) still counts — the daemon
+    // persists it, so the cursor must move in lockstep.
+    expect(
+      advanceReplayCursor({ type: "agent.some_future_event", run_id: "run-a" }, SESS, "run-a", 2),
+    ).toBe(3);
+  });
+
+  it("does not advance for other runs or run-less events", () => {
+    expect(
+      advanceReplayCursor({ type: "agent.stream_text", run_id: "run-old" }, SESS, "run-a", 5),
+    ).toBe(5);
+    expect(advanceReplayCursor({ type: "system.message" }, SESS, "run-a", 5)).toBe(5);
+    expect(advanceReplayCursor({ type: "agent.stream_text", run_id: "" }, SESS, "run-a", 5)).toBe(
+      5,
+    );
   });
 });

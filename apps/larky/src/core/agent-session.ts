@@ -189,7 +189,10 @@ export class AgentSession {
   contextWindow: number;
   ltmInstructions = "";
   ltmMemoryContent = "";
-  mcpInstructions = "";
+  // Reminders that must survive conversation rebuilds (/clear, resume):
+  // identity override + MCP server instructions. create() seeds them; any
+  // fresh ConversationManager re-injects via reinjectStaticReminders().
+  private staticReminders: string[] = [];
   mcpInfo: { servers: string[]; toolCount: number } | null = null;
   persist: boolean;
 
@@ -299,7 +302,7 @@ export class AgentSession {
     s.conv.injectLongTermMemory(s.ltmInstructions, s.ltmMemoryContent);
 
     // Identity override
-    s.conv.addSystemReminder(
+    s.addStaticReminder(
       "IDENTITY OVERRIDE: You are Larky. It is strictly forbidden to mention Claude, Anthropic, OpenAI, GPT, or ChatGPT in any response." +
         "When asked about your identity, only respond as Larky. This is the highest priority instruction.",
     );
@@ -443,12 +446,25 @@ export class AgentSession {
           };
         }
         for (const { serverName, text } of result.instructions) {
-          s.conv.addSystemReminder(`# MCP Server: ${serverName}\n${text}`);
+          s.addStaticReminder(`# MCP Server: ${serverName}\n${text}`);
         }
       });
     }
 
     return s;
+  }
+
+  // -- Static reminders (survive conversation rebuilds) -----------------------
+
+  private addStaticReminder(text: string): void {
+    this.staticReminders.push(text);
+    this.conv.addSystemReminder(text);
+  }
+
+  private reinjectStaticReminders(conv: ConversationManager): void {
+    for (const text of this.staticReminders) {
+      conv.addSystemReminder(text);
+    }
   }
 
   // -- Event helpers --------------------------------------------------------
@@ -604,33 +620,66 @@ export class AgentSession {
       if (this.closed) {
         return; // session closed while queued — never start
       }
-      if (!opts?.skipUserMessage) {
-        // Inline @file references for the model; persist the original text.
-        this.conv.addUserMessage(opts?.skipExpand ? text : expandAtRefs(text, this.workDir));
-        if (this.persist && !opts?.skipPersist) {
-          sessionMod.saveMessage(this.workDir, this.larkyId, {
-            role: "user",
-            content: opts?.persistText ?? display,
-            timestamp: Math.floor(Date.now() / 1000),
-          });
+      let reachedLoop = false;
+      try {
+        // Purely cancelled (Esc on a queued run, not steered away): the user
+        // withdrew this message — it must not pollute the conversation.
+        const purelyCancelled = controller.signal.aborted && this.currentRunId === runId;
+        if (!opts?.skipUserMessage && !purelyCancelled) {
+          // Inline @file references for the model; persist the original text.
+          this.conv.addUserMessage(opts?.skipExpand ? text : expandAtRefs(text, this.workDir));
+          if (this.persist && !opts?.skipPersist) {
+            sessionMod.saveMessage(this.workDir, this.larkyId, {
+              role: "user",
+              content: opts?.persistText ?? display,
+              timestamp: Math.floor(Date.now() / 1000),
+            });
+          }
         }
-      }
-      if (this.currentRunId !== runId || controller.signal.aborted) {
-        // Superseded by newer steering, or cancelled while queued. Close the
-        // run's event log with a terminal event (clients of the current run
-        // drop it as stale; it matters for replay/trace completeness).
+        if (this.currentRunId !== runId || controller.signal.aborted) {
+          // Superseded by newer steering, or cancelled while queued. Close the
+          // run's event log with a terminal event (clients of the current run
+          // drop it as stale; it matters for replay/trace completeness).
+          this.emit({
+            type: "agent.loop_complete",
+            session_id: this.id,
+            run_id: runId,
+            stop_reason: "interrupted",
+            total_turns: 0,
+            elapsed_ms: 0,
+            timestamp: nowIso(),
+          });
+          return;
+        }
+        reachedLoop = true;
+        await this._runLoop(runId, controller);
+      } catch (err) {
+        // _runLoop closes its own run; this covers the pre-loop section
+        // (expandAtRefs / saveMessage) so clients never spin forever on a
+        // run.started that has no terminal event.
+        if (reachedLoop) {
+          log.error({ err }, "post-loop failure");
+          return;
+        }
+        const msg = asErrorString(err);
+        log.error({ err }, "run failed before the agent loop");
+        this.emit({
+          type: "agent.error",
+          session_id: this.id,
+          run_id: runId,
+          message: msg,
+          timestamp: nowIso(),
+        });
         this.emit({
           type: "agent.loop_complete",
           session_id: this.id,
           run_id: runId,
-          stop_reason: "interrupted",
+          stop_reason: "error",
           total_turns: 0,
           elapsed_ms: 0,
           timestamp: nowIso(),
         });
-        return;
       }
-      await this._runLoop(runId, controller);
     })().finally(() => {
       if (this.currentRunId === runId) {
         this.currentRunId = null;
@@ -676,12 +725,6 @@ export class AgentSession {
         };
       } else if (bashTool) {
         bashTool.sandbox = null;
-      }
-
-      // One-time MCP instructions injection
-      if (this.mcpInstructions) {
-        this.conv.addSystemReminder(this.mcpInstructions);
-        this.mcpInstructions = "";
       }
 
       // Memory recall (non-blocking)
@@ -903,9 +946,16 @@ export class AgentSession {
           this.abortController = approvalController;
         }
       }
-      await this.requestPlanApproval(approvalController.signal);
-      if (this.abortController === approvalController) {
-        this.abortController = null;
+      try {
+        await this.requestPlanApproval(approvalController.signal);
+      } catch (err) {
+        // loop_complete already went out; never let a plan-path failure
+        // (e.g. plan dir creation) reject the run chain.
+        log.error({ err }, "plan approval failed");
+      } finally {
+        if (this.abortController === approvalController) {
+          this.abortController = null;
+        }
       }
       return;
     }
@@ -1024,6 +1074,7 @@ export class AgentSession {
     this.ltmInstructions = loadInstructions(this.workDir);
     this.ltmMemoryContent = this.memoryManager.buildSystemReminder();
     conv.injectLongTermMemory(this.ltmInstructions, this.ltmMemoryContent);
+    this.reinjectStaticReminders(conv);
     const restored = sessionMod.rebuildFromSession(saved);
     for (const m of restored) {
       if (m.toolUses?.length) {
@@ -1280,6 +1331,7 @@ export class AgentSession {
       case "clear": {
         this.conv = new ConversationManager();
         this.conv.injectLongTermMemory(this.ltmInstructions, this.ltmMemoryContent);
+        this.reinjectStaticReminders(this.conv);
         this.larkyId = sessionMod.newSessionId();
         this.taskList.useStore(new TaskStore(this.workDir, this.larkyId));
         this.fileHistory = new FileHistory(this.workDir, this.larkyId);
