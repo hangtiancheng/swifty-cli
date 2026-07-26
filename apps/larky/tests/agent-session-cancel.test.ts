@@ -1,6 +1,10 @@
 /**
- * P0 regression tests: steering abort-controller handoff (P0-1/P0-4),
- * broker abort awareness (P0-2), and cancellable plan approval (P0-3).
+ * Regression tests for run cancellation and blocking interactions:
+ * - steering abort-controller handoff (P0-1/P0-4)
+ * - broker abort awareness via InteractionHub (P0-2)
+ * - cancellable plan approval (P0-3, P2-15)
+ * - queued-run lifecycle: close/cancel/supersede (H-1/M-1/L-5)
+ * - busy guard for conversation-rewriting commands (P1-9)
  */
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -9,11 +13,13 @@ import { join } from "node:path";
 import { describe, it, expect, afterEach } from "vitest";
 
 import { AgentSession, type InteractionBroker } from "../src/core/agent-session.js";
-import { CoreApp } from "../src/core/app.js";
+import { InteractionHub } from "../src/core/interaction-hub.js";
 import type { Event } from "../src/core/bus/events.js";
 import type { ProviderConfig } from "../src/config/config.js";
+import type { ConversationManager } from "../src/conversation/conversation.js";
 import type { LLMClient } from "../src/llm/client.js";
 import type { StreamEvent } from "../src/llm/events.js";
+import type { ToolSchema } from "../src/tools/types.js";
 
 const PROVIDER: ProviderConfig = {
   name: "mock",
@@ -40,15 +46,29 @@ const END: StreamEvent = {
   },
 };
 
-/** LLM client whose streams hang until their run's abort signal fires. */
+/**
+ * LLM client for tests. Script kinds:
+ * - "hang": blocks until the run's abort signal fires (abort-reactive tool);
+ * - "stuck": ignores abort entirely until releaseStuck() (abort-deaf tool);
+ * - StreamEvent[]: replays the given events.
+ */
 class GateClient implements LLMClient {
   started: (AbortSignal | undefined)[] = [];
-  constructor(private scripts: ("hang" | StreamEvent[])[]) {}
+  private stuckRejects: ((e: Error) => void)[] = [];
+  constructor(private scripts: ("hang" | "stuck" | StreamEvent[])[]) {}
   setSystemPrompt(): void {
     /* noop */
   }
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  async *stream(_conv: any, _tools: any, signal?: AbortSignal): AsyncGenerator<StreamEvent> {
+  releaseStuck(): void {
+    for (const reject of this.stuckRejects.splice(0)) {
+      reject(abortError());
+    }
+  }
+  async *stream(
+    _conv: ConversationManager,
+    _tools: ToolSchema[],
+    signal?: AbortSignal,
+  ): AsyncGenerator<StreamEvent> {
     const idx = this.started.length;
     this.started.push(signal);
     const script = this.scripts[idx] ?? "hang";
@@ -58,7 +78,19 @@ class GateClient implements LLMClient {
           reject(abortError());
           return;
         }
-        signal?.addEventListener("abort", () => reject(abortError()), { once: true });
+        signal?.addEventListener(
+          "abort",
+          () => {
+            reject(abortError());
+          },
+          { once: true },
+        );
+      });
+      return;
+    }
+    if (script === "stuck") {
+      await new Promise((_resolve, reject) => {
+        this.stuckRejects.push(reject);
       });
       return;
     }
@@ -101,6 +133,13 @@ function makeSessionHarness() {
       }),
   };
   return { events, planPending, broker, emit: (e: Event) => events.push(e) };
+}
+
+function userMessages(session: AgentSession): string[] {
+  return session.conv
+    .getMessages()
+    .filter((m) => m.role === "user" && !m.content.startsWith("<system-reminder>"))
+    .map((m) => m.content);
 }
 
 describe("agent-session cancel & steering", () => {
@@ -165,11 +204,7 @@ describe("agent-session cancel & steering", () => {
     await waitFor(() => client.started.length === 2);
 
     // Serialization: run2's user message lands after run1's loop unwound.
-    const users = session.conv
-      .getMessages()
-      .filter((m) => m.role === "user" && !m.content.startsWith("<system-reminder>"))
-      .map((m) => m.content);
-    expect(users).toEqual(["one", "two"]);
+    expect(userMessages(session)).toEqual(["one", "two"]);
 
     // Regression: before the fix, run1's finally nulled run2's controller.
     expect(session.cancel()).toBe(true);
@@ -188,6 +223,81 @@ describe("agent-session cancel & steering", () => {
       (e) => e.type.startsWith("agent.") && "run_id" in e && e.run_id === run2,
     );
     expect(idxRun2First).toBeGreaterThan(idxRun1Done);
+  });
+
+  it("close() prevents a queued (steered) run from ever starting (H-1)", async () => {
+    const harness = makeSessionHarness();
+    const client = new GateClient(["stuck", "hang"]);
+    const session = await createSession(harness, client);
+
+    const run1 = session.startRun("one");
+    await waitFor(() => client.started.length === 1);
+    // Steer: run2 queues behind the abort-deaf run1.
+    session.startRun("two");
+
+    await session.close();
+    client.releaseStuck(); // run1 finally unwinds — after the session closed
+
+    await waitFor(() =>
+      harness.events.some((e) => e.type === "agent.loop_complete" && e.run_id === run1),
+    );
+    // Give the chain a chance to (incorrectly) start run2.
+    await new Promise((r) => setTimeout(r, 50));
+    expect(client.started.length).toBe(1); // run2 never reached the LLM
+    expect(session.isRunning).toBe(false);
+  });
+
+  it("a run queued behind an abort-deaf tool is cancellable (M-1/L-5)", async () => {
+    const harness = makeSessionHarness();
+    const client = new GateClient(["stuck", "hang"]);
+    const session = await createSession(harness, client);
+
+    session.startRun("one");
+    await waitFor(() => client.started.length === 1);
+    const run2 = session.startRun("two");
+
+    // Esc while run2 is still queued: aborts run2's (pre-created) controller.
+    expect(session.cancel()).toBe(true);
+    client.releaseStuck();
+
+    // run2 must end with a terminal event without ever calling the LLM.
+    await waitFor(() =>
+      harness.events.some(
+        (e) =>
+          e.type === "agent.loop_complete" &&
+          e.run_id === run2 &&
+          e.stop_reason === "interrupted" &&
+          e.total_turns === 0,
+      ),
+    );
+    expect(client.started.length).toBe(1);
+    await waitFor(() => !session.isRunning);
+  });
+
+  it("a superseded queued run emits a terminal loop_complete (L-5)", async () => {
+    const harness = makeSessionHarness();
+    const client = new GateClient(["stuck", "hang", "hang"]);
+    const session = await createSession(harness, client);
+
+    session.startRun("one");
+    await waitFor(() => client.started.length === 1);
+    const run2 = session.startRun("two"); // queued
+    const run3 = session.startRun("three"); // supersedes run2 while queued
+    client.releaseStuck();
+
+    await waitFor(() =>
+      harness.events.some(
+        (e) => e.type === "agent.loop_complete" && e.run_id === run2 && e.total_turns === 0,
+      ),
+    );
+    // run3 starts normally and is cancellable.
+    await waitFor(() => client.started.length === 2);
+    expect(session.cancel()).toBe(true);
+    await waitFor(() =>
+      harness.events.some((e) => e.type === "agent.loop_complete" && e.run_id === run3),
+    );
+    // Both queued-run user messages still reached the conversation in order.
+    expect(userMessages(session)).toEqual(["one", "two", "three"]);
   });
 
   it("busy guard blocks conversation-rewriting commands while running (P1-9)", async () => {
@@ -231,42 +341,11 @@ describe("agent-session cancel & steering", () => {
     await waitFor(() => harness.planPending[0].settled);
     await waitFor(() => !session.isRunning);
   });
-});
 
-describe("plan approval trigger (P2-15)", () => {
-  const workDirs: string[] = [];
-  const sessions: AgentSession[] = [];
-
-  afterEach(async () => {
-    for (const s of sessions.splice(0)) {
-      try {
-        await s.close();
-      } catch {
-        /* noop */
-      }
-    }
-    for (const dir of workDirs.splice(0)) {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
-
-  it("an interrupted plan run still pops approval and stays cancellable", async () => {
+  it("an interrupted plan run still pops approval and stays cancellable (P2-15)", async () => {
     const harness = makeSessionHarness();
     const client = new GateClient(["hang"]);
-    const dir = mkdtempSync(join(tmpdir(), "larky-plan-int-"));
-    workDirs.push(dir);
-    const session = await AgentSession.create({
-      provider: PROVIDER,
-      workDir: dir,
-      enableCoordinatorMode: false,
-      forkDisabled: true,
-      persist: false,
-      permissionMode: "plan",
-      emit: harness.emit,
-      broker: harness.broker,
-    });
-    session.client = client;
-    sessions.push(session);
+    const session = await createSession(harness, client, "plan");
 
     session.startRun("plan something");
     await waitFor(() => client.started.length === 1);
@@ -282,41 +361,36 @@ describe("plan approval trigger (P2-15)", () => {
   });
 });
 
-describe("interaction broker abort awareness (P0-2)", () => {
-  type BrokerAccess = {
-    _broker: InteractionBroker;
-    _bus: { subscribe: (h: (e: Event) => void | Promise<void>) => void };
-    _pendingPermissions: Map<string, unknown>;
-    _pendingAsks: Map<string, unknown>;
-    _pendingPlans: Map<string, unknown>;
-  };
+describe("interaction hub abort awareness (P0-2)", () => {
+  const DECISION = { effect: "ask", reason: "test" } as const;
 
-  function makeApp() {
-    // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
-    const app = new CoreApp() as unknown as BrokerAccess;
+  function makeHub() {
     const events: Event[] = [];
-    app._bus.subscribe((e) => {
+    const hub = new InteractionHub((e) => {
       events.push(e);
     });
-    const fakeSession = { id: "sess-test", currentRunId: "run-test" } as unknown as AgentSession;
-    return { app, events, fakeSession };
+    const sessionRef = { id: "sess-test", currentRunId: "run-test" };
+    return { hub, events, sessionRef };
+  }
+
+  function findRequestedId(events: Event[]): string {
+    for (const e of events) {
+      if (e.type === "permission.requested") {
+        return e.id;
+      }
+    }
+    throw new Error("no permission.requested event");
   }
 
   it("aborting a pending permission resolves deny and clears the map", async () => {
-    const { app, events, fakeSession } = makeApp();
+    const { hub, events, sessionRef } = makeHub();
     const ac = new AbortController();
-    const promise = app._broker.requestPermission(
-      fakeSession,
-      "Bash",
-      {},
-      { effect: "ask", reason: "test" },
-      ac.signal,
-    );
-    await waitFor(() => app._pendingPermissions.size === 1);
+    const promise = hub.requestPermission(sessionRef, "Bash", {}, DECISION, ac.signal);
+    await waitFor(() => hub.pendingCounts.permissions === 1);
 
     ac.abort();
     await expect(promise).resolves.toBe("deny");
-    expect(app._pendingPermissions.size).toBe(0);
+    expect(hub.pendingCounts.permissions).toBe(0);
     await waitFor(() =>
       events.some((e) => e.type === "permission.resolved" && e.source === "abort"),
     );
@@ -327,44 +401,36 @@ describe("interaction broker abort awareness (P0-2)", () => {
   });
 
   it("aborting a pending ask rejects (isError tool_result pairing)", async () => {
-    const { app, events, fakeSession } = makeApp();
+    const { hub, events, sessionRef } = makeHub();
     const ac = new AbortController();
-    const promise = app._broker.askUser(fakeSession, [], ac.signal);
-    await waitFor(() => app._pendingAsks.size === 1);
+    const promise = hub.askUser(sessionRef, [], ac.signal);
+    await waitFor(() => hub.pendingCounts.asks === 1);
 
     ac.abort();
     await expect(promise).rejects.toThrow("interrupted");
-    expect(app._pendingAsks.size).toBe(0);
+    expect(hub.pendingCounts.asks).toBe(0);
     await waitFor(() => events.some((e) => e.type === "ask_user.resolved"));
   });
 
   it("aborting a pending plan approval rejects and broadcasts cancelled", async () => {
-    const { app, events, fakeSession } = makeApp();
+    const { hub, events, sessionRef } = makeHub();
     const ac = new AbortController();
-    const promise = app._broker.requestPlanApproval(fakeSession, "plan text", ac.signal);
-    await waitFor(() => app._pendingPlans.size === 1);
+    const promise = hub.requestPlanApproval(sessionRef, "plan text", ac.signal);
+    await waitFor(() => hub.pendingCounts.plans === 1);
 
     ac.abort();
     await expect(promise).rejects.toThrow("interrupted");
-    expect(app._pendingPlans.size).toBe(0);
+    expect(hub.pendingCounts.plans).toBe(0);
     await waitFor(() => events.some((e) => e.type === "plan.resolved" && e.choice === "cancelled"));
   });
 
   it("first settle wins: respond then abort settles exactly once", async () => {
-    const { app, events, fakeSession } = makeApp();
+    const { hub, events, sessionRef } = makeHub();
     const ac = new AbortController();
-    const promise = app._broker.requestPermission(
-      fakeSession,
-      "Bash",
-      {},
-      { effect: "ask", reason: "test" },
-      ac.signal,
-    );
-    await waitFor(() => app._pendingPermissions.size === 1);
-    const id = [...app._pendingPermissions.keys()][0];
+    const promise = hub.requestPermission(sessionRef, "Bash", {}, DECISION, ac.signal);
+    await waitFor(() => hub.pendingCounts.permissions === 1);
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (app as any)._permissionRespondHandler({ id, response: "allow" });
+    hub.respondPermission(findRequestedId(events), "allow");
     ac.abort(); // late abort must be a no-op
 
     await expect(promise).resolves.toBe("allow");
@@ -373,22 +439,17 @@ describe("interaction broker abort awareness (P0-2)", () => {
     expect(resolved[0]).toMatchObject({ response: "allow", source: "client" });
   });
 
-  it("session close settles only that session's pendings (P1-8b)", async () => {
-    const { app, events, fakeSession } = makeApp();
-    const other = { id: "sess-other", currentRunId: "run-o" } as unknown as AgentSession;
-    const p1 = app._broker.requestPermission(
-      fakeSession,
-      "Bash",
-      {},
-      { effect: "ask", reason: "t" },
-    );
-    const p2 = app._broker.requestPermission(other, "Bash", {}, { effect: "ask", reason: "t" });
-    await waitFor(() => app._pendingPermissions.size === 2);
+  it("session close settles only that session's pending (P1-8b)", async () => {
+    const { hub, events, sessionRef } = makeHub();
+    const other = { id: "sess-other", currentRunId: "run-o" };
+    const p1 = hub.requestPermission(sessionRef, "Bash", {}, DECISION);
+    const p2 = hub.requestPermission(other, "Bash", {}, DECISION);
+    await waitFor(() => hub.pendingCounts.permissions === 2);
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (app as any)._cancelPendingForSession("sess-test");
+    hub.cancelForSession("sess-test");
     await expect(p1).resolves.toBe("deny");
-    expect(app._pendingPermissions.size).toBe(1);
+    expect(hub.pendingCounts.permissions).toBe(1);
+    expect(hub.hasPendingFor("sess-other")).toBe(true);
     const resolved = events.filter((e) => e.type === "permission.resolved");
     expect(resolved).toHaveLength(1);
     expect(resolved[0]).toMatchObject({
@@ -397,25 +458,18 @@ describe("interaction broker abort awareness (P0-2)", () => {
       source: "session_closed",
     });
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (app as any)._cancelPendingForSession("sess-other");
+    hub.cancelForSession("sess-other");
     await expect(p2).resolves.toBe("deny");
-    expect(app._pendingPermissions.size).toBe(0);
+    expect(hub.pendingCounts.permissions).toBe(0);
   });
 
   it("pre-aborted signal short-circuits without creating a pending entry", async () => {
-    const { app, fakeSession } = makeApp();
+    const { hub, sessionRef } = makeHub();
     const ac = new AbortController();
     ac.abort();
-    await expect(
-      app._broker.requestPermission(
-        fakeSession,
-        "Bash",
-        {},
-        { effect: "ask", reason: "t" },
-        ac.signal,
-      ),
-    ).resolves.toBe("deny");
-    expect(app._pendingPermissions.size).toBe(0);
+    await expect(hub.requestPermission(sessionRef, "Bash", {}, DECISION, ac.signal)).resolves.toBe(
+      "deny",
+    );
+    expect(hub.pendingCounts.permissions).toBe(0);
   });
 });

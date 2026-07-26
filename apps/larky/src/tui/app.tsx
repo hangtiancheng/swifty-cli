@@ -133,13 +133,14 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// Mirrors core/app.ts SESSION_NOT_FOUND: daemon restarted / session evicted.
+const SESSION_NOT_FOUND = -32010;
+
 export function App({ client, provider, permissionMode, onSessionChange }: Props) {
   const { exit } = useApp();
   const { stdout } = useStdout();
 
   const workDir = process.cwd();
-  const SESSION_NOT_FOUND = -32010;
-
   const historyDir = `${workDir}/.larky`;
 
   // -- Rendering state ------------------------------------------------------
@@ -179,10 +180,7 @@ export function App({ client, provider, permissionMode, onSessionChange }: Props
   // -- Refs -------------------------------------------------------------------
   const sessionIdRef = useRef<string>("");
   const lastRunIdRef = useRef<string | null>(null);
-  // Text the user just submitted locally (already echoed); prevents double
-  // echo when its run.started arrives, while daemon-initiated runs (plan
-  // execution, feedback) do get their trigger text echoed.
-  const lastSubmittedTextRef = useRef<string | null>(null);
+
   // Replay cursor: persisted (run-scoped) events already applied for the
   // current run; sent as replay_offset on resubscribe to avoid re-rendering.
   const replayedCountRef = useRef(0);
@@ -280,15 +278,33 @@ export function App({ client, provider, permissionMode, onSessionChange }: Props
 
   const handleEvent = useCallback(
     (raw: Record<string, unknown>) => {
+      // Advance the replay cursor on RAW fields, before schema parsing: the
+      // daemon persists every non-empty-run_id line schema-agnostically, so
+      // unknown (future) event types must still advance the cursor or a
+      // reconnect would replay already-applied events.
+      const rawRunId = typeof raw.run_id === "string" ? raw.run_id : "";
+      const rawSession = typeof raw.session_id === "string" ? raw.session_id : "";
+      if (rawRunId) {
+        if (raw.type === "run.started") {
+          if (sessionIdRef.current && rawSession === sessionIdRef.current) {
+            replayedCountRef.current = 1; // run.started is the run's first line
+          }
+        } else if (rawRunId === lastRunIdRef.current) {
+          replayedCountRef.current += 1;
+        }
+      }
+
       const parsed = EventSchema.safeParse(raw);
       if (!parsed.success) {
         return;
       } // unknown event types are forward-compatible noise
       const event: Event = parsed.data;
 
-      // Session filtering: ignore events for other sessions.
-      if ("session_id" in event && event.session_id && sessionIdRef.current) {
-        if (event.session_id !== sessionIdRef.current) {
+      // Session filtering: ignore events for other sessions. While our own
+      // session id is unknown (startup / just reset), any session-scoped
+      // event necessarily belongs to someone else — drop it too.
+      if ("session_id" in event && event.session_id) {
+        if (!sessionIdRef.current || event.session_id !== sessionIdRef.current) {
           return;
         }
       }
@@ -299,23 +315,29 @@ export function App({ client, provider, permissionMode, onSessionChange }: Props
         return;
       }
 
-      // Advance the replay cursor for run-scoped (persisted) events. The
-      // count matches the daemon's events.jsonl line order for this run.
-      if ("run_id" in event && event.run_id) {
-        if (event.type === "run.started") {
-          replayedCountRef.current = 1; // run.started is the run's first line
-        } else if (event.run_id === lastRunIdRef.current) {
-          replayedCountRef.current += 1;
-        }
+      // Reconnect mid-run: disconnect cleared isStreaming and the replay
+      // offset skips run.started — live events of the current run restore
+      // the streaming state (Esc / Ctrl+C cancel depend on it).
+      if (
+        !isStreamingRef.current &&
+        lastRunIdRef.current !== null &&
+        event.type.startsWith("agent.") &&
+        event.type !== "agent.loop_complete" &&
+        "run_id" in event &&
+        event.run_id === lastRunIdRef.current
+      ) {
+        setIsStreaming(true);
       }
 
       switch (event.type) {
         case "run.started":
           lastRunIdRef.current = event.run_id;
-          if (event.content && event.content !== lastSubmittedTextRef.current) {
+          // Daemon-initiated runs (plan execution, feedback) carry trigger
+          // text the user never typed; client-origin runs were already
+          // echoed locally by handleSubmit.
+          if (event.origin === "daemon" && event.content) {
             setMessages((prev) => [...prev, { role: "user", content: event.content }]);
           }
-          lastSubmittedTextRef.current = null;
           streamStartRef.current = Date.now();
           setCompletionMark(null);
           setError(null);
@@ -650,8 +672,9 @@ export function App({ client, provider, permissionMode, onSessionChange }: Props
     setPromptHistory(historyMod.load(historyDir));
 
     return () => {
+      // Socket lifecycle belongs to the launcher (tui/index.tsx), which must
+      // still send session.close AFTER unmount — closing here would race it.
       cancelled = true;
-      client.close();
     };
   }, []);
 
@@ -734,14 +757,31 @@ export function App({ client, provider, permissionMode, onSessionChange }: Props
           await openRewindDialog();
           return;
         }
-        // Everything else runs daemon-side.
-        lastSubmittedTextRef.current = text;
+        // Everything else runs daemon-side (one-shot -32010 recovery).
         setMessages((prev) => [...prev, { role: "user", content: text }]);
-        rpc("command.run", { session_id: sessionIdRef.current, input: text });
+        try {
+          await sendCommand("command.run", { session_id: sessionIdRef.current, input: text });
+        } catch (err) {
+          if (err instanceof IpcError && err.code === SESSION_NOT_FOUND) {
+            try {
+              sessionIdRef.current = "";
+              lastRunIdRef.current = null;
+              replayedCountRef.current = 0;
+              await createSession();
+              await sendCommand("command.run", { session_id: sessionIdRef.current, input: text });
+              return;
+            } catch (retryErr) {
+              pushSystem(
+                `RPC command.run failed: ${retryErr instanceof Error ? retryErr.message : String(retryErr)}`,
+              );
+              return;
+            }
+          }
+          pushSystem(`RPC command.run failed: ${err instanceof Error ? err.message : String(err)}`);
+        }
         return;
       }
 
-      lastSubmittedTextRef.current = text;
       setMessages((prev) => [...prev, { role: "user", content: text }]);
       setError(null);
       // Immediate optimistic streaming state; run.started confirms.

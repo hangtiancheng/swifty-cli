@@ -45,6 +45,7 @@ describe("EventWriter", () => {
       run_id: "r1",
       session_id: "s1",
       content: "test goal",
+      origin: "client",
       timestamp: new Date().toISOString(),
     });
 
@@ -86,6 +87,7 @@ describe("EventWriter", () => {
       run_id: "r1",
       session_id: "s1",
       content: "goal 1",
+      origin: "client",
       timestamp: new Date().toISOString(),
     });
     await bus.publish({
@@ -93,6 +95,7 @@ describe("EventWriter", () => {
       run_id: "r2",
       session_id: "s1",
       content: "goal 2",
+      origin: "client",
       timestamp: new Date().toISOString(),
     });
 

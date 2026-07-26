@@ -1282,6 +1282,7 @@ Events are written to the run's `events.jsonl` and forwarded over IPC to matchin
 | `session_id` | `string` | yes      |
 | `run_id`     | `string` | yes      |
 | `content`    | `string` | yes      |
+| `origin`     | `string` | yes      |
 | `timestamp`  | `string` | yes      |
 
 ```json
@@ -1303,11 +1304,16 @@ Events are written to the run's `events.jsonl` and forwarded over IPC to matchin
     "content": {
       "type": "string"
     },
+    "origin": {
+      "default": "client",
+      "type": "string",
+      "enum": ["client", "daemon"]
+    },
     "timestamp": {
       "type": "string"
     }
   },
-  "required": ["type", "session_id", "run_id", "content", "timestamp"],
+  "required": ["type", "session_id", "run_id", "content", "origin", "timestamp"],
   "additionalProperties": false
 }
 ```

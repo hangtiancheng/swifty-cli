@@ -27,7 +27,6 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { readdir, rm, stat } from "node:fs/promises";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
-import { randomUUID } from "node:crypto";
 import type net from "node:net";
 
 import picomatch from "picomatch";
@@ -60,15 +59,14 @@ import {
   CommandListCommandSchema,
   RewindListCommandSchema,
   RewindApplyCommandSchema,
-  type WirePlanChoice,
 } from "./bus/commands.js";
 import type { Event } from "./bus/events.js";
 
-import { AgentSession, type InteractionBroker } from "./agent-session.js";
+import { AgentSession } from "./agent-session.js";
+import { InteractionHub } from "./interaction-hub.js";
 import { loadConfig as loadLarkyConfig, forkEnabled } from "../config/config.js";
 import type { AppConfig } from "../config/config.js";
-import type { Decision, PermissionMode } from "../permissions/checker.js";
-import type { Question } from "../tools/ask-user.js";
+import type { PermissionMode } from "../permissions/checker.js";
 import * as sessionMod from "../session/session.js";
 import { initLogger } from "../logger/index.js";
 
@@ -84,29 +82,6 @@ function runEventsPath(workDir: string, runId: string): string {
   return path.join(workDir, ".larky", "daemon", "runs", runId, "events.jsonl");
 }
 
-interface PendingPermission {
-  sessionId: string;
-  runId: string;
-  resolve: (r: "allow" | "deny" | "allowAlways") => void;
-  cleanup?: () => void;
-}
-
-interface PendingAsk {
-  sessionId: string;
-  runId: string;
-  resolve: (answers: Record<string, string>) => void;
-  reject: (e: Error) => void;
-  cleanup?: () => void;
-}
-
-interface PendingPlan {
-  sessionId: string;
-  runId: string;
-  resolve: (r: { choice: WirePlanChoice; feedback: string }) => void;
-  reject: (e: Error) => void;
-  cleanup?: () => void;
-}
-
 export class CoreApp {
   private _bus = new EventBus();
   private _broadcaster: IpcEventBroadcaster | null = null;
@@ -116,9 +91,9 @@ export class CoreApp {
   private _larkyConfig: AppConfig | null = null;
   private _sessions = new Map<string, AgentSession>();
 
-  private _pendingPermissions = new Map<string, PendingPermission>();
-  private _pendingAsks = new Map<string, PendingAsk>();
-  private _pendingPlans = new Map<string, PendingPlan>();
+  private _hub = new InteractionHub((e) => {
+    this.emit(e);
+  });
 
   private _teammatePollTimer: ReturnType<typeof setInterval> | null = null;
   // Per-session cache: a single shared string would make two sessions with
@@ -148,216 +123,8 @@ export class CoreApp {
   }
 
   // -- Interaction broker -----------------------------------------------------
-
-  // Each pending interaction settles exactly once (first of: client respond,
-  // run abort, disconnect). Settlement is funneled through the _settle*
-  // methods, which use Map.delete() as the mutual-exclusion point.
-
-  private _settlePermission(
-    id: string,
-    response: "allow" | "deny" | "allowAlways",
-    source: "client" | "timeout" | "disconnect" | "abort" | "session_closed",
-  ): void {
-    const pending = this._pendingPermissions.get(id);
-    if (!pending || !this._pendingPermissions.delete(id)) {
-      return;
-    }
-    pending.cleanup?.();
-    pending.resolve(response);
-    this.emit({
-      type: "permission.resolved",
-      id,
-      session_id: pending.sessionId,
-      run_id: pending.runId,
-      response,
-      source,
-      timestamp: nowIso(),
-    });
-  }
-
-  private _settleAsk(
-    id: string,
-    outcome: { answers: Record<string, string> } | { error: Error },
-  ): void {
-    const pending = this._pendingAsks.get(id);
-    if (!pending || !this._pendingAsks.delete(id)) {
-      return;
-    }
-    pending.cleanup?.();
-    if ("answers" in outcome) {
-      pending.resolve(outcome.answers);
-    } else {
-      pending.reject(outcome.error);
-    }
-    this.emit({
-      type: "ask_user.resolved",
-      id,
-      session_id: pending.sessionId,
-      run_id: pending.runId,
-      timestamp: nowIso(),
-    });
-  }
-
-  private _settlePlan(
-    id: string,
-    outcome: { choice: WirePlanChoice; feedback: string } | { error: Error },
-  ): void {
-    const pending = this._pendingPlans.get(id);
-    if (!pending || !this._pendingPlans.delete(id)) {
-      return;
-    }
-    pending.cleanup?.();
-    if ("error" in outcome) {
-      pending.reject(outcome.error);
-    } else {
-      pending.resolve(outcome);
-    }
-    this.emit({
-      type: "plan.resolved",
-      id,
-      session_id: pending.sessionId,
-      run_id: pending.runId,
-      choice: "error" in outcome ? "cancelled" : outcome.choice,
-      timestamp: nowIso(),
-    });
-  }
-
-  private _broker: InteractionBroker = {
-    requestPermission: (session, toolName, args, decision: Decision, signal?: AbortSignal) => {
-      const id = `perm-${randomUUID().slice(0, 8)}`;
-      return new Promise<"allow" | "deny" | "allowAlways">((resolve) => {
-        if (signal?.aborted) {
-          resolve("deny");
-          return;
-        }
-        const onAbort = () => {
-          this._settlePermission(id, "deny", "abort");
-        };
-        this._pendingPermissions.set(id, {
-          sessionId: session.id,
-          runId: session.currentRunId ?? "",
-          resolve,
-          cleanup: () => {
-            signal?.removeEventListener("abort", onAbort);
-          },
-        });
-        signal?.addEventListener("abort", onAbort, { once: true });
-        this.emit({
-          type: "permission.requested",
-          id,
-          session_id: session.id,
-          run_id: session.currentRunId ?? "",
-          tool_name: toolName,
-          args,
-          reason: decision.reason,
-          timestamp: nowIso(),
-        });
-      });
-    },
-    askUser: (session, questions: Question[], signal?: AbortSignal) => {
-      const id = `ask-${randomUUID().slice(0, 8)}`;
-      return new Promise<Record<string, string>>((resolve, reject) => {
-        if (signal?.aborted) {
-          reject(new Error("interrupted"));
-          return;
-        }
-        const onAbort = () => {
-          // Reject so the executor records an isError tool_result, keeping
-          // the tool_use/tool_result pairing intact.
-          this._settleAsk(id, { error: new Error("interrupted") });
-        };
-        this._pendingAsks.set(id, {
-          sessionId: session.id,
-          runId: session.currentRunId ?? "",
-          resolve,
-          reject,
-          cleanup: () => {
-            signal?.removeEventListener("abort", onAbort);
-          },
-        });
-        signal?.addEventListener("abort", onAbort, { once: true });
-        this.emit({
-          type: "ask_user.requested",
-          id,
-          session_id: session.id,
-          run_id: session.currentRunId ?? "",
-          questions: questions.map((q) => ({
-            question: q.question,
-            header: q.header,
-            options: q.options.map((o) => ({
-              label: o.label,
-              ...(o.description !== undefined ? { description: o.description } : {}),
-            })),
-            multiSelect: q.multiSelect,
-          })),
-          timestamp: nowIso(),
-        });
-      });
-    },
-    requestPlanApproval: (session, planText: string, signal?: AbortSignal) => {
-      const id = `plan-${randomUUID().slice(0, 8)}`;
-      return new Promise<{ choice: WirePlanChoice; feedback: string }>((resolve, reject) => {
-        if (signal?.aborted) {
-          reject(new Error("interrupted"));
-          return;
-        }
-        const onAbort = () => {
-          this._settlePlan(id, { error: new Error("interrupted") });
-        };
-        this._pendingPlans.set(id, {
-          sessionId: session.id,
-          runId: session.currentRunId ?? "",
-          resolve,
-          reject,
-          cleanup: () => {
-            signal?.removeEventListener("abort", onAbort);
-          },
-        });
-        signal?.addEventListener("abort", onAbort, { once: true });
-        this.emit({
-          type: "plan.requested",
-          id,
-          session_id: session.id,
-          run_id: session.currentRunId ?? "",
-          plan_text: planText,
-          timestamp: nowIso(),
-        });
-      });
-    },
-  };
-
-  // Cancel all pending interactions (e.g. last client disconnected).
-  private _cancelAllInteractions(): void {
-    for (const id of [...this._pendingPermissions.keys()]) {
-      this._settlePermission(id, "deny", "disconnect");
-    }
-    for (const id of [...this._pendingAsks.keys()]) {
-      this._settleAsk(id, { answers: {} });
-    }
-    for (const id of [...this._pendingPlans.keys()]) {
-      this._settlePlan(id, { error: new Error("client disconnected") });
-    }
-  }
-
-  // Settle every pending interaction owned by a closing session so its
-  // resolvers never leak and clients drop the stranded dialogs.
-  private _cancelPendingForSession(sessionId: string): void {
-    for (const [id, p] of [...this._pendingPermissions]) {
-      if (p.sessionId === sessionId) {
-        this._settlePermission(id, "deny", "session_closed");
-      }
-    }
-    for (const [id, p] of [...this._pendingAsks]) {
-      if (p.sessionId === sessionId) {
-        this._settleAsk(id, { error: new Error("session closed") });
-      }
-    }
-    for (const [id, p] of [...this._pendingPlans]) {
-      if (p.sessionId === sessionId) {
-        this._settlePlan(id, { error: new Error("session closed") });
-      }
-    }
-  }
+  // Delegated to InteractionHub (core/interaction-hub.ts): pending maps,
+  // exactly-once settlement, abort/disconnect/session-close cancellation.
 
   // -- Session helpers ----------------------------------------------------------
 
@@ -422,7 +189,7 @@ export class CoreApp {
       emit: (e) => {
         this.emit(e);
       },
-      broker: this._broker,
+      broker: this._hub,
     });
     this._sessions.set(session.id, session);
     this.emit({
@@ -485,7 +252,7 @@ export class CoreApp {
     const session = this._getSession(cmd.session_id);
     this._sessions.delete(cmd.session_id);
     this._lastTeammateStates.delete(cmd.session_id);
-    this._cancelPendingForSession(cmd.session_id);
+    this._hub.cancelForSession(cmd.session_id);
     await session.close();
     return { ok: true };
   }
@@ -503,7 +270,7 @@ export class CoreApp {
       type: "permission.respond",
     });
     // Unknown/duplicate ids are idempotently ignored (first response wins).
-    this._settlePermission(cmd.id, cmd.response, "client");
+    this._hub.respondPermission(cmd.id, cmd.response);
     return Promise.resolve({ ok: true });
   }
 
@@ -512,7 +279,7 @@ export class CoreApp {
       ...params,
       type: "ask_user.respond",
     });
-    this._settleAsk(cmd.id, { answers: cmd.answers });
+    this._hub.respondAsk(cmd.id, cmd.answers);
     return Promise.resolve({ ok: true });
   }
 
@@ -521,7 +288,7 @@ export class CoreApp {
       ...params,
       type: "plan.respond",
     });
-    this._settlePlan(cmd.id, { choice: cmd.choice, feedback: cmd.feedback });
+    this._hub.respondPlan(cmd.id, cmd.choice, cmd.feedback);
     return Promise.resolve({ ok: true });
   }
 
@@ -621,28 +388,20 @@ export class CoreApp {
         return;
       }
       for (const [id, session] of [...this._sessions]) {
-        if (session.isRunning || this._hasPendingFor(id)) {
+        if (session.isRunning || this._hub.hasPendingFor(id)) {
           continue;
         }
         this._sessions.delete(id);
         this._lastTeammateStates.delete(id);
         void session.close().catch(() => undefined);
       }
+      // Busy sessions were skipped: re-arm so they are eventually reclaimed
+      // (no further disconnect event will ever arrive to re-arm us).
+      if (this._sessions.size > 0 && this._broadcaster.subscriptionCount() === 0) {
+        this._armIdleRecycle();
+      }
     }, CoreApp.IDLE_RECYCLE_MS);
     this._idleTimer.unref?.();
-  }
-
-  private _hasPendingFor(sessionId: string): boolean {
-    for (const p of this._pendingPermissions.values()) {
-      if (p.sessionId === sessionId) return true;
-    }
-    for (const p of this._pendingAsks.values()) {
-      if (p.sessionId === sessionId) return true;
-    }
-    for (const p of this._pendingPlans.values()) {
-      if (p.sessionId === sessionId) return true;
-    }
-    return false;
   }
 
   // -- Teammate state polling ------------------------------------------------
@@ -712,7 +471,7 @@ export class CoreApp {
         // B-3: nobody left to answer pending interactions → cancel them all
         // instead of letting agents freeze forever.
         if (this._broadcaster?.subscriptionCount() === 0) {
-          this._cancelAllInteractions();
+          this._hub.cancelAll();
           this._armIdleRecycle();
         }
       },
@@ -780,7 +539,11 @@ export class CoreApp {
     if (this._teammatePollTimer) {
       clearInterval(this._teammatePollTimer);
     }
-    this._cancelAllInteractions();
+    if (this._idleTimer) {
+      clearTimeout(this._idleTimer);
+      this._idleTimer = null;
+    }
+    this._hub.cancelAll();
     for (const session of this._sessions.values()) {
       await session.close().catch(() => undefined);
     }

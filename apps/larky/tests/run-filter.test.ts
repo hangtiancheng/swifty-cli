@@ -49,6 +49,7 @@ describe("isStaleRunEvent", () => {
       session_id: "sess-1",
       run_id: "run-old",
       content: "hello",
+      origin: "client",
       timestamp: TS,
     };
     expect(isStaleRunEvent(runStarted, "run-new")).toBe(false);

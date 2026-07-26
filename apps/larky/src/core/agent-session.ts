@@ -207,6 +207,8 @@ export class AgentSession {
   // Serializes agent loops: a steered run waits here until the previous
   // loop has fully unwound, keeping tool_use/tool_result pairing intact.
   private loopDone: Promise<void> = Promise.resolve();
+  // Set by close(): queued (steered) runs must never start afterwards.
+  private closed = false;
   private hasExitedPlanMode = false;
   private memCursor = 0;
   private memExtracting = false;
@@ -532,7 +534,11 @@ export class AgentSession {
   }
 
   async close(): Promise<void> {
+    this.closed = true;
     this.cancel();
+    // A queued (steered) run must not start after close; its chain guard
+    // checks `closed`. currentRunId is cleared so isRunning turns false.
+    this.currentRunId = null;
     try {
       await this.mcpManager?.disconnectAll();
     } catch {
@@ -564,6 +570,9 @@ export class AgentSession {
       // Persist this instead of displayText (prompt commands persist the
       // rendered prompt so /resume rebuilds the real instruction).
       persistText?: string;
+      // "daemon" marks runs the user did not type (plan execution, feedback);
+      // clients echo their trigger text. Default "client": already echoed.
+      origin?: "client" | "daemon";
     },
   ): string {
     if (this.isRunning) {
@@ -572,6 +581,10 @@ export class AgentSession {
     }
     const runId = `run-${randomUUID().slice(0, 12)}`;
     this.currentRunId = runId;
+    // Created here (not in _runLoop) so Esc can cancel a run that is still
+    // queued behind a draining predecessor.
+    const controller = new AbortController();
+    this.abortController = controller;
 
     const display = opts?.displayText ?? text;
     this.emit({
@@ -579,14 +592,18 @@ export class AgentSession {
       session_id: this.id,
       run_id: runId,
       content: display,
+      origin: opts?.origin ?? "client",
       timestamp: nowIso(),
     });
 
     const prev = this.loopDone;
-    this.loopDone = (async () => {
+    const chain = (async () => {
       // Wait for the previous loop to fully unwind so its tool results are
       // already in the conversation before the new user message lands.
       await prev.catch(() => undefined);
+      if (this.closed) {
+        return; // session closed while queued — never start
+      }
       if (!opts?.skipUserMessage) {
         // Inline @file references for the model; persist the original text.
         this.conv.addUserMessage(opts?.skipExpand ? text : expandAtRefs(text, this.workDir));
@@ -598,25 +615,43 @@ export class AgentSession {
           });
         }
       }
-      if (this.currentRunId !== runId) {
-        return; // superseded by a newer steering while queued
+      if (this.currentRunId !== runId || controller.signal.aborted) {
+        // Superseded by newer steering, or cancelled while queued. Close the
+        // run's event log with a terminal event (clients of the current run
+        // drop it as stale; it matters for replay/trace completeness).
+        this.emit({
+          type: "agent.loop_complete",
+          session_id: this.id,
+          run_id: runId,
+          stop_reason: "interrupted",
+          total_turns: 0,
+          elapsed_ms: 0,
+          timestamp: nowIso(),
+        });
+        return;
       }
-      await this._runLoop(runId);
+      await this._runLoop(runId, controller);
     })().finally(() => {
       if (this.currentRunId === runId) {
         this.currentRunId = null;
       }
+      if (this.abortController === controller) {
+        this.abortController = null;
+      }
     });
+    // Handled reference: a chain failure (e.g. saveMessage ENOSPC) must not
+    // become an unhandledRejection when no further run ever queues behind it.
+    chain.catch((err: unknown) => {
+      log.error({ err }, "run chain failed");
+    });
+    this.loopDone = chain;
     return runId;
   }
 
-  private async _runLoop(runId: string): Promise<void> {
+  private async _runLoop(runId: string, controller: AbortController): Promise<void> {
     const startTime = Date.now();
     let stopReason = "end_turn";
     let turnCount = 0;
-
-    const controller = new AbortController();
-    this.abortController = controller;
 
     try {
       this.refreshSkillsIfNeeded();
@@ -912,10 +947,10 @@ export class AgentSession {
           : "Plan approved. Each edit requires confirmation.",
       );
       if (planContent) {
-        this.startRun(`Execute this plan:\n\n${planContent}`);
+        this.startRun(`Execute this plan:\n\n${planContent}`, { origin: "daemon" });
       }
     } else if (choice === "feedback" && feedback) {
-      this.startRun(feedback);
+      this.startRun(feedback, { origin: "daemon" });
     }
   }
 
@@ -1477,11 +1512,14 @@ export class AgentSession {
     // the events get persisted for replay (non-empty run_id).
     const runId = `run-${randomUUID().slice(0, 12)}`;
     this.currentRunId = runId;
+    const controller = new AbortController();
+    this.abortController = controller;
     this.emit({
       type: "run.started",
       session_id: this.id,
       run_id: runId,
       content: args ? `/${name} ${args}` : `/${name}`,
+      origin: "client",
       timestamp: nowIso(),
     });
     const startTime = Date.now();
@@ -1509,34 +1547,61 @@ export class AgentSession {
           .join("\n");
       },
     };
-    try {
-      const result = await runSkillFork(skill, args, forkHost);
-      // Surface the fork result as a normal stream so clients render it as assistant output.
-      this.emit({
-        type: "agent.stream_text",
-        session_id: this.id,
-        run_id: runId,
-        text: result,
-        timestamp: nowIso(),
-      });
-    } catch (err) {
-      stopReason = "error";
-      this.systemMessage(`Skill fork error: ${asErrorString(err)}`);
-    } finally {
+    const prev = this.loopDone;
+    const chain = (async () => {
+      await prev.catch(() => undefined);
+      if (this.closed) {
+        return;
+      }
+      try {
+        if (controller.signal.aborted || this.currentRunId !== runId) {
+          // Cancelled/superseded while queued: emit only the terminal event.
+          stopReason = "interrupted";
+          return;
+        }
+        const result = await runSkillFork(skill, args, forkHost);
+        if (controller.signal.aborted || this.currentRunId !== runId) {
+          // The user steered away mid-fork; its late output would only be
+          // dropped as stale by clients — suppress it deterministically.
+          stopReason = "interrupted";
+          return;
+        }
+        // Surface the fork result as a normal stream so clients render it as assistant output.
+        this.emit({
+          type: "agent.stream_text",
+          session_id: this.id,
+          run_id: runId,
+          text: result,
+          timestamp: nowIso(),
+        });
+      } catch (err) {
+        stopReason = "error";
+        this.systemMessage(`Skill fork error: ${asErrorString(err)}`);
+      } finally {
+        this.emit({
+          type: "agent.loop_complete",
+          session_id: this.id,
+          run_id: runId,
+          stop_reason: stopReason,
+          total_turns: 1,
+          elapsed_ms: Date.now() - startTime,
+          timestamp: nowIso(),
+        });
+        this.commandDone();
+      }
+    })().finally(() => {
       if (this.currentRunId === runId) {
         this.currentRunId = null;
       }
-      this.emit({
-        type: "agent.loop_complete",
-        session_id: this.id,
-        run_id: runId,
-        stop_reason: stopReason,
-        total_turns: 1,
-        elapsed_ms: Date.now() - startTime,
-        timestamp: nowIso(),
-      });
-      this.commandDone();
-    }
+      if (this.abortController === controller) {
+        this.abortController = null;
+      }
+    });
+    chain.catch((err: unknown) => {
+      log.error({ err }, "fork chain failed");
+    });
+    this.loopDone = chain;
+    await chain;
   }
 }
 

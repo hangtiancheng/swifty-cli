@@ -23,10 +23,10 @@ Personalized mastery tutor. Diagnose, question, advance on understanding.
 
 ## Arguments
 
-| Argument          | Description                                                                  |
-| ----------------- | ---------------------------------------------------------------------------- |
-| `<topic>`         | Subject to learn (required, or prompted)                                     |
-| `--level <level>` | Starting level: beginner, intermediate, advanced (default: diagnose)         |
+| Argument          | Description                                                                 |
+| ----------------- | --------------------------------------------------------------------------- |
+| `<topic>`         | Subject to learn (required, or prompted)                                    |
+| `--level <level>` | Starting level: beginner, intermediate, advanced (default: diagnose)        |
 | `--resume`        | Resume previous session from `.larky/skills/teach-me/records/{topic-slug}/` |
 
 ## Core Rules

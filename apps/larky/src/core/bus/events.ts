@@ -87,6 +87,9 @@ export const RunStartedEventSchema = z.object({
   session_id: z.string(),
   run_id: z.string(),
   content: z.string(),
+  // "daemon": the user never typed this text (plan execution, feedback) —
+  // clients should echo `content`. "client": already echoed locally.
+  origin: z.enum(["client", "daemon"]).catch("client"),
   timestamp: z.string(),
 });
 export type RunStartedEvent = z.infer<typeof RunStartedEventSchema>;

@@ -330,6 +330,7 @@ describe("SocketServer", () => {
       run_id: "r1",
       session_id: "s1",
       content: "test",
+      origin: "client",
       timestamp: "2026-01-01T00:00:00Z",
     });
     expect(writes.length).toBe(0);

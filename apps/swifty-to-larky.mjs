@@ -22,6 +22,9 @@
  *     "update", and files whose transformed content already matches "same".
  *   - node_modules/dist/.DS_Store are excluded during recursive copy
  *     (remote/fe/dist is a build artifact — users rebuild it via fe:build).
+ *   - A final report lists every file under apps/swifty that was NOT
+ *     migrated; a directory with no migrated file at all is collapsed to a
+ *     single "<dir>/*" line.
  */
 import {
   existsSync,
@@ -94,6 +97,9 @@ function brandTransform(content) {
 const stats = { new: 0, update: 0, same: 0 };
 const skippedProtected = [];
 const missingSources = [];
+// Every swifty-relative path that was migrated ("new"/"update"/"same" all
+// count); used at the end to compute the not-migrated report.
+const migrated = new Set();
 
 /** Reads a source file, applying brand renaming when applicable; returns a Buffer. */
 function transformedContent(src) {
@@ -109,6 +115,7 @@ function copyFile(src, dest) {
     skippedProtected.push(relDest);
     return;
   }
+  migrated.add(path.relative(SWIFTY, src));
   const content = transformedContent(src);
   const exists = existsSync(dest);
   if (exists) {
@@ -146,6 +153,59 @@ function copyDir(srcDir, destDir) {
       copyFile(src, dest);
     }
   }
+}
+
+// Directories that by definition never contain migrated files — collapsed to
+// "<dir>/*" without walking them (node_modules can hold tens of thousands of
+// entries).
+const ALWAYS_COLLAPSE = new Set(["node_modules", ".git"]);
+
+/**
+ * Walks the swifty tree and collects every file that was NOT migrated.
+ * A directory whose entire subtree contains no migrated file is collapsed to
+ * a single "<dir>/*" line instead of listing each file.
+ * Returns [subtreeHasMigratedFile, subtreeHasAnyFile].
+ */
+function collectUnmigrated(absDir, relDir, out) {
+  let hasMigrated = false;
+  let hasAnyFile = false;
+  const pending = [];
+  for (const entry of readdirSync(absDir)) {
+    const abs = path.join(absDir, entry);
+    const rel = relDir ? `${relDir}/${entry}` : entry;
+    let st;
+    try {
+      st = statSync(abs);
+    } catch {
+      continue; // broken symlink etc.
+    }
+    if (st.isDirectory()) {
+      if (ALWAYS_COLLAPSE.has(entry)) {
+        hasAnyFile = true;
+        pending.push(`${rel}/*`);
+        continue;
+      }
+      const sub = [];
+      const [subMigrated, subAnyFile] = collectUnmigrated(abs, rel, sub);
+      if (!subAnyFile) continue; // empty subtree: nothing to report
+      hasAnyFile = true;
+      if (subMigrated) {
+        hasMigrated = true;
+        pending.push(...sub); // partially migrated: list individual leftovers
+      } else {
+        pending.push(`${rel}/*`); // fully unmigrated: collapse
+      }
+    } else {
+      hasAnyFile = true;
+      if (migrated.has(rel)) {
+        hasMigrated = true;
+      } else {
+        pending.push(PROTECTED.has(rel) ? `${rel} (protected)` : rel);
+      }
+    }
+  }
+  out.push(...pending);
+  return [hasMigrated, hasAnyFile];
 }
 
 function main() {
@@ -205,6 +265,13 @@ function main() {
       "  outside this script's scope and must be renamed manually.",
     );
   }
+
+  // 5. not-migrated report: everything under apps/swifty that this run did
+  //    not copy. Fully unmigrated directories are collapsed to "<dir>/*".
+  const unmigrated = [];
+  collectUnmigrated(SWIFTY, "", unmigrated);
+  console.log(`\n== not migrated (relative to apps/swifty, ${String(unmigrated.length)} entries) ==`);
+  for (const f of unmigrated) console.log(`  ${f}`);
 }
 
 main();
