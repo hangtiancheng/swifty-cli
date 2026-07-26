@@ -1,26 +1,32 @@
 #!/usr/bin/env node
 /**
- * swifty-to-larky.mjs — 从 apps/swifty 拷贝业务代码到 apps/larky 的迁移同步脚本。
+ * swifty-to-larky.mjs — 从 apps/swifty 拷贝业务代码到 apps/larky 的迁移同步脚本，
+ * 拷贝时自动完成品牌替换。
  *
  * 用法（在仓库任意位置执行）：
  *   node apps/swifty-to-larky.mjs           # 默认 dry-run：只打印将要发生的操作
  *   node apps/swifty-to-larky.mjs --write   # 实际落盘拷贝
  *
- * ⚠️ larky 侧已做过品牌替换（.swifty→.larky、Swifty→Larky 等）；
- *    --write 覆盖会把这些改名回退为 swifty 命名，执行前请先看 dry-run 的 update 清单。
- *
  * 行为约定（见 apps/migrate.md）：
- *   - 拷贝范围：swifty/src 下 28 个业务模块目录 + print-mode.ts/teammate.ts/main.tsx，
+ *   - 拷贝范围：swifty/src 下 28 个业务模块目录 + print-mode.ts/teammate.ts，
  *     以及 swifty/tests 下的 *.test.ts + run-e2e.mjs + run-failing.mjs。
+ *     （main.tsx 不拷贝：已被 cli/main.ts + tui/index.tsx 完全替代）
+ *   - 品牌替换（仅文本文件）：swifty→larky、Swifty→Larky、SWIFTY→LARKY，
+ *     随后把误伤的包名 @larky.js 统一改回 @swifty.js（workspace 包名不变）。
  *   - larky 侧已被双进程改造的文件（PROTECTED 清单）**永不覆盖**，
  *     结尾会明确打印这些未拷贝的文件；不提供强制覆盖开关。
- *   - 其余文件一律覆盖（新文件标 new，覆盖标 update，内容相同标 same）。
- *   - 递归拷贝时排除 node_modules/.DS_Store。
- *
- * 注意：main.tsx 已被 larky 的 cli/main.ts 替代；拷入后会因新版 <App> props
- * 变化导致 typecheck 失败，脚本会对此打印警告。
+ *   - 其余文件一律覆盖（新文件标 new，覆盖标 update，转换后内容相同标 same）。
+ *   - 递归拷贝时排除 node_modules/dist/.DS_Store（remote/fe/dist 由用户自行 fe:build）。
  */
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, copyFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  statSync,
+  copyFileSync,
+  writeFileSync,
+} from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -28,7 +34,7 @@ const APPS_DIR = path.dirname(fileURLToPath(import.meta.url));
 const SWIFTY = path.join(APPS_DIR, "swifty");
 const LARKY = path.join(APPS_DIR, "larky");
 
-// 安全默认：不带 --write 一律 dry-run（防止覆盖回退 larky 侧的品牌替换）
+// 安全默认：不带 --write 一律 dry-run
 const DRY_RUN = !process.argv.includes("--write");
 
 // 28 个业务模块目录（与 migrate.md §2.3 一致）
@@ -40,8 +46,8 @@ const SRC_DIRS = [
   "utils", "tui", "remote",
 ];
 
-// 顶层单文件
-const SRC_FILES = ["print-mode.ts", "teammate.ts", "main.tsx"];
+// 顶层单文件（main.tsx 已被 cli/main.ts + tui/index.tsx 替代，不拷贝）
+const SRC_FILES = ["print-mode.ts", "teammate.ts"];
 
 // larky 侧已被双进程架构改造、永不覆盖的文件（相对 larky 根目录）
 const PROTECTED = new Set([
@@ -50,39 +56,70 @@ const PROTECTED = new Set([
   "src/teams/team.ts", // teammate 外部后端入口重定向到 cli/main
 ]);
 
-// 递归拷贝时忽略的目录/文件名
-const IGNORE = new Set(["node_modules", ".DS_Store"]);
+// 递归拷贝时忽略的目录/文件名（dist：remote/fe 构建产物由用户自行打包）
+const IGNORE = new Set(["node_modules", "dist", ".DS_Store"]);
+
+// 品牌替换只作用于文本文件；其余（wasm/图片等）按字节原样拷贝
+const TEXT_EXTS = new Set([
+  ".ts", ".tsx", ".js", ".mjs", ".cjs", ".jsx", ".json", ".md", ".yml",
+  ".yaml", ".html", ".css", ".txt", ".toml",
+]);
+
+/**
+ * 品牌替换：swifty→larky / Swifty→Larky / SWIFTY→LARKY，
+ * 再把 workspace 包作用域 @larky.js 改回 @swifty.js（包名保持真实存在的名字）。
+ * 覆盖场景示例：.swifty 目录→.larky、__SWIFTY_VERSION__→__LARKY_VERSION__、
+ * SWIFTY_BYPASS_PERMISSIONS→LARKY_BYPASS_PERMISSIONS、"You are Swifty"→"You are Larky"。
+ */
+function brandTransform(content) {
+  return content
+    .replaceAll("swifty", "larky")
+    .replaceAll("Swifty", "Larky")
+    .replaceAll("SWIFTY", "LARKY")
+    .replaceAll("@larky.js", "@swifty.js")
+    .replaceAll("@larky\\.js", "@swifty\\.js"); // 正则字面量里的转义形式
+}
 
 const stats = { new: 0, update: 0, same: 0 };
 const skippedProtected = [];
 const missingSources = [];
 
-function sameContent(a, b) {
-  try {
-    return readFileSync(a).equals(readFileSync(b));
-  } catch {
-    return false;
-  }
+/** 读取源文件并按需做品牌替换；返回 Buffer。 */
+function transformedContent(src) {
+  const raw = readFileSync(src);
+  if (!TEXT_EXTS.has(path.extname(src))) return raw;
+  return Buffer.from(brandTransform(raw.toString("utf-8")), "utf-8");
 }
 
-/** 拷贝单个文件（带保护清单/dry-run/统计）。 */
+/** 拷贝单个文件（带保护清单/品牌替换/dry-run/统计）。 */
 function copyFile(src, dest) {
   const relDest = path.relative(LARKY, dest);
   if (PROTECTED.has(relDest)) {
     skippedProtected.push(relDest);
     return;
   }
+  const content = transformedContent(src);
   const exists = existsSync(dest);
-  if (exists && sameContent(src, dest)) {
-    stats.same++;
-    return;
+  if (exists) {
+    try {
+      if (readFileSync(dest).equals(content)) {
+        stats.same++;
+        return;
+      }
+    } catch {
+      // 读取失败按需要覆盖处理
+    }
   }
   const kind = exists ? "update" : "new";
   stats[kind]++;
   console.log(`  [${kind.padEnd(6)}] ${relDest}`);
   if (!DRY_RUN) {
     mkdirSync(path.dirname(dest), { recursive: true });
-    copyFileSync(src, dest);
+    if (TEXT_EXTS.has(path.extname(src))) {
+      writeFileSync(dest, content);
+    } else {
+      copyFileSync(src, dest); // 二进制按字节拷贝
+    }
   }
 }
 
@@ -105,7 +142,9 @@ function main() {
     console.error(`error: 需要同时存在 ${SWIFTY} 与 ${LARKY}`);
     process.exit(1);
   }
-  console.log(`swifty → larky 拷贝${DRY_RUN ? "（dry-run，不落盘）" : ""}\n`);
+  console.log(
+    `swifty → larky 拷贝 + 品牌替换${DRY_RUN ? "（dry-run，不落盘；--write 才写入）" : ""}\n`,
+  );
 
   // 1. src 业务模块目录
   console.log("== src 业务模块 ==");
@@ -140,18 +179,16 @@ function main() {
 
   // 4. 汇总
   console.log("\n== 汇总 ==");
-  console.log(`  新增 ${stats.new}  覆盖 ${stats.update}  内容相同跳过 ${stats.same}`);
+  console.log(`  新增 ${stats.new}  覆盖 ${stats.update}  转换后内容相同跳过 ${stats.same}`);
   if (missingSources.length > 0) {
     console.log(`  swifty 侧缺失（未拷贝）: ${missingSources.join(", ")}`);
   }
   if (skippedProtected.length > 0) {
     console.log("\n== 受保护、未拷贝的文件（larky 双进程改造版本，保持不动） ==");
     for (const f of skippedProtected) console.log(`  [skip  ] ${f}`);
-  }
-  if (stats.new + stats.update > 0 || DRY_RUN) {
     console.log(
-      "\n提示: main.tsx 已被 larky 的 cli/main.ts 替代；若拷入 src/main.tsx，" +
-        "其对 <App> 的旧 props 用法会导致 pnpm typecheck 失败，不需要时请删除。",
+      "  注意: 以上文件及 larky 原生文件（core/agent-session.ts、core/app.ts、cli/main.ts、\n" +
+        "  tui/index.tsx 等）中的 swifty 命名不在本脚本处理范围，需自行替换。",
     );
   }
 }
