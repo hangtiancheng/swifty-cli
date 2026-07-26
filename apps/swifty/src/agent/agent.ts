@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/consistent-type-assertions */
 /**
  * Copyright (c) 2026 hangtiancheng
  *
@@ -20,7 +21,6 @@
  * SOFTWARE.
  */
 
-/* eslint-disable @typescript-eslint/consistent-type-assertions */
 import { saveMessage, toolUsesToRecords, toolResultsToRecords } from "../session/session.js";
 import { REJECTED_TOOL_RESULT } from "../conversation/pairing.js";
 import type { LLMClient } from "../llm/client.js";
@@ -348,7 +348,7 @@ export class Agent {
 
           yield {
             type: "error",
-            error: err as Error,
+            error: err instanceof Error ? err : new Error(JSON.stringify(err)),
           };
           return;
         }

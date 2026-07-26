@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/consistent-type-assertions */
 /**
  * Copyright (c) 2026 hangtiancheng
  *
@@ -347,7 +348,7 @@ export class Agent {
 
           yield {
             type: "error",
-            error: err instanceof Error ? err : new Error(asErrorString(err)),
+            error: err instanceof Error ? err : new Error(JSON.stringify(err)),
           };
           return;
         }
