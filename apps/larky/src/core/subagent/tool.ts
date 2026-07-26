@@ -69,6 +69,16 @@ Available roles for the "subagent_type" parameter:`;
   }
   desc += `
 
+Example call shape:
+{
+  "name": "spawn_agent",
+  "input": {
+    "subagent_type": "<role from the list above, or empty>",
+    "description": "Short task label",
+    "prompt": "Detailed instructions — the sub-agent has zero prior context"
+  }
+}
+
 Write a detailed, self-contained prompt explaining what the sub-agent should do and why — it has zero prior context.
 Use run_in_background=true to run sub-agents in parallel; retrieve each result later with agent_result(run_id=...).`;
   return desc;

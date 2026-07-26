@@ -61,6 +61,58 @@ After your analysis, output your final summary wrapped in <summary> tags. Your s
 9. Optional Next Step: List the next step to take that is related to the most recent work. IMPORTANT: ensure that this step is DIRECTLY in line with the user's most recent explicit requests, and the task being worked on immediately before this summary request. If the last task was concluded, then only list next steps if they are explicitly in line with the user's request. Do not start on tangential requests or really old requests that were already completed without confirming with the user first.
                        If there is a next step, include direct quotes from the most recent conversation showing exactly what task was in progress and where it left off. This should be verbatim to ensure there's no drift in task interpretation.
 
+Here's an example of how your output should be structured:
+
+<example>
+<analysis>
+[Your thought process, ensuring all points are covered thoroughly and accurately]
+</analysis>
+
+<summary>
+1. Primary Request and Intent:
+   [Detailed description]
+
+2. Key Technical Concepts:
+   - [Concept 1]
+   - [Concept 2]
+   - [...]
+
+3. Files and Code Sections:
+   - [File Name 1]
+      - [Summary of why this file is important]
+      - [Summary of the changes made to this file, if any]
+      - [Important Code Snippet]
+   - [File Name 2]
+      - [Important Code Snippet]
+   - [...]
+
+4. Errors and fixes:
+    - [Detailed description of error 1]:
+      - [How the error was fixed]
+      - [User feedback on the error if any]
+    - [...]
+
+5. Problem Solving:
+   [Description of solved problems and ongoing troubleshooting]
+
+6. All user messages:
+    - [Detailed non tool use user message]
+    - [...]
+
+7. Pending Tasks:
+   - [Task 1]
+   - [Task 2]
+   - [...]
+
+8. Current Work:
+   [Precise description of current work]
+
+9. Optional Next Step:
+   [Optional Next step to take]
+
+</summary>
+</example>
+
 Please provide your summary based on the conversation so far, following this structure and ensuring precision and thoroughness in your response.`;
 
 // Strip the <analysis> scratch area and unwrap <summary> tags; fall back to

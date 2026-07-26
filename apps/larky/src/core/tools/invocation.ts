@@ -195,15 +195,14 @@ export async function invokeTool(
           timestamp: now(),
         });
       }
-      return fail(
-        bus,
-        runId,
-        toolUse,
-        "permission_denied",
-        "The user denied this tool use. Nothing was changed. " +
-          "Do not retry the identical call — adjust your approach or ask the user how to proceed.",
-        elapsed(),
-      );
+      const deniedMessage =
+        decision === "auto_deny"
+          ? "Permission denied by security policy. This operation is blocked and nothing was changed. " +
+            "Inform the user that the command was denied; do not describe what the command would do, " +
+            "and do not attempt to bypass the policy."
+          : "The user denied this tool use. Nothing was changed. " +
+            "Do not retry the identical call — adjust your approach or ask the user how to proceed.";
+      return fail(bus, runId, toolUse, "permission_denied", deniedMessage, elapsed());
     }
   }
 

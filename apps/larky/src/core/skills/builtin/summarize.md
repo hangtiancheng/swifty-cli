@@ -14,6 +14,11 @@ Summary content:
 3. Final conclusion or deliverables.
 4. Outstanding issues or the starting point for the next session (if applicable).
 
+Rules:
+
+- Report faithfully: if something failed or was left incomplete, say so — never present partial results as success.
+- Preserve critical data verbatim: file paths, exact commands, error messages, and configuration values must not be paraphrased.
+
 Format requirements:
 
 - Use Markdown.
