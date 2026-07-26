@@ -8,10 +8,7 @@ import { join } from "node:path";
 
 import { describe, it, expect, afterEach } from "vitest";
 
-import {
-  AgentSession,
-  type InteractionBroker,
-} from "../src/core/agent-session.js";
+import { AgentSession, type InteractionBroker } from "../src/core/agent-session.js";
 import { CoreApp } from "../src/core/app.js";
 import type { Event } from "../src/core/bus/events.js";
 import type { ProviderConfig } from "../src/config/config.js";
@@ -161,7 +158,8 @@ describe("agent-session cancel & steering", () => {
     // Old loop must fully unwind (interrupted) before the new one starts.
     await waitFor(() =>
       harness.events.some(
-        (e) => e.type === "agent.loop_complete" && e.run_id === run1 && e.stop_reason === "interrupted",
+        (e) =>
+          e.type === "agent.loop_complete" && e.run_id === run1 && e.stop_reason === "interrupted",
       ),
     );
     await waitFor(() => client.started.length === 2);
@@ -177,7 +175,8 @@ describe("agent-session cancel & steering", () => {
     expect(session.cancel()).toBe(true);
     await waitFor(() =>
       harness.events.some(
-        (e) => e.type === "agent.loop_complete" && e.run_id === run2 && e.stop_reason === "interrupted",
+        (e) =>
+          e.type === "agent.loop_complete" && e.run_id === run2 && e.stop_reason === "interrupted",
       ),
     );
 
@@ -270,9 +269,7 @@ describe("interaction broker abort awareness (P0-2)", () => {
     ac.abort();
     await expect(promise).rejects.toThrow("interrupted");
     expect(app._pendingPlans.size).toBe(0);
-    await waitFor(() =>
-      events.some((e) => e.type === "plan.resolved" && e.choice === "cancelled"),
-    );
+    await waitFor(() => events.some((e) => e.type === "plan.resolved" && e.choice === "cancelled"));
   });
 
   it("first settle wins: respond then abort settles exactly once", async () => {
@@ -303,7 +300,13 @@ describe("interaction broker abort awareness (P0-2)", () => {
     const ac = new AbortController();
     ac.abort();
     await expect(
-      app._broker.requestPermission(fakeSession, "Bash", {}, { effect: "ask", reason: "t" }, ac.signal),
+      app._broker.requestPermission(
+        fakeSession,
+        "Bash",
+        {},
+        { effect: "ask", reason: "t" },
+        ac.signal,
+      ),
     ).resolves.toBe("deny");
     expect(app._pendingPermissions.size).toBe(0);
   });

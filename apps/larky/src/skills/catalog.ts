@@ -319,7 +319,7 @@ export function buildSkillSection(catalog: SkillCatalog, workDir: string): strin
   if (metas.length === 0) {
     return "";
   }
-  const skillsDir = join(workDir, ".swifty", "skills");
+  const skillsDir = join(workDir, ".larky", "skills");
   const lines = [
     "## Available Skills\n",
     `Skills are installed at: ${skillsDir}`,

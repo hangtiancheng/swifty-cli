@@ -8,8 +8,8 @@ import { ToolRegistry } from "@/tools/registry.js";
 import type { Tool } from "@/tools/types.js";
 import { ALL_AGENT_DISALLOWED_TOOLS, TEAMMATE_DISALLOWED_TOOLS } from "@/subagent/tool-filter.js";
 
-// The team directory lives at <home>/.swifty/teams. Point HOME to a temp
-// directory to avoid leaving artifacts in the real ~/.swifty/teams.
+// The team directory lives at <home>/.larky/teams. Point HOME to a temp
+// directory to avoid leaving artifacts in the real ~/.larky/teams.
 // os.homedir() reads USERPROFILE on Windows and HOME elsewhere; set both.
 let __origHome: string | undefined;
 let __origUserProfile: string | undefined;
@@ -18,7 +18,7 @@ let workDir: string;
 beforeEach(() => {
   __origHome = process.env.HOME;
   __origUserProfile = process.env.USERPROFILE;
-  workDir = mkdtempSync(join(tmpdir(), "swifty-teammate-"));
+  workDir = mkdtempSync(join(tmpdir(), "larky-teammate-"));
   process.env.HOME = workDir;
   process.env.USERPROFILE = workDir;
 });
