@@ -86,7 +86,7 @@ export default defineConfig({
     // triggers prebuild) instead of calling `tsup` directly.
 
     // 1. release.wasm — loaded by glob-wasm via new URL("release.wasm", import.meta.url)
-    const wasmSrc = join(__dirname, "../../glob-wasm/build/release.wasm");
+    const wasmSrc = join(__dirname, "../glob-wasm/build/release.wasm");
     copyFileSync(wasmSrc, join(__dirname, "dist/release.wasm"));
 
     // 2. builtin skills — SKILL.md + references, read by loadBuiltinFile()
@@ -98,7 +98,7 @@ export default defineConfig({
     //    code but copied for future use. Cross-platform npm distribution
     //    would need per-platform prebuilt packages instead.
     copyFileSync(
-      join(__dirname, "../../glob-addon/build/Release/glob_addon.node"),
+      join(__dirname, "../glob-addon/build/Release/glob_addon.node"),
       join(__dirname, "dist/glob_addon.node"),
     );
 

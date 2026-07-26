@@ -20,8 +20,6 @@
 
 packages:
   - apps/*
-  - glob-addon
-  - glob-wasm
 
 allowBuilds:
   '@parcel/watcher': true
