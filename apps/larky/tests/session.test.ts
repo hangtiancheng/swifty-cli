@@ -236,9 +236,6 @@ describe("rebuildFromSession (compacted-state resume)", () => {
     const saved = loadSession(workDir, id);
     expect(saved).toHaveLength(1);
     expect(saved[0].type).toBe(COMPACT_BOUNDARY);
-    expect(JSON.parse(saved[0].content ?? "{}")).toEqual({
-      summary: "s",
-      keep: [],
-    });
+    expect(JSON.parse(saved[0].content ?? "{}")).toEqual({ summary: "s", keep: [] });
   });
 });

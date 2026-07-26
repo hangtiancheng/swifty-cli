@@ -194,9 +194,6 @@ export class ConversationManager {
     if (this.baselineTokens <= 0) {
       return null;
     }
-    return {
-      baselineTokens: this.baselineTokens,
-      anchorCount: this._anchorCount,
-    };
+    return { baselineTokens: this.baselineTokens, anchorCount: this._anchorCount };
   }
 }

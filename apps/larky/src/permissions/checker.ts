@@ -441,10 +441,7 @@ export class PermissionChecker {
         // sandbox ask; otherwise rules for outside paths could never apply.
         const ruleEffect = this.ruleEngine.evaluate(toolName, content);
         if (ruleEffect) {
-          return {
-            effect: ruleEffect,
-            reason: `Permission rule: ${ruleEffect}`,
-          };
+          return { effect: ruleEffect, reason: `Permission rule: ${ruleEffect}` };
         }
         return { effect: "ask", reason: sandboxDecision.reason };
       }

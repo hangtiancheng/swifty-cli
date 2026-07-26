@@ -93,11 +93,7 @@ export type KeptMessage = z.infer<typeof KeptMessageSchema>;
 
 /** Conversation-layer tool blocks (camelCase) → persisted records (snake_case); empty values are omitted. */
 export function toolUsesToRecords(
-  toolUses?: {
-    toolUseId: string;
-    toolName: string;
-    arguments?: Record<string, unknown>;
-  }[],
+  toolUses?: { toolUseId: string; toolName: string; arguments?: Record<string, unknown> }[],
 ): ToolUseRecord[] {
   return (toolUses ?? []).map((tu) => ({
     tool_use_id: tu.toolUseId,
@@ -216,11 +212,7 @@ export interface RestoredMessage {
   role: "user" | "assistant";
   content: string;
   // In-memory form uses camelCase, consistent with the conversation layer; converted from snake_case disk records
-  toolUses?: {
-    toolUseId: string;
-    toolName: string;
-    arguments?: Record<string, unknown>;
-  }[];
+  toolUses?: { toolUseId: string; toolName: string; arguments?: Record<string, unknown> }[];
   toolResults?: { toolUseId: string; content: string; isError?: boolean }[];
 }
 
