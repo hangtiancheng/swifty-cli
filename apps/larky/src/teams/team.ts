@@ -21,9 +21,6 @@
  */
 
 import { createChildLogger } from "../logger/index.js";
-
-const log = createChildLogger({ module: "teams" });
-
 import { join } from "node:path";
 import { mkdirSync, readFileSync, rmSync } from "node:fs";
 import { FileMailbox, type FileMailMessage } from "./file-mailbox.js";
@@ -50,6 +47,7 @@ import { getNameRegistry } from "./registry.js";
 import { getOrCreatePlanPath } from "../plan-file/plan-file.js";
 import type { PermissionChecker } from "../permissions/checker.js";
 
+const log = createChildLogger({ module: "teams" });
 export type TeamMode = "in-process" | "tmux" | "iterm";
 
 // Callback that receives agent events during execution. The team layer uses
@@ -111,7 +109,10 @@ export class Team {
     this.name = name;
     this.mode = mode;
     this.workDir = workDir;
-    this.mailboxDir = teamDir(name);
+    // Mailboxes live in a dedicated inboxes/ subdirectory, separate from
+    // config.json and tasks.json at the team root, keeping the layout clean
+    // as membership grows.
+    this.mailboxDir = join(teamDir(name), "inboxes");
     mkdirSync(this.mailboxDir, { recursive: true });
     this.leadMailbox = new FileMailbox(this.mailboxDir, "lead");
   }
@@ -227,11 +228,9 @@ export class Team {
       spinnerVerb: randomVerb(),
     };
 
-    // Teammate entry point mirrors cli/main.ts: runs this repo's CLI entry
-    // with --teammate flags. Inside the daemon process argv[1] points at
-    // core/app.js (which does not parse --teammate), so redirect to the
-    // sibling cli/main entry.
-    // Flag names align with parseTeammateFlags in teammate.ts: --team-dir/--member-name/--task.
+    // Teammate entry point mirrors main.tsx: bun runs this repo's entry script with --teammate flags.
+    // Flag names align with parseTeammateFlags in teammate.ts. The team name is
+    // passed explicitly so the shared task board resolves to the same tasks.json.
     let entry = process.argv[1] ?? "src/cli/main.ts";
     entry = entry
       .replace(/core[/\\]app\.js$/, "cli/main.js")
@@ -245,6 +244,8 @@ export class Team {
         "--teammate",
         "--team-dir",
         this.mailboxDir,
+        "--team-name",
+        this.name,
         "--member-name",
         name,
         "--task",

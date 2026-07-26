@@ -21,9 +21,6 @@
  */
 
 import { createChildLogger } from "../logger/index.js";
-
-const log = createChildLogger({ module: "subagent" });
-
 import type { Tool, ToolResult, ToolContext, ToolSchema } from "../tools/types.js";
 import type { AgentDefinition } from "./definition.js";
 import { loadAgentDefinitions } from "./loader.js";
@@ -33,10 +30,12 @@ import type { TeamManager, RunAgent } from "../teams/team.js";
 import { asErrorString, boolArg, strArg } from "@/utils/index.js";
 import { TaskCreateTool, TaskGetTool, TaskListTool, TaskUpdateTool } from "../teams/task-tools.js";
 import { SendMessageTool } from "../teams/tools.js";
+import { ALL_AGENT_DISALLOWED_TOOLS, TEAMMATE_DISALLOWED_TOOLS } from "./tool-filter.js";
 import { PermissionChecker } from "../permissions/checker.js";
 import { buildWorktreeNotice, createAgentWorktree } from "../worktree/worktree.js";
 import { randomBytes } from "node:crypto";
 
+const log = createChildLogger({ module: "subagent" });
 /** Fallback target when subagent_type is omitted and fork is disabled */
 const GENERAL_PURPOSE_AGENT_TYPE = "general-purpose";
 
@@ -349,8 +348,16 @@ ${prompt}`;
     // Build a teammate-scoped tool registry: clone the parent registry, then
     // inject team-level task tools and a named SendMessage (overriding the
     // inherited personal version so teammates share the same task list).
+    // Two categories are excluded during cloning: tools no subagent should
+    // have, and team membership management tools reserved for the Lead.
     const teammateRegistry = new ToolRegistry();
     for (const tool of this.registry.listTools()) {
+      if (ALL_AGENT_DISALLOWED_TOOLS.has(tool.name)) {
+        continue;
+      }
+      if (TEAMMATE_DISALLOWED_TOOLS.has(tool.name)) {
+        continue;
+      }
       teammateRegistry.register(tool);
     }
     teammateRegistry.register(new SendMessageTool(this.teamManager, memberName));

@@ -34,6 +34,11 @@ export const ALL_AGENT_DISALLOWED_TOOLS = new Set([
   "Workflow",
 ]);
 
+// Additional tools blocked for teammates beyond the global subagent list.
+// Team creation and dissolution are the Lead's responsibility; teammates
+// only execute work and coordinate with peers.
+export const TEAMMATE_DISALLOWED_TOOLS = new Set(["TeamCreate", "TeamDelete"]);
+
 // Additional tools disallowed for custom Agents (loaded from .larky/agents/);
 // Currently identical to the global list, but maintained separately for future extensibility
 export const CUSTOM_AGENT_DISALLOWED_TOOLS = new Set([

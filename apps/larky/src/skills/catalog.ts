@@ -308,3 +308,29 @@ function parseSkillFile(content: string): {
     return null;
   }
 }
+
+/**
+ * Build the Skill listing for the system prompt: only names and one-line
+ * descriptions are included; the full SOP is fetched on demand via LoadSkill.
+ * Returns an empty string when the catalog is empty so callers can skip this section.
+ */
+export function buildSkillSection(catalog: SkillCatalog, workDir: string): string {
+  const metas = catalog.list();
+  if (metas.length === 0) {
+    return "";
+  }
+  const skillsDir = join(workDir, ".swifty", "skills");
+  const lines = [
+    "## Available Skills\n",
+    `Skills are installed at: ${skillsDir}`,
+    "When creating new skills, always place them under this directory as <skill-name>/SKILL.md.\n",
+    'Only Skill names and one-line descriptions are listed below. To activate a Skill on demand call the LoadSkill tool with {name: "<skill-name>"}. After activation the Skill\'s full SOP gets pinned to the environment context, and any tools the Skill declares get registered. Users can also invoke a Skill directly with /<name>.\n',
+    'If the user pastes a Skill URL (skills.sh, github.com tree URL, or raw SKILL.md URL) and asks to install / add / get it, call the InstallSkill tool with {url: "<url>"} — the new Skill becomes available immediately afterwards.\n',
+  ];
+  for (const meta of metas) {
+    const desc =
+      meta.description.length > 200 ? meta.description.slice(0, 200) + "…" : meta.description;
+    lines.push(`- /${meta.name}: ${desc}`);
+  }
+  return lines.join("\n");
+}

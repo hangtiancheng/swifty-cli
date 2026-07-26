@@ -13,14 +13,14 @@
  +------------------------------+    TCP JSON-RPC / NDJSON     +--------------------------------+
  |  客户端进程 dist/cli/main.js |  <=========================> |  daemon 进程 dist/core/app.js   |
  |  模式分派:                   |       127.0.0.1:5520         |  CoreApp                        |
- |   · TUI(默认, socket 客户端) |                              |   · AgentSession (每会话一个)    |
- |   · -p print (进程内)       |   事件: agent.*, run.*,      |     持有 swifty 完整 Agent 栈:   |
- |   · --teammate (进程内)     |   permission.requested ...   |     client/conv/registry/checker|
- |   · --remote (进程内)       |   RPC: session.*, run.cancel |     hooks/skills/teams/memory/  |
- |   · ping/core/trace 子命令  |   permission.respond ...     |     fileHistory/mcp/sandbox     |
+ |   · TUI(默认, socket 客户端) |                              |   · AgentSession (每会话一个)   |
+ |   · -p print (进程内)        |   事件: agent.*, run.*,      |     持有 swifty 完整 Agent 栈:  |
+ |   · --teammate (进程内)      |   permission.requested ...   |     client/conv/registry/checker|
+ |   · --remote (进程内)        |   RPC: session.*, run.cancel |     hooks/skills/teams/memory/  |
+ |   · ping/core/trace 子命令   |   permission.respond ...     |     fileHistory/mcp/sandbox     |
  |  本地能力: 输入历史/@补全/   |                              |   · pending maps (交互桥接)     |
  |  鼠标滚动/主题/渲染          |                              |   · events.jsonl 落盘 + replay  |
- +----------------------------+                              +--------------------------------+
+ +------------------------------+                              +--------------------------------+
 ```
 
 关键设计（均源自 swifty `remote/server.ts` 已验证的模式）：
@@ -121,39 +121,39 @@ done
 cp swifty/src/print-mode.ts swifty/src/teammate.ts swifty/src/main.tsx larky/src/
 ```
 
-| 目录/文件 | 内容 |
-|---|---|
-| `agent/` | agent.ts(786 行, 主循环+streaming), streaming-executor.ts, events.ts (AgentEvent) |
-| `llm/` | client.ts, anthropic.ts, openai.ts, model-resolver.ts, errors.ts, events.ts (anthropic/openai/openai-compat 三协议) |
-| `conversation/` | conversation.ts, pairing.ts |
-| `tools/` | read-file, bash(沙箱), glob, grep(WASM 加速), write-file, edit-file, diff, ask-user, tool-search(deferred tools), enter/exit-worktree, exit-plan-mode, synthetic-output, registry, types, file-state-cache, addon/ |
-| `tool-result/` | budget.ts (工具输出预算/超 50k 溢写磁盘) |
-| `prompt/` | builder.ts, sections.ts, plan-mode.ts, coordinator.ts |
-| `permissions/` | checker.ts (524 行, 模式/规则/危险命令模式匹配) |
-| `sandbox/` | index.ts, seatbelt.ts (macOS), bwrap.ts (Linux) |
-| `config/` | config.ts (zod+YAML, ~/.swifty → 项目 .swifty → config.local.yml 三级合并) |
-| `session/` | session.ts (JSONL 持久化/resume 重建/compact boundary) |
-| `compact/` | compact.ts (forceCompact), recovery.ts (RecoveryState) |
-| `memory/` | manager.ts, extractor.ts, consolidation.ts, instructions.ts, memory-age.ts (长期记忆) |
-| `skills/` | catalog.ts, executor.ts (runInline/runFork), install-tool.ts, load-skill-tool.ts, builtins.ts, skill.ts, builtin/ (SKILL.md 资产) |
-| `commands/` | commands.ts (内置 slash 命令注册表+parse), loader.ts (用户 .md 命令), usage-tracker.ts |
-| `subagent/` | agent-tool.ts, spawn.ts, loader.ts, tool-filter.ts, task-manager.ts, definition.ts |
-| `teams/` | team.ts, tools.ts, task-tools.ts, file-mailbox.ts, backend.ts, protocol.ts, shared-task.ts, transcript.ts, coordinator.ts, progress.ts, registry.ts, task-stop.ts, team-file.ts (13 文件) |
-| `hooks/` | hooks.ts (HookEngine + validate) |
-| `mcp/` | manager.ts, client.ts, tool-wrapper.ts |
-| `worktree/` | worktree.ts (git worktree 隔离) |
-| `code-review/` | session.ts, handler.ts, manager.ts |
-| `file-history/` | file-history.ts (快照/rewind) |
-| `plan-file/` | plan-file.ts (getOrCreatePlanPath/loadPlan/resetPlanPath 等) |
-| `todo/` | todo.ts (TaskList), store.ts (TaskStore), tools.ts (TaskCreate/Get/List/Update) |
-| `history/` | history.ts (输入历史 load/append) |
-| `logger/` | index, logger, child, cleanup, context, serializers (pino 文件日志, initLogger/closeLogger) |
-| `utils/` | asErrorString/strArg/asRecord 等工具函数 |
-| `tui/` | 全部 24 文件 (app.tsx 2028 行 — Phase 3 重写; 其余组件原样复用: input.tsx, chat.tsx, ask-user-dialog.tsx, permission-dialog.tsx, plan-approval.tsx, rewind-dialog.tsx, teams-dialog.tsx, team-status.tsx, teammate-*.tsx, provider-select.tsx, status-bar.tsx, tool-display.tsx, diff-render.tsx, scroll-box.tsx, spinner.tsx, mouse.ts, styles.ts, sync-output.ts, verbs.ts, at-expand.ts, is-diff-tool.ts, version.ts) |
-| `remote/` | server.ts (1635 行 Koa+WS) + fe/ (浏览器 React/Tailwind 前端子项目) |
-| `print-mode.ts` | 非交互 -p 模式 (text / stream-json) |
-| `teammate.ts` | --teammate 子进程入口 (文件邮箱轮询) |
-| `main.tsx` | 拷入作参考，Phase 3 被 cli/main.ts 替代后**已删除** |
+| 目录/文件       | 内容                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `agent/`        | agent.ts(786 行, 主循环+streaming), streaming-executor.ts, events.ts (AgentEvent)                                                                                                                                                                                                                                                                                                                                         |
+| `llm/`          | client.ts, anthropic.ts, openai.ts, model-resolver.ts, errors.ts, events.ts (anthropic/openai/openai-compat 三协议)                                                                                                                                                                                                                                                                                                       |
+| `conversation/` | conversation.ts, pairing.ts                                                                                                                                                                                                                                                                                                                                                                                               |
+| `tools/`        | read-file, bash(沙箱), glob, grep(WASM 加速), write-file, edit-file, diff, ask-user, tool-search(deferred tools), enter/exit-worktree, exit-plan-mode, synthetic-output, registry, types, file-state-cache, addon/                                                                                                                                                                                                        |
+| `tool-result/`  | budget.ts (工具输出预算/超 50k 溢写磁盘)                                                                                                                                                                                                                                                                                                                                                                                  |
+| `prompt/`       | builder.ts, sections.ts, plan-mode.ts, coordinator.ts                                                                                                                                                                                                                                                                                                                                                                     |
+| `permissions/`  | checker.ts (524 行, 模式/规则/危险命令模式匹配)                                                                                                                                                                                                                                                                                                                                                                           |
+| `sandbox/`      | index.ts, seatbelt.ts (macOS), bwrap.ts (Linux)                                                                                                                                                                                                                                                                                                                                                                           |
+| `config/`       | config.ts (zod+YAML, ~/.swifty → 项目 .swifty → config.local.yml 三级合并)                                                                                                                                                                                                                                                                                                                                                |
+| `session/`      | session.ts (JSONL 持久化/resume 重建/compact boundary)                                                                                                                                                                                                                                                                                                                                                                    |
+| `compact/`      | compact.ts (forceCompact), recovery.ts (RecoveryState)                                                                                                                                                                                                                                                                                                                                                                    |
+| `memory/`       | manager.ts, extractor.ts, consolidation.ts, instructions.ts, memory-age.ts (长期记忆)                                                                                                                                                                                                                                                                                                                                     |
+| `skills/`       | catalog.ts, executor.ts (runInline/runFork), install-tool.ts, load-skill-tool.ts, builtins.ts, skill.ts, builtin/ (SKILL.md 资产)                                                                                                                                                                                                                                                                                         |
+| `commands/`     | commands.ts (内置 slash 命令注册表+parse), loader.ts (用户 .md 命令), usage-tracker.ts                                                                                                                                                                                                                                                                                                                                    |
+| `subagent/`     | agent-tool.ts, spawn.ts, loader.ts, tool-filter.ts, task-manager.ts, definition.ts                                                                                                                                                                                                                                                                                                                                        |
+| `teams/`        | team.ts, tools.ts, task-tools.ts, file-mailbox.ts, backend.ts, protocol.ts, shared-task.ts, transcript.ts, coordinator.ts, progress.ts, registry.ts, task-stop.ts, team-file.ts (13 文件)                                                                                                                                                                                                                                 |
+| `hooks/`        | hooks.ts (HookEngine + validate)                                                                                                                                                                                                                                                                                                                                                                                          |
+| `mcp/`          | manager.ts, client.ts, tool-wrapper.ts                                                                                                                                                                                                                                                                                                                                                                                    |
+| `worktree/`     | worktree.ts (git worktree 隔离)                                                                                                                                                                                                                                                                                                                                                                                           |
+| `code-review/`  | session.ts, handler.ts, manager.ts                                                                                                                                                                                                                                                                                                                                                                                        |
+| `file-history/` | file-history.ts (快照/rewind)                                                                                                                                                                                                                                                                                                                                                                                             |
+| `plan-file/`    | plan-file.ts (getOrCreatePlanPath/loadPlan/resetPlanPath 等)                                                                                                                                                                                                                                                                                                                                                              |
+| `todo/`         | todo.ts (TaskList), store.ts (TaskStore), tools.ts (TaskCreate/Get/List/Update)                                                                                                                                                                                                                                                                                                                                           |
+| `history/`      | history.ts (输入历史 load/append)                                                                                                                                                                                                                                                                                                                                                                                         |
+| `logger/`       | index, logger, child, cleanup, context, serializers (pino 文件日志, initLogger/closeLogger)                                                                                                                                                                                                                                                                                                                               |
+| `utils/`        | asErrorString/strArg/asRecord 等工具函数                                                                                                                                                                                                                                                                                                                                                                                  |
+| `tui/`          | 全部 24 文件 (app.tsx 2028 行 — Phase 3 重写; 其余组件原样复用: input.tsx, chat.tsx, ask-user-dialog.tsx, permission-dialog.tsx, plan-approval.tsx, rewind-dialog.tsx, teams-dialog.tsx, team-status.tsx, teammate-\*.tsx, provider-select.tsx, status-bar.tsx, tool-display.tsx, diff-render.tsx, scroll-box.tsx, spinner.tsx, mouse.ts, styles.ts, sync-output.ts, verbs.ts, at-expand.ts, is-diff-tool.ts, version.ts) |
+| `remote/`       | server.ts (1635 行 Koa+WS) + fe/ (浏览器 React/Tailwind 前端子项目)                                                                                                                                                                                                                                                                                                                                                       |
+| `print-mode.ts` | 非交互 -p 模式 (text / stream-json)                                                                                                                                                                                                                                                                                                                                                                                       |
+| `teammate.ts`   | --teammate 子进程入口 (文件邮箱轮询)                                                                                                                                                                                                                                                                                                                                                                                      |
+| `main.tsx`      | 拷入作参考，Phase 3 被 cli/main.ts 替代后**已删除**                                                                                                                                                                                                                                                                                                                                                                       |
 
 ### 2.4 从 swifty 拷贝的测试（31 个，零修改直接通过）
 
@@ -171,6 +171,7 @@ cp swifty/tests/*.test.ts swifty/tests/run-e2e.mjs swifty/tests/run-failing.mjs 
 ### 2.5 配置文件合并
 
 **package.json**（保留 larky 身份 `@swifty.js/larky` / bin `larky`，并入 swifty 依赖）：
+
 - 新增 dependencies：`@modelcontextprotocol/sdk`, `dompurify`, `js-yaml`, `koa`, `openai`, `react-dom`, `ws`
 - 新增 devDependencies：`@swifty.js/glob-addon` (workspace), `@swifty.js/glob-wasm` (workspace), `@tailwindcss/postcss`, `@types/js-yaml`, `@types/koa`, `@types/react-dom`, `@types/ws`, `pino-pretty`, `postcss`, `tailwindcss`
 - 新增 scripts：`prebuild`（构建 glob-addon + glob-wasm）、`fe:dev` / `fe:build` / `fe:preview`（remote 前端）
@@ -182,6 +183,7 @@ cp swifty/tests/*.test.ts swifty/tests/run-e2e.mjs swifty/tests/run-failing.mjs 
 **vitest.config.ts**：增加 `@` 别名 resolve、`environment: "node"`、testTimeout 30s；coverage exclude 增加 `src/remote/fe/**`、`src/**/types.ts`；移除迁移期覆盖率阈值（原 50%）。
 
 **tsup.config.ts**：保持 larky 双 entry 模式并融合 swifty 细节：
+
 - entry 1: `src/cli/main.ts` → `dist/cli/main.js`（shebang + createRequire shim, clean:true）
 - entry 2: `src/core/app.ts` → `dist/core/app.js`（无 shebang, clean:false）
 - 同时注入 `__LARKY_VERSION__` 与 `__SWIFTY_VERSION__` 两个版本宏（larky 基建读前者，swifty 源码 tui/version.ts 读后者）
@@ -201,25 +203,25 @@ Phase 0 完成时即达成：typecheck 0 错误、39 个测试文件 259 用例�
 
 ### 3.1 `src/core/bus/commands.ts`（全部重写，17 个 RPC 方法）
 
-| 方法 | 请求要点 | 响应要点 |
-|---|---|---|
-| `core.ping` | client | server_version, uptime_ms, received_at |
-| `core.status` | — | server_version, uptime_ms, cwd, active_sessions |
-| `event.subscribe` | topics[], scope(global / session:<id> / run:<id>), replay_from_run | subscription_id, replayed_count |
-| `session.create` | permission_mode?, persist | session_id, cwd, permission_mode, commands[]（供补全） |
-| `session.list` | — | sessions[{id, first_message, message_count, mod_time}] |
-| `session.resume` | session_id, resume_id | messages[{role, content}]（回放转录） |
-| `session.send_message` | session_id, content | run_id（**立即返回**，进度走事件；区别于旧 larky 阻塞到 run 结束） |
-| `session.close` | session_id | ok |
-| `run.cancel` | session_id | ok, cancelled |
-| `permission.respond` | id, response(allow/deny/allowAlways) | ok |
-| `ask_user.respond` | id, answers{question→answer} | ok |
-| `plan.respond` | id, choice(yolo/manual/feedback), feedback | ok |
-| `mode.set` | session_id, mode(default/acceptEdits/plan/bypassPermissions) | ok, mode |
-| `command.run` | session_id, input("/xxx args") | accepted（输出走 system.message，command.done 结尾） |
-| `command.list` | session_id | commands[{name, description}] |
-| `rewind.list` | session_id | snapshots[{index, message_index, user_text, file_count, timestamp}] |
-| `rewind.apply` | session_id, index, mode(both/files/conversation) | ok, message |
+| 方法                   | 请求要点                                                           | 响应要点                                                            |
+| ---------------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------- |
+| `core.ping`            | client                                                             | server_version, uptime_ms, received_at                              |
+| `core.status`          | —                                                                  | server_version, uptime_ms, cwd, active_sessions                     |
+| `event.subscribe`      | topics[], scope(global / session:<id> / run:<id>), replay_from_run | subscription_id, replayed_count                                     |
+| `session.create`       | permission_mode?, persist                                          | session_id, cwd, permission_mode, commands[]（供补全）              |
+| `session.list`         | —                                                                  | sessions[{id, first_message, message_count, mod_time}]              |
+| `session.resume`       | session_id, resume_id                                              | messages[{role, content}]（回放转录）                               |
+| `session.send_message` | session_id, content                                                | run_id（**立即返回**，进度走事件；区别于旧 larky 阻塞到 run 结束）  |
+| `session.close`        | session_id                                                         | ok                                                                  |
+| `run.cancel`           | session_id                                                         | ok, cancelled                                                       |
+| `permission.respond`   | id, response(allow/deny/allowAlways)                               | ok                                                                  |
+| `ask_user.respond`     | id, answers{question→answer}                                       | ok                                                                  |
+| `plan.respond`         | id, choice(yolo/manual/feedback), feedback                         | ok                                                                  |
+| `mode.set`             | session_id, mode(default/acceptEdits/plan/bypassPermissions)       | ok, mode                                                            |
+| `command.run`          | session_id, input("/xxx args")                                     | accepted（输出走 system.message，command.done 结尾）                |
+| `command.list`         | session_id                                                         | commands[{name, description}]                                       |
+| `rewind.list`          | session_id                                                         | snapshots[{index, message_index, user_text, file_count, timestamp}] |
+| `rewind.apply`         | session_id, index, mode(both/files/conversation)                   | ok, message                                                         |
 
 错误码：-32700..-32603 标准码（保留）+ `SESSION_NOT_FOUND -32010`、`SESSION_BUSY -32012`（保留）+ -32020（无 provider 配置）。
 
@@ -249,7 +251,7 @@ per-session daemon 侧 Handle，融合三个 swifty 来源：`remote/server.ts` 
 
 - **`AgentSession.create()`**：注册 14 个内置工具（ReadFile/Bash/Glob/Grep/Write/Edit/ToolSearch/Enter+ExitWorktree/ExitPlanMode/Task×4）+ ExitPlanMode 的 isPlanMode/planExists 回调 + LoadSkill/InstallSkill（安装后热接线+刷新系统提示）+ AskUserQuestion(→broker) + 7 个 team 工具 + SyntheticOutput + AgentTool（子代理，onProgress → `subagent.progress` 事件）+ MCP 后台连接（工具注册/错误上报/instructions 注入）；系统提示 + skill section；长期记忆注入 + IDENTITY OVERRIDE；hooks 校验 + HookEngine；用户命令加载 + skills→slash 命令接线。
 - **`startRun(text, opts)`**：生成 `run-<uuid12>`；运行中则先 cancel（steering 语义，与 swifty TUI 一致）；`expandAtRefs`（从 tui/at-expand.ts 引入，纯函数）@文件展开进对话、原文持久化到 `.swifty/sessions/<swiftyId>.jsonl`；发 `run.started`；后台 `_runLoop`。
-- **`_runLoop`**：PermissionChecker(当前 permMode + sandbox 标志)；BashTool 沙箱挂接/摘除（allowWrite/denyWrite/network 配置与 swifty 相同）；MCP instructions 一次性注入；memory recall（非阻塞）；Agent 构造与 swifty `runAgentLoop` 逐项对齐（contextWindow 同步种子+异步升级 / maxOutput / recoveryState / activeSkills / toolFilter=coordinator∧skill / coordinatorActiveFn / notificationFn=teamManager.drainLeads / onLoopComplete=记忆抽取+后台固化 / onPermissionRequest=broker）；`for await` 将 11 种 AgentEvent 桥接为 wire 事件；Task* 工具结果后推 `todo.updated`；catch 区分 abort(→stop_reason "interrupted"+系统提示) 与错误(→`agent.error`)；**finally 必发 `agent.loop_complete`**（客户端状态机依赖）；plan 模式干净结束后进入 `requestPlanApproval`。
+- **`_runLoop`**：PermissionChecker(当前 permMode + sandbox 标志)；BashTool 沙箱挂接/摘除（allowWrite/denyWrite/network 配置与 swifty 相同）；MCP instructions 一次性注入；memory recall（非阻塞）；Agent 构造与 swifty `runAgentLoop` 逐项对齐（contextWindow 同步种子+异步升级 / maxOutput / recoveryState / activeSkills / toolFilter=coordinator∧skill / coordinatorActiveFn / notificationFn=teamManager.drainLeads / onLoopComplete=记忆抽取+后台固化 / onPermissionRequest=broker）；`for await` 将 11 种 AgentEvent 桥接为 wire 事件；Task\* 工具结果后推 `todo.updated`；catch 区分 abort(→stop_reason "interrupted"+系统提示) 与错误(→`agent.error`)；**finally 必发 `agent.loop_complete`**（客户端状态机依赖）；plan 模式干净结束后进入 `requestPlanApproval`。
 - **`requestPlanApproval`**：读 plan 文件 → broker（`plan.requested` 事件 + `plan.respond` RPC）→ yolo(切 bypassPermissions) / manual(还原 prePlanMode) 注入 `buildPlanModeExitReminder` 并 `startRun("Execute this plan:...")`；feedback 直接跑反馈文本。
 - **`runCommand`（daemon 侧 slash 执行）**：`/mcp`、`/skill` 简写重写、status/permission/memory 富命令（用 daemon 实时状态：token 计数、工具数、沙箱状态、swiftyId 等）；`local` 类通用执行（CommandContext 提供 permissionMode/tokenCount/toolCount/memoryList/model）；`local_ui` 类逐个实现：clear（重建 conv+重注入 LTM+换 swiftyId+TaskStore+FileHistory+发 `ui.clear`）、plan/do（模式切换+reminder+审批执行）、compact（forceCompact+boundary 持久化）、resume（文本回退路径：`ui.clear` + `replay.message` 流 + 系统提示）、skills（列表 / reload+系统提示刷新）、worktree（git worktree list）、rewind（指引走 RPC）、sandbox（1/2/3 档）；`prompt` 类渲染后 `startRun(prompt, {displayText:"/name args"})`；`skill_fork` 类完整实现（SkillForkHost + runSkillFork，结果以 `agent.stream_text` 回传）——**补齐了 swifty remote 模式 "not yet supported" 的缺口**。
 - **`resumeFrom`**（loadSession→rebuildFromSession→重建 conv 含工具块→换 swiftyId/TaskStore/FileHistory→返回可渲染转录）、**`getSnapshots` / `rewind(both|files|conversation)`**、**`setMode`**（进 plan 时记 prePlanMode+发 `mode.changed`）、**`cancel` / `close`**（abort + MCP disconnectAll + `session.closed`）。
@@ -285,11 +287,13 @@ per-session daemon 侧 Handle，融合三个 swifty 来源：`remote/server.ts` 
 **删除**（全部移至 daemon）：`initClient`（~210 行装配）、`runAgentLoop`（Agent 构造+事件消费）、`handleSlashCommand` 的 daemon 侧分支（~560 行）、`handlePlanApproval`/`handleRewindAction` 本地实现、记忆抽取、sandbox 状态、teams 500ms 轮询、conv/session/fileHistory/registry 等全部直接引用。
 
 **保留**（渲染与本地能力，逐段平移）：
+
 - 渲染结构：品牌头（追加 "(connecting…)" 连接状态）、滚动视口（负 marginTop 平移+裁剪、SGR 鼠标滚轮 parseWheel、PageUp/Down、stick-to-bottom）、ChatView / ToolDisplay / Spinner / TeammateSpinnerTree / TeamStatus / 全部对话框组件。
 - 流式节流（50ms setTimeout）、turn 折叠为 `turn_summary`（thinking 时长 + 工具汇总；**累加器改为 refs** 因为事件经 handler 到达而非循环闭包）、completionMark（`✻ <verb> for Ns`）。
 - 本地能力：输入历史（`.swifty` 目录 load/append）、slash 补全（命令清单来自 `session.create` 返回，包装成 Command stub 供 InputBox；CommandUsageTracker 本地频率排序）、Ctrl+C 双击退出提示、Ctrl+O 展开工具输出、Ctrl+T teams 面板。
 
 **新增**（wire 对接）：
+
 - 连接循环：`connect → event.subscribe(topics:["*"], replay_from_run: lastRunIdRef) → session.create（仅首次，记录 session_id/commands/permission_mode）→ waitForDisconnect → 清瞬态（streaming/activeTools/三类对话框）→ 2s 重连`；事件 handler 只注册一次，经 `handleEventRef` 间接调用避免闭包过期。
 - 事件 switch：30 种 wire 事件映射回原渲染逻辑；`run.started` 置 isStreaming（daemon 自发的 run —— 如 plan 审批后的执行 —— 也能正确显示）；`agent.loop_complete` 落定 assistant 消息（interrupted 加 `*[cancelled]*` 后缀）；按 `session_id` 过滤他会话事件；zod safeParse 失败静默跳过（前向兼容）。
 - 交互对接：PermissionDialog 改为 **FIFO 队列**（requested 去重入队、resolved/本地应答出队，渲染队首）→ `permission.respond`；AskUserDialog → `ask_user.respond`；PlanApprovalDialog（`plan.requested` 触发）→ `plan.respond`；RewindDialog（`/rewind` → `rewind.list` 构造 Snapshot 形状（backups 用占位键还原 file_count）→ `rewind.apply`，动作映射 code_and_conversation→both / code_only→files / conversation_only→conversation）。
@@ -305,6 +309,7 @@ swifty config 加载（校验 providers 非空）+ larky config（host/port）�
 ### 5.3 重写 `src/cli/main.ts`
 
 swifty `main.tsx` 的模式分派 + larky 的 daemon 生命周期：
+
 - `--teammate` → `runTeammate`（**进程内**，供 tmux/iterm team 后端 spawn 使用）
 - `-p` / print flags → `runPrintMode`（**进程内**一次性运行，与 swifty 行为逐字节一致 —— 对计划的有意偏差：不经 daemon，行为等价且减少风险）
 - `--remote [addr]` → RemoteServer（**进程内** Koa+WS，见 Phase 4）
@@ -331,16 +336,16 @@ swifty `main.tsx` 的模式分派 + larky 的 daemon 生命周期：
 
 ### 7.2 验证门禁（最终状态）
 
-| 门禁 | 结果 |
-|---|---|
-| `pnpm typecheck` | ✅ 0 错误 |
-| `pnpm build` | ✅ dist/cli/main.js (7.7MB) + dist/core/app.js (2.8MB)，双侧资产齐备 |
-| `pnpm test` | ✅ 41 文件 / 268 用例全部通过 |
-| `pnpm doc` | ✅ WIRE_PROTOCOL.md 重新生成 |
-| daemon 冒烟（端口 5599） | ✅ ping / status / subscribe / session.create（返回 104 个命令） |
-| **真实 LLM 端到端** | ✅ `session.send_message "Reply with exactly: OK"` → 事件序列 `session.created → run.started → agent.thinking_text → agent.stream_text("OK") → agent.thinking_complete → agent.usage → agent.loop_complete(end_turn, 3107ms)` |
-| CLI 子命令 | ✅ version / --help / core status |
-| print 模式 | ✅ `node dist/cli/main.js -p "Reply with exactly: OK"` → `OK` |
+| 门禁                     | 结果                                                                                                                                                                                                                       |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm typecheck`         | 0 错误                                                                                                                                                                                                                     |
+| `pnpm build`             | dist/cli/main.js (7.7MB) + dist/core/app.js (2.8MB)，双侧资产齐备                                                                                                                                                          |
+| `pnpm test`              | 41 文件 / 268 用例全部通过                                                                                                                                                                                                 |
+| `pnpm doc`               | WIRE_PROTOCOL.md 重新生成                                                                                                                                                                                                  |
+| daemon 冒烟（端口 5599） | ping / status / subscribe / session.create（返回 104 个命令）                                                                                                                                                              |
+| **真实 LLM 端到端**      | `session.send_message "Reply with exactly: OK"` → 事件序列 `session.created → run.started → agent.thinking_text → agent.stream_text("OK") → agent.thinking_complete → agent.usage → agent.loop_complete(end_turn, 3107ms)` |
+| CLI 子命令               | version / --help / core status                                                                                                                                                                                             |
+| print 模式               | `node dist/cli/main.js -p "Reply with exactly: OK"` → `OK`                                                                                                                                                                 |
 
 ### 7.3 迁移中发现并修复的缺陷（架构层遗留 bug）
 

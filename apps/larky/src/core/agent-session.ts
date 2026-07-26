@@ -64,7 +64,7 @@ import { MCPToolWrapper } from "../mcp/tool-wrapper.js";
 import { loadInstructions } from "../memory/instructions.js";
 import { MemoryManager } from "../memory/manager.js";
 import { MemoryConsolidator } from "../memory/consolidation.js";
-import { MemoryExtractor } from "../memory/extractor.js";
+import { MemoryExtractor, buildSkillSection } from "../memory/extractor.js";
 import { SkillCatalog } from "../skills/catalog.js";
 import type { SkillForkHost, SkillHost } from "../skills/skill.js";
 import { LoadSkillTool } from "../skills/load-skill-tool.js";
@@ -1438,25 +1438,4 @@ export function wireSkillsToRegistry(
       // name clash → keep existing command
     }
   }
-}
-
-export function buildSkillSection(catalog: SkillCatalog, workDir: string): string {
-  const metas = catalog.list();
-  if (metas.length === 0) {
-    return "";
-  }
-  const skillsDir = join(workDir, ".larky", "skills");
-  const lines = [
-    "## Available Skills\n",
-    `Skills are installed at: ${skillsDir}`,
-    "When creating new skills, always place them under this directory as <skill-name>/SKILL.md.\n",
-    'Only Skill names and one-line descriptions are listed below. To activate a Skill on demand call the LoadSkill tool with {name: "<skill-name>"}. After activation the Skill\'s full SOP gets pinned to the environment context, and any tools the Skill declares get registered. Users can also invoke a Skill directly with /<name>.\n',
-    'If the user pastes a Skill URL (skills.sh, github.com tree URL, or raw SKILL.md URL) and asks to install / add / get it, call the InstallSkill tool with {url: "<url>"} — the new Skill becomes available immediately afterwards.\n',
-  ];
-  for (const meta of metas) {
-    const desc =
-      meta.description.length > 200 ? meta.description.slice(0, 200) + "…" : meta.description;
-    lines.push(`- /${meta.name}: ${desc}`);
-  }
-  return lines.join("\n");
 }

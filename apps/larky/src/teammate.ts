@@ -20,6 +20,7 @@
  * SOFTWARE.
  */
 
+import { basename, dirname } from "node:path";
 import { loadConfig } from "./config/config.js";
 import { createClient } from "./llm/client.js";
 import { ConversationManager } from "./conversation/conversation.js";
@@ -31,15 +32,32 @@ import { GlobTool } from "./tools/glob.js";
 import { GrepTool } from "./tools/grep.js";
 import { WriteFileTool } from "./tools/write-file.js";
 import { EditFileTool } from "./tools/edit-file.js";
+import { ToolSearchTool } from "./tools/tool-search.js";
+import { SyntheticOutputTool } from "./tools/synthetic-output.js";
+import { EnterWorktreeTool } from "./tools/enter-worktree.js";
+import { ExitWorktreeTool } from "./tools/exit-worktree.js";
 import { PermissionChecker } from "./permissions/checker.js";
 import { Agent } from "./agent/agent.js";
 import { FileStateCache } from "./tools/file-state-cache.js";
 import type { FileMailMessage } from "./teams/file-mailbox.js";
 import { FileMailbox } from "./teams/file-mailbox.js";
+import { TeamManager } from "./teams/team.js";
+import { SendMessageTool } from "./teams/tools.js";
+import { TaskCreateTool, TaskGetTool, TaskListTool, TaskUpdateTool } from "./teams/task-tools.js";
+import { SkillCatalog } from "./skills/catalog.js";
+import { buildSkillSection } from "./skills/catalog.js";
+import { LoadSkillTool } from "./skills/load-skill-tool.js";
+import { InstallSkillTool } from "./skills/install-tool.js";
+import type { SkillHost } from "./skills/skill.js";
+import { MCPManager } from "./mcp/manager.js";
+import { MCPToolWrapper } from "./mcp/tool-wrapper.js";
+import type { MCPServerConfig } from "./config/config.js";
 import { initLogger, closeLogger, createChildLogger, sanitizeNameSegment } from "./logger/index.js";
+import { asErrorString } from "./utils/index.js";
 
 interface TeammateArgs {
   teamDir: string;
+  teamName: string;
   memberName: string;
   initialTask: string;
   providerName?: string;
@@ -51,6 +69,7 @@ export function parseTeammateFlags(args: string[]): TeammateArgs | null {
   }
 
   let teamDir = "";
+  let teamName = "";
   let memberName = "";
   let initialTask = "";
   let providerName: string | undefined;
@@ -59,6 +78,10 @@ export function parseTeammateFlags(args: string[]): TeammateArgs | null {
     if (args[i] === "--team-dir" && args[i + 1]) {
       teamDir = args[++i];
     }
+    if (args[i] === "--team-name" && args[i + 1]) {
+      teamName = args[++i];
+    }
+
     if (args[i] === "--member-name" && args[i + 1]) {
       memberName = args[++i];
     }
@@ -70,10 +93,14 @@ export function parseTeammateFlags(args: string[]): TeammateArgs | null {
     }
   }
 
-  if (!teamDir || !memberName || !initialTask) {
-    return null;
+  // The team name resolves the shared task board. When the flag is absent,
+  // derive it from the mailbox directory path: the mailbox dir is
+  // <team-dir>/inboxes, so the team name is one level up.
+  if (!teamName) {
+    const leaf = basename(teamDir);
+    teamName = leaf === "inboxes" ? basename(dirname(teamDir)) : leaf;
   }
-  return { teamDir, memberName, initialTask, providerName };
+  return { teamDir, teamName, memberName, initialTask, providerName };
 }
 
 // ShutdownPrefix marks a mailbox message as a request to terminate the teammate.
@@ -97,6 +124,72 @@ function createIdleNotification(memberName: string): FileMailMessage {
   };
 }
 
+/**
+ * Assemble the teammate tool registry: file/command tools, tool search,
+ * worktree switching, Skills, and MCP extensions, plus team collaboration
+ * tools (SendMessage under the member's own name, and the shared task board).
+ * The task board resolves to a single tasks.json by team name, so all
+ * teammates operate on the same board.
+ *
+ * Agent is intentionally excluded — the call tree terminates at the teammate
+ * level. TeamCreate and TeamDelete are also excluded; team lifecycle
+ * management is the Lead's responsibility.
+ */
+export async function buildTeammateRegistry(opts: {
+  workDir: string;
+  teamName: string;
+  memberName: string;
+  catalog: SkillCatalog;
+  skillHost: SkillHost;
+  mcpServers?: MCPServerConfig[];
+}): Promise<ToolRegistry> {
+  const registry = new ToolRegistry();
+  registry.register(new ReadFileTool());
+  registry.register(new BashTool());
+  registry.register(new GlobTool());
+  registry.register(new GrepTool());
+  registry.register(new WriteFileTool());
+  registry.register(new EditFileTool());
+
+  registry.register(new ToolSearchTool(registry));
+  registry.register(new SyntheticOutputTool());
+  registry.register(new EnterWorktreeTool());
+  registry.register(new ExitWorktreeTool());
+
+  // No forkHost is provided; skills declaring fork mode fall back to inline execution
+  registry.register(new LoadSkillTool(opts.catalog, opts.skillHost));
+  registry.register(new InstallSkillTool(opts.workDir, opts.catalog));
+
+  const teamManager = new TeamManager(opts.workDir);
+  registry.register(new SendMessageTool(teamManager, opts.memberName));
+  registry.register(new TaskCreateTool(teamManager, opts.teamName, opts.memberName));
+  registry.register(new TaskGetTool(teamManager, opts.teamName));
+  registry.register(new TaskListTool(teamManager, opts.teamName));
+  registry.register(new TaskUpdateTool(teamManager, opts.teamName));
+
+  const mcpServers = opts.mcpServers ?? [];
+  if (mcpServers.length > 0) {
+    try {
+      const mgr = new MCPManager();
+      const result = await mgr.connectAll(mcpServers);
+      for (const { serverName, tool } of result.tools) {
+        const client = mgr.getClient(serverName);
+        if (client) {
+          registry.register(new MCPToolWrapper(client, serverName, tool));
+        }
+      }
+      for (const { serverName, error } of result.errors) {
+        console.error(`MCP error [${serverName}]: ${error}`);
+      }
+    } catch (e) {
+      // MCP connectivity failures should not crash the teammate process
+      console.error(`MCP setup failed: ${asErrorString(e)}`);
+    }
+  }
+
+  return registry;
+}
+
 export async function runTeammate(args: TeammateArgs): Promise<void> {
   // Initialize logger for this teammate subprocess. Subprocess skips cleanup
   // to avoid multi-process races on unlinkSync.
@@ -115,21 +208,36 @@ export async function runTeammate(args: TeammateArgs): Promise<void> {
     ? (cfg.providers.find((p) => p.name === args.providerName) ?? cfg.providers[0])
     : cfg.providers[0];
 
-  const env = detectEnvironment(process.cwd());
+  const workDir = process.cwd();
+  const conversation = new ConversationManager();
+
+  // The skill catalog feeds both the system prompt (so the model knows which
+  // skills are available) and the LoadSkill tool (for on-demand activation)
+  const catalog = new SkillCatalog();
+  catalog.load(workDir);
+  const skillHost: SkillHost = {
+    activateSkill: (name, body) => {
+      conversation.addSystemReminder(`<skill-name>${name}</skill-name>\n${body}`);
+    },
+  };
+
+  const env = detectEnvironment(workDir);
   env.model = provider.model;
-  const systemPrompt = buildSystemPrompt(env);
+  const systemPrompt = buildSystemPrompt(env, {
+    skillSection: buildSkillSection(catalog, workDir),
+  });
   const client = await createClient(provider, systemPrompt);
 
-  const registry = new ToolRegistry();
-  registry.register(new ReadFileTool());
-  registry.register(new BashTool());
-  registry.register(new GlobTool());
-  registry.register(new GrepTool());
-  registry.register(new WriteFileTool());
-  registry.register(new EditFileTool());
+  const registry = await buildTeammateRegistry({
+    workDir,
+    teamName: args.teamName,
+    memberName: args.memberName,
+    catalog,
+    skillHost,
+    mcpServers: cfg.mcp_servers,
+  });
 
-  const conversation = new ConversationManager();
-  const checker = new PermissionChecker(process.cwd(), "acceptEdits");
+  const checker = new PermissionChecker(workDir, "acceptEdits");
 
   const agent = new Agent({
     client,
