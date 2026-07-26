@@ -64,8 +64,8 @@ import { MCPToolWrapper } from "../mcp/tool-wrapper.js";
 import { loadInstructions } from "../memory/instructions.js";
 import { MemoryManager } from "../memory/manager.js";
 import { MemoryConsolidator } from "../memory/consolidation.js";
-import { MemoryExtractor, buildSkillSection } from "../memory/extractor.js";
-import { SkillCatalog } from "../skills/catalog.js";
+import { MemoryExtractor } from "../memory/extractor.js";
+import { SkillCatalog, buildSkillSection } from "../skills/catalog.js";
 import type { SkillForkHost, SkillHost } from "../skills/skill.js";
 import { LoadSkillTool } from "../skills/load-skill-tool.js";
 import { InstallSkillTool } from "../skills/install-tool.js";
@@ -113,18 +113,29 @@ const log = createChildLogger({ module: "agent-session" });
 /** Emits a wire event (published on the daemon EventBus). */
 export type EmitFn = (event: Event) => void;
 
-/** Blocking interaction callbacks answered by clients via *.respond RPCs. */
+/**
+ * Blocking interaction callbacks answered by clients via *.respond RPCs.
+ * When a signal is provided the pending interaction must settle on abort
+ * (permission → "deny", ask → reject, plan → reject) so an interrupted run
+ * can never leave the agent loop hanging on a dialog.
+ */
 export interface InteractionBroker {
   requestPermission(
     session: AgentSession,
     toolName: string,
     args: Record<string, unknown>,
     decision: Decision,
+    signal?: AbortSignal,
   ): Promise<"allow" | "deny" | "allowAlways">;
-  askUser(session: AgentSession, questions: Question[]): Promise<Record<string, string>>;
+  askUser(
+    session: AgentSession,
+    questions: Question[],
+    signal?: AbortSignal,
+  ): Promise<Record<string, string>>;
   requestPlanApproval(
     session: AgentSession,
     planText: string,
+    signal?: AbortSignal,
   ): Promise<{ choice: WirePlanChoice; feedback: string }>;
 }
 
@@ -192,6 +203,9 @@ export class AgentSession {
   inputTokens = 0;
   outputTokens = 0;
   private abortController: AbortController | null = null;
+  // Serializes agent loops: a steered run waits here until the previous
+  // loop has fully unwound, keeping tool_use/tool_result pairing intact.
+  private loopDone: Promise<void> = Promise.resolve();
   private hasExitedPlanMode = false;
   private memCursor = 0;
   private memExtracting = false;
@@ -313,8 +327,11 @@ export class AgentSession {
       }),
     );
 
-    // AskUserQuestion → broker
-    registry.register(new AskUserQuestionTool((questions) => s.broker.askUser(s, questions)));
+    // AskUserQuestion → broker (per-call signal so an interrupted run
+    // settles its pending dialog instead of hanging the executor)
+    registry.register(
+      new AskUserQuestionTool((questions) => s.broker.askUser(s, questions, s.currentAbortSignal)),
+    );
 
     // Teams
     s.teamManager = new TeamManager(workDir);
@@ -500,6 +517,11 @@ export class AgentSession {
     return this.currentRunId !== null;
   }
 
+  /** Abort signal of the in-flight run, if any (evaluated at call time). */
+  get currentAbortSignal(): AbortSignal | undefined {
+    return this.abortController?.signal;
+  }
+
   cancel(): boolean {
     if (!this.abortController) {
       return false;
@@ -538,18 +560,6 @@ export class AgentSession {
     this.currentRunId = runId;
 
     const display = opts?.displayText ?? text;
-    if (!opts?.skipUserMessage) {
-      // Inline @file references for the model; persist the original text.
-      this.conv.addUserMessage(expandAtRefs(text, this.workDir));
-      if (this.persist) {
-        sessionMod.saveMessage(this.workDir, this.larkyId, {
-          role: "user",
-          content: display,
-          timestamp: Math.floor(Date.now() / 1000),
-        });
-      }
-    }
-
     this.emit({
       type: "run.started",
       session_id: this.id,
@@ -558,7 +568,27 @@ export class AgentSession {
       timestamp: nowIso(),
     });
 
-    void this._runLoop(runId).finally(() => {
+    const prev = this.loopDone;
+    this.loopDone = (async () => {
+      // Wait for the previous loop to fully unwind so its tool results are
+      // already in the conversation before the new user message lands.
+      await prev.catch(() => undefined);
+      if (!opts?.skipUserMessage) {
+        // Inline @file references for the model; persist the original text.
+        this.conv.addUserMessage(expandAtRefs(text, this.workDir));
+        if (this.persist) {
+          sessionMod.saveMessage(this.workDir, this.larkyId, {
+            role: "user",
+            content: display,
+            timestamp: Math.floor(Date.now() / 1000),
+          });
+        }
+      }
+      if (this.currentRunId !== runId) {
+        return; // superseded by a newer steering while queued
+      }
+      await this._runLoop(runId);
+    })().finally(() => {
       if (this.currentRunId === runId) {
         this.currentRunId = null;
       }
@@ -662,7 +692,7 @@ export class AgentSession {
           this.extractMemories(conv);
         },
         onPermissionRequest: (toolName, args, decision) =>
-          this.broker.requestPermission(this, toolName, args, decision),
+          this.broker.requestPermission(this, toolName, args, decision, controller.signal),
       });
 
       for await (const event of agent.run()) {
@@ -800,7 +830,6 @@ export class AgentSession {
         });
       }
     } finally {
-      this.abortController = null;
       this.emit({
         type: "agent.loop_complete",
         session_id: this.id,
@@ -813,12 +842,20 @@ export class AgentSession {
     }
 
     // Plan-mode approval: after a clean plan-mode loop, ask the client.
+    // The controller stays live through the approval wait so run.cancel /
+    // Esc can abort a pending approval (the broker settles it on abort).
     if (this.permMode === "plan" && stopReason === "end_turn") {
-      await this.requestPlanApproval();
+      await this.requestPlanApproval(controller.signal);
+    }
+
+    // Steering hands the shared slot to the next run before this loop
+    // unwinds — only clear the controller if it is still ours.
+    if (this.abortController === controller) {
+      this.abortController = null;
     }
   }
 
-  private async requestPlanApproval(): Promise<void> {
+  private async requestPlanApproval(signal?: AbortSignal): Promise<void> {
     const planPath = getOrCreatePlanPath(this.workDir);
     let planContent = "";
     try {
@@ -832,9 +869,9 @@ export class AgentSession {
     let choice: WirePlanChoice;
     let feedback = "";
     try {
-      ({ choice, feedback } = await this.broker.requestPlanApproval(this, planContent));
+      ({ choice, feedback } = await this.broker.requestPlanApproval(this, planContent, signal));
     } catch {
-      return; // cancelled (e.g. client disconnect)
+      return; // cancelled (abort or client disconnect)
     }
 
     if (choice === "yolo" || choice === "manual") {

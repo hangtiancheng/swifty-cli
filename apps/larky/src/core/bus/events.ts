@@ -226,7 +226,9 @@ export const PermissionResolvedEventSchema = z.object({
   id: z.string(),
   session_id: z.string(),
   response: z.string(),
-  source: z.enum(["client", "timeout", "disconnect"]).default("client"),
+  // .catch(): unknown future sources degrade to "client" on old clients
+  // instead of failing the whole event parse (which would strand dialogs).
+  source: z.enum(["client", "timeout", "disconnect", "abort"]).catch("client"),
   timestamp: z.string(),
 });
 export type PermissionResolvedEvent = z.infer<typeof PermissionResolvedEventSchema>;

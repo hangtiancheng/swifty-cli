@@ -40,6 +40,7 @@ import { z } from "zod";
 
 import type { SocketClient } from "../core/transport/socket-client.js";
 import { EventSchema, type Event } from "../core/bus/events.js";
+import { isStaleRunEvent } from "./run-filter.js";
 
 import RewindDialog, { type RewindAction } from "./rewind-dialog.js";
 import { PermissionDialog, type PermissionAction } from "./permission-dialog.js";
@@ -244,6 +245,12 @@ export function App({ client, provider, permissionMode }: Props) {
         if (event.session_id !== sessionIdRef.current) {
           return;
         }
+      }
+
+      // Run filtering: after steering, the cancelled run's late events
+      // (esp. its interrupted loop_complete) must not clobber the new run.
+      if (isStaleRunEvent(event, lastRunIdRef.current)) {
+        return;
       }
 
       switch (event.type) {

@@ -86,17 +86,21 @@ function runEventsPath(workDir: string, runId: string): string {
 interface PendingPermission {
   sessionId: string;
   resolve: (r: "allow" | "deny" | "allowAlways") => void;
+  cleanup?: () => void;
 }
 
 interface PendingAsk {
   sessionId: string;
   resolve: (answers: Record<string, string>) => void;
+  reject: (e: Error) => void;
+  cleanup?: () => void;
 }
 
 interface PendingPlan {
   sessionId: string;
   resolve: (r: { choice: WirePlanChoice; feedback: string }) => void;
   reject: (e: Error) => void;
+  cleanup?: () => void;
 }
 
 export class CoreApp {
@@ -138,16 +142,95 @@ export class CoreApp {
 
   // -- Interaction broker -----------------------------------------------------
 
+  // Each pending interaction settles exactly once (first of: client respond,
+  // run abort, disconnect). Settlement is funneled through the _settle*
+  // methods, which use Map.delete() as the mutual-exclusion point.
+
+  private _settlePermission(
+    id: string,
+    response: "allow" | "deny" | "allowAlways",
+    source: "client" | "timeout" | "disconnect" | "abort",
+  ): void {
+    const pending = this._pendingPermissions.get(id);
+    if (!pending || !this._pendingPermissions.delete(id)) {
+      return;
+    }
+    pending.cleanup?.();
+    pending.resolve(response);
+    this.emit({
+      type: "permission.resolved",
+      id,
+      session_id: pending.sessionId,
+      response,
+      source,
+      timestamp: nowIso(),
+    });
+  }
+
+  private _settleAsk(
+    id: string,
+    outcome: { answers: Record<string, string> } | { error: Error },
+  ): void {
+    const pending = this._pendingAsks.get(id);
+    if (!pending || !this._pendingAsks.delete(id)) {
+      return;
+    }
+    pending.cleanup?.();
+    if ("answers" in outcome) {
+      pending.resolve(outcome.answers);
+    } else {
+      pending.reject(outcome.error);
+    }
+    this.emit({
+      type: "ask_user.resolved",
+      id,
+      session_id: pending.sessionId,
+      timestamp: nowIso(),
+    });
+  }
+
+  private _settlePlan(
+    id: string,
+    outcome: { choice: WirePlanChoice; feedback: string } | { error: Error },
+  ): void {
+    const pending = this._pendingPlans.get(id);
+    if (!pending || !this._pendingPlans.delete(id)) {
+      return;
+    }
+    pending.cleanup?.();
+    if ("error" in outcome) {
+      pending.reject(outcome.error);
+    } else {
+      pending.resolve(outcome);
+    }
+    this.emit({
+      type: "plan.resolved",
+      id,
+      session_id: pending.sessionId,
+      choice: "error" in outcome ? "cancelled" : outcome.choice,
+      timestamp: nowIso(),
+    });
+  }
+
   private _broker: InteractionBroker = {
-    requestPermission: (session, toolName, args, decision: Decision) => {
+    requestPermission: (session, toolName, args, decision: Decision, signal?: AbortSignal) => {
       const id = `perm-${randomUUID().slice(0, 8)}`;
       return new Promise<"allow" | "deny" | "allowAlways">((resolve) => {
+        if (signal?.aborted) {
+          resolve("deny");
+          return;
+        }
+        const onAbort = () => {
+          this._settlePermission(id, "deny", "abort");
+        };
         this._pendingPermissions.set(id, {
           sessionId: session.id,
-          resolve: (r) => {
-            resolve(r);
+          resolve,
+          cleanup: () => {
+            signal?.removeEventListener("abort", onAbort);
           },
         });
+        signal?.addEventListener("abort", onAbort, { once: true });
         this.emit({
           type: "permission.requested",
           id,
@@ -160,10 +243,27 @@ export class CoreApp {
         });
       });
     },
-    askUser: (session, questions: Question[]) => {
+    askUser: (session, questions: Question[], signal?: AbortSignal) => {
       const id = `ask-${randomUUID().slice(0, 8)}`;
-      return new Promise<Record<string, string>>((resolve) => {
-        this._pendingAsks.set(id, { sessionId: session.id, resolve });
+      return new Promise<Record<string, string>>((resolve, reject) => {
+        if (signal?.aborted) {
+          reject(new Error("interrupted"));
+          return;
+        }
+        const onAbort = () => {
+          // Reject so the executor records an isError tool_result, keeping
+          // the tool_use/tool_result pairing intact.
+          this._settleAsk(id, { error: new Error("interrupted") });
+        };
+        this._pendingAsks.set(id, {
+          sessionId: session.id,
+          resolve,
+          reject,
+          cleanup: () => {
+            signal?.removeEventListener("abort", onAbort);
+          },
+        });
+        signal?.addEventListener("abort", onAbort, { once: true });
         this.emit({
           type: "ask_user.requested",
           id,
@@ -182,14 +282,25 @@ export class CoreApp {
         });
       });
     },
-    requestPlanApproval: (session, planText: string) => {
+    requestPlanApproval: (session, planText: string, signal?: AbortSignal) => {
       const id = `plan-${randomUUID().slice(0, 8)}`;
       return new Promise<{ choice: WirePlanChoice; feedback: string }>((resolve, reject) => {
+        if (signal?.aborted) {
+          reject(new Error("interrupted"));
+          return;
+        }
+        const onAbort = () => {
+          this._settlePlan(id, { error: new Error("interrupted") });
+        };
         this._pendingPlans.set(id, {
           sessionId: session.id,
           resolve,
           reject,
+          cleanup: () => {
+            signal?.removeEventListener("abort", onAbort);
+          },
         });
+        signal?.addEventListener("abort", onAbort, { once: true });
         this.emit({
           type: "plan.requested",
           id,
@@ -203,39 +314,15 @@ export class CoreApp {
 
   // Cancel all pending interactions (e.g. last client disconnected).
   private _cancelAllInteractions(): void {
-    for (const [id, pending] of this._pendingPermissions) {
-      pending.resolve("deny");
-      this.emit({
-        type: "permission.resolved",
-        id,
-        session_id: pending.sessionId,
-        response: "deny",
-        source: "disconnect",
-        timestamp: nowIso(),
-      });
+    for (const id of [...this._pendingPermissions.keys()]) {
+      this._settlePermission(id, "deny", "disconnect");
     }
-    this._pendingPermissions.clear();
-    for (const [id, pending] of this._pendingAsks) {
-      pending.resolve({});
-      this.emit({
-        type: "ask_user.resolved",
-        id,
-        session_id: pending.sessionId,
-        timestamp: nowIso(),
-      });
+    for (const id of [...this._pendingAsks.keys()]) {
+      this._settleAsk(id, { answers: {} });
     }
-    this._pendingAsks.clear();
-    for (const [id, pending] of this._pendingPlans) {
-      pending.reject(new Error("client disconnected"));
-      this.emit({
-        type: "plan.resolved",
-        id,
-        session_id: pending.sessionId,
-        choice: "cancelled",
-        timestamp: nowIso(),
-      });
+    for (const id of [...this._pendingPlans.keys()]) {
+      this._settlePlan(id, { error: new Error("client disconnected") });
     }
-    this._pendingPlans.clear();
   }
 
   // -- Session helpers ----------------------------------------------------------
@@ -379,20 +466,8 @@ export class CoreApp {
       ...params,
       type: "permission.respond",
     });
-    const pending = this._pendingPermissions.get(cmd.id);
-    if (pending) {
-      this._pendingPermissions.delete(cmd.id);
-      pending.resolve(cmd.response);
-      this.emit({
-        type: "permission.resolved",
-        id: cmd.id,
-        session_id: pending.sessionId,
-        response: cmd.response,
-        source: "client",
-        timestamp: nowIso(),
-      });
-    }
     // Unknown/duplicate ids are idempotently ignored (first response wins).
+    this._settlePermission(cmd.id, cmd.response, "client");
     return Promise.resolve({ ok: true });
   }
 
@@ -401,17 +476,7 @@ export class CoreApp {
       ...params,
       type: "ask_user.respond",
     });
-    const pending = this._pendingAsks.get(cmd.id);
-    if (pending) {
-      this._pendingAsks.delete(cmd.id);
-      pending.resolve(cmd.answers);
-      this.emit({
-        type: "ask_user.resolved",
-        id: cmd.id,
-        session_id: pending.sessionId,
-        timestamp: nowIso(),
-      });
-    }
+    this._settleAsk(cmd.id, { answers: cmd.answers });
     return Promise.resolve({ ok: true });
   }
 
@@ -420,18 +485,7 @@ export class CoreApp {
       ...params,
       type: "plan.respond",
     });
-    const pending = this._pendingPlans.get(cmd.id);
-    if (pending) {
-      this._pendingPlans.delete(cmd.id);
-      pending.resolve({ choice: cmd.choice, feedback: cmd.feedback });
-      this.emit({
-        type: "plan.resolved",
-        id: cmd.id,
-        session_id: pending.sessionId,
-        choice: cmd.choice,
-        timestamp: nowIso(),
-      });
-    }
+    this._settlePlan(cmd.id, { choice: cmd.choice, feedback: cmd.feedback });
     return Promise.resolve({ ok: true });
   }
 
