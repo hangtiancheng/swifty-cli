@@ -53,7 +53,8 @@ export class TaskCreateTool implements BaseTool {
   readonly name = "task_create";
   readonly description =
     "Create a new task to track a unit of work. " +
-    "Use this to break down a complex goal into smaller, trackable steps. " +
+    "Use this when a goal requires 3 or more distinct steps: break it down into smaller, " +
+    "trackable tasks and record ordering dependencies with blocked_by. " +
     "Returns the created task as JSON.";
   readonly inputSchema = {
     type: "object" as const,

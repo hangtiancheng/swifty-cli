@@ -32,15 +32,11 @@ import type { ToolRegistry } from "./tools/registry.js";
 import type { ExecutionContext } from "./context.js";
 import type { Compactor } from "./compact/compactor.js";
 import type { PermissionManager } from "./permissions/manager.js";
+import { buildSystemPrompt, detectEnvironment } from "./prompt/builder.js";
 
 function now(): string {
   return new Date().toISOString();
 }
-
-const SYSTEM_PROMPT =
-  "You are a helpful AI assistant. " +
-  "Use the available tools to complete the user's goal. " +
-  "When the goal is fully achieved, respond with a final answer and do not call any more tools.";
 
 export class AgentLoop {
   private _provider: LLMProvider;
@@ -51,6 +47,7 @@ export class AgentLoop {
   private _compactThreshold: number;
   private _sessionId: string;
   private _signal: AbortSignal | undefined;
+  private _basePrompt: string;
 
   constructor(
     provider: LLMProvider,
@@ -62,6 +59,7 @@ export class AgentLoop {
       compactThreshold?: number;
       sessionId?: string;
       signal?: AbortSignal;
+      basePrompt?: string;
     },
   ) {
     this._provider = provider;
@@ -72,6 +70,7 @@ export class AgentLoop {
     this._compactThreshold = options?.compactThreshold ?? 0.8;
     this._sessionId = options?.sessionId ?? "";
     this._signal = options?.signal;
+    this._basePrompt = options?.basePrompt ?? buildSystemPrompt(detectEnvironment(process.cwd()));
   }
 
   // Drive the plan-act-observe loop until the context signals completion
@@ -101,7 +100,7 @@ export class AgentLoop {
           context.runId,
           {
             step: context.step,
-            system: context.systemPrompt(SYSTEM_PROMPT),
+            system: context.systemPrompt(this._basePrompt),
             ...(this._signal ? { signal: this._signal } : {}),
           },
         );

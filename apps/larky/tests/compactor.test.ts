@@ -21,7 +21,11 @@
  */
 
 import { describe, expect, test } from "vitest";
-import { Compactor } from "../src/core/compact/compactor.js";
+import {
+  Compactor,
+  buildCompactedMessages,
+  extractSummary,
+} from "../src/core/compact/compactor.js";
 import { EventBus } from "../src/core/events/bus.js";
 import { ExecutionContext } from "../src/core/context.js";
 import type { LLMProvider } from "../src/core/llm/base.js";
@@ -291,5 +295,46 @@ describe("Compactor", () => {
     // The serialized history should contain both opening and closing tool_call tags
     expect(capturedContent).toContain("<tool_call");
     expect(capturedContent).toContain("</tool_call>");
+  });
+
+  // Feature: extractSummary unwraps <summary> and drops the <analysis> scratch area
+  // Design: Feed tagged text, verify only the summary body remains
+  test("extractSummary unwraps summary tags", () => {
+    const text =
+      "<analysis>\nscratch thoughts\n</analysis>\n\n<summary>\nFinal summary\n</summary>";
+    expect(extractSummary(text)).toBe("Final summary");
+  });
+
+  // Feature: extractSummary falls back to raw text minus analysis when tags are missing
+  // Design: Feed untagged and analysis-only text, verify fallback behavior
+  test("extractSummary falls back without summary tags", () => {
+    expect(extractSummary("plain summary text")).toBe("plain summary text");
+    expect(extractSummary("<analysis>notes</analysis>\nremaining text")).toBe("remaining text");
+  });
+
+  // Feature: compactMessages strips the analysis section from the provider response
+  // Design: Provider returns analysis+summary, verify stored summaryText has no analysis
+  test("compactMessages strips analysis from LLM output", async () => {
+    const bus = new EventBus();
+    const compactor = new Compactor(bus, "/tmp/session", "session-1");
+    const result = await compactor.compactMessages(
+      [{ role: "user" as const, content: "hello" }],
+      stubProviderWithSummary("<analysis>internal</analysis><summary>Kept summary</summary>"),
+    );
+    expect(result).not.toBeNull();
+    expect(result?.summaryText).toBe("Kept summary");
+    expect(result?.summaryText).not.toContain("internal");
+  });
+
+  // Feature: buildCompactedMessages produces the continuation preamble pair
+  // Design: Verify user preamble wording and assistant acknowledgment
+  test("buildCompactedMessages wraps summary in continuation preamble", () => {
+    const pair = buildCompactedMessages("The summary body");
+    expect(pair).toHaveLength(2);
+    expect(pair[0].role).toBe("user");
+    expect(pair[0].content).toContain("This session continues from a previous conversation");
+    expect(pair[0].content).toContain("The summary body");
+    expect(pair[1].role).toBe("assistant");
+    expect(pair[1].content).toBe("Understood, I'll continue from this summary.");
   });
 });

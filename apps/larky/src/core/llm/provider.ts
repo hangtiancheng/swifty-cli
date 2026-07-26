@@ -43,10 +43,8 @@ const MODEL_CONTEXT_WINDOWS: Record<string, number> = {
 const MAX_STREAM_RETRIES = 3;
 const RETRY_BACKOFF_MS = [1000, 2000, 4000];
 
-const SYSTEM_PROMPT =
-  "You are a helpful AI assistant. " +
-  "Use the available tools to complete the user's goal. " +
-  "When the goal is fully achieved, respond with a final answer and do not call any more tools.";
+// Minimal fallback only; callers normally pass the sectioned prompt from prompt/builder.ts
+const SYSTEM_PROMPT = "You are Larky, an AI coding agent.";
 
 // Return the max context window token count for a given model
 function contextWindow(model: string): number {

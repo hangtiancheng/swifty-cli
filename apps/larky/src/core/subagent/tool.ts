@@ -56,13 +56,27 @@ const SpawnAgentParamsSchema = z.object({
   subagent_type: z.string().default(""),
 });
 
+// Build the spawn_agent description dynamically so newly added agent
+// profiles (project local or user global) appear in the role list
+function buildSpawnAgentDescription(): string {
+  let desc = `Spawn an isolated sub-agent to handle a self-contained sub-task. Each sub-agent runs independently with a clean context containing only the provided prompt — it cannot see the current conversation.
+
+This is ONE tool with multiple role profiles. Roles are NOT separate tools — pick one by passing its name in the "subagent_type" parameter, or leave it empty for a general-purpose agent.
+
+Available roles for the "subagent_type" parameter:`;
+  for (const p of profileLoader.listAll()) {
+    desc += `\n- ${p.name}: ${p.description}`;
+  }
+  desc += `
+
+Write a detailed, self-contained prompt explaining what the sub-agent should do and why — it has zero prior context.
+Use run_in_background=true to run sub-agents in parallel; retrieve each result later with agent_result(run_id=...).`;
+  return desc;
+}
+
 export class SpawnAgentTool implements BaseTool {
   readonly name = "spawn_agent";
-  readonly description =
-    "Spawn an isolated sub-agent to handle a self-contained sub-task. " +
-    "The sub-agent starts with a clean context containing only the provided prompt — " +
-    "it does not inherit the current conversation history. " +
-    "Use run_in_background=true to run in parallel; retrieve result later with agent_result.";
+  readonly description = buildSpawnAgentDescription();
   readonly inputSchema = {
     type: "object",
     properties: {
@@ -82,7 +96,9 @@ export class SpawnAgentTool implements BaseTool {
       },
       subagent_type: {
         type: "string",
-        description: "Agent role profile (planner/executor/reviewer). Leave empty for default.",
+        description:
+          "Role profile name from the list in this tool's description. " +
+          "Leave empty for the default general-purpose agent.",
       },
     },
     required: ["description", "prompt"],
@@ -338,8 +354,10 @@ const AgentResultParamsSchema = z.object({
 export class AgentResultTool implements BaseTool {
   readonly name = "agent_result";
   readonly description =
-    "Retrieve the result of a background sub-agent previously started with spawn_agent. " +
-    "Returns 'still running' if the sub-agent has not yet completed.";
+    "Retrieve the result of a background sub-agent previously started with " +
+    "spawn_agent(run_in_background=true). Returns 'still running' if the sub-agent " +
+    "has not yet completed -- do useful work in the meantime and check again later " +
+    "instead of busy-polling.";
   readonly inputSchema = {
     type: "object",
     properties: {

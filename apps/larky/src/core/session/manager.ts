@@ -30,7 +30,7 @@ import type { EventBus } from "../events/bus.js";
 import type { LLMProvider } from "../llm/base.js";
 import { newRunId } from "../runs.js";
 import { SkillLoader } from "../skills/loader.js";
-import { Compactor } from "../compact/compactor.js";
+import { Compactor, buildCompactedMessages } from "../compact/compactor.js";
 import type { Session, SessionMode } from "./model.js";
 import { createSession } from "./model.js";
 import type { SessionStore } from "./store.js";
@@ -243,13 +243,7 @@ export class SessionManager {
         throw new HandlerError(COMPACTION_FAILED, "compaction failed or not beneficial");
       }
 
-      this._store.writeCompacted(sid, [
-        { role: "user", content: result.summaryText },
-        {
-          role: "assistant",
-          content: "Understood, I'll continue from this summary.",
-        },
-      ]);
+      this._store.writeCompacted(sid, buildCompactedMessages(result.summaryText));
 
       return {
         summaryTokens: result.summaryTokens,

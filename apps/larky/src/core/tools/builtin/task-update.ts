@@ -45,8 +45,10 @@ export class TaskUpdateTool implements BaseTool {
   readonly name = "task_update";
   readonly description =
     "Update a task's status or dependency list. " +
-    "Set status to 'in_progress' when starting work on a task, " +
-    "'completed' when finished (automatically clears it from other tasks' blocked_by). " +
+    "Set status to 'in_progress' when starting work on a task, and 'completed' immediately " +
+    "after finishing it -- do not batch updates. " +
+    "Only mark a task completed when the work is fully done and verified. " +
+    "Completing a task automatically clears it from other tasks' blocked_by. " +
     "Returns the updated task as JSON.";
   readonly inputSchema = {
     type: "object" as const,

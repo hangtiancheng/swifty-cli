@@ -38,10 +38,13 @@ export const WriteFileParamsSchema = z.object({
 
 export class WriteFileTool implements BaseTool {
   readonly name = "write_file";
-  readonly description =
-    "Write text content to a file, creating it (and any parent directories) if it does not exist, " +
-    "or overwriting it if it does. Path must be relative to the current working directory. " +
-    "Content size is limited to 1 MB.";
+  readonly description = `Write text content to a file, creating it (and any parent directories) if it does not exist, or overwriting it if it does.
+
+Usage notes:
+- path must be relative to the current working directory. Content size is limited to 1 MB.
+- You MUST read an existing file with read_file before overwriting it.
+- To change part of a file, read it first, then write it back with only the intended parts changed -- preserve the rest exactly.
+- NEVER create documentation files (*.md) or README files unless explicitly requested.`;
   readonly inputSchema = {
     type: "object" as const,
     properties: {

@@ -44,10 +44,23 @@ export const BashParamsSchema = z.object({
 
 export class BashTool implements BaseTool {
   readonly name = "bash";
-  readonly description =
-    "Execute a shell command and return its output (stdout + stderr combined). " +
-    "Non-interactive only -- commands requiring user input will hang and time out. " +
-    "Prefer short, focused commands. Output is truncated at 64 KB.";
+  readonly description = `Execute a shell command and return its output (stdout and stderr combined).
+
+Usage notes:
+- Non-interactive only -- commands requiring user input will hang and time out.
+- Each call runs a fresh shell from the current working directory; shell state (cd, exports) does not persist between calls.
+- Always quote file paths containing spaces with double quotes.
+- Optional timeout in seconds (max 120). Default 60. Output is truncated at 64 KB.
+- Use && to chain sequential dependent commands. Use ; only when you don't care if earlier commands failed.
+- Do NOT retry failing commands in a sleep loop -- diagnose the root cause instead.
+- When using find or grep, search from "." or a specific path, never from "/" -- scanning the full filesystem is too expensive.
+
+IMPORTANT: Avoid using this tool to run cat, head, tail, or ls. Use read_file to read files and list_dir to inspect directories instead.
+
+Git Safety Protocol:
+- NEVER run destructive git commands (push --force, reset --hard, checkout ., clean -f, branch -D) unless the user explicitly requests it.
+- NEVER skip hooks (--no-verify) unless the user explicitly requests it.
+- Prefer creating a new commit rather than amending an existing one.`;
   readonly inputSchema = {
     type: "object" as const,
     properties: {

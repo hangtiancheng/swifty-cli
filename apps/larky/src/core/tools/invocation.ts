@@ -132,7 +132,14 @@ export async function invokeTool(
 
   const tool = registry.get(toolUse.name);
   if (!tool) {
-    return fail(bus, runId, toolUse, "runtime_error", `unknown tool: ${toolUse.name}`, elapsed());
+    return fail(
+      bus,
+      runId,
+      toolUse,
+      "runtime_error",
+      `Unknown tool: ${toolUse.name}. Use only tools from the provided tool list.`,
+      elapsed(),
+    );
   }
 
   // Parameter validation
@@ -193,7 +200,8 @@ export async function invokeTool(
         runId,
         toolUse,
         "permission_denied",
-        "Permission denied by user. You may not execute this command. Try an alternative approach or ask the user what to do.",
+        "The user denied this tool use. Nothing was changed. " +
+          "Do not retry the identical call — adjust your approach or ask the user how to proceed.",
         elapsed(),
       );
     }
@@ -236,7 +244,7 @@ export async function invokeTool(
           runId,
           toolUse,
           "timeout",
-          `tool timed out after ${String(timeout / 1000)}s`,
+          `Tool execution timed out after ${String(timeout / 1000)}s. Try a smaller or more focused operation.`,
           elapsed(),
           attempt,
         );

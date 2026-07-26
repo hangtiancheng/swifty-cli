@@ -119,7 +119,7 @@ describe("Tool Invocation", () => {
     );
 
     expect(result.isError).toBe(true);
-    expect(result.content).toContain("unknown tool");
+    expect(result.content).toContain("Unknown tool");
   });
 
   // Feature: Verify invokeTool publishes events

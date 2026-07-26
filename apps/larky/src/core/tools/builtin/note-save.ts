@@ -34,8 +34,10 @@ export const NoteSaveParamsSchema = z.object({
 export class NoteSaveTool implements BaseTool {
   readonly name = "note_save";
   readonly description =
-    "Save a concise fact or decision to this session's notes. " +
-    "These notes are visible in future turns of the same session.";
+    "Save a concise, durable fact or decision to this session's notes. " +
+    "Notes are injected into future turns of the same session. " +
+    "Use it for information worth remembering across turns: user preferences, " +
+    "key decisions, and discovered constraints.";
   readonly inputSchema = {
     type: "object" as const,
     properties: {

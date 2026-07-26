@@ -21,7 +21,7 @@
  */
 
 // Agent profile loader: parse TOML agent profile files with 3-tier search (project local > user global > builtin)
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -76,6 +76,28 @@ export class AgentProfileLoader {
       }
     }
     return null;
+  }
+
+  // List all available profiles across the three tiers, deduped by name
+  // with the same priority as load() (project local > user global > builtin)
+  listAll(): AgentProfile[] {
+    const dirs = [
+      path.join(".larky", "agents"),
+      path.join(homedir(), ".larky", "agents"),
+      this._builtinDir,
+    ];
+    const seen = new Map<string, AgentProfile>();
+    for (const dir of dirs) {
+      if (!existsSync(dir)) continue;
+      for (const entry of readdirSync(dir)) {
+        if (!entry.endsWith(".toml")) continue;
+        const name = entry.slice(0, -".toml".length);
+        if (seen.has(name)) continue;
+        const profile = this.load(name);
+        if (profile) seen.set(name, profile);
+      }
+    }
+    return [...seen.values()].sort((a, b) => a.name.localeCompare(b.name));
   }
 
   // Return [project local, user global, builtin] paths; load() returns the first existing one

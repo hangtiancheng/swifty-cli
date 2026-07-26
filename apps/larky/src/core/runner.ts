@@ -38,6 +38,7 @@ import { AnthropicProvider } from "./llm/provider.js";
 import { getLogger } from "./logging.js";
 import { loadContextFile } from "./memory/loader.js";
 import type { PermissionManager } from "./permissions/manager.js";
+import { buildSystemPrompt, detectEnvironment } from "./prompt/builder.js";
 import { newRunId } from "./runs.js";
 import type { Session } from "./session/model.js";
 import type { SessionStore } from "./session/store.js";
@@ -288,11 +289,15 @@ export class AgentRunner {
             : runPath;
         const compactor = new Compactor(bus, sessionDir, sessionIdStr);
 
+        const basePrompt = buildSystemPrompt(
+          detectEnvironment(process.cwd(), this._config.llm.defaultModel),
+        );
         const loop = new AgentLoop(provider, registry, bus, {
           ...(this._permissionManager ? { permissionManager: this._permissionManager } : {}),
           compactor,
           compactThreshold: this._config.compaction.autoThreshold,
           sessionId: sessionIdStr,
+          basePrompt,
           ...(this._signal ? { signal: this._signal } : {}),
         });
         await loop.run(context);

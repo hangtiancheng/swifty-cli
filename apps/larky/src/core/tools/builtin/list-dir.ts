@@ -50,11 +50,13 @@ interface DirEntry {
 
 export class ListDirTool implements BaseTool {
   readonly name = "list_dir";
-  readonly description =
-    "List the contents of a directory as a tree. " +
-    "Path must be relative to the current working directory. " +
-    "Hidden entries (starting with .) are included. " +
-    `Maximum depth is ${String(MAX_DEPTH)}, maximum total entries is ${String(MAX_ENTRIES)}.`;
+  readonly description = `List the contents of a directory as a tree.
+
+Usage notes:
+- path must be relative to the current working directory. List from "." or a specific subdirectory, never from the filesystem root.
+- Hidden entries (starting with .) are included.
+- Maximum depth is ${String(MAX_DEPTH)}; output is capped at ${String(MAX_ENTRIES)} entries.
+- Use this instead of ls or find via bash.`;
   readonly inputSchema = {
     type: "object" as const,
     properties: {
