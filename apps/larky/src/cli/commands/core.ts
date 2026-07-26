@@ -50,7 +50,9 @@ function pidLooksLikeLarky(pid: number): boolean {
 }
 
 function runningPid(): number | null {
-  if (!existsSync(PID_FILE)) return null;
+  if (!existsSync(PID_FILE)) {
+    return null;
+  }
   try {
     const raw = readFileSync(PID_FILE, "utf-8").trim();
     const pid = Number(raw);
@@ -62,7 +64,9 @@ function runningPid(): number | null {
     process.kill(pid, 0);
     return pid;
   } catch {
-    if (existsSync(PID_FILE)) unlinkSync(PID_FILE);
+    if (existsSync(PID_FILE)) {
+      unlinkSync(PID_FILE);
+    }
     return null;
   }
 }
@@ -101,7 +105,9 @@ export function cmdCoreStart(config: LarkyConfig): void {
 
   // Write PID file
   const dir = path.dirname(PID_FILE);
-  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+  if (!existsSync(dir)) {
+    mkdirSync(dir, { recursive: true });
+  }
   writeFileSync(PID_FILE, String(child.pid), "utf-8");
 
   console.log(`started  pid=${String(child.pid)}  (${config.host}:${String(config.port)})`);
@@ -111,14 +117,18 @@ export function cmdCoreStart(config: LarkyConfig): void {
 // Returns true if this process spawned the daemon, false if it was already running.
 export async function ensureDaemonRunning(config: LarkyConfig): Promise<boolean> {
   const outcome = await pingDaemon(config);
-  if (outcome.ok) return false;
+  if (outcome.ok) {
+    return false;
+  }
 
   cmdCoreStart(config);
 
   for (let i = 0; i < 20; i++) {
     await new Promise((resolve) => setTimeout(resolve, 250));
     const retry = await pingDaemon(config);
-    if (retry.ok) return true;
+    if (retry.ok) {
+      return true;
+    }
   }
 
   console.error(`Error: daemon did not become reachable at ${config.host}:${String(config.port)}`);
@@ -134,7 +144,9 @@ export async function ensureDaemonRunning(config: LarkyConfig): Promise<boolean>
 export function stopDaemonOnExit(config: LarkyConfig): void {
   let done = false;
   const stopOnce = (): void => {
-    if (done) return;
+    if (done) {
+      return;
+    }
     done = true;
     try {
       cmdCoreStop(config);
@@ -182,11 +194,15 @@ export function cmdCoreStop(_config: LarkyConfig): void {
     console.warn(
       `warning: pid=${String(pid)} does not look like larky-core (PID reuse?); removing stale PID file without killing`,
     );
-    if (existsSync(PID_FILE)) unlinkSync(PID_FILE);
+    if (existsSync(PID_FILE)) {
+      unlinkSync(PID_FILE);
+    }
     return;
   }
 
   process.kill(pid, "SIGTERM");
-  if (existsSync(PID_FILE)) unlinkSync(PID_FILE);
+  if (existsSync(PID_FILE)) {
+    unlinkSync(PID_FILE);
+  }
   console.log(`stopped  pid=${String(pid)}`);
 }

@@ -53,7 +53,9 @@ export class EventWriter {
 
   // Serialize event as JSON line and append to file; silently skip on write failure
   handle(event: Event): void {
-    if (!this._opened) return;
+    if (!this._opened) {
+      return;
+    }
     try {
       appendFileSync(this._path, JSON.stringify(event) + "\n", "utf-8");
     } catch (err) {

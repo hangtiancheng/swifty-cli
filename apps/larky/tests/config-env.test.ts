@@ -112,7 +112,7 @@ describe("config priority chain", () => {
     const dir = makeTmpDir();
     writeFileSync(path.join(dir, ".env"), "LARKY_PORT=9999\n");
     process.chdir(dir);
-    process.env["LARKY_PORT"] = "8888";
+    process.env.LARKY_PORT = "8888";
 
     const cfg = getConfig();
     expect(cfg.port).toBe(8888);
@@ -125,7 +125,7 @@ describe("config priority chain", () => {
     const tomlPath = path.join(dir, "custom.toml");
     writeFileSync(tomlPath, "[core]\nport = 5555\n");
     process.chdir(dir);
-    process.env["LARKY_CONFIG"] = tomlPath;
+    process.env.LARKY_CONFIG = tomlPath;
 
     const cfg = getConfig();
     expect(cfg.port).toBe(5555);
@@ -139,8 +139,8 @@ describe("config priority chain", () => {
     writeFileSync(tomlPath, "[core]\nport = 6000\n");
     writeFileSync(path.join(dir, ".env"), "LARKY_PORT=7000\n");
     process.chdir(dir);
-    process.env["LARKY_CONFIG"] = tomlPath;
-    process.env["LARKY_PORT"] = "8000";
+    process.env.LARKY_CONFIG = tomlPath;
+    process.env.LARKY_PORT = "8000";
 
     const cfg = getConfig();
     expect(cfg.port).toBe(8000);
@@ -153,7 +153,7 @@ describe("config priority chain", () => {
     const tomlPath = path.join(dir, "bad.toml");
     writeFileSync(tomlPath, '[unknown_section]\nfoo = "bar"\n');
     process.chdir(dir);
-    process.env["LARKY_CONFIG"] = tomlPath;
+    process.env.LARKY_CONFIG = tomlPath;
 
     const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {
       /** noop */

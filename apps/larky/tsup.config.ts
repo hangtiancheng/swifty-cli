@@ -53,7 +53,6 @@ const coreBanner = [
 // __LARKY_VERSION__ while larky infra reads __LARKY_VERSION__.
 const defines = {
   __LARKY_VERSION__: JSON.stringify(pkg.version),
-  __LARKY_VERSION__: JSON.stringify(pkg.version),
 };
 
 function externalizePlugin(): NonNullable<Options["esbuildPlugins"]> {

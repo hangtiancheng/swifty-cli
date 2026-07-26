@@ -124,7 +124,9 @@ export class CoreApp {
   // Persist run-scoped events for replay, then broadcast.
   private _persistEvent(event: Event): void {
     const runId = "run_id" in event ? event.run_id : "";
-    if (!runId) return;
+    if (!runId) {
+      return;
+    }
     const p = runEventsPath(this._workDir, runId);
     try {
       mkdirSync(path.dirname(p), { recursive: true });
@@ -500,7 +502,9 @@ export class CoreApp {
       type: "event.subscribe",
     });
     const writer = getConnectionWriter();
-    if (!this._broadcaster) throw new Error("broadcaster not initialized");
+    if (!this._broadcaster) {
+      throw new Error("broadcaster not initialized");
+    }
     return handleEventSubscribe(this._broadcaster, writer, cmd, (runId, topics) =>
       snapshotReplayLines(this._workDir, runId, topics),
     );
@@ -513,13 +517,15 @@ export class CoreApp {
       for (const session of this._sessions.values()) {
         const states = session.teamManager.getAllTeammateStates();
         const serialized = JSON.stringify(states);
-        if (serialized === this._lastTeammateStates) continue;
+        if (serialized === this._lastTeammateStates) {
+          continue;
+        }
         this._lastTeammateStates = serialized;
         this.emit({
           type: "teammate.state",
           session_id: session.id,
-          // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
-          states: states.map((s) => ({ ...s }) as unknown as Record<string, unknown>),
+
+          states: states.map((s) => ({ ...s })),
           timestamp: nowIso(),
         });
       }
@@ -542,10 +548,7 @@ export class CoreApp {
       this._trace = new TraceWriter(tracePath);
       this._trace.start();
       this._bus.subscribe((e) => {
-        // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
-        this._trace?.emit(
-          makeEventTrace("run_id" in e ? e.run_id : null, e as unknown as Record<string, unknown>),
-        );
+        this._trace?.emit(makeEventTrace("run_id" in e ? e.run_id : null, e));
         return Promise.resolve();
       });
     }
@@ -601,7 +604,7 @@ export class CoreApp {
       addr = await server.start();
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      const code = isRecord(e) && typeof e["code"] === "string" ? e["code"] : "";
+      const code = isRecord(e) && typeof e.code === "string" ? e.code : "";
       if (code === "EADDRINUSE" || msg.includes("already running")) {
         console.error(
           `larky-core: port ${String(config.port)} already in use (${config.host}:${String(config.port)})`,
@@ -637,14 +640,18 @@ export class CoreApp {
     await shutdownPromise;
 
     logger.info("shutting down");
-    if (this._teammatePollTimer) clearInterval(this._teammatePollTimer);
+    if (this._teammatePollTimer) {
+      clearInterval(this._teammatePollTimer);
+    }
     this._cancelAllInteractions();
     for (const session of this._sessions.values()) {
       await session.close().catch(() => undefined);
     }
     this._sessions.clear();
     await server.stop();
-    if (this._trace) await this._trace.stop();
+    if (this._trace) {
+      await this._trace.stop();
+    }
 
     process.off("SIGINT", onSignal);
     process.off("SIGTERM", onSignal);
@@ -671,19 +678,27 @@ export function snapshotReplayLines(workDir: string, runId: string, topics: stri
 }
 
 export function snapshotReplayLinesFromFile(eventsPath: string, topics: string[]): string[] {
-  if (!existsSync(eventsPath)) return [];
+  if (!existsSync(eventsPath)) {
+    return [];
+  }
 
   const matchers = topics.map((t) => picomatch(t));
   const out: string[] = [];
   try {
     const content = readFileSync(eventsPath, "utf-8");
     for (const line of content.split("\n")) {
-      if (!line.trim()) continue;
+      if (!line.trim()) {
+        continue;
+      }
       try {
         const parsed: unknown = JSON.parse(line);
-        if (!isRecord(parsed)) continue;
-        const eventType = typeof parsed["type"] === "string" ? parsed["type"] : "";
-        if (!matchTopic(eventType, matchers)) continue;
+        if (!isRecord(parsed)) {
+          continue;
+        }
+        const eventType = typeof parsed.type === "string" ? parsed.type : "";
+        if (!matchTopic(eventType, matchers)) {
+          continue;
+        }
         out.push(JSON.stringify({ kind: "event", event: parsed }) + "\n");
       } catch {
         // Skip malformed JSON lines

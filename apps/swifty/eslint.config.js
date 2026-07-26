@@ -37,7 +37,6 @@ export default defineConfig(
     "node_modules",
     "out",
     "eslint.config.js",
-    "rspress.config.ts",
     "tsup.config.ts",
     "vitest.config.ts",
     "src/remote/fe",

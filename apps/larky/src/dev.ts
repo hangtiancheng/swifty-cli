@@ -70,7 +70,9 @@ function waitForDaemon(host: string, port: number, timeoutMs = 10_000): Promise<
         );
       });
       sock.on("error", () => {
-        if (settled) return;
+        if (settled) {
+          return;
+        }
         settled = true;
         sock.destroy();
         setTimeout(tryConnect, 200);
@@ -117,7 +119,9 @@ async function main(): Promise<void> {
 
   // Cleanup helper: kill daemon if we started it
   const killDaemon = (): void => {
-    if (!daemon) return;
+    if (!daemon) {
+      return;
+    }
     daemon.kill("SIGTERM");
     // Force kill after 3s if SIGTERM doesn't work
     const timer = setTimeout(() => {

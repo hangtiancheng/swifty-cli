@@ -192,27 +192,21 @@ rules.ninja
 *.swp
 *.swo
 
-**/.vitepress/cache/
-swifty-vscode/swifty-vscode-*.vsix
-
 tsconfig.tsbuildinfo
 **/tsconfig.tsbuildinfo
-
-code-review*.md
-plan*.md
-swifty*.code-workspace
 
 target
 **/target
 
-glob-addon/glob-addon.*.node
 !apps/swifty-agent/app/api/upload
 
-*.local.yml
 *.local.yaml
-**/*.local.yml
 **/*.local.yaml
-**/doc_build/
 
-.omo/
 .swifty/
+**/.swifty/
+.larky/
+**/.larky/
+
+!apps/larky/.swifty/config.yaml
+!apps/larky/.larky/config.yaml

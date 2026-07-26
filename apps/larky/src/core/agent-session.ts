@@ -264,7 +264,9 @@ export class AgentSession {
     // Context window: sync seed + async upgrade
     getContextWindowAsync(provider)
       .then((w) => {
-        if (w > 0) s.contextWindow = w;
+        if (w > 0) {
+          s.contextWindow = w;
+        }
       })
       .catch(() => {
         /* best-effort */
@@ -469,8 +471,8 @@ export class AgentSession {
     this.emit({
       type: "todo.updated",
       session_id: this.id,
-      // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
-      todos: this.taskList.list().map((t) => ({ ...t }) as Record<string, unknown>),
+
+      todos: this.taskList.list().map((t) => ({ ...t })),
       timestamp: nowIso(),
     });
   }
@@ -499,7 +501,9 @@ export class AgentSession {
   }
 
   cancel(): boolean {
-    if (!this.abortController) return false;
+    if (!this.abortController) {
+      return false;
+    }
     this.abortController.abort();
     return true;
   }
@@ -610,7 +614,9 @@ export class AgentSession {
       const recallPromise = this.memoryManager
         .findRelevantMemories(lastUser, this.client)
         .then((memories) => {
-          if (memories.length === 0) return "";
+          if (memories.length === 0) {
+            return "";
+          }
           const lines = memories
             .map((m) => {
               try {
@@ -645,7 +651,9 @@ export class AgentSession {
         activeSkills: this.activeSkills,
         memoryRecallPromise: recallPromise,
         toolFilter: (name: string) => {
-          if (!coordinatorToolFilter(this.enableCoordinatorMode)(name)) return false;
+          if (!coordinatorToolFilter(this.enableCoordinatorMode)(name)) {
+            return false;
+          }
           return this.toolFilter ? this.toolFilter(name) : true;
         },
         coordinatorActiveFn: () => coordinatorActive(this.enableCoordinatorMode),
@@ -848,8 +856,12 @@ export class AgentSession {
   }
 
   private extractMemories(conv: ConversationManager): void {
-    if (this.memExtracting) return;
-    if (conv.len() - this.memCursor < 2) return;
+    if (this.memExtracting) {
+      return;
+    }
+    if (conv.len() - this.memCursor < 2) {
+      return;
+    }
     this.memExtracting = true;
     const cursor = conv.len();
     const summary = conv
@@ -888,7 +900,9 @@ export class AgentSession {
 
   private refreshSkillsIfNeeded(): void {
     const catalog = this.skillCatalog;
-    if (!catalog?.needsReload()) return;
+    if (!catalog?.needsReload()) {
+      return;
+    }
     catalog.reload();
     wireSkillsToRegistry(catalog, this.cmdRegistry, this.skillHost);
     const env = detectEnvironment(this.workDir);
@@ -1404,9 +1418,13 @@ export function wireSkillsToRegistry(
   skillHost: SkillHost,
 ): void {
   for (const meta of catalog.list()) {
-    if (cmdRegistry.find(meta.name)) continue;
+    if (cmdRegistry.find(meta.name)) {
+      continue;
+    }
     const skill = catalog.get(meta.name);
-    if (!skill) continue;
+    if (!skill) {
+      continue;
+    }
     const isFork = skill.meta.mode === "fork";
     try {
       cmdRegistry.register({
@@ -1424,7 +1442,9 @@ export function wireSkillsToRegistry(
 
 export function buildSkillSection(catalog: SkillCatalog, workDir: string): string {
   const metas = catalog.list();
-  if (metas.length === 0) return "";
+  if (metas.length === 0) {
+    return "";
+  }
   const skillsDir = join(workDir, ".larky", "skills");
   const lines = [
     "## Available Skills\n",

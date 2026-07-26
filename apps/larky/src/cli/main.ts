@@ -65,7 +65,9 @@ Usage:
 
 function readFlagValue(args: string[], flag: string): string | undefined {
   const idx = args.indexOf(flag);
-  if (idx >= 0 && idx + 1 < args.length) return args[idx + 1];
+  if (idx >= 0 && idx + 1 < args.length) {
+    return args[idx + 1];
+  }
   return undefined;
 }
 
@@ -146,7 +148,9 @@ async function main(): Promise<void> {
   // If this process spawned the daemon, shut it down when the TUI exits.
   if (args.length === 0) {
     const startedDaemon = await ensureDaemonRunning(config);
-    if (startedDaemon) stopDaemonOnExit(config);
+    if (startedDaemon) {
+      stopDaemonOnExit(config);
+    }
     const { launchTUI } = await import("../tui/index.js");
     await launchTUI();
     process.exit(0);
@@ -204,10 +208,18 @@ async function main(): Promise<void> {
         raw?: boolean;
         follow?: boolean;
       } = {};
-      if (layer) options.layer = layer;
-      if (direction) options.direction = direction;
-      if (raw) options.raw = true;
-      if (follow) options.follow = true;
+      if (layer) {
+        options.layer = layer;
+      }
+      if (direction) {
+        options.direction = direction;
+      }
+      if (raw) {
+        options.raw = true;
+      }
+      if (follow) {
+        options.follow = true;
+      }
       cmdTrace(runId, config, options);
       break;
     }

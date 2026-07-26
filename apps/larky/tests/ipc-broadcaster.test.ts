@@ -104,17 +104,23 @@ function makeTurnComplete(runId = "r1"): Event {
 // Retrieve the write tracker for a socket
 function getTracker(socket: net.Socket): WriteTracker {
   const tracker = trackerRegistry.get(socket);
-  if (!tracker) throw new Error("no tracker registered for socket");
+  if (!tracker) {
+    throw new Error("no tracker registered for socket");
+  }
   return tracker;
 }
 
 // Type-safe helper to parse the first write call as JSON
 function getWriteCallData(socket: net.Socket): Record<string, unknown> | null {
   const tracker = getTracker(socket);
-  if (tracker.data.length === 0) return null;
+  if (tracker.data.length === 0) {
+    return null;
+  }
   const first = tracker.data[0];
   const parsed: unknown = JSON.parse(first.trim());
-  if (!isRecord(parsed)) return null;
+  if (!isRecord(parsed)) {
+    return null;
+  }
   return parsed;
 }
 
@@ -136,10 +142,12 @@ describe("IpcEventBroadcaster", () => {
 
     expect(getWriteCallCount(socket)).toBe(1);
     const data = getWriteCallData(socket);
-    if (!data) throw new Error("write not called");
-    expect(data["kind"]).toBe("event");
-    const event = data["event"];
-    expect(isRecord(event) ? event["type"] : undefined).toBe("run.started");
+    if (!data) {
+      throw new Error("write not called");
+    }
+    expect(data.kind).toBe("event");
+    const event = data.event;
+    expect(isRecord(event) ? event.type : undefined).toBe("run.started");
   });
 
   // Feature: Verify handle does not write to any socket when no subscriptions exist
@@ -268,9 +276,11 @@ describe("IpcEventBroadcaster", () => {
     const tracker = getTracker(slow);
     const runIds = tracker.data.map((raw) => {
       const parsed: unknown = JSON.parse(raw.trim());
-      if (!isRecord(parsed)) return "";
-      const event = parsed["event"];
-      return isRecord(event) && typeof event["run_id"] === "string" ? event["run_id"] : "";
+      if (!isRecord(parsed)) {
+        return "";
+      }
+      const event = parsed.event;
+      return isRecord(event) && typeof event.run_id === "string" ? event.run_id : "";
     });
     expect(runIds).toEqual(["first", "second"]);
   });

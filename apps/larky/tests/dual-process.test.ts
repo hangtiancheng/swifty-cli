@@ -59,7 +59,9 @@ async function waitForPort(port: number, timeoutMs = 15_000): Promise<void> {
         resolve(false);
       });
     });
-    if (ok) return;
+    if (ok) {
+      return;
+    }
     await new Promise((r) => setTimeout(r, 200));
   }
   throw new Error("daemon did not become reachable");

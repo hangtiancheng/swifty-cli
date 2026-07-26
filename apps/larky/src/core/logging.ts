@@ -79,7 +79,9 @@ const warnedUnknownLevels = new Set<string>();
 function toPinoLevel(raw: string): PinoLevel {
   const lower = raw.toLowerCase();
   const mapped = LEVEL_ALIASES[lower];
-  if (mapped !== undefined) return mapped;
+  if (mapped !== undefined) {
+    return mapped;
+  }
   if (!warnedUnknownLevels.has(lower)) {
     warnedUnknownLevels.add(lower);
     process.stderr.write(
@@ -119,21 +121,27 @@ const LogHeadSchema = z.object({
 // passed through unchanged so nothing is ever silently dropped.
 export function formatTextLine(line: string): string {
   const trimmed = line.trim();
-  if (trimmed === "") return "";
+  if (trimmed === "") {
+    return "";
+  }
   let parsed: unknown;
   try {
     parsed = JSON.parse(trimmed);
   } catch {
     return line;
   }
-  if (!isRecord(parsed)) return line;
+  if (!isRecord(parsed)) {
+    return line;
+  }
   const record = parsed;
 
   const head = LogHeadSchema.parse(record);
 
   let out = `level=${head.level} ts=${head.time} source=${head.name} msg=${JSON.stringify(head.msg)}`;
   for (const [key, value] of Object.entries(record)) {
-    if (TEXT_CORE_KEYS.has(key)) continue;
+    if (TEXT_CORE_KEYS.has(key)) {
+      continue;
+    }
     out += ` ${key}=${JSON.stringify(value)}`;
   }
   return `${out}\n`;
@@ -182,11 +190,19 @@ export class RotatingFileDestination implements pino.DestinationStream {
   }
 
   write(msg: string): void {
-    if (msg === "") return;
+    if (msg === "") {
+      return;
+    }
     const buf = Buffer.from(msg, "utf8");
-    if (this.fd === undefined) this.open();
-    if (this.size > 0 && this.size + buf.length > this.maxSize) this.roll();
-    if (this.fd === undefined) return;
+    if (this.fd === undefined) {
+      this.open();
+    }
+    if (this.size > 0 && this.size + buf.length > this.maxSize) {
+      this.roll();
+    }
+    if (this.fd === undefined) {
+      return;
+    }
     fs.writeSync(this.fd, buf);
     this.size += buf.length;
   }
@@ -207,9 +223,13 @@ export class RotatingFileDestination implements pino.DestinationStream {
     }
     for (let i = this.maxBackups - 1; i >= 1; i--) {
       const src = `${this.filePath}.${String(i)}`;
-      if (fs.existsSync(src)) fs.renameSync(src, `${this.filePath}.${String(i + 1)}`);
+      if (fs.existsSync(src)) {
+        fs.renameSync(src, `${this.filePath}.${String(i + 1)}`);
+      }
     }
-    if (fs.existsSync(this.filePath)) fs.renameSync(this.filePath, `${this.filePath}.1`);
+    if (fs.existsSync(this.filePath)) {
+      fs.renameSync(this.filePath, `${this.filePath}.1`);
+    }
     this.open();
   }
 }
@@ -221,7 +241,9 @@ let fallbackLogger: pino.Logger | undefined;
 // Return the logger created by setupLogging; safe to call before setup
 // (returns a stderr fallback logger until setupLogging runs)
 export function getLogger(): pino.Logger {
-  if (moduleLogger) return moduleLogger;
+  if (moduleLogger) {
+    return moduleLogger;
+  }
   fallbackLogger ??= pino({ level: "info" }, pino.destination(2));
   return fallbackLogger;
 }

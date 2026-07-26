@@ -54,7 +54,9 @@ export class TraceWriter {
 
   // Synchronously write a single trace record to file
   emit(record: TraceRecord): void {
-    if (this._stopped) return;
+    if (this._stopped) {
+      return;
+    }
     try {
       appendFileSync(this._path, JSON.stringify(record) + "\n", "utf-8");
     } catch {

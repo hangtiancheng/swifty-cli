@@ -68,7 +68,7 @@ describe("SocketClient", () => {
     const response = await client.sendCommand("test.method", {
       param: "value",
     });
-    expect(response["result"]).toBe("success");
+    expect(response.result).toBe("success");
 
     client.close();
     await server.stop();
@@ -132,7 +132,7 @@ describe("SocketClient", () => {
     await new Promise((resolve) => setTimeout(resolve, 50));
 
     expect(events.length).toBeGreaterThan(0);
-    const testEvent = events.find((e: unknown) => asRecord(e)["type"] === "session.created");
+    const testEvent = events.find((e: unknown) => asRecord(e).type === "session.created");
     expect(testEvent).toBeDefined();
 
     client.close();

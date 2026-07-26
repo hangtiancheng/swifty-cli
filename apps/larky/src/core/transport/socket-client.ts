@@ -127,7 +127,9 @@ export class SocketClient {
 
   // Start reading lines from the socket and dispatching responses/events
   private _startReading(): void {
-    if (!this._socket) return;
+    if (!this._socket) {
+      return;
+    }
 
     const rl = createInterface({
       input: this._socket,
@@ -198,24 +200,28 @@ export class SocketClient {
     let msg: Record<string, unknown>;
     try {
       const parsed: unknown = JSON.parse(line);
-      if (!isRecord(parsed)) return;
+      if (!isRecord(parsed)) {
+        return;
+      }
       msg = parsed;
     } catch {
       return;
     }
 
     if ("jsonrpc" in msg) {
-      const reqIdRaw = msg["id"];
+      const reqIdRaw = msg.id;
       const reqId = typeof reqIdRaw === "string" ? reqIdRaw : undefined;
       if (reqId && this._pending.has(reqId)) {
         const pending = this._pending.get(reqId);
-        if (!pending) return;
+        if (!pending) {
+          return;
+        }
         this._pending.delete(reqId);
         if ("error" in msg) {
-          const { code, message } = RpcErrorSchema.parse(msg["error"]);
+          const { code, message } = RpcErrorSchema.parse(msg.error);
           pending.reject(new IpcError(code, message));
         } else {
-          pending.resolve(RpcResultSchema.parse(msg["result"]));
+          pending.resolve(RpcResultSchema.parse(msg.result));
         }
       }
     } else {

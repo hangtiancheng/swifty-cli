@@ -52,7 +52,9 @@ function writeLine(socket: net.Socket, data: unknown): boolean {
 function peerAddress(socket: net.Socket): string {
   const addr = socket.remoteAddress;
   const port = socket.remotePort;
-  if (addr && port) return `${addr}:${String(port)}`;
+  if (addr && port) {
+    return `${addr}:${String(port)}`;
+  }
   return "<unknown>";
 }
 
@@ -103,8 +105,12 @@ export class IpcEventBroadcaster {
     const sessionId = "session_id" in event ? event.session_id : undefined;
 
     for (const sub of [...this._subscriptions]) {
-      if (!this._matchesTopic(eventType, sub.matchers)) continue;
-      if (!this._matchesScope(runId, sessionId, sub.scope)) continue;
+      if (!this._matchesTopic(eventType, sub.matchers)) {
+        continue;
+      }
+      if (!this._matchesScope(runId, sessionId, sub.scope)) {
+        continue;
+      }
 
       sub.writeQueue = sub.writeQueue
         .then(() => this._deliver(sub, event, eventType, runId))
@@ -177,9 +183,15 @@ export class IpcEventBroadcaster {
     sessionId: string | undefined,
     scope: string,
   ): boolean {
-    if (scope === "global") return true;
-    if (scope.startsWith("run:")) return runId === scope.slice(4);
-    if (scope.startsWith("session:")) return sessionId === scope.slice(8);
+    if (scope === "global") {
+      return true;
+    }
+    if (scope.startsWith("run:")) {
+      return runId === scope.slice(4);
+    }
+    if (scope.startsWith("session:")) {
+      return sessionId === scope.slice(8);
+    }
     return false;
   }
 }

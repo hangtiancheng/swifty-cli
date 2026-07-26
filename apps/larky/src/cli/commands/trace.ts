@@ -93,8 +93,12 @@ const ApiResponseDataSchema = z.object({
 });
 
 function str(v: unknown): string {
-  if (typeof v === "string") return v;
-  if (typeof v === "number") return String(v);
+  if (typeof v === "string") {
+    return v;
+  }
+  if (typeof v === "number") {
+    return String(v);
+  }
   return JSON.stringify(v ?? "");
 }
 
@@ -109,11 +113,11 @@ function summarize(record: TraceRecord): string {
   }
 
   if (kind === "response") {
-    const result = ResponseResultSchema.safeParse(data["result"]);
+    const result = ResponseResultSchema.safeParse(data.result);
     if (result.success) {
       return `run_id=${result.data.run_id.slice(0, 8)}`;
     }
-    return JSON.stringify(data["result"] ?? "").slice(0, 60);
+    return JSON.stringify(data.result ?? "").slice(0, 60);
   }
 
   if (kind === "error") {
@@ -122,11 +126,11 @@ function summarize(record: TraceRecord): string {
   }
 
   if (kind === "push") {
-    return `event=${str(data["event_type"])}  sub=${str(data["sub_id"])}`;
+    return `event=${str(data.event_type)}  sub=${str(data.sub_id)}`;
   }
 
   if (kind === "event") {
-    return `type=${str(data["type"])}`;
+    return `type=${str(data.type)}`;
   }
 
   if (kind === "api_call") {
@@ -166,16 +170,26 @@ function processLine(
   direction: string | undefined,
   raw: boolean,
 ): void {
-  if (!line.trim()) return;
+  if (!line.trim()) {
+    return;
+  }
   try {
     const result = TraceRecordSchema.safeParse(JSON.parse(line));
-    if (!result.success) return;
+    if (!result.success) {
+      return;
+    }
     const record: TraceRecord = result.data;
 
     // Apply filters
-    if (runId && record.run_id !== runId) return;
-    if (layer && record.layer !== layer) return;
-    if (direction && record.direction !== direction) return;
+    if (runId && record.run_id !== runId) {
+      return;
+    }
+    if (layer && record.layer !== layer) {
+      return;
+    }
+    if (direction && record.direction !== direction) {
+      return;
+    }
 
     if (raw) {
       console.log(line);

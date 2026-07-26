@@ -31,7 +31,16 @@ import reactRefresh from "eslint-plugin-react-refresh";
 import globals from "globals";
 
 export default defineConfig(
-  globalIgnores(["./dist", "./node_modules"]),
+  globalIgnores([
+    "app",
+    "dist",
+    "node_modules",
+    "out",
+    "eslint.config.js",
+    "tsup.config.ts",
+    "vitest.config.ts",
+    "src/remote/fe",
+  ]),
   {
     files: ["**/*.{ts,tsx}"],
     extends: [
@@ -72,6 +81,9 @@ export default defineConfig(
       "@typescript-eslint/no-unsafe-member-access": "error",
       "@typescript-eslint/no-unsafe-return": "error",
       "unicorn/filename-case": ["error", { case: "kebabCase" }],
+      "no-console": "warn",
+      curly: ["error", "all"],
+      "no-control-regex": "warn",
     },
   },
   {

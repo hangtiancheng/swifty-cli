@@ -59,7 +59,9 @@ const MAX_LINE_BYTES = 64 * 1024 * 1024; // 64 MB per frame
 function peerAddress(socket: net.Socket): string {
   const addr = socket.remoteAddress;
   const port = socket.remotePort;
-  if (addr && port) return `${addr}:${String(port)}`;
+  if (addr && port) {
+    return `${addr}:${String(port)}`;
+  }
   return "<unknown>";
 }
 
@@ -68,8 +70,11 @@ async function sendJson(socket: net.Socket, data: unknown): Promise<void> {
   return new Promise<void>((resolve, reject) => {
     const line = JSON.stringify(data) + "\n";
     const ok = socket.write(line, "utf-8", (err) => {
-      if (err) reject(err);
-      else resolve();
+      if (err) {
+        reject(err);
+      } else {
+        resolve();
+      }
     });
     if (!ok) {
       // Backpressure: wait for drain event
@@ -129,7 +134,9 @@ export class SocketServer {
   // Close server: disconnect all active connections first, then close server
   async stop(): Promise<void> {
     const server = this._server;
-    if (!server) return;
+    if (!server) {
+      return;
+    }
 
     for (const socket of this._activeSockets) {
       socket.destroy();
@@ -169,7 +176,9 @@ export class SocketServer {
     // any state keyed on this socket.
     let cleaned = false;
     const cleanup = (): void => {
-      if (cleaned) return;
+      if (cleaned) {
+        return;
+      }
       cleaned = true;
       this._activeSockets.delete(socket);
       this._onDisconnect?.(socket);

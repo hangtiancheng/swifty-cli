@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/consistent-type-assertions */
 /**
  * Copyright (c) 2026 hangtiancheng
  *
@@ -20,9 +21,6 @@
  * SOFTWARE.
  */
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
-/* eslint-disable @typescript-eslint/consistent-type-assertions */
-/* eslint-disable @typescript-eslint/no-unsafe-argument */
 import { describe, it, expect } from "vitest";
 import {
   mkdtempSync,
@@ -35,6 +33,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { MemoryConsolidator } from "../src/memory/consolidation.js";
+import type { LLMClient } from "@/llm/client.js";
 
 function makeTempDir(): string {
   return mkdtempSync(join(tmpdir(), "consolidation-test-"));
@@ -87,7 +86,7 @@ describe("MemoryConsolidator", () => {
   describe("Gate logic", () => {
     it("skips when memory dir does not exist", async () => {
       const dir = makeTempDir();
-      const consolidator = new MemoryConsolidator(null as any, dir);
+      const consolidator = new MemoryConsolidator({} as LLMClient, dir);
       // Should not throw
       await consolidator.maybeRun();
     });
@@ -106,7 +105,7 @@ describe("MemoryConsolidator", () => {
       createSessions(dir, 10);
 
       let triggered = false;
-      const consolidator = new MemoryConsolidator(null as any, dir, {
+      const consolidator = new MemoryConsolidator({} as LLMClient, dir, {
         appendSystem: () => {
           triggered = true;
         },
@@ -126,7 +125,7 @@ describe("MemoryConsolidator", () => {
       // Only 2 sessions (need 5)
       createSessions(dir, 2);
 
-      const consolidator = new MemoryConsolidator(null as any, dir);
+      const consolidator = new MemoryConsolidator({} as LLMClient, dir);
       // Should not throw even with null client (gates should block before LLM call)
       await consolidator.maybeRun();
     });

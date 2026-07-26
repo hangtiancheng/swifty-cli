@@ -26,7 +26,7 @@
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import net from "node:net";
+import type net from "node:net";
 
 import { describe, expect, test } from "vitest";
 
@@ -102,7 +102,6 @@ describe("replay snapshot", () => {
           return true;
         },
         writableNeedDrain: false,
-        // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
       } as unknown as net.Socket;
 
       const result = await handleEventSubscribe(
@@ -141,7 +140,6 @@ describe("broadcaster session scope", () => {
         writes.push(typeof chunk === "string" ? chunk : Buffer.from(chunk).toString());
         return true;
       },
-      // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
     } as unknown as net.Socket;
 
     broadcaster.subscribe(fakeSocket, ["*"], "session:s1");

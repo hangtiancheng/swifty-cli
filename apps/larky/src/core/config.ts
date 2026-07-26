@@ -152,7 +152,7 @@ export function getConfig(): LarkyConfig {
   loadDotenv();
 
   // Determine TOML config file paths
-  const explicit = process.env["LARKY_CONFIG"];
+  const explicit = process.env.LARKY_CONFIG;
   const configPaths = explicit
     ? [expandUser(explicit)]
     : [expandUser(DEFAULT_CONFIG_PATH), path.resolve(".larky/config.toml")];
@@ -273,33 +273,63 @@ function applyToml(config: LarkyConfig, data: Record<string, unknown>): void {
   }
   const t = result.data;
 
-  if (t.core?.host !== undefined) config.host = t.core.host;
-  if (t.core?.port !== undefined) config.port = t.core.port;
+  if (t.core?.host !== undefined) {
+    config.host = t.core.host;
+  }
+  if (t.core?.port !== undefined) {
+    config.port = t.core.port;
+  }
 
-  if (t.logging?.level !== undefined) config.logging.level = t.logging.level;
-  if (t.logging?.file !== undefined) config.logging.file = t.logging.file;
-  if (t.logging?.format !== undefined) config.logging.format = t.logging.format;
+  if (t.logging?.level !== undefined) {
+    config.logging.level = t.logging.level;
+  }
+  if (t.logging?.file !== undefined) {
+    config.logging.file = t.logging.file;
+  }
+  if (t.logging?.format !== undefined) {
+    config.logging.format = t.logging.format;
+  }
 
-  if (t.agent?.max_steps !== undefined) config.agent.maxSteps = t.agent.max_steps;
+  if (t.agent?.max_steps !== undefined) {
+    config.agent.maxSteps = t.agent.max_steps;
+  }
 
-  if (t.llm?.default_model !== undefined) config.llm.defaultModel = t.llm.default_model;
-  if (t.llm?.router !== undefined) config.llm.router = t.llm.router;
-  if (t.llm?.base_url !== undefined) config.llm.baseUrl = t.llm.base_url;
-  if (t.llm?.api_key !== undefined) config.llm.apiKey = t.llm.api_key;
+  if (t.llm?.default_model !== undefined) {
+    config.llm.defaultModel = t.llm.default_model;
+  }
+  if (t.llm?.router !== undefined) {
+    config.llm.router = t.llm.router;
+  }
+  if (t.llm?.base_url !== undefined) {
+    config.llm.baseUrl = t.llm.base_url;
+  }
+  if (t.llm?.api_key !== undefined) {
+    config.llm.apiKey = t.llm.api_key;
+  }
 
-  if (t.trace?.enabled !== undefined) config.trace.enabled = t.trace.enabled;
-  if (t.trace?.file !== undefined) config.trace.file = t.trace.file;
-  if (t.trace?.include_llm_payload !== undefined)
+  if (t.trace?.enabled !== undefined) {
+    config.trace.enabled = t.trace.enabled;
+  }
+  if (t.trace?.file !== undefined) {
+    config.trace.file = t.trace.file;
+  }
+  if (t.trace?.include_llm_payload !== undefined) {
     config.trace.includeLlmPayload = t.trace.include_llm_payload;
+  }
 
-  if (t.permission?.timeout_s !== undefined) config.permission.timeoutS = t.permission.timeout_s;
+  if (t.permission?.timeout_s !== undefined) {
+    config.permission.timeoutS = t.permission.timeout_s;
+  }
 
-  if (t.compaction?.auto_threshold !== undefined)
+  if (t.compaction?.auto_threshold !== undefined) {
     config.compaction.autoThreshold = t.compaction.auto_threshold;
-  if (t.compaction?.tool_result_limit !== undefined)
+  }
+  if (t.compaction?.tool_result_limit !== undefined) {
     config.compaction.toolResultLimit = t.compaction.tool_result_limit;
-  if (t.compaction?.tool_result_keep !== undefined)
+  }
+  if (t.compaction?.tool_result_keep !== undefined) {
     config.compaction.toolResultKeep = t.compaction.tool_result_keep;
+  }
 
   if (t.mcp) {
     config.mcp.servers.push(...t.mcp.servers);
@@ -308,10 +338,12 @@ function applyToml(config: LarkyConfig, data: Record<string, unknown>): void {
 
 // Override config fields from LARKY_* environment variables
 function applyEnv(config: LarkyConfig): void {
-  const host = process.env["LARKY_HOST"];
-  if (host !== undefined) config.host = host;
+  const host = process.env.LARKY_HOST;
+  if (host !== undefined) {
+    config.host = host;
+  }
 
-  const portStr = process.env["LARKY_PORT"];
+  const portStr = process.env.LARKY_PORT;
   if (portStr !== undefined) {
     const port = Number(portStr);
     if (!Number.isInteger(port)) {
@@ -320,16 +352,22 @@ function applyEnv(config: LarkyConfig): void {
     config.port = port;
   }
 
-  const logLevel = process.env["LARKY_LOG_LEVEL"];
-  if (logLevel !== undefined) config.logging.level = logLevel;
+  const logLevel = process.env.LARKY_LOG_LEVEL;
+  if (logLevel !== undefined) {
+    config.logging.level = logLevel;
+  }
 
-  const logFile = process.env["LARKY_LOG_FILE"];
-  if (logFile !== undefined) config.logging.file = logFile;
+  const logFile = process.env.LARKY_LOG_FILE;
+  if (logFile !== undefined) {
+    config.logging.file = logFile;
+  }
 
-  const logFormat = process.env["LARKY_LOG_FORMAT"];
-  if (logFormat !== undefined) config.logging.format = logFormat;
+  const logFormat = process.env.LARKY_LOG_FORMAT;
+  if (logFormat !== undefined) {
+    config.logging.format = logFormat;
+  }
 
-  const maxStepsStr = process.env["LARKY_MAX_STEPS"];
+  const maxStepsStr = process.env.LARKY_MAX_STEPS;
   if (maxStepsStr !== undefined) {
     const val = Number(maxStepsStr);
     if (!Number.isInteger(val) || val <= 0) {
@@ -340,29 +378,37 @@ function applyEnv(config: LarkyConfig): void {
     config.agent.maxSteps = val;
   }
 
-  const defaultModel = process.env["LARKY_LLM_DEFAULT_MODEL"];
-  if (defaultModel !== undefined) config.llm.defaultModel = defaultModel;
+  const defaultModel = process.env.LARKY_LLM_DEFAULT_MODEL;
+  if (defaultModel !== undefined) {
+    config.llm.defaultModel = defaultModel;
+  }
 
-  const anthropicBaseUrl = process.env["ANTHROPIC_BASE_URL"];
-  if (anthropicBaseUrl !== undefined) config.llm.baseUrl = anthropicBaseUrl;
+  const anthropicBaseUrl = process.env.ANTHROPIC_BASE_URL;
+  if (anthropicBaseUrl !== undefined) {
+    config.llm.baseUrl = anthropicBaseUrl;
+  }
 
-  const anthropicApiKey = process.env["ANTHROPIC_API_KEY"];
-  if (anthropicApiKey !== undefined) config.llm.apiKey = anthropicApiKey;
+  const anthropicApiKey = process.env.ANTHROPIC_API_KEY;
+  if (anthropicApiKey !== undefined) {
+    config.llm.apiKey = anthropicApiKey;
+  }
 
-  const traceEnabled = process.env["LARKY_TRACE_ENABLED"];
+  const traceEnabled = process.env.LARKY_TRACE_ENABLED;
   if (traceEnabled !== undefined) {
     config.trace.enabled = !["0", "false", "no"].includes(traceEnabled.toLowerCase());
   }
 
-  const traceFile = process.env["LARKY_TRACE_FILE"];
-  if (traceFile !== undefined) config.trace.file = traceFile;
+  const traceFile = process.env.LARKY_TRACE_FILE;
+  if (traceFile !== undefined) {
+    config.trace.file = traceFile;
+  }
 
-  const tracePayload = process.env["LARKY_TRACE_INCLUDE_LLM_PAYLOAD"];
+  const tracePayload = process.env.LARKY_TRACE_INCLUDE_LLM_PAYLOAD;
   if (tracePayload !== undefined) {
     config.trace.includeLlmPayload = !["0", "false", "no"].includes(tracePayload.toLowerCase());
   }
 
-  const permTimeout = process.env["LARKY_PERMISSION_TIMEOUT_S"];
+  const permTimeout = process.env.LARKY_PERMISSION_TIMEOUT_S;
   if (permTimeout !== undefined) {
     const val = Number(permTimeout);
     if (Number.isNaN(val) || val < 0) {
@@ -373,7 +419,7 @@ function applyEnv(config: LarkyConfig): void {
     config.permission.timeoutS = val;
   }
 
-  const compactThreshold = process.env["LARKY_COMPACT_THRESHOLD"];
+  const compactThreshold = process.env.LARKY_COMPACT_THRESHOLD;
   if (compactThreshold !== undefined) {
     const val = Number(compactThreshold);
     if (Number.isNaN(val) || val < 0 || val > 1) {
@@ -384,7 +430,7 @@ function applyEnv(config: LarkyConfig): void {
     config.compaction.autoThreshold = val;
   }
 
-  const compactToolLimit = process.env["LARKY_COMPACT_TOOL_LIMIT"];
+  const compactToolLimit = process.env.LARKY_COMPACT_TOOL_LIMIT;
   if (compactToolLimit !== undefined) {
     const val = Number(compactToolLimit);
     if (!Number.isInteger(val) || val <= 0) {
@@ -395,7 +441,7 @@ function applyEnv(config: LarkyConfig): void {
     config.compaction.toolResultLimit = val;
   }
 
-  const compactToolKeep = process.env["LARKY_COMPACT_TOOL_KEEP"];
+  const compactToolKeep = process.env.LARKY_COMPACT_TOOL_KEEP;
   if (compactToolKeep !== undefined) {
     const val = Number(compactToolKeep);
     if (!Number.isInteger(val) || val <= 0) {

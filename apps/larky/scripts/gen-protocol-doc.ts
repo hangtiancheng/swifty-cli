@@ -95,8 +95,12 @@ function asStringArray(value: unknown): string[] {
 // Extract a printable string from an unknown value, falling back when the value
 // would use Object's default toString (avoiding @typescript-eslint/no-base-to-string)
 function asString(value: unknown, fallback: string): string {
-  if (typeof value === "string") return value;
-  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  if (typeof value === "string") {
+    return value;
+  }
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
   return fallback;
 }
 
@@ -112,11 +116,11 @@ function modelSection(name: string, schema: z.ZodType): string {
     table = "\n| Field | Type | Required |\n|---|---|---|\n";
     for (const [fieldName, fieldInfoRaw] of Object.entries(props)) {
       const fieldInfo = isRecord(fieldInfoRaw) ? fieldInfoRaw : {};
-      let fieldType = asString(fieldInfo["type"], "object");
-      const anyOf = fieldInfo["anyOf"];
+      let fieldType = asString(fieldInfo.type, "object");
+      const anyOf = fieldInfo.anyOf;
       if (Array.isArray(anyOf)) {
         fieldType = anyOf
-          .map((t: unknown) => asString(isRecord(t) ? t["type"] : "?", "?"))
+          .map((t: unknown) => asString(isRecord(t) ? t.type : "?", "?"))
           .join(" | ");
       }
       const req = required.has(fieldName) ? "yes" : "no";
@@ -132,14 +136,20 @@ function modelSection(name: string, schema: z.ZodType): string {
 function literalType(schema: z.ZodType): string {
   const jsonSchema = z.toJSONSchema(schema);
   const props = isRecord(jsonSchema.properties) ? jsonSchema.properties : {};
-  const typeInfo = props["type"];
+  const typeInfo = props.type;
   if (isRecord(typeInfo)) {
-    const enumVals = typeInfo["enum"];
-    if (Array.isArray(enumVals) && typeof enumVals[0] === "string") return enumVals[0];
-    const constVal = typeInfo["const"];
-    if (typeof constVal === "string") return constVal;
-    const defaultVal = typeInfo["default"];
-    if (typeof defaultVal === "string") return defaultVal;
+    const enumVals = typeInfo.enum;
+    if (Array.isArray(enumVals) && typeof enumVals[0] === "string") {
+      return enumVals[0];
+    }
+    const constVal = typeInfo.const;
+    if (typeof constVal === "string") {
+      return constVal;
+    }
+    const defaultVal = typeInfo.default;
+    if (typeof defaultVal === "string") {
+      return defaultVal;
+    }
   }
   return "unknown";
 }

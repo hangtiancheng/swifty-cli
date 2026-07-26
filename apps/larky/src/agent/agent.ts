@@ -20,7 +20,6 @@
  * SOFTWARE.
  */
 
-/* eslint-disable @typescript-eslint/consistent-type-assertions */
 import { saveMessage, toolUsesToRecords, toolResultsToRecords } from "../session/session.js";
 import { REJECTED_TOOL_RESULT } from "../conversation/pairing.js";
 import type { LLMClient } from "../llm/client.js";
@@ -42,7 +41,7 @@ import { buildPlanModeReminder } from "../prompt/plan-mode.js";
 import { coordinatorReminder } from "../prompt/coordinator.js";
 import { applyBudget, isSpillReadback, persistLargeResult } from "../tool-result/budget.js";
 import { readFile } from "node:fs/promises";
-import { asRecord, strArg } from "@/utils/index.js";
+import { asErrorString, asRecord, strArg } from "@/utils/index.js";
 import type { ToolSchema } from "@/tools/types.js";
 import type { UsageInfo } from "@/llm/events.js";
 
@@ -348,7 +347,7 @@ export class Agent {
 
           yield {
             type: "error",
-            error: err as Error,
+            error: err instanceof Error ? err : new Error(asErrorString(err)),
           };
           return;
         }

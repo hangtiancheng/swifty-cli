@@ -37,7 +37,7 @@ import type { Snapshot } from "../file-history/file-history.js";
 import type { TeammateUIState } from "../teams/progress.js";
 import { strArg } from "../utils/index.js";
 
-import { SocketClient } from "../core/transport/socket-client.js";
+import type { SocketClient } from "../core/transport/socket-client.js";
 import { EventSchema, type Event } from "../core/bus/events.js";
 
 import RewindDialog, { type RewindAction } from "./rewind-dialog.js";
@@ -86,9 +86,15 @@ interface PlanUiRequest {
 const truncate = (s: string, max: number): string => (s.length > max ? s.slice(0, max) + "…" : s);
 
 function formatToolArgs(args: Record<string, unknown>): string {
-  if (args.command) return truncate(strArg(args, "command"), 80);
-  if (args.file_path) return truncate(strArg(args, "file_path"), 80);
-  if (args.pattern) return truncate(strArg(args, "pattern"), 80);
+  if (args.command) {
+    return truncate(strArg(args, "command"), 80);
+  }
+  if (args.file_path) {
+    return truncate(strArg(args, "file_path"), 80);
+  }
+  if (args.pattern) {
+    return truncate(strArg(args, "pattern"), 80);
+  }
   return "";
 }
 
@@ -136,8 +142,12 @@ export function App({ client, provider, permissionMode }: Props) {
   const [subagents, setSubagents] = useState<{ id: string; label: string; detail: string }[]>([]);
 
   const [permMode, setPermMode] = useState<PermissionMode>(() => {
-    if (process.env.LARKY_BYPASS_PERMISSIONS === "1") return "bypassPermissions";
-    if (permissionMode && isPermissionModeStr(permissionMode)) return permissionMode;
+    if (process.env.LARKY_BYPASS_PERMISSIONS === "1") {
+      return "bypassPermissions";
+    }
+    if (permissionMode && isPermissionModeStr(permissionMode)) {
+      return permissionMode;
+    }
     return "default";
   });
 
@@ -212,12 +222,16 @@ export function App({ client, provider, permissionMode }: Props) {
   const handleEvent = useCallback(
     (raw: Record<string, unknown>) => {
       const parsed = EventSchema.safeParse(raw);
-      if (!parsed.success) return; // unknown event types are forward-compatible noise
+      if (!parsed.success) {
+        return;
+      } // unknown event types are forward-compatible noise
       const event: Event = parsed.data;
 
       // Session filtering: ignore events for other sessions.
       if ("session_id" in event && event.session_id && sessionIdRef.current) {
-        if (event.session_id !== sessionIdRef.current) return;
+        if (event.session_id !== sessionIdRef.current) {
+          return;
+        }
       }
 
       switch (event.type) {
@@ -429,7 +443,7 @@ export function App({ client, provider, permissionMode }: Props) {
         }
 
         case "ask_user.resolved":
-          setAskRequest((prev) => (prev && prev.id === event.id ? null : prev));
+          setAskRequest((prev) => (prev?.id === event.id ? null : prev));
           break;
 
         case "plan.requested":
@@ -437,7 +451,7 @@ export function App({ client, provider, permissionMode }: Props) {
           break;
 
         case "plan.resolved":
-          setPlanRequest((prev) => (prev && prev.id === event.id ? null : prev));
+          setPlanRequest((prev) => (prev?.id === event.id ? null : prev));
           break;
 
         case "todo.updated":
@@ -445,8 +459,7 @@ export function App({ client, provider, permissionMode }: Props) {
           break;
 
         case "teammate.state":
-          // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
-          setTeammateStates(event.states as unknown as TeammateUIState[]);
+          setTeammateStates(event.states);
           break;
 
         case "subagent.progress":
@@ -515,7 +528,6 @@ export function App({ client, provider, permissionMode }: Props) {
             });
             sessionIdRef.current = typeof res.session_id === "string" ? res.session_id : "";
             if (Array.isArray(res.commands)) {
-              // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
               setCommands(toInputCommands(res.commands as WireCommandInfo[]));
             }
             const mode = typeof res.permission_mode === "string" ? res.permission_mode : "";
@@ -528,7 +540,9 @@ export function App({ client, provider, permissionMode }: Props) {
         }
 
         await client.waitForDisconnect();
-        if (cancelled) break;
+        if (cancelled) {
+          break;
+        }
         setConnected(false);
         // Clear transient run state; pending dialogs are daemon-side cancelled.
         setIsStreaming(false);
@@ -548,7 +562,6 @@ export function App({ client, provider, permissionMode }: Props) {
       cancelled = true;
       client.close();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // -- Keyboard shortcuts ----------------------------------------------------
@@ -569,7 +582,9 @@ export function App({ client, provider, permissionMode }: Props) {
         return;
       }
       setCtrlCHint(true);
-      if (ctrlCTimerRef.current) clearTimeout(ctrlCTimerRef.current);
+      if (ctrlCTimerRef.current) {
+        clearTimeout(ctrlCTimerRef.current);
+      }
       ctrlCTimerRef.current = setTimeout(() => {
         ctrlCCountRef.current = 0;
         setCtrlCHint(false);
@@ -597,7 +612,9 @@ export function App({ client, provider, permissionMode }: Props) {
   const submittingRef = useRef(false);
 
   const handleSubmit = async (text: string) => {
-    if (submittingRef.current) return;
+    if (submittingRef.current) {
+      return;
+    }
     submittingRef.current = true;
     try {
       historyMod.append(historyDir, text);
@@ -659,7 +676,6 @@ export function App({ client, provider, permissionMode }: Props) {
         return;
       }
       const snapshots: Snapshot[] = raw.map((s) => {
-        // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
         const rec = s as Record<string, unknown>;
         const fileCount = typeof rec.file_count === "number" ? rec.file_count : 0;
         return {
@@ -672,8 +688,7 @@ export function App({ client, provider, permissionMode }: Props) {
             ]),
           ),
           timestamp: typeof rec.timestamp === "string" ? rec.timestamp : "",
-          // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
-        } as unknown as Snapshot;
+        };
       });
       setRewindSnapshots(snapshots);
       setRewindDialogActive(true);
@@ -685,7 +700,9 @@ export function App({ client, provider, permissionMode }: Props) {
   const handleRewindAction = useCallback(
     (action: RewindAction) => {
       setRewindDialogActive(false);
-      if (action.type === "cancel") return;
+      if (action.type === "cancel") {
+        return;
+      }
       const mode =
         action.type === "code_and_conversation"
           ? "both"
@@ -705,7 +722,9 @@ export function App({ client, provider, permissionMode }: Props) {
     (choice: PlanChoice, feedback?: string) => {
       const req = planRequest;
       setPlanRequest(null);
-      if (!req) return;
+      if (!req) {
+        return;
+      }
       rpc("plan.respond", { id: req.id, choice, feedback: feedback ?? "" });
     },
     [planRequest, rpc],

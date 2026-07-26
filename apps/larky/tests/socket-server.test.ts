@@ -48,21 +48,27 @@ function freePort(): Promise<number> {
 // Type-safe helper to parse JSON-RPC response
 function parseResponse(raw: string): Record<string, unknown> {
   const parsed: unknown = JSON.parse(raw);
-  if (!isRecord(parsed)) throw new Error("invalid JSON-RPC response");
+  if (!isRecord(parsed)) {
+    throw new Error("invalid JSON-RPC response");
+  }
   return parsed;
 }
 
 // Type-safe helper to extract result from parsed response
 function getResult(resp: Record<string, unknown>): Record<string, unknown> {
-  const result = resp["result"];
-  if (!isRecord(result)) throw new Error("missing result in response");
+  const result = resp.result;
+  if (!isRecord(result)) {
+    throw new Error("missing result in response");
+  }
   return result;
 }
 
 // Type-safe helper to extract error from parsed response
 function getError(resp: Record<string, unknown>): Record<string, unknown> {
-  const error = resp["error"];
-  if (!isRecord(error)) throw new Error("missing error in response");
+  const error = resp.error;
+  if (!isRecord(error)) {
+    throw new Error("missing error in response");
+  }
   return error;
 }
 
@@ -121,11 +127,11 @@ describe("SocketServer", () => {
     });
 
     const resp = parseResponse(response);
-    expect(resp["jsonrpc"]).toBe("2.0");
-    expect(resp["id"]).toBe("test-1");
-    expect(resp["result"]).toBeDefined();
+    expect(resp.jsonrpc).toBe("2.0");
+    expect(resp.id).toBe("test-1");
+    expect(resp.result).toBeDefined();
     const result = getResult(resp);
-    expect(result["server_version"]).toBe("0.0.1");
+    expect(result.server_version).toBe("0.0.1");
   });
 
   // Feature: Verify METHOD_NOT_FOUND error code (-32601) for unregistered methods
@@ -157,9 +163,9 @@ describe("SocketServer", () => {
     });
 
     const resp = parseResponse(response);
-    expect(resp["error"]).toBeDefined();
+    expect(resp.error).toBeDefined();
     const error = getError(resp);
-    expect(error["code"]).toBe(-32601);
+    expect(error.code).toBe(-32601);
   });
 
   // Feature: Verify PARSE_ERROR (-32700) for non-JSON data without crashing
@@ -185,9 +191,9 @@ describe("SocketServer", () => {
     });
 
     const resp = parseResponse(response);
-    expect(resp["error"]).toBeDefined();
+    expect(resp.error).toBeDefined();
     const error = getError(resp);
-    expect(error["code"]).toBe(-32700);
+    expect(error.code).toBe(-32700);
   });
 
   // Feature: Verify INVALID_PARAMS (-32602) when handler throws ZodError
@@ -224,9 +230,9 @@ describe("SocketServer", () => {
     });
 
     const resp = parseResponse(response);
-    expect(resp["error"]).toBeDefined();
+    expect(resp.error).toBeDefined();
     const error = getError(resp);
-    expect(error["code"]).toBe(-32602);
+    expect(error.code).toBe(-32602);
   });
 
   // Feature: Verify onDisconnect is invoked exactly once when a client disconnects
@@ -312,7 +318,9 @@ describe("SocketServer", () => {
     // Publish an event: the dead socket must not receive anything
     const writes: string[] = [];
     const sock = captured.socket;
-    if (!sock) throw new Error("server-side socket not captured");
+    if (!sock) {
+      throw new Error("server-side socket not captured");
+    }
     sock.write = (chunk: string | Uint8Array): boolean => {
       writes.push(typeof chunk === "string" ? chunk : Buffer.from(chunk).toString());
       return true;
