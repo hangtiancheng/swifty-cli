@@ -190,6 +190,31 @@ describe("agent-session cancel & steering", () => {
     expect(idxRun2First).toBeGreaterThan(idxRun1Done);
   });
 
+  it("busy guard blocks conversation-rewriting commands while running (P1-9)", async () => {
+    const harness = makeSessionHarness();
+    const client = new GateClient(["hang"]);
+    const session = await createSession(harness, client);
+
+    session.startRun("go");
+    await waitFor(() => client.started.length === 1);
+
+    await session.runCommand("/compact");
+    expect(
+      harness.events.some(
+        (e) => e.type === "system.message" && e.message.includes("not available"),
+      ),
+    ).toBe(true);
+
+    // Read-only commands stay available during a run.
+    harness.events.length = 0;
+    await session.runCommand("/status");
+    expect(
+      harness.events.some((e) => e.type === "system.message" && e.message.includes("Mode:")),
+    ).toBe(true);
+
+    session.cancel();
+  });
+
   it("cancel during plan approval settles the pending approval (P0-3)", async () => {
     const harness = makeSessionHarness();
     const client = new GateClient([[END]]);
@@ -202,6 +227,55 @@ describe("agent-session cancel & steering", () => {
     await waitFor(() => harness.planPending.length === 1);
 
     // Regression: before the fix, the controller was already nulled here.
+    expect(session.cancel()).toBe(true);
+    await waitFor(() => harness.planPending[0].settled);
+    await waitFor(() => !session.isRunning);
+  });
+});
+
+describe("plan approval trigger (P2-15)", () => {
+  const workDirs: string[] = [];
+  const sessions: AgentSession[] = [];
+
+  afterEach(async () => {
+    for (const s of sessions.splice(0)) {
+      try {
+        await s.close();
+      } catch {
+        /* noop */
+      }
+    }
+    for (const dir of workDirs.splice(0)) {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("an interrupted plan run still pops approval and stays cancellable", async () => {
+    const harness = makeSessionHarness();
+    const client = new GateClient(["hang"]);
+    const dir = mkdtempSync(join(tmpdir(), "larky-plan-int-"));
+    workDirs.push(dir);
+    const session = await AgentSession.create({
+      provider: PROVIDER,
+      workDir: dir,
+      enableCoordinatorMode: false,
+      forkDisabled: true,
+      persist: false,
+      permissionMode: "plan",
+      emit: harness.emit,
+      broker: harness.broker,
+    });
+    session.client = client;
+    sessions.push(session);
+
+    session.startRun("plan something");
+    await waitFor(() => client.started.length === 1);
+
+    // Esc: interrupt the run — swifty parity pops the approval dialog anyway.
+    expect(session.cancel()).toBe(true);
+    await waitFor(() => harness.planPending.length === 1);
+
+    // The approval wait got a fresh controller: still cancellable.
     expect(session.cancel()).toBe(true);
     await waitFor(() => harness.planPending[0].settled);
     await waitFor(() => !session.isRunning);
@@ -246,6 +320,10 @@ describe("interaction broker abort awareness (P0-2)", () => {
     await waitFor(() =>
       events.some((e) => e.type === "permission.resolved" && e.source === "abort"),
     );
+    // P1-8b: the resolution mirrors the requested run_id so it is persisted
+    // into the same run's replay log.
+    const resolved = events.find((e) => e.type === "permission.resolved");
+    expect(resolved).toMatchObject({ run_id: "run-test" });
   });
 
   it("aborting a pending ask rejects (isError tool_result pairing)", async () => {
@@ -293,6 +371,36 @@ describe("interaction broker abort awareness (P0-2)", () => {
     const resolved = events.filter((e) => e.type === "permission.resolved");
     expect(resolved).toHaveLength(1);
     expect(resolved[0]).toMatchObject({ response: "allow", source: "client" });
+  });
+
+  it("session close settles only that session's pendings (P1-8b)", async () => {
+    const { app, events, fakeSession } = makeApp();
+    const other = { id: "sess-other", currentRunId: "run-o" } as unknown as AgentSession;
+    const p1 = app._broker.requestPermission(
+      fakeSession,
+      "Bash",
+      {},
+      { effect: "ask", reason: "t" },
+    );
+    const p2 = app._broker.requestPermission(other, "Bash", {}, { effect: "ask", reason: "t" });
+    await waitFor(() => app._pendingPermissions.size === 2);
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (app as any)._cancelPendingForSession("sess-test");
+    await expect(p1).resolves.toBe("deny");
+    expect(app._pendingPermissions.size).toBe(1);
+    const resolved = events.filter((e) => e.type === "permission.resolved");
+    expect(resolved).toHaveLength(1);
+    expect(resolved[0]).toMatchObject({
+      session_id: "sess-test",
+      run_id: "run-test",
+      source: "session_closed",
+    });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (app as any)._cancelPendingForSession("sess-other");
+    await expect(p2).resolves.toBe("deny");
+    expect(app._pendingPermissions.size).toBe(0);
   });
 
   it("pre-aborted signal short-circuits without creating a pending entry", async () => {

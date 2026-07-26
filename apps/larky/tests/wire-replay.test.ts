@@ -101,6 +101,51 @@ describe("replay snapshot", () => {
     expect(snapshotReplayLinesFromFile("/nonexistent/events.jsonl", ["*"])).toEqual([]);
   });
 
+  test("replay offset skips already-applied matching lines (P1-8a)", () => {
+    const { dir, file } = writeEventsFile(RUN_EVENTS);
+    try {
+      const skipped = snapshotReplayLinesFromFile(file, ["*"], 2);
+      expect(skipped.length).toBe(1);
+      const parsed: unknown = JSON.parse(skipped[0]);
+      expect(parsed).toMatchObject({ event: { type: "agent.loop_complete" } });
+
+      // Offset counts *matching* lines: with agent.* only, offset 1 skips
+      // the stream_text and leaves loop_complete.
+      const agentSkipped = snapshotReplayLinesFromFile(file, ["agent.*"], 1);
+      expect(agentSkipped.length).toBe(1);
+      expect(JSON.parse(agentSkipped[0])).toMatchObject({
+        event: { type: "agent.loop_complete" },
+      });
+
+      // Offset beyond total → nothing to replay.
+      expect(snapshotReplayLinesFromFile(file, ["*"], 99)).toEqual([]);
+    } finally {
+      rmSync(dir, { recursive: true });
+    }
+  });
+
+  test("handleEventSubscribe forwards replay_offset to the snapshot fn", async () => {
+    const { dir, file } = writeEventsFile(RUN_EVENTS);
+    try {
+      const broadcaster = new IpcEventBroadcaster();
+      const writes: string[] = [];
+      const fakeSocket = makeMockSocket(writes);
+
+      const result = await handleEventSubscribe(
+        broadcaster,
+        fakeSocket,
+        { topics: ["*"], scope: "global", replay_from_run: "r1", replay_offset: 1 },
+        (_runId, topics, offset) => snapshotReplayLinesFromFile(file, topics, offset),
+      );
+
+      expect(result).toMatchObject({ replayed_count: 2 });
+      expect(writes.length).toBe(2);
+      expect(JSON.parse(writes[0])).toMatchObject({ event: { type: "agent.stream_text" } });
+    } finally {
+      rmSync(dir, { recursive: true });
+    }
+  });
+
   test("handleEventSubscribe replays snapshot then subscribes", async () => {
     const { dir, file } = writeEventsFile(RUN_EVENTS);
     try {

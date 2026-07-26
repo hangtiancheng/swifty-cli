@@ -135,12 +135,13 @@ All commands are sent as JSON-RPC 2.0 requests; `method` selects the handler.
 
 ### Request params
 
-| Field             | Type     | Required |
-| ----------------- | -------- | -------- | --- |
-| `type`            | `string` | yes      |
-| `topics`          | `array`  | yes      |
-| `scope`           | `string` | yes      |
-| `replay_from_run` | `string  | null`    | yes |
+| Field             | Type      | Required |
+| ----------------- | --------- | -------- | --- |
+| `type`            | `string`  | yes      |
+| `topics`          | `array`   | yes      |
+| `scope`           | `string`  | yes      |
+| `replay_from_run` | `string   | null`    | yes |
+| `replay_offset`   | `integer` | yes      |
 
 ```json
 {
@@ -172,9 +173,15 @@ All commands are sent as JSON-RPC 2.0 requests; `method` selects the handler.
           "type": "null"
         }
       ]
+    },
+    "replay_offset": {
+      "default": 0,
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
     }
   },
-  "required": ["type", "topics", "scope", "replay_from_run"],
+  "required": ["type", "topics", "scope", "replay_from_run", "replay_offset"],
   "additionalProperties": false
 }
 ```
@@ -284,9 +291,16 @@ All commands are sent as JSON-RPC 2.0 requests; `method` selects the handler.
           "description": {
             "default": "",
             "type": "string"
+          },
+          "aliases": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         },
-        "required": ["name", "description"],
+        "required": ["name", "description", "aliases"],
         "additionalProperties": false
       }
     }
@@ -915,9 +929,16 @@ All commands are sent as JSON-RPC 2.0 requests; `method` selects the handler.
           "description": {
             "default": "",
             "type": "string"
+          },
+          "aliases": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         },
-        "required": ["name", "description"],
+        "required": ["name", "description", "aliases"],
         "additionalProperties": false
       }
     }
@@ -1872,6 +1893,7 @@ Events are written to the run's `events.jsonl` and forwarded over IPC to matchin
 | `type`       | `string` | yes      |
 | `id`         | `string` | yes      |
 | `session_id` | `string` | yes      |
+| `run_id`     | `string` | yes      |
 | `response`   | `string` | yes      |
 | `source`     | `string` | yes      |
 | `timestamp`  | `string` | yes      |
@@ -1892,19 +1914,23 @@ Events are written to the run's `events.jsonl` and forwarded over IPC to matchin
     "session_id": {
       "type": "string"
     },
+    "run_id": {
+      "default": "",
+      "type": "string"
+    },
     "response": {
       "type": "string"
     },
     "source": {
       "default": "client",
       "type": "string",
-      "enum": ["client", "timeout", "disconnect"]
+      "enum": ["client", "timeout", "disconnect", "abort", "session_closed"]
     },
     "timestamp": {
       "type": "string"
     }
   },
-  "required": ["type", "id", "session_id", "response", "source", "timestamp"],
+  "required": ["type", "id", "session_id", "run_id", "response", "source", "timestamp"],
   "additionalProperties": false
 }
 ```
@@ -1992,6 +2018,7 @@ Events are written to the run's `events.jsonl` and forwarded over IPC to matchin
 | `type`       | `string` | yes      |
 | `id`         | `string` | yes      |
 | `session_id` | `string` | yes      |
+| `run_id`     | `string` | yes      |
 | `timestamp`  | `string` | yes      |
 
 ```json
@@ -2010,11 +2037,15 @@ Events are written to the run's `events.jsonl` and forwarded over IPC to matchin
     "session_id": {
       "type": "string"
     },
+    "run_id": {
+      "default": "",
+      "type": "string"
+    },
     "timestamp": {
       "type": "string"
     }
   },
-  "required": ["type", "id", "session_id", "timestamp"],
+  "required": ["type", "id", "session_id", "run_id", "timestamp"],
   "additionalProperties": false
 }
 ```
@@ -2026,6 +2057,7 @@ Events are written to the run's `events.jsonl` and forwarded over IPC to matchin
 | `type`       | `string` | yes      |
 | `id`         | `string` | yes      |
 | `session_id` | `string` | yes      |
+| `run_id`     | `string` | yes      |
 | `plan_text`  | `string` | yes      |
 | `timestamp`  | `string` | yes      |
 
@@ -2045,6 +2077,10 @@ Events are written to the run's `events.jsonl` and forwarded over IPC to matchin
     "session_id": {
       "type": "string"
     },
+    "run_id": {
+      "default": "",
+      "type": "string"
+    },
     "plan_text": {
       "default": "",
       "type": "string"
@@ -2053,7 +2089,7 @@ Events are written to the run's `events.jsonl` and forwarded over IPC to matchin
       "type": "string"
     }
   },
-  "required": ["type", "id", "session_id", "plan_text", "timestamp"],
+  "required": ["type", "id", "session_id", "run_id", "plan_text", "timestamp"],
   "additionalProperties": false
 }
 ```
@@ -2065,6 +2101,7 @@ Events are written to the run's `events.jsonl` and forwarded over IPC to matchin
 | `type`       | `string` | yes      |
 | `id`         | `string` | yes      |
 | `session_id` | `string` | yes      |
+| `run_id`     | `string` | yes      |
 | `choice`     | `string` | yes      |
 | `timestamp`  | `string` | yes      |
 
@@ -2084,6 +2121,10 @@ Events are written to the run's `events.jsonl` and forwarded over IPC to matchin
     "session_id": {
       "type": "string"
     },
+    "run_id": {
+      "default": "",
+      "type": "string"
+    },
     "choice": {
       "type": "string"
     },
@@ -2091,7 +2132,7 @@ Events are written to the run's `events.jsonl` and forwarded over IPC to matchin
       "type": "string"
     }
   },
-  "required": ["type", "id", "session_id", "choice", "timestamp"],
+  "required": ["type", "id", "session_id", "run_id", "choice", "timestamp"],
   "additionalProperties": false
 }
 ```

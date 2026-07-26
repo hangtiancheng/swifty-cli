@@ -55,6 +55,7 @@ import { PermissionChecker, type Decision, type PermissionMode } from "../permis
 import {
   parse as parseCommand,
   createDefaultRegistry as createCommandRegistry,
+  type Command,
   type CommandRegistry,
   type CommandContext,
 } from "../commands/commands.js";
@@ -551,7 +552,20 @@ export class AgentSession {
    * progress is delivered through wire events. displayText (if different)
    * is what gets persisted, e.g. "/review foo" while the rendered prompt runs.
    */
-  startRun(text: string, opts?: { displayText?: string; skipUserMessage?: boolean }): string {
+  startRun(
+    text: string,
+    opts?: {
+      displayText?: string;
+      skipUserMessage?: boolean;
+      // Rendered prompts are inserted verbatim (swifty parity): no @-expansion.
+      skipExpand?: boolean;
+      // e.g. /do approval text is never persisted (swifty parity).
+      skipPersist?: boolean;
+      // Persist this instead of displayText (prompt commands persist the
+      // rendered prompt so /resume rebuilds the real instruction).
+      persistText?: string;
+    },
+  ): string {
     if (this.isRunning) {
       // Steering: interrupt the in-flight run, then queue the new message.
       this.cancel();
@@ -575,11 +589,11 @@ export class AgentSession {
       await prev.catch(() => undefined);
       if (!opts?.skipUserMessage) {
         // Inline @file references for the model; persist the original text.
-        this.conv.addUserMessage(expandAtRefs(text, this.workDir));
-        if (this.persist) {
+        this.conv.addUserMessage(opts?.skipExpand ? text : expandAtRefs(text, this.workDir));
+        if (this.persist && !opts?.skipPersist) {
           sessionMod.saveMessage(this.workDir, this.larkyId, {
             role: "user",
-            content: display,
+            content: opts?.persistText ?? display,
             timestamp: Math.floor(Date.now() / 1000),
           });
         }
@@ -841,11 +855,24 @@ export class AgentSession {
       });
     }
 
-    // Plan-mode approval: after a clean plan-mode loop, ask the client.
-    // The controller stays live through the approval wait so run.cancel /
-    // Esc can abort a pending approval (the broker settles it on abort).
-    if (this.permMode === "plan" && stopReason === "end_turn") {
-      await this.requestPlanApproval(controller.signal);
+    // Plan-mode approval: align with swifty — any non-error completion in
+    // plan mode pops the approval dialog, including Esc-interrupted runs.
+    // A superseded (steered) run skips it: the user already moved on.
+    if (this.permMode === "plan" && stopReason !== "error" && this.currentRunId === runId) {
+      // An interrupted run's controller is already aborted; give the wait a
+      // fresh one so the approval itself stays cancellable via run.cancel.
+      let approvalController = controller;
+      if (controller.signal.aborted) {
+        approvalController = new AbortController();
+        if (this.abortController === controller) {
+          this.abortController = approvalController;
+        }
+      }
+      await this.requestPlanApproval(approvalController.signal);
+      if (this.abortController === approvalController) {
+        this.abortController = null;
+      }
+      return;
     }
 
     // Steering hands the shared slot to the next run before this loop
@@ -957,6 +984,10 @@ export class AgentSession {
       throw new Error(`Session "${resumeId}" not found or empty.`);
     }
     const conv = new ConversationManager();
+    // Reload long-term memory at resume time (parity with swifty /resume):
+    // instructions/memories may have changed since this session was created.
+    this.ltmInstructions = loadInstructions(this.workDir);
+    this.ltmMemoryContent = this.memoryManager.buildSystemReminder();
     conv.injectLongTermMemory(this.ltmInstructions, this.ltmMemoryContent);
     const restored = sessionMod.rebuildFromSession(saved);
     for (const m of restored) {
@@ -1016,10 +1047,11 @@ export class AgentSession {
 
   // -- Slash commands (daemon side) ----------------------------------------------
 
-  listCommands(): { name: string; description: string }[] {
+  listCommands(): { name: string; description: string; aliases: string[] }[] {
     return this.cmdRegistry.listCommands().map((c) => ({
       name: c.name,
       description: c.description,
+      aliases: c.aliases,
     }));
   }
 
@@ -1064,6 +1096,18 @@ export class AgentSession {
     const cmd = this.cmdRegistry.find(parsed.name);
     if (!cmd) {
       this.systemMessage(`Unknown command: /${parsed.name}`);
+      this.commandDone();
+      return;
+    }
+
+    // Busy guard: commands that rewrite/replace the conversation must not
+    // race the in-flight agent loop (swifty serialized these via its
+    // submitting lock). Read-only commands and steering-style prompt
+    // commands remain allowed.
+    if (this.isRunning && this.isBusyBlocked(cmd, parsed.args)) {
+      this.systemMessage(
+        `/${parsed.name} is not available while a run is in progress. Press Esc to interrupt first.`,
+      );
       this.commandDone();
       return;
     }
@@ -1152,7 +1196,9 @@ export class AgentSession {
         this.commandDone();
         if (promptText.trim()) {
           const displayText = parsed.args ? `/${parsed.name} ${parsed.args}` : `/${parsed.name}`;
-          this.startRun(promptText, { displayText });
+          // swifty parity: persist the rendered prompt (so /resume rebuilds
+          // the real instruction) and insert it verbatim, no @-expansion.
+          this.startRun(promptText, { displayText, skipExpand: true, persistText: promptText });
         }
         return;
       }
@@ -1161,6 +1207,25 @@ export class AgentSession {
         return;
       }
     }
+  }
+
+  /**
+   * Commands blocked while a run is in flight: they rewrite or replace the
+   * conversation/session identity out from under the running agent. local_ui
+   * handlers are pure action-name lookups, safe to pre-evaluate here.
+   */
+  private isBusyBlocked(cmd: Command, args: string): boolean {
+    if (cmd.type === "skill_fork") {
+      return true;
+    }
+    if (cmd.type !== "local_ui") {
+      return false;
+    }
+    const action = cmd.handler(this.buildCommandContext(args));
+    if (action === "clear" || action === "compact" || action === "do") {
+      return true;
+    }
+    return action === "resume" && args.trim() !== "";
   }
 
   private buildCommandContext(args: string): CommandContext {
@@ -1229,7 +1294,7 @@ export class AgentSession {
           this.startRun(
             "The plan below has been approved. Exit plan mode and carry it out now.\n\n# Approved Plan\n" +
               planContent,
-            { skipUserMessage: false },
+            { skipExpand: true, skipPersist: true },
           );
         } else {
           this.systemMessage("Exited plan mode.");
@@ -1407,6 +1472,20 @@ export class AgentSession {
       return;
     }
     this.systemMessage(`Running skill "${name}" in fork mode…`);
+    // Synthesize a full run lifecycle so clients render the fork result as
+    // an assistant message (run.started → stream_text → loop_complete) and
+    // the events get persisted for replay (non-empty run_id).
+    const runId = `run-${randomUUID().slice(0, 12)}`;
+    this.currentRunId = runId;
+    this.emit({
+      type: "run.started",
+      session_id: this.id,
+      run_id: runId,
+      content: args ? `/${name} ${args}` : `/${name}`,
+      timestamp: nowIso(),
+    });
+    const startTime = Date.now();
+    let stopReason = "end_turn";
     const forkHost: SkillForkHost = {
       activateSkill: this.skillHost.activateSkill.bind(this.skillHost),
       runSubagent: (prompt: string) =>
@@ -1436,14 +1515,28 @@ export class AgentSession {
       this.emit({
         type: "agent.stream_text",
         session_id: this.id,
-        run_id: "",
+        run_id: runId,
         text: result,
         timestamp: nowIso(),
       });
     } catch (err) {
+      stopReason = "error";
       this.systemMessage(`Skill fork error: ${asErrorString(err)}`);
+    } finally {
+      if (this.currentRunId === runId) {
+        this.currentRunId = null;
+      }
+      this.emit({
+        type: "agent.loop_complete",
+        session_id: this.id,
+        run_id: runId,
+        stop_reason: stopReason,
+        total_turns: 1,
+        elapsed_ms: Date.now() - startTime,
+        timestamp: nowIso(),
+      });
+      this.commandDone();
     }
-    this.commandDone();
   }
 }
 

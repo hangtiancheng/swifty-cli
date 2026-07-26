@@ -52,11 +52,28 @@ export async function launchTUI(): Promise<void> {
   initLogger({ sessionId: newSessionId(), mode: "tui" });
 
   installSyncOutput();
+  let sessionId = "";
   const instance = render(
-    <App client={client} provider={cfg.providers[0]} permissionMode={cfg.permission_mode} />,
+    <App
+      client={client}
+      provider={cfg.providers[0]}
+      permissionMode={cfg.permission_mode}
+      onSessionChange={(id) => {
+        sessionId = id;
+      }}
+    />,
     { exitOnCtrlC: false },
   );
   await instance.waitUntilExit();
+  // Best-effort: release the daemon-side session (a standing daemon would
+  // otherwise leak one AgentSession per TUI launch). Bounded so a wedged
+  // daemon cannot block exit.
+  if (sessionId) {
+    await Promise.race([
+      client.sendCommand("session.close", { session_id: sessionId }).catch(() => undefined),
+      new Promise((resolve) => setTimeout(resolve, 1000)),
+    ]);
+  }
   client.close();
   rawStdoutWrite("\x1b[?1049l");
 }

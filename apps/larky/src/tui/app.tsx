@@ -38,7 +38,7 @@ import { TeammateUIStateSchema, type TeammateUIState } from "../teams/progress.j
 import { strArg } from "../utils/index.js";
 import { z } from "zod";
 
-import type { SocketClient } from "../core/transport/socket-client.js";
+import { IpcError, type SocketClient } from "../core/transport/socket-client.js";
 import { EventSchema, type Event } from "../core/bus/events.js";
 import { isStaleRunEvent } from "./run-filter.js";
 
@@ -62,11 +62,14 @@ interface Props {
   client: SocketClient;
   provider: ProviderConfig;
   permissionMode?: string;
+  // Reports the live daemon session id so the launcher can session.close on exit.
+  onSessionChange?: (id: string) => void;
 }
 
 const WireCommandInfoSchema = z.object({
   name: z.string(),
   description: z.string().catch(""),
+  aliases: z.array(z.string()).catch([]),
 });
 const WireCommandListSchema = z.array(WireCommandInfoSchema);
 type WireCommandInfo = z.infer<typeof WireCommandInfoSchema>;
@@ -119,7 +122,7 @@ function isPermissionModeStr(mode: string): mode is PermissionMode {
 function toInputCommands(infos: WireCommandInfo[]): Command[] {
   return infos.map((c) => ({
     name: c.name,
-    aliases: [],
+    aliases: c.aliases,
     type: "local",
     description: c.description,
     handler: () => "",
@@ -130,11 +133,13 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-export function App({ client, provider, permissionMode }: Props) {
+export function App({ client, provider, permissionMode, onSessionChange }: Props) {
   const { exit } = useApp();
   const { stdout } = useStdout();
 
   const workDir = process.cwd();
+  const SESSION_NOT_FOUND = -32010;
+
   const historyDir = `${workDir}/.larky`;
 
   // -- Rendering state ------------------------------------------------------
@@ -174,6 +179,13 @@ export function App({ client, provider, permissionMode }: Props) {
   // -- Refs -------------------------------------------------------------------
   const sessionIdRef = useRef<string>("");
   const lastRunIdRef = useRef<string | null>(null);
+  // Text the user just submitted locally (already echoed); prevents double
+  // echo when its run.started arrives, while daemon-initiated runs (plan
+  // execution, feedback) do get their trigger text echoed.
+  const lastSubmittedTextRef = useRef<string | null>(null);
+  // Replay cursor: persisted (run-scoped) events already applied for the
+  // current run; sent as replay_offset on resubscribe to avoid re-rendering.
+  const replayedCountRef = useRef(0);
   const isStreamingRef = useRef(false);
   useEffect(() => {
     isStreamingRef.current = isStreaming;
@@ -217,11 +229,45 @@ export function App({ client, provider, permissionMode }: Props) {
   const rpc = useCallback(
     (method: string, params: Record<string, unknown>) => {
       sendCommand(method, params).catch((err: unknown) => {
+        if (err instanceof IpcError && err.code === SESSION_NOT_FOUND) {
+          sessionIdRef.current = "";
+          lastRunIdRef.current = null;
+          replayedCountRef.current = 0;
+          pushSystem("(session lost — it will be recreated on your next input)");
+          return;
+        }
         pushSystem(`RPC ${method} failed: ${err instanceof Error ? err.message : String(err)}`);
       });
     },
     [sendCommand, pushSystem],
   );
+
+  // Creates (or recreates, after daemon restart / session loss) the daemon
+  // session. Uses only refs and stable props, so the mount-time closure in
+  // the connection loop stays valid.
+  const createSession = useCallback(async () => {
+    // LARKY_BYPASS_PERMISSIONS must reach the daemon (swifty parity where the
+    // env directly drove the permission checker), not just the local UI badge.
+    const envBypass = process.env.LARKY_BYPASS_PERMISSIONS === "1";
+    const res = await client.sendCommand("session.create", {
+      permission_mode: envBypass
+        ? "bypassPermissions"
+        : permissionMode && isPermissionModeStr(permissionMode)
+          ? permissionMode
+          : null,
+      persist: true,
+    });
+    sessionIdRef.current = typeof res.session_id === "string" ? res.session_id : "";
+    onSessionChange?.(sessionIdRef.current);
+    const commandList = WireCommandListSchema.safeParse(res.commands);
+    if (commandList.success) {
+      setCommands(toInputCommands(commandList.data));
+    }
+    const mode = typeof res.permission_mode === "string" ? res.permission_mode : "";
+    if (isPermissionModeStr(mode)) {
+      setPermMode(mode);
+    }
+  }, [client, permissionMode, onSessionChange]);
 
   // -- Event handling ----------------------------------------------------------
 
@@ -253,9 +299,23 @@ export function App({ client, provider, permissionMode }: Props) {
         return;
       }
 
+      // Advance the replay cursor for run-scoped (persisted) events. The
+      // count matches the daemon's events.jsonl line order for this run.
+      if ("run_id" in event && event.run_id) {
+        if (event.type === "run.started") {
+          replayedCountRef.current = 1; // run.started is the run's first line
+        } else if (event.run_id === lastRunIdRef.current) {
+          replayedCountRef.current += 1;
+        }
+      }
+
       switch (event.type) {
         case "run.started":
           lastRunIdRef.current = event.run_id;
+          if (event.content && event.content !== lastSubmittedTextRef.current) {
+            setMessages((prev) => [...prev, { role: "user", content: event.content }]);
+          }
+          lastSubmittedTextRef.current = null;
           streamStartRef.current = Date.now();
           setCompletionMark(null);
           setError(null);
@@ -387,6 +447,9 @@ export function App({ client, provider, permissionMode }: Props) {
           setActiveTools([]);
           resetTurnAccumulators();
           setIsStreaming(false);
+          // Run finished: nothing to replay on reconnect.
+          lastRunIdRef.current = null;
+          replayedCountRef.current = 0;
           const elapsed = Math.floor((Date.now() - streamStartRef.current) / 1000);
           setCompletionMark(`✻ ${randomCompletionVerb()} for ${String(elapsed)}s`);
           break;
@@ -538,26 +601,30 @@ export function App({ client, provider, permissionMode }: Props) {
         }
         setConnected(true);
         try {
+          // Probe: the daemon may have restarted (in-memory sessions lost).
+          // Detect it before subscribing so we never replay a dead run.
+          if (sessionIdRef.current) {
+            try {
+              await client.sendCommand("command.list", { session_id: sessionIdRef.current });
+            } catch (probeErr) {
+              if (probeErr instanceof IpcError && probeErr.code === SESSION_NOT_FOUND) {
+                sessionIdRef.current = "";
+                lastRunIdRef.current = null;
+                replayedCountRef.current = 0;
+                pushSystem(
+                  "(daemon restarted — session reset; transcript kept, model context lost)",
+                );
+              }
+            }
+          }
           await client.sendCommand("event.subscribe", {
             topics: ["*"],
             scope: "global",
-            replay_from_run: lastRunIdRef.current,
+            replay_from_run: sessionIdRef.current ? lastRunIdRef.current : null,
+            replay_offset: replayedCountRef.current,
           });
           if (!sessionIdRef.current) {
-            const res = await client.sendCommand("session.create", {
-              permission_mode:
-                permissionMode && isPermissionModeStr(permissionMode) ? permissionMode : null,
-              persist: true,
-            });
-            sessionIdRef.current = typeof res.session_id === "string" ? res.session_id : "";
-            const commandList = WireCommandListSchema.safeParse(res.commands);
-            if (commandList.success) {
-              setCommands(toInputCommands(commandList.data));
-            }
-            const mode = typeof res.permission_mode === "string" ? res.permission_mode : "";
-            if (isPermissionModeStr(mode)) {
-              setPermMode(mode);
-            }
+            await createSession();
           }
         } catch (err) {
           setError(`daemon setup failed: ${err instanceof Error ? err.message : String(err)}`);
@@ -645,8 +712,13 @@ export function App({ client, provider, permissionMode }: Props) {
       setPromptHistory((prev) => [...prev, text]);
 
       if (!sessionIdRef.current) {
-        setError("Not connected to daemon yet");
-        return;
+        // Session lost (daemon restart) — recreate before submitting.
+        try {
+          await createSession();
+        } catch {
+          setError("Not connected to daemon yet");
+          return;
+        }
       }
 
       if (text.startsWith("/")) {
@@ -663,11 +735,13 @@ export function App({ client, provider, permissionMode }: Props) {
           return;
         }
         // Everything else runs daemon-side.
+        lastSubmittedTextRef.current = text;
         setMessages((prev) => [...prev, { role: "user", content: text }]);
         rpc("command.run", { session_id: sessionIdRef.current, input: text });
         return;
       }
 
+      lastSubmittedTextRef.current = text;
       setMessages((prev) => [...prev, { role: "user", content: text }]);
       setError(null);
       // Immediate optimistic streaming state; run.started confirms.
@@ -681,6 +755,24 @@ export function App({ client, provider, permissionMode }: Props) {
           content: text,
         });
       } catch (err) {
+        // One-shot recovery: the session may have died between probe and send.
+        if (err instanceof IpcError && err.code === SESSION_NOT_FOUND) {
+          try {
+            sessionIdRef.current = "";
+            lastRunIdRef.current = null;
+            replayedCountRef.current = 0;
+            await createSession();
+            await sendCommand("session.send_message", {
+              session_id: sessionIdRef.current,
+              content: text,
+            });
+            return;
+          } catch (retryErr) {
+            setIsStreaming(false);
+            setError(retryErr instanceof Error ? retryErr.message : String(retryErr));
+            return;
+          }
+        }
         setIsStreaming(false);
         setError(err instanceof Error ? err.message : String(err));
       }

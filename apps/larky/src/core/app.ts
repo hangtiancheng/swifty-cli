@@ -24,6 +24,7 @@
 // server. Clients (TUI / print mode) drive sessions via RPCs and receive
 // progress through the event stream (with per-run events.jsonl replay).
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+import { readdir, rm, stat } from "node:fs/promises";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
 import { randomUUID } from "node:crypto";
@@ -85,12 +86,14 @@ function runEventsPath(workDir: string, runId: string): string {
 
 interface PendingPermission {
   sessionId: string;
+  runId: string;
   resolve: (r: "allow" | "deny" | "allowAlways") => void;
   cleanup?: () => void;
 }
 
 interface PendingAsk {
   sessionId: string;
+  runId: string;
   resolve: (answers: Record<string, string>) => void;
   reject: (e: Error) => void;
   cleanup?: () => void;
@@ -98,6 +101,7 @@ interface PendingAsk {
 
 interface PendingPlan {
   sessionId: string;
+  runId: string;
   resolve: (r: { choice: WirePlanChoice; feedback: string }) => void;
   reject: (e: Error) => void;
   cleanup?: () => void;
@@ -117,7 +121,10 @@ export class CoreApp {
   private _pendingPlans = new Map<string, PendingPlan>();
 
   private _teammatePollTimer: ReturnType<typeof setInterval> | null = null;
-  private _lastTeammateStates = "";
+  // Per-session cache: a single shared string would make two sessions with
+  // different states re-broadcast teammate.state on every poll tick.
+  private _lastTeammateStates = new Map<string, string>();
+  private _idleTimer: ReturnType<typeof setTimeout> | null = null;
 
   // -- Event emission -------------------------------------------------------
 
@@ -149,7 +156,7 @@ export class CoreApp {
   private _settlePermission(
     id: string,
     response: "allow" | "deny" | "allowAlways",
-    source: "client" | "timeout" | "disconnect" | "abort",
+    source: "client" | "timeout" | "disconnect" | "abort" | "session_closed",
   ): void {
     const pending = this._pendingPermissions.get(id);
     if (!pending || !this._pendingPermissions.delete(id)) {
@@ -161,6 +168,7 @@ export class CoreApp {
       type: "permission.resolved",
       id,
       session_id: pending.sessionId,
+      run_id: pending.runId,
       response,
       source,
       timestamp: nowIso(),
@@ -185,6 +193,7 @@ export class CoreApp {
       type: "ask_user.resolved",
       id,
       session_id: pending.sessionId,
+      run_id: pending.runId,
       timestamp: nowIso(),
     });
   }
@@ -207,6 +216,7 @@ export class CoreApp {
       type: "plan.resolved",
       id,
       session_id: pending.sessionId,
+      run_id: pending.runId,
       choice: "error" in outcome ? "cancelled" : outcome.choice,
       timestamp: nowIso(),
     });
@@ -225,6 +235,7 @@ export class CoreApp {
         };
         this._pendingPermissions.set(id, {
           sessionId: session.id,
+          runId: session.currentRunId ?? "",
           resolve,
           cleanup: () => {
             signal?.removeEventListener("abort", onAbort);
@@ -257,6 +268,7 @@ export class CoreApp {
         };
         this._pendingAsks.set(id, {
           sessionId: session.id,
+          runId: session.currentRunId ?? "",
           resolve,
           reject,
           cleanup: () => {
@@ -294,6 +306,7 @@ export class CoreApp {
         };
         this._pendingPlans.set(id, {
           sessionId: session.id,
+          runId: session.currentRunId ?? "",
           resolve,
           reject,
           cleanup: () => {
@@ -305,6 +318,7 @@ export class CoreApp {
           type: "plan.requested",
           id,
           session_id: session.id,
+          run_id: session.currentRunId ?? "",
           plan_text: planText,
           timestamp: nowIso(),
         });
@@ -322,6 +336,26 @@ export class CoreApp {
     }
     for (const id of [...this._pendingPlans.keys()]) {
       this._settlePlan(id, { error: new Error("client disconnected") });
+    }
+  }
+
+  // Settle every pending interaction owned by a closing session so its
+  // resolvers never leak and clients drop the stranded dialogs.
+  private _cancelPendingForSession(sessionId: string): void {
+    for (const [id, p] of [...this._pendingPermissions]) {
+      if (p.sessionId === sessionId) {
+        this._settlePermission(id, "deny", "session_closed");
+      }
+    }
+    for (const [id, p] of [...this._pendingAsks]) {
+      if (p.sessionId === sessionId) {
+        this._settleAsk(id, { error: new Error("session closed") });
+      }
+    }
+    for (const [id, p] of [...this._pendingPlans]) {
+      if (p.sessionId === sessionId) {
+        this._settlePlan(id, { error: new Error("session closed") });
+      }
     }
   }
 
@@ -450,6 +484,8 @@ export class CoreApp {
     });
     const session = this._getSession(cmd.session_id);
     this._sessions.delete(cmd.session_id);
+    this._lastTeammateStates.delete(cmd.session_id);
+    this._cancelPendingForSession(cmd.session_id);
     await session.close();
     return { ok: true };
   }
@@ -559,9 +595,54 @@ export class CoreApp {
     if (!this._broadcaster) {
       throw new Error("broadcaster not initialized");
     }
-    return handleEventSubscribe(this._broadcaster, writer, cmd, (runId, topics) =>
-      snapshotReplayLines(this._workDir, runId, topics),
+    if (this._idleTimer) {
+      clearTimeout(this._idleTimer);
+      this._idleTimer = null;
+    }
+    return handleEventSubscribe(this._broadcaster, writer, cmd, (runId, topics, offset) =>
+      snapshotReplayLines(this._workDir, runId, topics, offset),
     );
+  }
+
+  // -- Idle session recycling (P2-14) -----------------------------------------
+
+  // When no client stays connected (crash / kill -9, so session.close never
+  // arrived), reclaim idle sessions after a grace period. Sessions with a
+  // run in flight or pending interactions are exempt.
+  private static readonly IDLE_RECYCLE_MS = 30 * 60 * 1000;
+
+  private _armIdleRecycle(): void {
+    if (this._idleTimer) {
+      clearTimeout(this._idleTimer);
+    }
+    this._idleTimer = setTimeout(() => {
+      this._idleTimer = null;
+      if (this._broadcaster?.subscriptionCount() !== 0) {
+        return;
+      }
+      for (const [id, session] of [...this._sessions]) {
+        if (session.isRunning || this._hasPendingFor(id)) {
+          continue;
+        }
+        this._sessions.delete(id);
+        this._lastTeammateStates.delete(id);
+        void session.close().catch(() => undefined);
+      }
+    }, CoreApp.IDLE_RECYCLE_MS);
+    this._idleTimer.unref?.();
+  }
+
+  private _hasPendingFor(sessionId: string): boolean {
+    for (const p of this._pendingPermissions.values()) {
+      if (p.sessionId === sessionId) return true;
+    }
+    for (const p of this._pendingAsks.values()) {
+      if (p.sessionId === sessionId) return true;
+    }
+    for (const p of this._pendingPlans.values()) {
+      if (p.sessionId === sessionId) return true;
+    }
+    return false;
   }
 
   // -- Teammate state polling ------------------------------------------------
@@ -571,10 +652,10 @@ export class CoreApp {
       for (const session of this._sessions.values()) {
         const states = session.teamManager.getAllTeammateStates();
         const serialized = JSON.stringify(states);
-        if (serialized === this._lastTeammateStates) {
+        if (serialized === this._lastTeammateStates.get(session.id)) {
           continue;
         }
-        this._lastTeammateStates = serialized;
+        this._lastTeammateStates.set(session.id, serialized);
         this.emit({
           type: "teammate.state",
           session_id: session.id,
@@ -632,6 +713,7 @@ export class CoreApp {
         // instead of letting agents freeze forever.
         if (this._broadcaster?.subscriptionCount() === 0) {
           this._cancelAllInteractions();
+          this._armIdleRecycle();
         }
       },
     });
@@ -671,6 +753,7 @@ export class CoreApp {
       process.exit(1);
     }
     logger.info(`larky-core ${version} listening addr=${addr}`);
+    void cleanExpiredRunDirs(this._workDir).catch(() => undefined);
     this.emit({
       type: "core.started",
       listen_addr: addr,
@@ -726,18 +809,29 @@ function matchTopic(eventType: string, matchers: picomatch.Matcher[]): boolean {
 
 // Synchronously snapshot matching replay lines from a run's events.jsonl.
 // Fully synchronous so callers can subscribe immediately after snapshotting
-// without an await gap (B-11).
-export function snapshotReplayLines(workDir: string, runId: string, topics: string[]): string[] {
-  return snapshotReplayLinesFromFile(runEventsPath(workDir, runId), topics);
+// without an await gap (B-11). offset skips the first N matching lines the
+// client already applied before disconnecting.
+export function snapshotReplayLines(
+  workDir: string,
+  runId: string,
+  topics: string[],
+  offset = 0,
+): string[] {
+  return snapshotReplayLinesFromFile(runEventsPath(workDir, runId), topics, offset);
 }
 
-export function snapshotReplayLinesFromFile(eventsPath: string, topics: string[]): string[] {
+export function snapshotReplayLinesFromFile(
+  eventsPath: string,
+  topics: string[],
+  offset = 0,
+): string[] {
   if (!existsSync(eventsPath)) {
     return [];
   }
 
   const matchers = topics.map((t) => picomatch(t));
   const out: string[] = [];
+  let matched = 0;
   try {
     const content = readFileSync(eventsPath, "utf-8");
     for (const line of content.split("\n")) {
@@ -751,6 +845,10 @@ export function snapshotReplayLinesFromFile(eventsPath: string, topics: string[]
         }
         const eventType = typeof parsed.type === "string" ? parsed.type : "";
         if (!matchTopic(eventType, matchers)) {
+          continue;
+        }
+        matched++;
+        if (matched <= offset) {
           continue;
         }
         out.push(JSON.stringify({ kind: "event", event: parsed }) + "\n");
@@ -771,12 +869,12 @@ export function snapshotReplayLinesFromFile(eventsPath: string, topics: string[]
 export async function handleEventSubscribe(
   broadcaster: IpcEventBroadcaster,
   writer: net.Socket,
-  cmd: { topics: string[]; scope: string; replay_from_run: string | null },
-  snapshotFn: (runId: string, topics: string[]) => string[],
+  cmd: { topics: string[]; scope: string; replay_from_run: string | null; replay_offset?: number },
+  snapshotFn: (runId: string, topics: string[], offset: number) => string[],
 ): Promise<unknown> {
   let replayLines: string[] = [];
   if (cmd.replay_from_run !== null) {
-    replayLines = snapshotFn(cmd.replay_from_run, cmd.topics);
+    replayLines = snapshotFn(cmd.replay_from_run, cmd.topics, cmd.replay_offset ?? 0);
   }
 
   const subId = broadcaster.subscribe(writer, cmd.topics, cmd.scope);
@@ -794,13 +892,57 @@ export async function handleEventSubscribe(
   });
 }
 
+// -- Run events cleanup (P2-17) ---------------------------------------------
+
+// Replay logs are a short-lived reconnect cache; reclaim old run dirs on
+// daemon startup (no active runs exist at that point). Keeps the most
+// recent KEEP_RECENT dirs and anything younger than RUN_EXPIRY_MS.
+const RUN_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000;
+const KEEP_RECENT_RUNS = 20;
+
+export async function cleanExpiredRunDirs(workDir: string): Promise<number> {
+  const base = path.join(workDir, ".larky", "daemon", "runs");
+  let names: string[];
+  try {
+    const entries = await readdir(base, { withFileTypes: true });
+    names = entries.filter((e) => e.isDirectory()).map((e) => e.name);
+  } catch {
+    return 0;
+  }
+  const dirs: { p: string; mtime: number }[] = [];
+  for (const name of names) {
+    const dirPath = path.join(base, name);
+    try {
+      dirs.push({ p: dirPath, mtime: (await stat(dirPath)).mtimeMs });
+    } catch {
+      // raced away; skip
+    }
+  }
+  dirs.sort((a, b) => b.mtime - a.mtime);
+  const now = Date.now();
+  let removed = 0;
+  for (const [i, d] of dirs.entries()) {
+    if (i < KEEP_RECENT_RUNS || now - d.mtime <= RUN_EXPIRY_MS) {
+      continue;
+    }
+    try {
+      await rm(d.p, { recursive: true, force: true });
+      removed++;
+    } catch {
+      // best-effort
+    }
+  }
+  return removed;
+}
+
 // Daemon entry point
 async function main(): Promise<void> {
   await new CoreApp().run();
   process.exit(0);
 }
 
-const isDirectRun = process.argv[1].endsWith("/app.ts") || process.argv[1].endsWith("/app.js");
+const entryPath = process.argv[1] ?? "";
+const isDirectRun = entryPath.endsWith("/app.ts") || entryPath.endsWith("/app.js");
 
 if (isDirectRun) {
   void main();

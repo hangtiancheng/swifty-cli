@@ -42,6 +42,7 @@ export type WirePlanChoice = z.infer<typeof PlanChoiceSchema>;
 export const CommandInfoSchema = z.object({
   name: z.string(),
   description: z.string().default(""),
+  aliases: z.array(z.string()).default([]),
 });
 export type CommandInfo = z.infer<typeof CommandInfoSchema>;
 
@@ -83,6 +84,9 @@ export const EventSubscribeCommandSchema = z.object({
   // "global" | "session:<id>" | "run:<id>"
   scope: z.string().default("global"),
   replay_from_run: z.string().nullable().default(null),
+  // Replay cursor: skip this many already-applied matching lines so a brief
+  // reconnect does not re-render the whole run.
+  replay_offset: z.number().int().nonnegative().default(0),
 });
 export type EventSubscribeCommand = z.infer<typeof EventSubscribeCommandSchema>;
 

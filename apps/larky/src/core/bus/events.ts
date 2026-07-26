@@ -225,10 +225,13 @@ export const PermissionResolvedEventSchema = z.object({
   type: z.literal("permission.resolved").default("permission.resolved"),
   id: z.string(),
   session_id: z.string(),
+  // Mirrors the requested event's run_id so the resolution is persisted into
+  // the same run's events.jsonl (replay then auto-clears the dialog).
+  run_id: z.string().default(""),
   response: z.string(),
   // .catch(): unknown future sources degrade to "client" on old clients
   // instead of failing the whole event parse (which would strand dialogs).
-  source: z.enum(["client", "timeout", "disconnect", "abort"]).catch("client"),
+  source: z.enum(["client", "timeout", "disconnect", "abort", "session_closed"]).catch("client"),
   timestamp: z.string(),
 });
 export type PermissionResolvedEvent = z.infer<typeof PermissionResolvedEventSchema>;
@@ -247,6 +250,7 @@ export const AskUserResolvedEventSchema = z.object({
   type: z.literal("ask_user.resolved").default("ask_user.resolved"),
   id: z.string(),
   session_id: z.string(),
+  run_id: z.string().default(""),
   timestamp: z.string(),
 });
 export type AskUserResolvedEvent = z.infer<typeof AskUserResolvedEventSchema>;
@@ -255,6 +259,7 @@ export const PlanRequestedEventSchema = z.object({
   type: z.literal("plan.requested").default("plan.requested"),
   id: z.string(),
   session_id: z.string(),
+  run_id: z.string().default(""),
   plan_text: z.string().default(""),
   timestamp: z.string(),
 });
@@ -264,6 +269,7 @@ export const PlanResolvedEventSchema = z.object({
   type: z.literal("plan.resolved").default("plan.resolved"),
   id: z.string(),
   session_id: z.string(),
+  run_id: z.string().default(""),
   choice: z.string(),
   timestamp: z.string(),
 });
