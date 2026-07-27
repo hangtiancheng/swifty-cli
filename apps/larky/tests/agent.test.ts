@@ -148,26 +148,25 @@ describe("Agent loop", () => {
     expect(events.some((e) => e.type === "loop_complete")).toBe(true);
   });
 
-  it("aborts after 3 consecutive unknown tool calls", async () => {
+  it("returns an error result for unknown tools and keeps looping", async () => {
     const unknownTurn = (id: string): StreamEvent[] => [
-      {
-        type: "tool_call_complete",
-        toolId: id,
-        toolName: "Nope",
-        arguments: {},
-      },
+      { type: "tool_call_complete", toolId: id, toolName: "Nope", arguments: {} },
       end("tool_use"),
     ];
+    // After 3 consecutive wrong tool guesses, switch to plain text on round 4 and let the model handle the loop termination.
     const client = new MockClient([
       unknownTurn("x1"),
       unknownTurn("x2"),
       unknownTurn("x3"),
-      unknownTurn("x4"),
+      [{ type: "text_delta", text: "That tool does not exist." }, end()],
     ]);
     const { events } = await runAgent(client); // no Echo registered → Nope is unknown
 
-    const err = events.find((e) => e.type === "error");
-    expect(err?.type === "error" && err.error.message).toContain("unknown tool calls");
+    expect(events.some((e) => e.type === "error")).toBe(false);
+    const results = events.filter((e) => e.type === "tool_result");
+    expect(results.length).toBe(3);
+    expect(results.every((e) => e.type === "tool_result" && e.isError)).toBe(true);
+    expect(events.some((e) => e.type === "loop_complete")).toBe(true);
   });
 
   it("propagates cache token fields from stream_end through the usage event", async () => {

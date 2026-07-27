@@ -63,6 +63,7 @@ export class StreamingExecutor {
       const tool = this.registry.get(call.toolName);
       const start = Date.now();
 
+      // On invalid tool name, return a single error and let the model self-correct with another tool; keep the loop running.
       if (!tool) {
         return {
           toolId: call.toolId,
