@@ -163,7 +163,6 @@ export class Agent {
 
     let maxTokensEscalated = false;
     let outputRecoveries = 0;
-    let consecutiveUnknown = 0;
     let iteration = 0;
 
     await this.fireLifecycle("session_start");
@@ -431,23 +430,6 @@ export class Agent {
           const results = await this.executeTools(toolUses);
           for (const r of results) {
             yield r;
-          }
-
-          // Safety guard: bail out if the model keeps calling tools that don't
-          // exist — a sign it's stuck.
-          for (const tu of toolUses) {
-            if (this.registry.get(tu.toolName)) {
-              consecutiveUnknown = 0;
-            } else {
-              consecutiveUnknown++;
-            }
-          }
-          if (consecutiveUnknown >= 3) {
-            yield {
-              type: "error",
-              error: new Error("Too many consecutive unknown tool calls"),
-            };
-            return;
           }
 
           // Readback results from spill files are exempt from spilling: if we
