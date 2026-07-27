@@ -103,7 +103,7 @@ import { AskUserDialog } from "./ask-user-dialog.js";
 import { TeammateSpinnerTree } from "./teammate-spinner-tree.js";
 import { TeamStatus } from "./team-status.js";
 import { TeamsDialog } from "./teams-dialog.js";
-import { enableMouseTracking, disableMouseTracking, parseWheel } from "./mouse.js";
+// import { enableMouseTracking, disableMouseTracking, parseWheel } from "./mouse.js";
 import type { TeammateUIState } from "../teams/progress.js";
 import { AskUserQuestionTool, type Question } from "../tools/ask-user.js";
 import { existsSync, readFileSync } from "node:fs";
@@ -115,7 +115,7 @@ import { InputBox } from "./input.js";
 import { ChatView, type ChatMessage, type ToolSummaryItem } from "./chat.js";
 import { ToolDisplay, type ToolBlockInfo } from "./tool-display.js";
 import Spinner from "./spinner.js";
-import { COLORS, ICONS } from "./styles.js";
+import { BORDER_COLORS, COLORS, ICONS } from "./styles.js";
 import { CommandUsageTracker } from "../commands/usage-tracker.js";
 import { randomCompletionVerb } from "./verbs.js";
 import { asErrorString, asRecord, strArg } from "@/utils/index.js";
@@ -1751,12 +1751,12 @@ export function App({
 
   // Enable SGR mouse tracking so the wheel is reported as mouse sequences
   // instead of being translated by the terminal into ↑/↓ that misfire the input history.
-  useEffect(() => {
-    enableMouseTracking(stdout);
-    return () => {
-      disableMouseTracking(stdout);
-    };
-  }, [stdout]);
+  // useEffect(() => {
+  //   enableMouseTracking(stdout);
+  //   return () => {
+  //     disableMouseTracking(stdout);
+  //   };
+  // }, [stdout]);
 
   // Measure the content and viewport heights once after each render, used to
   // compute the scrollable range.
@@ -1777,31 +1777,31 @@ export function App({
     setScrollTop((prev) => (stickToBottomRef.current ? maxScroll : Math.min(prev, maxScroll)));
   }, [maxScroll]);
 
-  const scrollBy = useCallback(
-    (delta: number) => {
-      setScrollTop((prev) => {
-        const next = Math.max(0, Math.min(prev + delta, maxScroll));
-        stickToBottomRef.current = next >= maxScroll;
-        return next;
-      });
-    },
-    [maxScroll],
-  );
+  // const scrollBy = useCallback(
+  //   (delta: number) => {
+  //     setScrollTop((prev) => {
+  //       const next = Math.max(0, Math.min(prev + delta, maxScroll));
+  //       stickToBottomRef.current = next >= maxScroll;
+  //       return next;
+  //     });
+  //   },
+  //   [maxScroll],
+  // );
 
   // The wheel and page keys drive scrolling. Mouse sequences never reach the
   // input box (they are already filtered by SGR format inside InputBox).
-  useInput((input, key) => {
-    const wheel = parseWheel(input);
-    if (wheel) {
-      scrollBy(wheel === "up" ? -3 : 3);
-      return;
-    }
-    if (key.pageUp) {
-      scrollBy(-Math.max(1, viewportHeight - 2));
-    } else if (key.pageDown) {
-      scrollBy(Math.max(1, viewportHeight - 2));
-    }
-  });
+  // useInput((input, key) => {
+  //   const wheel = parseWheel(input);
+  //   if (wheel) {
+  //     scrollBy(wheel === "up" ? -3 : 3);
+  //     return;
+  //   }
+  //   if (key.pageUp) {
+  //     scrollBy(-Math.max(1, viewportHeight - 2));
+  //   } else if (key.pageDown) {
+  //     scrollBy(Math.max(1, viewportHeight - 2));
+  //   }
+  // });
 
   if (appState === "providerSelect") {
     return <ProviderSelect providers={providers} onSelect={handleProviderSelect} />;
@@ -1812,15 +1812,15 @@ export function App({
       {/* Top brand header: fixed and non-shrinking within the render tree, so it stays on screen even in long conversations */}
       <Box flexDirection="column" flexShrink={0}>
         <Text>
-          <Text color="#a78bfa"> /\_/\ </Text>
+          <Text color={BORDER_COLORS.focused}> /\_/\ </Text>
           <Text dimColor>Swifty v0.1.0</Text>
         </Text>
         <Text>
-          <Text color="#a78bfa">( o.o ) </Text>
+          <Text color={BORDER_COLORS.focused}>( o.o ) </Text>
           <Text dimColor>{selectedProvider.model || selectedProvider.name}</Text>
         </Text>
         <Text>
-          <Text color="#a78bfa">
+          <Text color={BORDER_COLORS.focused}>
             {" "}
             {">"} ^ {"<"}{" "}
           </Text>
