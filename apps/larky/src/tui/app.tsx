@@ -139,7 +139,8 @@ const SESSION_NOT_FOUND = -32010;
 export function App({ client, provider, permissionMode, onSessionChange }: Props) {
   const { exit } = useApp();
   // useWindowSize subscribes to stdout "resize" and re-renders on terminal
-  // size changes; a raw stdout.rows read would be a stale render-time snapshot.
+  // size changes; with a raw stdout.rows read nothing triggers a re-render,
+  // so the last-rendered height goes stale.
   const { rows: terminalRows } = useWindowSize();
 
   const workDir = process.cwd();

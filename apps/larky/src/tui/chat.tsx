@@ -28,7 +28,7 @@ import chalk from "chalk";
 import { marked } from "marked";
 import { markedTerminal } from "@swifty.js/marked-terminal";
 import { COLORS, ICONS } from "./styles.js";
-import { Box, Text, useWindowSize } from "ink";
+import { Box, Text, useStdout } from "ink";
 import { useRef } from "react";
 import { DiffLines } from "./diff-render.js";
 import { isDiffTool } from "./is-diff-tool.js";
@@ -108,10 +108,10 @@ function countPhysicalLines(lines: string[], cols: number): number {
 
 function StreamingText({ text }: { text: string }) {
   const stableRef = useRef({ text: "", rendered: "" });
-  const { columns, rows } = useWindowSize();
-  const cols = columns || 80;
+  const { stdout } = useStdout();
+  const cols = stdout.columns || 80;
   // Reserve 12 physical lines for dynamic area components like Spinner, ToolDisplay, InputBox, user messages, etc.
-  const maxPhysical = Math.max(5, (rows || 24) - 12);
+  const maxPhysical = Math.max(5, (stdout.rows || 24) - 12);
 
   const boundary = text.lastIndexOf("\n\n");
   const stableEnd =
