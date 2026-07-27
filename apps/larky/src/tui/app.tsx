@@ -25,7 +25,7 @@
 // renders the event stream and answers interaction requests via RPCs.
 // Local-only concerns: prompt history, @-file completion, scrolling, theme.
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Box, Text, useApp, useInput, useStdout, measureElement, type DOMElement } from "ink";
+import { Box, Text, useApp, useInput, useWindowSize, measureElement, type DOMElement } from "ink";
 
 import type { ProviderConfig } from "../config/config.js";
 import type { PermissionMode } from "../permissions/checker.js";
@@ -138,7 +138,9 @@ const SESSION_NOT_FOUND = -32010;
 
 export function App({ client, provider, permissionMode, onSessionChange }: Props) {
   const { exit } = useApp();
-  const { stdout } = useStdout();
+  // useWindowSize subscribes to stdout "resize" and re-renders on terminal
+  // size changes; a raw stdout.rows read would be a stale render-time snapshot.
+  const { rows: terminalRows } = useWindowSize();
 
   const workDir = process.cwd();
   const historyDir = `${workDir}/.larky`;
@@ -959,7 +961,7 @@ export function App({ client, provider, permissionMode, onSessionChange }: Props
   const activePermission = permissionQueue[0] ?? null;
 
   return (
-    <Box flexDirection="column" width="100%" height={Math.max(1, stdout.rows ?? 24)}>
+    <Box flexDirection="column" width="100%" height={Math.max(1, terminalRows ?? 24)}>
       {/* Top brand header */}
       <Box flexDirection="column" flexShrink={0}>
         <Text>
