@@ -1372,7 +1372,7 @@ export function App({
 
     for await (const event of agent.run()) {
       switch (event.type) {
-        case "stream_text":
+        case "stream_text": {
           fullText += event.text;
           streamingTextRef.current = fullText;
           // Throttled streaming: flush within 50ms to reduce React re-render churn
@@ -1381,20 +1381,23 @@ export function App({
             streamThrottleRef.current = null;
           }, 50);
           break;
+        }
 
-        case "thinking_text":
+        case "thinking_text": {
           if (!turnThinkingStart) {
             turnThinkingStart = Date.now();
           }
           turnThinkingText += event.text;
           break;
+        }
 
-        case "thinking_complete":
+        case "thinking_complete": {
           if (turnThinkingStart) {
             turnThinkingDuration = (Date.now() - turnThinkingStart) / 1000;
           }
           // Don't add a separate "thinking" message -- it'll be folded into the turn summary.
           break;
+        }
 
         case "tool_use": {
           const argsSummary = formatToolArgs(event.args);
@@ -1436,19 +1439,20 @@ export function App({
           break;
         }
 
-        case "usage":
+        case "usage": {
           setInputTokens((prev) => prev + event.usage.inputTokens);
           setOutputTokens((prev) => prev + event.usage.outputTokens);
           break;
+        }
 
-        case "compact":
+        case "compact": {
           setMessages((prev) => [...prev, { role: "system", content: `⊙ ${event.message}` }]);
           if (event.boundary) {
             sessionMod.saveCompactBoundary(workDir, sessionIdRef.current, event.boundary);
           }
           break;
-
-        case "retry":
+        }
+        case "retry": {
           setMessages((prev) => [
             ...prev,
             {
@@ -1457,6 +1461,7 @@ export function App({
             },
           ]);
           break;
+        }
 
         case "turn_complete": {
           if (streamThrottleRef.current) {
@@ -1486,7 +1491,7 @@ export function App({
           break;
         }
 
-        case "loop_complete":
+        case "loop_complete": {
           if (streamThrottleRef.current) {
             clearTimeout(streamThrottleRef.current);
             streamThrottleRef.current = null;
@@ -1513,9 +1518,11 @@ export function App({
             setPlanApprovalActive(true);
           }
           break;
+        }
 
-        case "error":
+        case "error": {
           throw event.error;
+        }
       }
     }
   };

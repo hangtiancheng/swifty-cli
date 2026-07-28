@@ -50,6 +50,7 @@ import {
 import type { StreamEvent } from "./events.js";
 import type { ToolSchema } from "@/tools/types.js";
 import type { ImageAttachment } from "@/images/types.js";
+import { computeCompactThreshold } from "@/compact/compact.js";
 
 enum AnthropicErrorCode {
   /** 413 Payload Too Large — The request entity is larger than the server is willing or able to process. */
@@ -360,13 +361,13 @@ export class AnthropicClient implements LLMClient {
       if (supportsAdaptiveThinking()) {
         params.thinking = {
           type: "enabled",
-          budget_tokens: this.maxOutputTokens - 1,
+          budget_tokens: computeCompactThreshold(this.contextWindow, this.maxOutputTokens),
         };
       }
     } else {
       params.thinking = {
         type: "enabled",
-        budget_tokens: this.maxOutputTokens - 1,
+        budget_tokens: computeCompactThreshold(this.contextWindow, this.maxOutputTokens),
       };
     }
 

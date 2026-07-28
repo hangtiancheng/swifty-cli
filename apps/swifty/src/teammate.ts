@@ -259,6 +259,9 @@ export async function runTeammate(args: TeammateArgs): Promise<void> {
         process.stdout.write(event.text);
         break;
       case "tool_result":
+        console.log(
+          `[${event.toolName}] ${event.isError ? "ERROR" : "OK"} (${event.elapsed.toFixed(1)}s)`,
+        );
         log.info(
           { toolName: event.toolName, isError: event.isError, elapsed: event.elapsed },
           "tool result",
@@ -266,8 +269,8 @@ export async function runTeammate(args: TeammateArgs): Promise<void> {
         log.debug({ output }, "tool output");
         break;
       case "loop_complete":
+        console.log("--- Task complete ---");
         log.info("task complete");
-        log.debug({ output }, "final output");
         break;
       case "error":
         log.error({ err: event.error }, "agent error");
@@ -284,10 +287,12 @@ export async function runTeammate(args: TeammateArgs): Promise<void> {
   for await (const msg of mailbox.poll(2000)) {
     // Graceful shutdown: stop polling and exit when the lead requests it.
     if (isShutdownRequest(msg)) {
+      console.log(`Shutdown requested, ${args.memberName} exiting.`);
       log.info({ memberName: args.memberName }, "shutdown requested, exiting");
       break;
     }
 
+    console.log(`Message from ${msg.from}: ${msg.text}`);
     log.info({ from: msg.from, text: msg.text }, "message received");
     conversation.addUserMessage(msg.text);
     for await (const event of agent.run()) {
