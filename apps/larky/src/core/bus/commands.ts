@@ -101,6 +101,9 @@ export type EventSubscribeResult = z.infer<typeof EventSubscribeResultSchema>;
 export const SessionCreateCommandSchema = z.object({
   type: z.literal("session.create").default("session.create"),
   permission_mode: PermissionModeSchema.nullable().default(null),
+  // Provider chosen by the client (config provider name); daemon falls back
+  // to the first configured provider when absent or unknown.
+  provider_name: z.string().nullable().default(null),
   // Persist conversation to a session file (disabled by print mode).
   persist: z.boolean().default(true),
 });

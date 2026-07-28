@@ -45,7 +45,7 @@ providers:
     thinking: true                           # optional, boolean, default: false — enable extended thinking
     context_window: 1000000                  # optional, number, default: built-in lookup by model name
                                              #   (claude -> 200000, gpt-4.1/1m -> 1000000, else 128000)
-    # max_output_tokens: 64000               # optional, number, default: 8192 (64000 when thinking: true)
+    max_output_tokens: 128000               # optional, number, default: 8192 (64000 when thinking: true)
 
   - name: openai-compat
     protocol: openai-compat
@@ -54,7 +54,7 @@ providers:
     api_key: "<your_api_key>"
     thinking: true
     context_window: 1000000
-    # max_output_tokens: 64000
+    max_output_tokens: 128000
 
 # mcp_servers — optional, array, default: [] (no servers).
 # Each server needs either `command` (stdio transport) or `url` (http/sse transport).

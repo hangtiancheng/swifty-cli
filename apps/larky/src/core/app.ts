@@ -179,8 +179,12 @@ export class CoreApp {
       cmd.permission_mode ??
       (isPermissionMode(cfg.permission_mode) ? cfg.permission_mode : undefined);
 
+    const provider = cmd.provider_name
+      ? (cfg.providers.find((p) => p.name === cmd.provider_name) ?? cfg.providers[0])
+      : cfg.providers[0];
+
     const session = await AgentSession.create({
-      provider: cfg.providers[0],
+      provider,
       workDir: this._workDir,
       hooks: cfg.hooks,
       mcpServers: cfg.mcp_servers,

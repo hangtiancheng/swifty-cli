@@ -24,14 +24,43 @@
 // Connects a SocketClient to the daemon, enters the alt screen, installs the
 // BSU/ESU sync-output patch, renders the Ink App, and restores the primary
 // screen on exit.
+import { useState } from "react";
 import { render } from "ink";
-import { loadConfig } from "../config/config.js";
+import { loadConfig, type ProviderConfig } from "../config/config.js";
 import { getConfig } from "../core/config.js";
 import { SocketClient } from "../core/transport/socket-client.js";
 import { initLogger } from "../logger/index.js";
 import { newSessionId } from "../session/session.js";
 import { App } from "./app.js";
+import { ProviderSelect } from "./provider-select.js";
 import { installSyncOutput } from "./sync-output.js";
+
+interface AppShellProps {
+  client: SocketClient;
+  providers: ProviderConfig[];
+  permissionMode?: string;
+  onSessionChange: (id: string) => void;
+}
+
+// Mirrors swifty's provider gate: with multiple configured providers, show
+// the picker before mounting App so session.create carries the chosen one.
+// eslint-disable-next-line react-refresh/only-export-components
+function AppShell({ client, providers, permissionMode, onSessionChange }: AppShellProps) {
+  const [provider, setProvider] = useState<ProviderConfig | null>(
+    providers.length === 1 ? providers[0] : null,
+  );
+  if (!provider) {
+    return <ProviderSelect providers={providers} onSelect={setProvider} />;
+  }
+  return (
+    <App
+      client={client}
+      provider={provider}
+      permissionMode={permissionMode}
+      onSessionChange={onSessionChange}
+    />
+  );
+}
 
 export async function launchTUI(): Promise<void> {
   const cfg = loadConfig();
@@ -54,9 +83,9 @@ export async function launchTUI(): Promise<void> {
   installSyncOutput();
   let sessionId = "";
   const instance = render(
-    <App
+    <AppShell
       client={client}
-      provider={cfg.providers[0]}
+      providers={cfg.providers}
       permissionMode={cfg.permission_mode}
       onSessionChange={(id) => {
         sessionId = id;

@@ -262,6 +262,7 @@ export function App({ client, provider, permissionMode, onSessionChange }: Props
         : permissionMode && isPermissionModeStr(permissionMode)
           ? permissionMode
           : null,
+      provider_name: provider.name,
       persist: true,
     });
     sessionIdRef.current = typeof res.session_id === "string" ? res.session_id : "";
@@ -274,7 +275,7 @@ export function App({ client, provider, permissionMode, onSessionChange }: Props
     if (isPermissionModeStr(mode)) {
       setPermMode(mode);
     }
-  }, [client, permissionMode, onSessionChange]);
+  }, [client, permissionMode, onSessionChange, provider.name]);
 
   // -- Event handling ----------------------------------------------------------
 
