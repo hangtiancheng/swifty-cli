@@ -49,6 +49,7 @@ import {
 } from "./errors.js";
 import type { StreamEvent } from "./events.js";
 import type { ToolSchema } from "@/tools/types.js";
+import type { ImageAttachment } from "@/images/types.js";
 
 enum AnthropicErrorCode {
   /** 413 Payload Too Large — The request entity is larger than the server is willing or able to process. */
@@ -125,6 +126,29 @@ function supportsAdaptiveThinking(): boolean {
   return true;
 }
 
+function imageBlocksFor(images?: ImageAttachment[]): Anthropic.ImageBlockParam[] {
+  return (images ?? []).map((img) => ({
+    type: "image",
+    source: {
+      type: "base64",
+      media_type: img.mediaType,
+      data: img.data,
+    },
+  }));
+}
+
+// User message content: text first, then images. Text-first keeps the
+// canMerge check below working (it inspects content[0]) so post-compaction
+// user/user merging isn't broken by an image in slot 0.
+function userBlocksFor(m: Message): Anthropic.ContentBlockParam[] {
+  const blocks: Anthropic.ContentBlockParam[] = [];
+  if (m.content || !m.images?.length) {
+    blocks.push({ type: "text", text: m.content });
+  }
+  blocks.push(...imageBlocksFor(m.images));
+  return blocks;
+}
+
 export function buildAnthropicMessages(messages: Message[]): Anthropic.MessageParam[] {
   const result: Anthropic.MessageParam[] = [];
 
@@ -171,7 +195,9 @@ export function buildAnthropicMessages(messages: Message[]): Anthropic.MessagePa
           type: "tool_result", // tool result
           tool_use_id: tr.toolUseId,
           is_error: tr.isError,
-          content: tr.content,
+          content: tr.images?.length
+            ? [{ type: "text", text: tr.content }, ...imageBlocksFor(tr.images)]
+            : tr.content,
         });
       }
 
@@ -191,7 +217,7 @@ export function buildAnthropicMessages(messages: Message[]): Anthropic.MessagePa
       if (result.length === 0) {
         result.push({
           role: "user",
-          content: [{ type: "text", text: m.content }],
+          content: userBlocksFor(m),
         });
         continue;
       }
@@ -205,7 +231,7 @@ export function buildAnthropicMessages(messages: Message[]): Anthropic.MessagePa
           (Array.isArray(content) &&
             content.length > 0 &&
             // content[0].type !== "tool_result"
-            content[0].type === "text"))
+            (content[0].type === "text" || content[0].type === "image")))
       ) {
         canMerge = true;
       }
@@ -224,14 +250,11 @@ export function buildAnthropicMessages(messages: Message[]): Anthropic.MessagePa
                 ]
               : [];
         }
-        content.push({
-          type: "text",
-          text: m.content,
-        });
+        content.push(...userBlocksFor(m));
       } else {
         result.push({
           role: "user",
-          content: [{ type: "text", text: m.content }],
+          content: userBlocksFor(m),
         });
       }
     }
@@ -520,7 +543,7 @@ export class AnthropicClient implements LLMClient {
 /**
  * @param messages
  */
-function markLastUserTailForCache(messages: Anthropic.Messages.MessageParam[]) {
+export function markLastUserTailForCache(messages: Anthropic.Messages.MessageParam[]) {
   for (let i = messages.length - 1; i >= 0; i--) {
     if (messages[i].role !== "user") {
       continue;
@@ -541,7 +564,15 @@ function markLastUserTailForCache(messages: Anthropic.Messages.MessageParam[]) {
         },
       ];
     }
-    const last: Anthropic.Messages.ContentBlockParam = content[content.length - 1];
+    // Prefer the last non-image block: some gateways reject cache_control on
+    // image blocks. Fall back to the true tail if everything is an image.
+    let last: Anthropic.Messages.ContentBlockParam = content[content.length - 1];
+    for (let j = content.length - 1; j >= 0; j--) {
+      if (content[j].type !== "image") {
+        last = content[j];
+        break;
+      }
+    }
 
     // Sets the property of target, equivalent to target[propertyKey] = value when receiver === target.
     Reflect.set(last, "cache_control", {

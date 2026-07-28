@@ -55,7 +55,8 @@ import {
   type Command,
 } from "../commands/commands.js";
 import { loadUserCommands } from "../commands/loader.js";
-import { expandAtRefs } from "./at-expand.js";
+import { expandAtRefsWithImages } from "./at-expand.js";
+import { saveSessionImages } from "../images/store.js";
 import { MCPManager } from "../mcp/manager.js";
 import { MCPToolWrapper } from "../mcp/tool-wrapper.js";
 import { loadInstructions } from "../memory/instructions.js";
@@ -924,7 +925,7 @@ export function App({
                 })),
               );
             } else if (m.role === "user") {
-              conv.addUserMessage(m.content);
+              conv.addUserMessage(m.content, m.images);
             } else {
               conv.addAssistantMessage(m.content);
             }
@@ -1669,15 +1670,21 @@ export function App({
     }
 
     setMessages((prev) => [...prev, { role: "user", content: text }]);
-    // Inline any @file references for the model; the UI/session keep the
-    // original text the user typed.
-    convRef.current.addUserMessage(expandAtRefs(text, workDir));
+    // Inline any @file references for the model; @image references become
+    // native image attachments. The UI/session keep the original text the
+    // user typed.
+    const expanded = await expandAtRefsWithImages(text, workDir);
+    convRef.current.addUserMessage(expanded.text, expanded.images);
 
-    // Save to session
+    // Save to session (images as refs; binaries live under sessions/<id>/images/)
+    const imageRefs = expanded.images.length
+      ? saveSessionImages(workDir, sessionIdRef.current, expanded.images)
+      : [];
     sessionMod.saveMessage(workDir, sessionIdRef.current, {
       role: "user",
       content: text,
       timestamp: Math.floor(Date.now() / 1000),
+      ...(imageRefs.length ? { images: imageRefs } : {}),
     });
 
     // If currently streaming, interrupt first

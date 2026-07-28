@@ -68,6 +68,12 @@ export default defineConfig({
           path: "react-devtools-core",
           external: true,
         }));
+        // sharp is a native module (prebuilt binaries) — esbuild cannot
+        // bundle it, so keep it external and resolved from node_modules.
+        build.onResolve({ filter: /^sharp$/ }, () => ({
+          path: "sharp",
+          external: true,
+        }));
         // @swifty.js/glob-addon is a C++ N-API addon (.node binary). esbuild
         // cannot bundle binaries — externalize it so build never breaks.
         // Currently addon/*.ts is dead code (tree-shaken), but this guard

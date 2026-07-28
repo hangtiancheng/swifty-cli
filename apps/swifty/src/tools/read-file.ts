@@ -21,10 +21,9 @@
  */
 
 import { createChildLogger } from "../logger/index.js";
-
-const log = createChildLogger({ module: "tools" });
-
 import { existsSync, readFileSync, statSync } from "fs";
+import { isImagePath } from "../images/detect.js";
+import { attachmentLabel, loadImageAttachment } from "../images/load.js";
 import { asErrorString } from "../utils/index.js";
 import { READ_FILE_DESCRIPTION } from "./descriptions.js";
 import {
@@ -36,6 +35,7 @@ import {
 } from "./types.js";
 import { intArg, strArg } from "../utils/index.js";
 
+const log = createChildLogger({ module: "tools" });
 export class ReadFileTool implements Tool {
   // Use a hardcoded string instead of ReadFileTool.name.replace("Tool", "")
   // because class names are not stable after minification — bundlers like
@@ -74,28 +74,48 @@ export class ReadFileTool implements Tool {
     };
   }
 
-  execute(ctx: ToolContext, args: Record<string, unknown>): Promise<ToolResult> {
+  async execute(ctx: ToolContext, args: Record<string, unknown>): Promise<ToolResult> {
     const filePath = strArg(args, "file_path");
     if (!filePath) {
-      return Promise.resolve({
+      return {
         output: "Error: file_path is required",
         isError: true,
-      });
+      };
     }
 
     if (!existsSync(filePath)) {
-      return Promise.resolve({
+      return {
         output: `Error: file not found: ${filePath}`,
         isError: true,
-      });
+      };
     }
 
     const stat = statSync(filePath);
     if (stat.isDirectory()) {
-      return Promise.resolve({
+      return {
         output: `Error: ${filePath} is a directory, not a file. Use Glob to list directory contents.`,
         isError: true,
-      });
+      };
+    }
+
+    // Images are returned as attachments for the model to see natively;
+    // offset/limit don't apply.
+    if (isImagePath(filePath)) {
+      try {
+        const attachment = await loadImageAttachment(filePath);
+        ctx.fileStateCache?.record(filePath, stat.mtimeMs);
+        return {
+          output: attachmentLabel(attachment),
+          isError: false,
+          images: [attachment],
+        };
+      } catch (err) {
+        log.error({ err }, "tool operation failed");
+        return {
+          output: `Error reading image: ${asErrorString(err)}`,
+          isError: true,
+        };
+      }
     }
 
     const offset = intArg(args, "offset", 0);
@@ -111,16 +131,16 @@ export class ReadFileTool implements Tool {
       ctx.fileStateCache?.record(filePath, stat.mtimeMs);
 
       const numbered = slice.map((line, i) => `${String(offset + i + 1)}\t${line}`);
-      return Promise.resolve({
+      return {
         output: numbered.join("\n"),
         isError: false,
-      });
+      };
     } catch (err) {
       log.error({ err }, "tool operation failed");
-      return Promise.resolve({
+      return {
         output: `Error reading file: ${asErrorString(err)}`,
         isError: true,
-      });
+      };
     }
   }
 }

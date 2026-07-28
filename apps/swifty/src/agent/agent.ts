@@ -22,6 +22,9 @@
  */
 
 import { saveMessage, toolUsesToRecords, toolResultsToRecords } from "../session/session.js";
+import { isImagePath } from "../images/detect.js";
+import { saveSessionImages } from "../images/store.js";
+import type { ImageAttachment } from "../images/types.js";
 import { REJECTED_TOOL_RESULT } from "../conversation/pairing.js";
 import type { LLMClient } from "../llm/client.js";
 import type { ConversationManager } from "../conversation/conversation.js";
@@ -445,6 +448,10 @@ export class Agent {
           const toolResults: ToolResultBlock[] = [];
           for (const r of results) {
             if (r.type === "tool_result") {
+              if (r.images?.length) {
+                // Image results carry a short placeholder text; never spill.
+                exemptIds.add(r.toolId);
+              }
               let content = r.output;
               if (content.length > MAX_OUTPUT_CHARS && !exemptIds.has(r.toolId)) {
                 // Single result exceeds the limit: write to disk and replace with
@@ -458,6 +465,7 @@ export class Agent {
                 toolUseId: r.toolId,
                 content,
                 isError: r.isError,
+                ...(r.images?.length ? { images: r.images } : {}),
               });
             }
           }
@@ -682,7 +690,7 @@ export class Agent {
     r: {
       toolId: string;
       toolName: string;
-      result: { output: string; isError: boolean };
+      result: { output: string; isError: boolean; images?: ImageAttachment[] | undefined };
       elapsed: number;
     },
     toolUses: ToolUseBlock[],
@@ -690,11 +698,12 @@ export class Agent {
   ): Promise<void> {
     // Snapshot ReadFile content into recovery state so a later auto-compact
     // can replay it after the transcript collapses into a summary. Mirrors
-    // Go agent.go executeSingleTool's RecordFileRead.
+    // Go agent.go executeSingleTool's RecordFileRead. Images are skipped:
+    // reading a binary as utf-8 would poison the snapshot.
     if (!r.result.isError && r.toolName === "ReadFile") {
       const tu = toolUses.find((t) => t.toolUseId === r.toolId);
       const p = strArg(tu?.arguments ?? {}, "file_path");
-      if (p) {
+      if (p && !isImagePath(p)) {
         try {
           this.recoveryState.recordFileRead(p, await readFile(p, "utf-8"));
         } catch {
@@ -710,6 +719,7 @@ export class Agent {
       output: r.result.output,
       isError: r.result.isError,
       elapsed: r.elapsed,
+      ...(r.result.images?.length ? { images: r.result.images } : {}),
     });
 
     // Fire post-tool hooks; queue any output as a notification.
@@ -749,7 +759,17 @@ export class Agent {
       content: last.content,
       timestamp: Math.floor(Date.now() / 1000),
       ...(last.toolUses?.length ? { tool_uses: toolUsesToRecords(last.toolUses) } : {}),
-      ...(last.toolResults?.length ? { tool_results: toolResultsToRecords(last.toolResults) } : {}),
+      ...(last.toolResults?.length
+        ? {
+            tool_results: toolResultsToRecords(last.toolResults, {
+              workDir: this.workDir,
+              sessionId: this.sessionId,
+            }),
+          }
+        : {}),
+      ...(last.images?.length
+        ? { images: saveSessionImages(this.workDir, this.sessionId, last.images) }
+        : {}),
     });
   }
 }

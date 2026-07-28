@@ -28,6 +28,7 @@ import { ensureToolPairing } from "../conversation/pairing.js";
 import OpenAI from "openai";
 import { getMaxOutputTokens, type ProviderConfig, resolveAPIKey } from "../config/config.js";
 import type { ConversationManager, Message } from "../conversation/conversation.js";
+import type { ImageAttachment } from "../images/types.js";
 import { asRecord, asString, DANGEROUSLY_JSON, isRecord, strArg } from "../utils/index.js";
 import type { LLMClient } from "./client.js";
 import {
@@ -249,27 +250,19 @@ export class OpenAIClient implements LLMClient {
   }
 }
 
-type OpenAIMessageParam =
-  | {
-      role: "assistant" | "user" | "system";
-      content: string;
-    }
-  | {
-      type: "function_call";
-      name: string;
-      call_id: string;
-      arguments: string;
-    }
-  | {
-      type: "function_call_output";
-      call_id: string;
-      output: string;
-    }
-  | {
-      type: "reasoning";
-      id: string;
-      summary: { type: "summary_text"; text: string }[];
-    };
+type ResponsesContentPart = OpenAI.Responses.ResponseInputContent;
+
+// Official Responses API input item types, narrowed to the variants this
+// converter actually emits (the full ResponseInputItem union is much wider).
+export type OpenAIMessageParam =
+  | OpenAI.Responses.EasyInputMessage
+  | OpenAI.Responses.ResponseFunctionToolCall
+  | OpenAI.Responses.ResponseInputItem.FunctionCallOutput
+  | OpenAI.Responses.ResponseReasoningItem;
+
+function imageDataUrl(img: ImageAttachment): string {
+  return `data:${img.mediaType};base64,${img.data}`;
+}
 
 // Convert Swifty's conversation into Responses API input items:
 // assistant tool calls become function_call items and
@@ -306,15 +299,49 @@ export function buildOpenAIInput(messages: Message[]): OpenAIMessageParam[] {
       }
     } // end if (m.toolUses && m.toolUses.length > 0)
     else if (m.toolResults && m.toolResults.length > 0) {
+      // function_call_output.output is string-only; tool images ride along in
+      // a synthetic user message appended AFTER the whole batch so the
+      // call/output pairing stays contiguous.
+      const pendingImageParts: ResponsesContentPart[] = [];
       for (const tr of m.toolResults) {
         result.push({
           type: "function_call_output",
           call_id: tr.toolUseId,
           output: tr.content,
         });
+        if (tr.images?.length) {
+          pendingImageParts.push({
+            type: "input_text",
+            text: `[Image(s) returned by tool call ${tr.toolUseId}]`,
+          });
+          for (const img of tr.images) {
+            pendingImageParts.push({
+              type: "input_image",
+              image_url: imageDataUrl(img),
+              detail: "auto",
+            });
+          }
+        }
+      }
+      if (pendingImageParts.length > 0) {
+        result.push({ role: "user", content: pendingImageParts });
       }
     } // end if (m.toolResults && m.toolResults.length > 0)
-    else {
+    else if (m.role === "user" && m.images?.length) {
+      result.push({
+        role: "user",
+        content: [
+          { type: "input_text", text: m.content },
+          ...m.images.map(
+            (img): ResponsesContentPart => ({
+              type: "input_image",
+              image_url: imageDataUrl(img),
+              detail: "auto",
+            }),
+          ),
+        ],
+      });
+    } else {
       result.push({
         role: m.role,
         content: m.content,
@@ -663,12 +690,31 @@ export function buildChatCompletionMessages(
       });
     } // end if (m.toolUses && m.toolUses.length > 0)
     else if (m.toolResults && m.toolResults.length > 0) {
+      // role:"tool" content must stay a plain string on most openai-compat
+      // gateways; tool images ride along in a synthetic user message appended
+      // AFTER the whole batch so tool_call pairing stays contiguous.
+      const pendingImageParts: OpenAI.ChatCompletionContentPart[] = [];
       for (const tr of m.toolResults) {
         params.push({
           role: "tool",
           tool_call_id: tr.toolUseId,
           content: tr.content,
         });
+        if (tr.images?.length) {
+          pendingImageParts.push({
+            type: "text",
+            text: `[Image(s) returned by tool call ${tr.toolUseId}]`,
+          });
+          for (const img of tr.images) {
+            pendingImageParts.push({
+              type: "image_url",
+              image_url: { url: imageDataUrl(img) },
+            });
+          }
+        }
+      }
+      if (pendingImageParts.length > 0) {
+        params.push({ role: "user", content: pendingImageParts });
       }
     } // end if (m.toolResults && m.toolResults.length > 0)
     else if (m.role === "assistant") {
@@ -682,7 +728,20 @@ export function buildChatCompletionMessages(
           : {}),
       });
     } // end if (m.role === "assistant")
-    else {
+    else if (m.role === "user" && m.images?.length) {
+      params.push({
+        role: "user",
+        content: [
+          { type: "text", text: m.content },
+          ...m.images.map(
+            (img): OpenAI.ChatCompletionContentPart => ({
+              type: "image_url",
+              image_url: { url: imageDataUrl(img) },
+            }),
+          ),
+        ],
+      });
+    } else {
       params.push({
         role: m.role === "system" ? "system" : "user",
         content: m.content,
