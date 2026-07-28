@@ -73,7 +73,7 @@ export function App() {
   );
 
   return (
-    <div className="mx-auto flex h-screen max-w-[960px] flex-col bg-bg font-mono text-sm text-base">
+    <div className="mx-auto flex h-screen max-w-240 flex-col bg-bg font-mono text-sm text-base">
       <StatusBar connection={state.connection} usage={state.usage} />
       <MessageList
         items={state.items}

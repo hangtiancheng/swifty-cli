@@ -43,7 +43,7 @@ export function StatusBar({ connection, usage }: StatusBarProps) {
     : "";
 
   return (
-    <div className="flex flex-shrink-0 items-center justify-between border-b border-border px-4 py-2 text-xs text-dim">
+    <div className="flex shrink-0 items-center justify-between border-b border-border px-4 py-2 text-xs text-dim">
       <span className="text-sm font-bold text-accent">⚡ Swifty Remote</span>
       <div className="flex items-center gap-4">
         <span className="flex items-center">

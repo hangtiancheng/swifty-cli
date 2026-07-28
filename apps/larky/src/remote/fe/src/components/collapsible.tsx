@@ -45,7 +45,7 @@ export function Collapsible({ header, children, defaultOpen = false }: Collapsib
         <span
           className={`text-xs text-dim transition-transform duration-200 ${open ? "rotate-90" : ""}`}
         >
-          ▶
+          {">"}
         </span>
         {header}
       </button>

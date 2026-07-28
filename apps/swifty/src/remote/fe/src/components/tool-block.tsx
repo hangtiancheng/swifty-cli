@@ -29,7 +29,7 @@ interface ToolBlockProps {
 }
 
 const STATUS_META: Record<ToolItem["status"], { label: string; className: string }> = {
-  running: { label: "⏳ running...", className: "text-yellow" },
+  running: { label: "✻ running...", className: "text-yellow" },
   ok: { label: "✓", className: "text-green" },
   err: { label: "✗", className: "text-red" },
 };
@@ -48,7 +48,7 @@ export function ToolBlock({ item }: ToolBlockProps) {
         <>
           <span className="font-semibold text-blue">{item.toolName}</span>
           {preview && (
-            <span className="ml-1 max-w-[500px] overflow-hidden text-ellipsis whitespace-nowrap text-xs text-dim">
+            <span className="ml-1 max-w-125 overflow-hidden text-ellipsis whitespace-nowrap text-xs text-dim">
               {preview}
             </span>
           )}

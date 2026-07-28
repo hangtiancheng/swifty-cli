@@ -34,7 +34,7 @@ export function ThinkingBlock({ text, label, streaming = false }: ThinkingBlockP
       header={
         <span className="text-dim">
           {label}
-          {streaming && <span className="animate-blink ml-1">▎</span>}
+          {streaming && <span className="animate-blink ml-1">|</span>}
         </span>
       }
     >

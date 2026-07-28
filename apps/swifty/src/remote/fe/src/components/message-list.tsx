@@ -60,7 +60,7 @@ export function MessageList({ items, onRespondPermission, onAnswerAsk }: Message
               <ThinkingBlock
                 key={item.id}
                 text={item.content}
-                label={item.done ? "💭 Thought" : "💭 Thinking..."}
+                label={item.done ? " Thought" : "✻ Thinking..."}
                 streaming={!item.done}
               />
             );

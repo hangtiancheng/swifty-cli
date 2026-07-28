@@ -48,10 +48,10 @@ const RESPONSE_OPTIONS: {
 export function PermissionDialog({ item, onRespond }: PermissionDialogProps) {
   return (
     <div className="my-3 rounded-lg border-2 border-yellow bg-surface p-4">
-      <div className="mb-2 font-bold text-yellow">🔒 Permission Required: {item.toolName}</div>
+      <div className="mb-2 font-bold text-yellow">Permission Required: {item.toolName}</div>
       <div className="mb-3 whitespace-pre-wrap text-[13px] text-base">{item.description}</div>
       {item.responded ? (
-        <div className="text-dim">🔒 Permission: {item.response}</div>
+        <div className="text-dim">Permission: {item.response}</div>
       ) : (
         <div className="flex gap-2">
           {RESPONSE_OPTIONS.map((opt) => (

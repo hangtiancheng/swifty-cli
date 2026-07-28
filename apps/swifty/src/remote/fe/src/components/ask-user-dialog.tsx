@@ -63,7 +63,7 @@ export function AskUserDialog({ item, onAnswer }: AskUserDialogProps) {
 
   return (
     <div className="my-3 rounded-lg border-2 border-yellow bg-surface p-4">
-      <div className="mb-3 font-bold text-yellow">❓ Question</div>
+      <div className="mb-3 font-bold text-yellow">? Question</div>
       {item.questions.map((q, qi) => {
         const key = `${item.id}_${qi}`;
         const draft = getDraft(key);
@@ -129,7 +129,7 @@ function QuestionRow({ question, name, draft, onChange }: QuestionRowProps) {
           type="text"
           value={draft.other}
           onChange={(e) => onChange({ other: e.target.value, useOther: true })}
-          className="w-[300px] rounded border border-border bg-input px-2 py-1 font-[inherit] text-[13px] text-base"
+          className="w-75 rounded border border-border bg-input px-2 py-1 font-[inherit] text-[13px] text-base"
         />
       </label>
     </div>

@@ -111,7 +111,7 @@ export function InputArea({ streaming, commands, onSend }: InputAreaProps) {
   };
 
   return (
-    <div className="relative flex flex-shrink-0 items-end gap-2 border-t border-border px-4 py-3">
+    <div className="relative flex shrink-0 items-end gap-2 border-t border-border px-4 py-3">
       {slashOpen && (
         <SlashMenu
           commands={filtered}
@@ -128,7 +128,7 @@ export function InputArea({ streaming, commands, onSend }: InputAreaProps) {
         placeholder="Send a message... (Enter to send, Shift+Enter for newline)"
         rows={1}
         disabled={streaming}
-        className="min-h-[42px] max-h-[200px] flex-1 resize-none rounded-md border border-border bg-input px-3 py-2.5 font-[inherit] text-sm leading-relaxed text-bright outline-none placeholder:text-dim focus:border-accent disabled:opacity-50"
+        className="min-h-10.5 max-h-50 flex-1 resize-none rounded-md border border-border bg-input px-3 py-2.5 font-[inherit] text-sm leading-relaxed text-bright outline-none placeholder:text-dim focus:border-accent disabled:opacity-50"
       />
       <button
         type="button"

@@ -25,5 +25,5 @@ interface ErrorMessageProps {
 }
 
 export function ErrorMessage({ content }: ErrorMessageProps) {
-  return <div className="mb-4 text-red">✖ {content}</div>;
+  return <div className="mb-4 text-red">✗ {content}</div>;
 }
