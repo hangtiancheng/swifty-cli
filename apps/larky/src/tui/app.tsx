@@ -25,7 +25,16 @@
 // renders the event stream and answers interaction requests via RPCs.
 // Local-only concerns: prompt history, @-file completion, scrolling, theme.
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Box, Text, useApp, useInput, measureElement, type DOMElement, useStdout, useWindowSize } from "ink";
+import {
+  Box,
+  Text,
+  useApp,
+  useInput,
+  measureElement,
+  type DOMElement,
+  useStdout,
+  useWindowSize,
+} from "ink";
 
 import type { ProviderConfig } from "../config/config.js";
 import type { PermissionMode } from "../permissions/checker.js";

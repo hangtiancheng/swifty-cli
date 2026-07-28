@@ -67,13 +67,13 @@ const LARKY = path.join(APPS_DIR, "larky");
 // Safe default: without --write the script always runs as a dry-run.
 const DRY_RUN = !process.argv.includes("--write");
 
-// The 28 business module directories (matches migrate.md §2.3).
+// The 29 business module directories (matches migrate.md §2.3).
 const SRC_DIRS = [
   "agent", "llm", "conversation", "tools", "tool-result", "prompt",
   "permissions", "sandbox", "config", "session", "compact", "memory",
   "skills", "commands", "subagent", "teams", "hooks", "mcp", "worktree",
   "code-review", "file-history", "plan-file", "todo", "history", "logger",
-  "utils", "tui", "remote",
+  "utils", "tui", "remote", "images",
 ];
 
 // Top-level single files. main.tsx is intentionally excluded: it has been
@@ -260,11 +260,12 @@ function main() {
     copyFile(src, path.join(LARKY, "src", file));
   }
 
-  // 3. tests: *.test.ts + run-e2e.mjs + run-failing.mjs
+  // 3. tests: *.test.ts + run-e2e.mjs + run-failing.mjs + binary fixtures
   console.log("\n== tests ==");
+  const TEST_EXTRAS = new Set(["run-e2e.mjs", "run-failing.mjs", "test.png"]);
   const testsDir = path.join(SWIFTY, "tests");
   for (const entry of readdirSync(testsDir)) {
-    if (!/\.test\.ts$/.test(entry) && entry !== "run-e2e.mjs" && entry !== "run-failing.mjs") {
+    if (!/\.test\.ts$/.test(entry) && !TEST_EXTRAS.has(entry)) {
       continue;
     }
     copyFile(path.join(testsDir, entry), path.join(LARKY, "tests", entry));

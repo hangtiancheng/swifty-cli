@@ -30,9 +30,11 @@ import {
   unlinkSync,
   rmSync,
 } from "node:fs";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { randomBytes } from "node:crypto";
 import z, { parse, safeParse } from "zod";
+import { loadImageRef, saveSessionImages } from "../images/store.js";
+import type { ImageAttachment } from "../images/types.js";
 import { createChildLogger } from "../logger/index.js";
 
 // Persistent session lines. Ordinary messages have an empty `type`, while compaction boundary records
@@ -60,11 +62,21 @@ const ToolUseRecordSchema = z.object({
 });
 export type ToolUseRecord = z.infer<typeof ToolUseRecordSchema>;
 
+/** Persisted reference to an image binary stored under sessions/<id>/images/.
+ *  The base64 payload never lands in the JSONL itself. */
+const ImageRefRecordSchema = z.object({
+  path: z.string(),
+  media_type: z.string(),
+  source_path: z.string().optional(),
+});
+export type ImageRefRecord = z.infer<typeof ImageRefRecordSchema>;
+
 /** Persisted form of a tool result, paired with a ToolUseRecord via tool_use_id. */
 const ToolResultRecordSchema = z.object({
   tool_use_id: z.string(),
   content: z.string(),
   is_error: z.boolean().optional(),
+  images: z.array(ImageRefRecordSchema).optional(),
 });
 
 export type ToolResultRecord = z.infer<typeof ToolResultRecordSchema>;
@@ -76,6 +88,7 @@ const SessionMessageSchema = z.object({
   type: z.string().optional(),
   tool_uses: z.array(ToolUseRecordSchema).optional(),
   tool_results: z.array(ToolResultRecordSchema).optional(),
+  images: z.array(ImageRefRecordSchema).optional(),
 });
 
 export type SessionMessage = z.infer<typeof SessionMessageSchema>;
@@ -87,6 +100,7 @@ const KeptMessageSchema = z.object({
   content: z.string(),
   tool_uses: z.array(ToolUseRecordSchema).optional(),
   tool_results: z.array(ToolResultRecordSchema).optional(),
+  images: z.array(ImageRefRecordSchema).optional(),
 });
 
 export type KeptMessage = z.infer<typeof KeptMessageSchema>;
@@ -103,13 +117,47 @@ export function toolUsesToRecords(
 }
 
 export function toolResultsToRecords(
-  toolResults?: { toolUseId: string; content: string; isError?: boolean }[],
+  toolResults?: {
+    toolUseId: string;
+    content: string;
+    isError?: boolean;
+    images?: ImageAttachment[] | undefined;
+  }[],
+  imageCtx?: { workDir: string; sessionId: string },
 ): ToolResultRecord[] {
   return (toolResults ?? []).map((tr) => ({
     tool_use_id: tr.toolUseId,
     content: tr.content,
     ...(tr.isError ? { is_error: true } : {}),
+    ...(imageCtx && tr.images?.length
+      ? { images: saveSessionImages(imageCtx.workDir, imageCtx.sessionId, tr.images) }
+      : {}),
   }));
+}
+
+// Restore ImageAttachments from persisted refs. Missing/unreadable binaries
+// are dropped; a human-readable note reports how many were lost so the model
+// isn't silently confused by a dangling mention.
+function restoreImageRefs(refs?: ImageRefRecord[]): {
+  images: ImageAttachment[];
+  note: string;
+} {
+  if (!refs?.length) {
+    return { images: [], note: "" };
+  }
+  const images: ImageAttachment[] = [];
+  for (const ref of refs) {
+    const img = loadImageRef(ref);
+    if (img) {
+      images.push(img);
+    }
+  }
+  const lost = refs.length - images.length;
+  return {
+    images,
+    note:
+      lost > 0 ? `\n[note: ${String(lost)} image(s) from this message could not be restored]` : "",
+  };
 }
 
 const CompactBoundaryPayloadSchema = z.object({
@@ -136,6 +184,23 @@ function sessionsDir(workDir: string): string {
 
 export function getSessionFilePath(workDir: string, sessionId: string): string {
   return join(sessionsDir(workDir), sessionId + ".jsonl");
+}
+
+// Inverse of getSessionFilePath. Returns null when the path doesn't match the
+// <workDir>/.larky/sessions/<id>.jsonl layout.
+export function sessionCtxFromFilePath(
+  filePath: string,
+): { workDir: string; sessionId: string } | null {
+  const base = basename(filePath);
+  if (!base.endsWith(".jsonl")) {
+    return null;
+  }
+  const dir = dirname(filePath);
+  const parent = dirname(dir);
+  if (basename(dir) !== "sessions" || basename(parent) !== ".larky") {
+    return null;
+  }
+  return { workDir: dirname(parent), sessionId: base.slice(0, -".jsonl".length) };
 }
 
 export function newSessionId(): string {
@@ -190,7 +255,8 @@ export function loadSession(workDir: string, sessionId: string): SessionMessage[
         const isEmpty =
           !data.content && // empty content
           !(data.tool_uses?.length ?? 0) && // empty tool uses
-          !(data.tool_results?.length ?? 0); // empty tool results
+          !(data.tool_results?.length ?? 0) && // empty tool results
+          !(data.images?.length ?? 0); // empty images
         if (!isEmpty) {
           out.push(data);
         }
@@ -213,7 +279,13 @@ export interface RestoredMessage {
   content: string;
   // In-memory form uses camelCase, consistent with the conversation layer; converted from snake_case disk records
   toolUses?: { toolUseId: string; toolName: string; arguments?: Record<string, unknown> }[];
-  toolResults?: { toolUseId: string; content: string; isError?: boolean }[];
+  toolResults?: {
+    toolUseId: string;
+    content: string;
+    isError?: boolean;
+    images?: ImageAttachment[];
+  }[];
+  images?: ImageAttachment[];
 }
 
 /** Persisted records (snake_case) → in-memory tool blocks (camelCase), used to restore the call chain on session resume. */
@@ -226,11 +298,15 @@ function recordsToCamelUses(recs?: ToolUseRecord[]) {
 }
 
 function recordsToCamelResults(recs?: ToolResultRecord[]) {
-  return recs?.map((tr) => ({
-    toolUseId: tr.tool_use_id,
-    content: tr.content,
-    isError: tr.is_error,
-  }));
+  return recs?.map((tr) => {
+    const restored = restoreImageRefs(tr.images);
+    return {
+      toolUseId: tr.tool_use_id,
+      content: tr.content + restored.note,
+      isError: tr.is_error,
+      ...(restored.images.length ? { images: restored.images } : {}),
+    };
+  });
 }
 
 // Rebuild the conversation to replay on resume, honoring compaction boundaries.
@@ -278,16 +354,19 @@ export function rebuildFromSession(saved: SessionMessage[]): RestoredMessage[] {
           (k.role !== "user" && k.role !== "assistant") ||
           (!k.content && // empty content
             !(k.tool_uses?.length ?? 0) && // empty tool uses
-            !(k.tool_results?.length ?? 0)) // empty tool results
+            !(k.tool_results?.length ?? 0) && // empty tool results
+            !(k.images?.length ?? 0)) // empty images
         ) {
           continue;
         }
 
+        const restoredImages = restoreImageRefs(k.images);
         out.push({
           role: k.role,
-          content: k.content,
+          content: k.content + restoredImages.note,
           toolUses: recordsToCamelUses(k.tool_uses),
           toolResults: recordsToCamelResults(k.tool_results),
+          ...(restoredImages.images.length ? { images: restoredImages.images } : {}),
         });
       }
     }
@@ -321,14 +400,21 @@ function toRestored(m: SessionMessage): RestoredMessage | null {
   if (m.role !== "user" && m.role !== "assistant") {
     return null;
   }
-  if (!m.content && !m.tool_uses?.length && !m.tool_results?.length) {
+  if (
+    !m.content &&
+    !(m.tool_uses?.length ?? 0) && // empty tool uses
+    !(m.tool_results?.length ?? 0) && // empty tool results
+    !(m.images?.length ?? 0) // empty images
+  ) {
     return null;
   }
+  const restored = restoreImageRefs(m.images);
   return {
     role: m.role,
-    content: m.content,
+    content: m.content + restored.note,
     toolUses: recordsToCamelUses(m.tool_uses),
     toolResults: recordsToCamelResults(m.tool_results),
+    ...(restored.images.length ? { images: restored.images } : {}),
   };
 }
 
@@ -414,17 +500,12 @@ export function cleanExpiredSessions(workDir: string): number {
       const stat = statSync(filePath);
       if (now - stat.mtimeMs > expiryMs) {
         unlinkSync(filePath);
-        // Clean up the corresponding tool_results directory
+        // Clean up the session's spill/images subdirectory tree. Must be
+        // recursive: it contains tool-results/ and images/ subdirectories.
         const id = file.replace(".jsonl", "");
-        const toolResultsDir = join(workDir, ".larky", "sessions", id, "tool_results");
-        try {
-          rmSync(toolResultsDir, { recursive: true, force: true });
-        } catch {
-          /** noop */
-        }
         const sessionSubdir = join(workDir, ".larky", "sessions", id);
         try {
-          rmSync(sessionSubdir, { recursive: false });
+          rmSync(sessionSubdir, { recursive: true, force: true });
         } catch {
           /** noop */
         }

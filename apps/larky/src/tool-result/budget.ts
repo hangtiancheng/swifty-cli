@@ -138,6 +138,11 @@ export function applyBudget(
     if (exemptIds?.has(r.toolUseId)) {
       continue;
     }
+    if (r.images?.length) {
+      // Image results never spill: their text is a short placeholder label,
+      // and spilling it while the images stay inline would be incoherent.
+      continue;
+    }
     if (r.content.length <= PREVIEW_CHARS) {
       // A result shorter than the preview gains no space from spilling
       continue;

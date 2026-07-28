@@ -162,18 +162,10 @@ const RPC_METHODS: [string, z.ZodType, z.ZodType][] = [
   ["session.create", SessionCreateCommandSchema, SessionCreateResultSchema],
   ["session.list", SessionListCommandSchema, SessionListResultSchema],
   ["session.resume", SessionResumeCommandSchema, SessionResumeResultSchema],
-  [
-    "session.send_message",
-    SessionSendMessageCommandSchema,
-    SessionSendMessageResultSchema,
-  ],
+  ["session.send_message", SessionSendMessageCommandSchema, SessionSendMessageResultSchema],
   ["session.close", SessionCloseCommandSchema, SessionCloseResultSchema],
   ["run.cancel", RunCancelCommandSchema, RunCancelResultSchema],
-  [
-    "permission.respond",
-    PermissionRespondCommandSchema,
-    PermissionRespondResultSchema,
-  ],
+  ["permission.respond", PermissionRespondCommandSchema, PermissionRespondResultSchema],
   ["ask_user.respond", AskUserRespondCommandSchema, AskUserRespondResultSchema],
   ["plan.respond", PlanRespondCommandSchema, PlanRespondResultSchema],
   ["mode.set", ModeSetCommandSchema, ModeSetResultSchema],
@@ -249,9 +241,7 @@ function main(): void {
       }
       console.log(`OK: ${OUTPUT_PATH} is up to date.`);
     } catch {
-      console.error(
-        `ERROR: ${OUTPUT_PATH} not found — run: tsx scripts/gen-protocol-doc.ts`,
-      );
+      console.error(`ERROR: ${OUTPUT_PATH} not found — run: tsx scripts/gen-protocol-doc.ts`);
       process.exit(1);
     }
   } else {

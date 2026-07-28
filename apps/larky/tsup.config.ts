@@ -75,6 +75,12 @@ function externalizePlugin(): NonNullable<Options["esbuildPlugins"]> {
           contents: "export default {};",
           loader: "js",
         }));
+        // sharp is a native module (prebuilt binaries) — esbuild cannot
+        // bundle it, so keep it external and resolved from node_modules.
+        build.onResolve({ filter: /^sharp$/ }, () => ({
+          path: "sharp",
+          external: true,
+        }));
         // @swifty.js/glob-addon is a C++ N-API addon (.node binary). esbuild
         // cannot bundle binaries — externalize it so build never breaks.
         build.onResolve({ filter: /@larky\.js\/glob-addon/ }, (args) => ({

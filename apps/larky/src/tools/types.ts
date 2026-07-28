@@ -20,7 +20,8 @@
  * SOFTWARE.
  */
 
-import type { FileHistory } from "../file-history/file-history.js";
+import type { FileHistory } from "@/file-history/file-history.js";
+import type { ImageAttachment } from "@/images/types.js";
 import type { FileStateCache } from "./file-state-cache.js";
 
 export type ToolCategory = "read" | "write" | "command";
@@ -28,6 +29,9 @@ export type ToolCategory = "read" | "write" | "command";
 export interface ToolResult {
   output: string;
   isError: boolean;
+  /** Images returned by the tool (e.g. ReadFile on a png). `output` holds a
+   * short placeholder label so text-only consumers still see something. */
+  images?: ImageAttachment[] | undefined;
 }
 
 export interface ToolContext {

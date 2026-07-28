@@ -20,13 +20,15 @@
  * SOFTWARE.
  */
 
-import { createChildLogger } from "../logger/index.js";
-
-const log = createChildLogger({ module: "tui" });
-
+import { createChildLogger } from "@/logger/index.js";
 import { readFileSync, statSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
+import { isImagePath } from "@/images/detect.js";
+import { MAX_IMAGES_PER_MESSAGE } from "@/images/limits.js";
+import { loadImageAttachment } from "@/images/load.js";
+import type { ImageAttachment } from "@/images/types.js";
 
+const log = createChildLogger({ module: "tui" });
 const MAX_INLINE_BYTES = 100_000;
 
 // Expand @path references in a user message by inlining the referenced files'
@@ -57,4 +59,55 @@ export function expandAtRefs(text: string, workDir: string): string {
     }
   }
   return appendix ? text + appendix : text;
+}
+
+// Like expandAtRefs, but @references to image files (png/jpg/gif/webp) are
+// loaded as ImageAttachments instead of being inlined as (garbled) utf-8
+// text. The appendix gets an <attached-image> placeholder so the model can
+// pair each attachment with its @token. Image load failures degrade to an
+// inline error note; non-image refs behave exactly like expandAtRefs.
+export async function expandAtRefsWithImages(
+  text: string,
+  workDir: string,
+): Promise<{ text: string; images: ImageAttachment[] }> {
+  const refs = [...text.matchAll(/(?:^|\s)@([^\s]+)/g)].map((m) => m[1]);
+  if (refs.length === 0) {
+    return { text, images: [] };
+  }
+
+  let appendix = "";
+  const images: ImageAttachment[] = [];
+  const seen = new Set<string>();
+  for (const ref of refs) {
+    if (seen.has(ref)) {
+      continue;
+    }
+    seen.add(ref);
+    const p = isAbsolute(ref) ? ref : join(workDir, ref);
+    try {
+      const st = statSync(p);
+      if (!st.isFile()) {
+        continue;
+      }
+      if (isImagePath(p)) {
+        if (images.length >= MAX_IMAGES_PER_MESSAGE) {
+          appendix += `\n\n<file path="${ref}">Error: too many images attached (limit ${String(MAX_IMAGES_PER_MESSAGE)} per message)</file>`;
+          continue;
+        }
+        try {
+          images.push(await loadImageAttachment(p));
+          appendix += `\n\n<attached-image path="${ref}"/>`;
+        } catch (imgErr) {
+          log.error({ err: imgErr }, "tui operation failed");
+          appendix += `\n\n<file path="${ref}">Error: ${imgErr instanceof Error ? imgErr.message : String(imgErr)}</file>`;
+        }
+      } else if (st.size <= MAX_INLINE_BYTES) {
+        appendix += `\n\n<file path="${ref}">\n${readFileSync(p, "utf-8")}\n</file>`;
+      }
+    } catch (err) {
+      log.error({ err }, "tui operation failed");
+      // not a readable file → leave the @token as literal text
+    }
+  }
+  return { text: appendix ? text + appendix : text, images };
 }

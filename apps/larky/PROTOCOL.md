@@ -1014,13 +1014,7 @@ All commands are sent as JSON-RPC 2.0 requests; `method` selects the handler.
             "type": "string"
           }
         },
-        "required": [
-          "index",
-          "message_index",
-          "user_text",
-          "file_count",
-          "timestamp"
-        ],
+        "required": ["index", "message_index", "user_text", "file_count", "timestamp"],
         "additionalProperties": false
       }
     }
@@ -1211,15 +1205,7 @@ Events are written to the run's `events.jsonl` and forwarded over IPC to matchin
       "type": "string"
     }
   },
-  "required": [
-    "type",
-    "session_id",
-    "run_id",
-    "level",
-    "source",
-    "message",
-    "timestamp"
-  ],
+  "required": ["type", "session_id", "run_id", "level", "source", "message", "timestamp"],
   "additionalProperties": false
 }
 ```
@@ -1327,14 +1313,7 @@ Events are written to the run's `events.jsonl` and forwarded over IPC to matchin
       "type": "string"
     }
   },
-  "required": [
-    "type",
-    "session_id",
-    "run_id",
-    "content",
-    "origin",
-    "timestamp"
-  ],
+  "required": ["type", "session_id", "run_id", "content", "origin", "timestamp"],
   "additionalProperties": false
 }
 ```
@@ -1498,15 +1477,7 @@ Events are written to the run's `events.jsonl` and forwarded over IPC to matchin
       "type": "string"
     }
   },
-  "required": [
-    "type",
-    "session_id",
-    "run_id",
-    "tool_id",
-    "tool_name",
-    "args",
-    "timestamp"
-  ],
+  "required": ["type", "session_id", "run_id", "tool_id", "tool_name", "args", "timestamp"],
   "additionalProperties": false
 }
 ```
@@ -1784,14 +1755,7 @@ Events are written to the run's `events.jsonl` and forwarded over IPC to matchin
       "type": "string"
     }
   },
-  "required": [
-    "type",
-    "session_id",
-    "run_id",
-    "reason",
-    "delay_ms",
-    "timestamp"
-  ],
+  "required": ["type", "session_id", "run_id", "reason", "delay_ms", "timestamp"],
   "additionalProperties": false
 }
 ```
@@ -1923,16 +1887,7 @@ Events are written to the run's `events.jsonl` and forwarded over IPC to matchin
       "type": "string"
     }
   },
-  "required": [
-    "type",
-    "id",
-    "session_id",
-    "run_id",
-    "tool_name",
-    "args",
-    "reason",
-    "timestamp"
-  ],
+  "required": ["type", "id", "session_id", "run_id", "tool_name", "args", "reason", "timestamp"],
   "additionalProperties": false
 }
 ```
@@ -1981,15 +1936,7 @@ Events are written to the run's `events.jsonl` and forwarded over IPC to matchin
       "type": "string"
     }
   },
-  "required": [
-    "type",
-    "id",
-    "session_id",
-    "run_id",
-    "response",
-    "source",
-    "timestamp"
-  ],
+  "required": ["type", "id", "session_id", "run_id", "response", "source", "timestamp"],
   "additionalProperties": false
 }
 ```
@@ -2354,15 +2301,7 @@ Events are written to the run's `events.jsonl` and forwarded over IPC to matchin
       "type": "string"
     }
   },
-  "required": [
-    "type",
-    "session_id",
-    "task_id",
-    "description",
-    "status",
-    "detail",
-    "timestamp"
-  ],
+  "required": ["type", "session_id", "task_id", "description", "status", "detail", "timestamp"],
   "additionalProperties": false
 }
 ```

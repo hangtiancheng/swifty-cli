@@ -24,6 +24,8 @@
  * Status: Done
  */
 
+import type { ImageAttachment } from "../images/types.js";
+
 export interface ToolUseBlock {
   toolUseId: string;
   toolName: string;
@@ -34,6 +36,7 @@ export interface ToolResultBlock {
   toolUseId: string;
   content: string;
   isError: boolean;
+  images?: ImageAttachment[] | undefined;
 }
 
 export interface ThinkingBlock {
@@ -47,6 +50,7 @@ export interface Message {
   thinkingBlocks?: ThinkingBlock[] | undefined;
   toolUses?: ToolUseBlock[] | undefined;
   toolResults?: ToolResultBlock[] | undefined;
+  images?: ImageAttachment[] | undefined;
 }
 
 export class ConversationManager {
@@ -55,8 +59,12 @@ export class ConversationManager {
   private baselineTokens = 0;
   private _anchorCount = 0;
 
-  addUserMessage(content: string): void {
-    this.history.push({ role: "user", content });
+  addUserMessage(content: string, images?: ImageAttachment[]): void {
+    this.history.push({
+      role: "user",
+      content,
+      ...(images?.length ? { images } : {}),
+    });
   }
 
   addAssistantMessage(content: string): void {
