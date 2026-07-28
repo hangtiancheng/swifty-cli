@@ -571,7 +571,10 @@ async function doCompact(
     .filter(
       (m) =>
         (m.role === "user" || m.role === "assistant") &&
-        (m.content || (m.toolUses?.length ?? 0) || (m.toolResults?.length ?? 0)),
+        (m.content ||
+          (m.toolUses?.length ?? 0) ||
+          (m.toolResults?.length ?? 0) ||
+          (m.images?.length ?? 0)),
     )
     .map((m) => ({
       role: m.role,

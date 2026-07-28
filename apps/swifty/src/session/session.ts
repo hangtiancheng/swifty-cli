@@ -255,7 +255,8 @@ export function loadSession(workDir: string, sessionId: string): SessionMessage[
         const isEmpty =
           !data.content && // empty content
           !(data.tool_uses?.length ?? 0) && // empty tool uses
-          !(data.tool_results?.length ?? 0); // empty tool results
+          !(data.tool_results?.length ?? 0) && // empty tool results
+          !(data.images?.length ?? 0); // empty images
         if (!isEmpty) {
           out.push(data);
         }
@@ -353,7 +354,8 @@ export function rebuildFromSession(saved: SessionMessage[]): RestoredMessage[] {
           (k.role !== "user" && k.role !== "assistant") ||
           (!k.content && // empty content
             !(k.tool_uses?.length ?? 0) && // empty tool uses
-            !(k.tool_results?.length ?? 0)) // empty tool results
+            !(k.tool_results?.length ?? 0) && // empty tool results
+            !(k.images?.length ?? 0)) // empty images
         ) {
           continue;
         }
@@ -398,7 +400,12 @@ function toRestored(m: SessionMessage): RestoredMessage | null {
   if (m.role !== "user" && m.role !== "assistant") {
     return null;
   }
-  if (!m.content && !m.tool_uses?.length && !m.tool_results?.length) {
+  if (
+    !m.content &&
+    !(m.tool_uses?.length ?? 0) && // empty tool uses
+    !(m.tool_results?.length ?? 0) && // empty tool results
+    !(m.images?.length ?? 0) // empty images
+  ) {
     return null;
   }
   const restored = restoreImageRefs(m.images);

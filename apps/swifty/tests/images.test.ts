@@ -20,45 +20,25 @@
  * SOFTWARE.
  */
 
-import { afterEach, describe, expect, it, vi } from "vitest";
+// These tests run the REAL sharp pipeline (no mocks): fixtures are generated
+// with sharp itself and tests/test.png is a real screenshot (JPEG bytes behind
+// a .png extension, which doubles as a magic-bytes-vs-extension fixture).
+
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import sharp, { type Sharp } from "sharp";
+import { beforeAll, describe, expect, it } from "vitest";
 import { isImagePath, mediaTypeForPath, sniffMediaType } from "@/images/detect.js";
 import {
   ImageTooLargeError,
-  MAX_API_IMAGE_BYTES,
+  MAX_DIMENSION_PX,
   MAX_IMAGE_BYTES_PASSTHROUGH,
 } from "@/images/limits.js";
+import { loadImageAttachment } from "@/images/load.js";
 import { maybeResizeAndDownsampleImage } from "@/images/resize.js";
 
-// Mock the sharp module: tests configure per-case behavior through sharpMock.
-const sharpMock = vi.hoisted(() => vi.fn());
-vi.mock("sharp", () => ({ default: sharpMock }));
-
-interface MockSharpInstance {
-  metadata: ReturnType<typeof vi.fn>;
-  resize: ReturnType<typeof vi.fn>;
-  png: ReturnType<typeof vi.fn>;
-  jpeg: ReturnType<typeof vi.fn>;
-  toBuffer: ReturnType<typeof vi.fn>;
-}
-
-function mockInstance(overrides: Partial<MockSharpInstance> = {}): MockSharpInstance {
-  const instance: MockSharpInstance = {
-    metadata: vi.fn().mockResolvedValue({ width: 1000, height: 1000, format: "png" }),
-    resize: vi.fn(),
-    png: vi.fn(),
-    jpeg: vi.fn(),
-    toBuffer: vi.fn().mockResolvedValue(Buffer.alloc(1000)),
-    ...overrides,
-  };
-  instance.resize.mockReturnValue(instance);
-  if (!overrides.png) {
-    instance.png.mockReturnValue(instance);
-  }
-  if (!overrides.jpeg) {
-    instance.jpeg.mockReturnValue(instance);
-  }
-  return instance;
-}
+const TEST_PNG_PATH = join(dirname(fileURLToPath(import.meta.url)), "test.png");
 
 const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 const JPEG_MAGIC = Buffer.from([0xff, 0xd8, 0xff, 0xe0]);
@@ -69,13 +49,34 @@ const WEBP_MAGIC = Buffer.concat([
   Buffer.from("WEBP", "ascii"),
 ]);
 
-function pngBuffer(totalSize: number): Buffer {
-  return Buffer.concat([PNG_MAGIC, Buffer.alloc(Math.max(0, totalSize - PNG_MAGIC.length))]);
+// Gaussian noise is nearly incompressible, which is the cheapest way to make
+// real oversized fixtures. Generated once and shared across tests.
+function noiseImage(width: number, height: number): Sharp {
+  return sharp({
+    create: {
+      width,
+      height,
+      channels: 3,
+      background: { r: 128, g: 128, b: 128 },
+      noise: { type: "gaussian", mean: 128, sigma: 30 },
+    },
+  });
 }
 
-afterEach(() => {
-  sharpMock.mockReset();
-});
+// 1600x1600 noise PNG ≈ 6.4MB: over the 3.75MB passthrough target but under
+// the 2000px dimension cap, so only re-encoding (not resizing) is required.
+let oversizedPng: Buffer;
+// 3000x3000 noise JPEG (q100) ≈ 10MB: over both the size and dimension caps.
+let oversizedJpeg: Buffer;
+
+beforeAll(async () => {
+  [oversizedPng, oversizedJpeg] = await Promise.all([
+    noiseImage(1600, 1600).png().toBuffer(),
+    noiseImage(3000, 3000).jpeg({ quality: 100 }).toBuffer(),
+  ]);
+  expect(oversizedPng.length).toBeGreaterThan(MAX_IMAGE_BYTES_PASSTHROUGH);
+  expect(oversizedJpeg.length).toBeGreaterThan(MAX_IMAGE_BYTES_PASSTHROUGH);
+}, 60_000);
 
 describe("detect", () => {
   it("maps extensions to media types", () => {
@@ -97,16 +98,33 @@ describe("detect", () => {
     expect(sniffMediaType(Buffer.from("not an image at all"))).toBeNull();
     expect(sniffMediaType(Buffer.alloc(0))).toBeNull();
   });
+
+  it("sniffs the real test image as JPEG despite its .png extension", () => {
+    const buf = readFileSync(TEST_PNG_PATH);
+    expect(mediaTypeForPath(TEST_PNG_PATH)).toBe("image/png");
+    expect(sniffMediaType(buf)).toBe("image/jpeg");
+  });
 });
 
-describe("maybeResizeAndDownsampleImage", () => {
-  it("passes small images through without invoking sharp", async () => {
-    const buf = pngBuffer(1024);
-    const result = await maybeResizeAndDownsampleImage(buf, "image/png");
+describe("loadImageAttachment (real file)", () => {
+  it("loads tests/test.png with magic bytes winning over the extension", async () => {
+    const buf = readFileSync(TEST_PNG_PATH);
+    const attachment = await loadImageAttachment(TEST_PNG_PATH);
+    // ~123KB is under the passthrough target: the payload must be untouched.
+    expect(attachment.mediaType).toBe("image/jpeg");
+    expect(attachment.data).toBe(buf.toString("base64"));
+    expect(attachment.byteLength).toBe(buf.length);
+    expect(attachment.sourcePath).toBe(TEST_PNG_PATH);
+  });
+});
+
+describe("maybeResizeAndDownsampleImage (real sharp)", () => {
+  it("passes small images through byte-identical without re-encoding", async () => {
+    const buf = readFileSync(TEST_PNG_PATH);
+    const result = await maybeResizeAndDownsampleImage(buf, "image/jpeg");
     expect(result.data).toBe(buf.toString("base64"));
-    expect(result.mediaType).toBe("image/png");
-    expect(result.byteLength).toBe(1024);
-    expect(sharpMock).not.toHaveBeenCalled();
+    expect(result.mediaType).toBe("image/jpeg");
+    expect(result.byteLength).toBe(buf.length);
   });
 
   it("rejects empty buffers", async () => {
@@ -115,73 +133,55 @@ describe("maybeResizeAndDownsampleImage", () => {
     );
   });
 
-  it("compresses oversized PNGs via sharp, preferring PNG output", async () => {
-    const instance = mockInstance({
-      metadata: vi.fn().mockResolvedValue({ width: 3000, height: 1500, format: "png" }),
-      toBuffer: vi.fn().mockResolvedValue(Buffer.alloc(1000)),
-    });
-    sharpMock.mockReturnValue(instance);
-
-    const buf = pngBuffer(MAX_API_IMAGE_BYTES + 1024);
-    const result = await maybeResizeAndDownsampleImage(buf, "image/png");
+  it("compresses an oversized PNG, preferring PNG output and keeping dimensions", async () => {
+    const result = await maybeResizeAndDownsampleImage(oversizedPng, "image/png");
     expect(result.mediaType).toBe("image/png");
-    expect(result.byteLength).toBe(1000);
-    // Dimension cap: 3000x1500 -> 2000x1000
-    expect(instance.resize).toHaveBeenCalledWith(2000, 1000, {
-      fit: "inside",
-      withoutEnlargement: true,
-    });
-  });
+    expect(result.byteLength).toBeLessThanOrEqual(MAX_IMAGE_BYTES_PASSTHROUGH);
+    // The output must be a real decodable PNG; 1600px is already under the
+    // cap and withoutEnlargement must not upscale it.
+    const meta = await sharp(Buffer.from(result.data, "base64")).metadata();
+    expect(meta.format).toBe("png");
+    expect(meta.width).toBe(1600);
+    expect(meta.height).toBe(1600);
+  }, 30_000);
 
-  it("falls through PNG to the JPEG quality ladder", async () => {
-    const big = Buffer.alloc(MAX_API_IMAGE_BYTES);
-    const small = Buffer.alloc(1000);
-    let jpegCalls = 0;
-    const instance = mockInstance();
-    instance.jpeg.mockImplementation(() => {
-      jpegCalls++;
-      return instance;
-    });
-    // PNG attempt returns big; second JPEG attempt (quality 60) fits.
-    // eslint-disable-next-line @typescript-eslint/no-misused-promises
-    instance.toBuffer.mockImplementation(() => {
-      return Promise.resolve(jpegCalls >= 2 ? small : big);
-    });
-    sharpMock.mockReturnValue(instance);
-
-    const buf = pngBuffer(MAX_API_IMAGE_BYTES + 1024);
-    const result = await maybeResizeAndDownsampleImage(buf, "image/png");
+  it("compresses an oversized JPEG via the quality ladder and caps dimensions at 2000px", async () => {
+    const result = await maybeResizeAndDownsampleImage(oversizedJpeg, "image/jpeg");
     expect(result.mediaType).toBe("image/jpeg");
-    expect(instance.jpeg).toHaveBeenCalledWith({ quality: 80 });
-    expect(instance.jpeg).toHaveBeenCalledWith({ quality: 60 });
-  });
+    expect(result.byteLength).toBeLessThanOrEqual(MAX_IMAGE_BYTES_PASSTHROUGH);
+    const meta = await sharp(Buffer.from(result.data, "base64")).metadata();
+    expect(meta.format).toBe("jpeg");
+    expect(meta.width).toBe(MAX_DIMENSION_PX);
+    expect(meta.height).toBe(MAX_DIMENSION_PX);
+  }, 30_000);
 
-  it("throws when even the smallest ladder step is too large", async () => {
-    const instance = mockInstance({
-      toBuffer: vi.fn().mockResolvedValue(Buffer.alloc(MAX_API_IMAGE_BYTES)),
-    });
-    sharpMock.mockReturnValue(instance);
+  it("round-trips the compressed payload as valid base64 binary", async () => {
+    const result = await maybeResizeAndDownsampleImage(oversizedJpeg, "image/jpeg");
+    const decoded = Buffer.from(result.data, "base64");
+    expect(decoded.length).toBe(result.byteLength);
+    expect(sniffMediaType(decoded)).toBe("image/jpeg");
+  }, 30_000);
 
-    const buf = pngBuffer(MAX_API_IMAGE_BYTES + 1024);
-    await expect(maybeResizeAndDownsampleImage(buf, "image/png")).rejects.toThrow(
+  it("throws ImageTooLargeError when sharp fails on an oversized corrupt buffer", async () => {
+    // PNG magic followed by garbage: sniffable as an image, but sharp cannot
+    // decode it. Over the passthrough target there is no valid fallback —
+    // passing it through would exceed the 5MB base64 API limit (regression
+    // test for the raw-vs-base64 fallback bug).
+    const corrupt = Buffer.concat([
+      PNG_MAGIC,
+      Buffer.alloc(Math.floor(MAX_IMAGE_BYTES_PASSTHROUGH) + 1024, 0xab),
+    ]);
+    await expect(maybeResizeAndDownsampleImage(corrupt, "image/png")).rejects.toThrow(
       ImageTooLargeError,
+    );
+    await expect(maybeResizeAndDownsampleImage(corrupt, "image/png")).rejects.toThrow(
+      /compression failed/,
     );
   });
 
-  it("falls back to size check when sharp throws at runtime", async () => {
-    const instance = mockInstance({
-      metadata: vi.fn().mockRejectedValue(new Error("corrupt header")),
-    });
-    sharpMock.mockReturnValue(instance);
-
-    // ~3.8MB: sharp fails but raw size is under the hard API limit -> passthrough
-    const okSize = Math.floor(MAX_IMAGE_BYTES_PASSTHROUGH) + 1024;
-    const ok = await maybeResizeAndDownsampleImage(pngBuffer(okSize), "image/png");
-    expect(ok.byteLength).toBe(okSize);
-
-    // >5MB: sharp fails and size is over -> error
-    await expect(
-      maybeResizeAndDownsampleImage(pngBuffer(MAX_API_IMAGE_BYTES + 1024), "image/png"),
-    ).rejects.toThrow(ImageTooLargeError);
+  it("still passes a small corrupt buffer through (sharp never consulted)", async () => {
+    const corrupt = Buffer.concat([PNG_MAGIC, Buffer.alloc(1024, 0xab)]);
+    const result = await maybeResizeAndDownsampleImage(corrupt, "image/png");
+    expect(result.data).toBe(corrupt.toString("base64"));
   });
 });

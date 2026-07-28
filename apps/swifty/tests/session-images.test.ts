@@ -139,6 +139,37 @@ describe("session image persistence", () => {
     expect(rebuilt[1]?.content).toBe("kept with image");
     expect(rebuilt[1]?.images?.[0]?.data).toBe(original.data);
   });
+
+  it("does not drop an image-only message (empty content) on resume", () => {
+    const id = newSessionId();
+    const original = img();
+    const refs = saveSessionImages(workDir, id, [original]);
+    saveMessage(workDir, id, {
+      role: "user",
+      content: "",
+      timestamp: t0,
+      images: refs,
+    });
+
+    const rebuilt = rebuildFromSession(loadSession(workDir, id));
+    expect(rebuilt).toHaveLength(1);
+    expect(rebuilt[0]?.images?.[0]?.data).toBe(original.data);
+  });
+
+  it("does not drop an image-only kept message from a compact boundary", () => {
+    const id = newSessionId();
+    const original = img();
+    const refs = saveSessionImages(workDir, id, [original]);
+    saveCompactBoundary(workDir, id, {
+      summary: "earlier chat",
+      keep: [{ role: "user", content: "", images: refs }],
+    });
+
+    const rebuilt = rebuildFromSession(loadSession(workDir, id));
+    // [0] = synthetic summary user message, [1] = image-only kept message
+    expect(rebuilt).toHaveLength(2);
+    expect(rebuilt[1]?.images?.[0]?.data).toBe(original.data);
+  });
 });
 
 describe("sessionCtxFromFilePath", () => {

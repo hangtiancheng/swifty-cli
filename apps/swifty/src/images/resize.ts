@@ -72,15 +72,15 @@ export async function maybeResizeAndDownsampleImage(
     if (err instanceof ImageTooLargeError) {
       throw err;
     }
-    // sharp failed at runtime (corrupt file, unsupported variant, ...) —
-    // pass the original through if it can still fit under the hard limit.
-    log.warn({ err }, "sharp compression failed, falling back to size check");
-    if (buf.length <= MAX_API_IMAGE_BYTES) {
-      return toResult(buf, mediaType);
-    }
+    // sharp failed at runtime (corrupt file, unsupported variant, ...).
+    // We only get here when the raw size already exceeds the passthrough
+    // target (3.75MB), so its base64 form necessarily exceeds the 5MB API
+    // limit — there is no valid passthrough, fail with context.
+    log.warn({ err }, "sharp compression failed");
     throw new ImageTooLargeError(
-      `Image is ${formatMB(buf.length)} (API limit ${formatMB(MAX_API_IMAGE_BYTES)} base64-encoded) ` +
-        `and compression failed. Please provide a smaller image.`,
+      `Image is ${formatMB(buf.length)} raw (${formatMB((buf.length * 4) / 3)} base64-encoded, ` +
+        `API limit ${formatMB(MAX_API_IMAGE_BYTES)}) and compression failed. ` +
+        `Please provide a smaller image.`,
     );
   }
 }
