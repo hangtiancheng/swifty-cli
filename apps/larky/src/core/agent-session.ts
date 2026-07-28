@@ -100,7 +100,8 @@ import { buildPlanModeExitReminder, buildPlanModeReentryReminder } from "../prom
 import { FileHistory, type Snapshot } from "../file-history/file-history.js";
 import { createSandbox, type Sandbox } from "../sandbox/index.js";
 import * as sessionMod from "../session/session.js";
-import { expandAtRefs } from "../tui/at-expand.js";
+import { expandAtRefsWithImages } from "../tui/at-expand.js";
+import { saveSessionImages } from "../images/store.js";
 import { createChildLogger } from "../logger/index.js";
 import { asErrorString } from "../utils/index.js";
 
@@ -626,13 +627,22 @@ export class AgentSession {
         // withdrew this message — it must not pollute the conversation.
         const purelyCancelled = controller.signal.aborted && this.currentRunId === runId;
         if (!opts?.skipUserMessage && !purelyCancelled) {
-          // Inline @file references for the model; persist the original text.
-          this.conv.addUserMessage(opts?.skipExpand ? text : expandAtRefs(text, this.workDir));
+          // Inline @file references for the model; @image references become
+          // native image attachments. Persist the original text (images as
+          // refs — binaries live under sessions/<id>/images/).
+          const expanded = opts?.skipExpand
+            ? { text, images: [] }
+            : await expandAtRefsWithImages(text, this.workDir);
+          this.conv.addUserMessage(expanded.text, expanded.images);
           if (this.persist && !opts?.skipPersist) {
+            const imageRefs = expanded.images.length
+              ? saveSessionImages(this.workDir, this.larkyId, expanded.images)
+              : [];
             sessionMod.saveMessage(this.workDir, this.larkyId, {
               role: "user",
               content: opts?.persistText ?? display,
               timestamp: Math.floor(Date.now() / 1000),
+              ...(imageRefs.length ? { images: imageRefs } : {}),
             });
           }
         }
@@ -655,7 +665,7 @@ export class AgentSession {
         await this._runLoop(runId, controller);
       } catch (err) {
         // _runLoop closes its own run; this covers the pre-loop section
-        // (expandAtRefs / saveMessage) so clients never spin forever on a
+        // (expandAtRefsWithImages / saveMessage) so clients never spin forever on a
         // run.started that has no terminal event.
         if (reachedLoop) {
           log.error({ err }, "post-loop failure");
@@ -1087,7 +1097,7 @@ export class AgentSession {
           m.toolResults.map((tr) => ({ ...tr, isError: tr.isError ?? false })),
         );
       } else if (m.role === "user") {
-        conv.addUserMessage(m.content);
+        conv.addUserMessage(m.content, m.images);
       } else {
         conv.addAssistantMessage(m.content);
       }
