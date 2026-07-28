@@ -886,6 +886,8 @@ export class RemoteServer {
       return;
     }
 
+    this.broadcast({ type: "replay_user", data: { content: text } });
+
     // Create agent eagerly on first message (if not yet initialized)
     if (!this.agentHandle) {
       try {
