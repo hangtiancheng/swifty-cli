@@ -19,6 +19,9 @@
   "lint-staged": {
     "apps/swifty/**/*.{json,jsonc,js,cjs,mjs,jsx,ts,cts,mts,tsx,html,vue,css,scss,md,mdx}": [
       "pnpm --filter @swifty.js/swifty format"
+    ],
+    "apps/larky/**/*.{json,jsonc,js,cjs,mjs,jsx,ts,cts,mts,tsx,html,vue,css,scss,md,mdx}": [
+      "pnpm --filter @swifty.js/larky format"
     ]
   },
   "author": "https://github.com/hangtiancheng",
