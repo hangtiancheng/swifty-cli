@@ -103,7 +103,7 @@ import { AskUserDialog } from "./ask-user-dialog.js";
 import { TeammateSpinnerTree } from "./teammate-spinner-tree.js";
 import { TeamStatus } from "./team-status.js";
 import { TeamsDialog } from "./teams-dialog.js";
-// import { enableMouseTracking, disableMouseTracking, parseWheel } from "./mouse.js";
+import { enableMouseTracking, disableMouseTracking, parseWheel } from "./mouse.js";
 import type { TeammateUIState } from "../teams/progress.js";
 import { AskUserQuestionTool, type Question } from "../tools/ask-user.js";
 import { existsSync, readFileSync } from "node:fs";
@@ -208,6 +208,7 @@ export function App({
 }: Props) {
   const { exit } = useApp();
   const { stdout } = useStdout();
+  // const { rows: terminalRows } = useWindowSize();
   const [appState, setAppState] = useState<AppState>(
     providers.length === 1 ? "chat" : "providerSelect",
   );
@@ -1751,12 +1752,12 @@ export function App({
 
   // Enable SGR mouse tracking so the wheel is reported as mouse sequences
   // instead of being translated by the terminal into ↑/↓ that misfire the input history.
-  // useEffect(() => {
-  //   enableMouseTracking(stdout);
-  //   return () => {
-  //     disableMouseTracking(stdout);
-  //   };
-  // }, [stdout]);
+  useEffect(() => {
+    enableMouseTracking(stdout);
+    return () => {
+      disableMouseTracking(stdout);
+    };
+  }, [stdout]);
 
   // Measure the content and viewport heights once after each render, used to
   // compute the scrollable range.
@@ -1777,31 +1778,31 @@ export function App({
     setScrollTop((prev) => (stickToBottomRef.current ? maxScroll : Math.min(prev, maxScroll)));
   }, [maxScroll]);
 
-  // const scrollBy = useCallback(
-  //   (delta: number) => {
-  //     setScrollTop((prev) => {
-  //       const next = Math.max(0, Math.min(prev + delta, maxScroll));
-  //       stickToBottomRef.current = next >= maxScroll;
-  //       return next;
-  //     });
-  //   },
-  //   [maxScroll],
-  // );
+  const scrollBy = useCallback(
+    (delta: number) => {
+      setScrollTop((prev) => {
+        const next = Math.max(0, Math.min(prev + delta, maxScroll));
+        stickToBottomRef.current = next >= maxScroll;
+        return next;
+      });
+    },
+    [maxScroll],
+  );
 
   // The wheel and page keys drive scrolling. Mouse sequences never reach the
   // input box (they are already filtered by SGR format inside InputBox).
-  // useInput((input, key) => {
-  //   const wheel = parseWheel(input);
-  //   if (wheel) {
-  //     scrollBy(wheel === "up" ? -3 : 3);
-  //     return;
-  //   }
-  //   if (key.pageUp) {
-  //     scrollBy(-Math.max(1, viewportHeight - 2));
-  //   } else if (key.pageDown) {
-  //     scrollBy(Math.max(1, viewportHeight - 2));
-  //   }
-  // });
+  useInput((input, key) => {
+    const wheel = parseWheel(input);
+    if (wheel) {
+      scrollBy(wheel === "up" ? -3 : 3);
+      return;
+    }
+    if (key.pageUp) {
+      scrollBy(-Math.max(1, viewportHeight - 2));
+    } else if (key.pageDown) {
+      scrollBy(Math.max(1, viewportHeight - 2));
+    }
+  });
 
   if (appState === "providerSelect") {
     return <ProviderSelect providers={providers} onSelect={handleProviderSelect} />;

@@ -40,7 +40,7 @@ The two processes:
 
 Interaction requests use the pending-map pattern: the daemon emits an event carrying an `id` (`permission.requested`, `ask_user.requested`, `plan.requested`) and blocks the agent until a client answers via the matching `*.respond` RPC. If the last subscribed client disconnects, all pending requests are denied so the agent never freezes.
 
-See [WIRE_PROTOCOL.md](./WIRE_PROTOCOL.md) (generated from zod schemas — `pnpm doc`).
+See [PROTOCOL.md](./PROTOCOL.md) (generated from zod schemas — `pnpm doc`).
 
 ## Usage
 
@@ -59,12 +59,12 @@ Configuration lives in larky's `.larky/config.yaml` (providers, hooks, MCP, sand
 
 ```bash
 pnpm dev        # spawn daemon (tsx) + TUI in one terminal
-pnpm dev:core   # daemon only
-pnpm dev:tui    # client only
+pnpm core       # daemon only
+pnpm cli        # client only
 pnpm test       # vitest (unit + dual-process integration)
 pnpm typecheck
 pnpm build      # tsup dual-entry bundle (dist/cli/main.js + dist/core/app.js)
-pnpm doc        # regenerate WIRE_PROTOCOL.md
+pnpm doc        # regenerate PROTOCOL.md
 ```
 
 ## License

@@ -22,7 +22,7 @@
  */
 
 /**
- * Generate WIRE_PROTOCOL.md from zod schemas in larky bus modules.
+ * Generate PROTOCOL.md from zod schemas in larky bus modules.
  *
  * Usage:
  *   tsx scripts/gen-protocol-doc.ts
@@ -74,7 +74,7 @@ import { EventPushEnvelopeSchema } from "../src/core/bus/envelope.js";
 import { EventSchema } from "../src/core/bus/events.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const OUTPUT_PATH = path.join(__dirname, "..", "WIRE_PROTOCOL.md");
+const OUTPUT_PATH = path.join(__dirname, "..", "PROTOCOL.md");
 
 // Narrow an unknown value to Record<string, unknown> if it is a non-null object
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -162,10 +162,18 @@ const RPC_METHODS: [string, z.ZodType, z.ZodType][] = [
   ["session.create", SessionCreateCommandSchema, SessionCreateResultSchema],
   ["session.list", SessionListCommandSchema, SessionListResultSchema],
   ["session.resume", SessionResumeCommandSchema, SessionResumeResultSchema],
-  ["session.send_message", SessionSendMessageCommandSchema, SessionSendMessageResultSchema],
+  [
+    "session.send_message",
+    SessionSendMessageCommandSchema,
+    SessionSendMessageResultSchema,
+  ],
   ["session.close", SessionCloseCommandSchema, SessionCloseResultSchema],
   ["run.cancel", RunCancelCommandSchema, RunCancelResultSchema],
-  ["permission.respond", PermissionRespondCommandSchema, PermissionRespondResultSchema],
+  [
+    "permission.respond",
+    PermissionRespondCommandSchema,
+    PermissionRespondResultSchema,
+  ],
   ["ask_user.respond", AskUserRespondCommandSchema, AskUserRespondResultSchema],
   ["plan.respond", PlanRespondCommandSchema, PlanRespondResultSchema],
   ["mode.set", ModeSetCommandSchema, ModeSetResultSchema],
@@ -175,7 +183,7 @@ const RPC_METHODS: [string, z.ZodType, z.ZodType][] = [
   ["rewind.apply", RewindApplyCommandSchema, RewindApplyResultSchema],
 ];
 
-// Generate the complete WIRE_PROTOCOL.md document string
+// Generate the complete PROTOCOL.md document string
 function generate(): string {
   const sections: string[] = [
     "# Wire Protocol\n\n",
@@ -223,7 +231,7 @@ function generate(): string {
   return sections.join("");
 }
 
-// Parse command-line arguments, write or verify WIRE_PROTOCOL.md
+// Parse command-line arguments, write or verify PROTOCOL.md
 function main(): void {
   const args = process.argv.slice(2);
   const isCheck = args.includes("--check");
@@ -241,7 +249,9 @@ function main(): void {
       }
       console.log(`OK: ${OUTPUT_PATH} is up to date.`);
     } catch {
-      console.error(`ERROR: ${OUTPUT_PATH} not found — run: tsx scripts/gen-protocol-doc.ts`);
+      console.error(
+        `ERROR: ${OUTPUT_PATH} not found — run: tsx scripts/gen-protocol-doc.ts`,
+      );
       process.exit(1);
     }
   } else {

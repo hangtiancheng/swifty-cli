@@ -28,7 +28,7 @@
     "README.md",
     "kill.mjs",
     "LICENSE",
-    "WIRE_PROTOCOL.md"
+    "PROTOCOL.md"
   ],
   "type": "module",
   "publishConfig": {
@@ -49,8 +49,8 @@
     "test:coverage": "vitest run --coverage",
     "doc": "tsx ./scripts/gen-protocol-doc.ts",
     "dev": "tsx ./src/dev.ts",
-    "dev:core": "tsx ./src/core/app.ts",
-    "dev:tui": "tsx ./src/cli/main.ts",
+    "core": "tsx ./src/core/app.ts",
+    "cli": "tsx ./src/cli/main.ts",
     "prepublishOnly": "pnpm build",
     "add:user": "npm adduser --registry=https://registry.npmjs.org/",
     "publish:latest": "npm publish --access public --registry=https://registry.npmjs.org/",

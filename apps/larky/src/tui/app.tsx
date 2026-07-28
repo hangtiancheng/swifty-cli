@@ -25,7 +25,7 @@
 // renders the event stream and answers interaction requests via RPCs.
 // Local-only concerns: prompt history, @-file completion, scrolling, theme.
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Box, Text, useApp, useInput, useWindowSize, measureElement, type DOMElement } from "ink";
+import { Box, Text, useApp, useInput, measureElement, type DOMElement, useStdout, useWindowSize } from "ink";
 
 import type { ProviderConfig } from "../config/config.js";
 import type { PermissionMode } from "../permissions/checker.js";
@@ -49,7 +49,7 @@ import { PlanApprovalDialog, type PlanChoice } from "./plan-approval.js";
 import { TeammateSpinnerTree } from "./teammate-spinner-tree.js";
 import { TeamStatus } from "./team-status.js";
 import { TeamsDialog } from "./teams-dialog.js";
-// import { enableMouseTracking, disableMouseTracking, parseWheel } from "./mouse.js";
+import { enableMouseTracking, disableMouseTracking, parseWheel } from "./mouse.js";
 import { InputBox } from "./input.js";
 import { ChatView, type ChatMessage, type ToolSummaryItem } from "./chat.js";
 import { ToolDisplay, type ToolBlockInfo } from "./tool-display.js";
@@ -138,11 +138,8 @@ const SESSION_NOT_FOUND = -32010;
 
 export function App({ client, provider, permissionMode, onSessionChange }: Props) {
   const { exit } = useApp();
-  // useWindowSize subscribes to stdout "resize" and re-renders on terminal
-  // size changes; with a raw stdout.rows read nothing triggers a re-render,
-  // so the last-rendered height goes stale.
-  const { rows: terminalRows } = useWindowSize();
-
+  const { stdout } = useStdout();
+  const { rows } = useWindowSize();
   const workDir = process.cwd();
   const historyDir = `${workDir}/.larky`;
 
@@ -911,12 +908,12 @@ export function App({ client, provider, permissionMode, onSessionChange }: Props
 
   const maxScroll = Math.max(0, contentHeight - viewportHeight);
 
-  // useEffect(() => {
-  //   enableMouseTracking(stdout);
-  //   return () => {
-  //     disableMouseTracking(stdout);
-  //   };
-  // }, [stdout]);
+  useEffect(() => {
+    enableMouseTracking(stdout);
+    return () => {
+      disableMouseTracking(stdout);
+    };
+  }, [stdout]);
 
   useEffect(() => {
     if (contentRef.current) {
@@ -933,36 +930,36 @@ export function App({ client, provider, permissionMode, onSessionChange }: Props
     setScrollTop((prev) => (stickToBottomRef.current ? maxScroll : Math.min(prev, maxScroll)));
   }, [maxScroll]);
 
-  // const scrollBy = useCallback(
-  //   (delta: number) => {
-  //     setScrollTop((prev) => {
-  //       const next = Math.max(0, Math.min(prev + delta, maxScroll));
-  //       stickToBottomRef.current = next >= maxScroll;
-  //       return next;
-  //     });
-  //   },
-  //   [maxScroll],
-  // );
+  const scrollBy = useCallback(
+    (delta: number) => {
+      setScrollTop((prev) => {
+        const next = Math.max(0, Math.min(prev + delta, maxScroll));
+        stickToBottomRef.current = next >= maxScroll;
+        return next;
+      });
+    },
+    [maxScroll],
+  );
 
   // The wheel and page keys drive scrolling. Mouse sequences never reach the
   // input box (they are already filtered by SGR format inside InputBox).
-  // useInput((input, key) => {
-  //   const wheel = parseWheel(input);
-  //   if (wheel) {
-  //     scrollBy(wheel === "up" ? -3 : 3);
-  //     return;
-  //   }
-  //   if (key.pageUp) {
-  //     scrollBy(-Math.max(1, viewportHeight - 2));
-  //   } else if (key.pageDown) {
-  //     scrollBy(Math.max(1, viewportHeight - 2));
-  //   }
-  // });
+  useInput((input, key) => {
+    const wheel = parseWheel(input);
+    if (wheel) {
+      scrollBy(wheel === "up" ? -3 : 3);
+      return;
+    }
+    if (key.pageUp) {
+      scrollBy(-Math.max(1, viewportHeight - 2));
+    } else if (key.pageDown) {
+      scrollBy(Math.max(1, viewportHeight - 2));
+    }
+  });
 
   const activePermission = permissionQueue[0] ?? null;
 
   return (
-    <Box flexDirection="column" width="100%" height={Math.max(1, terminalRows ?? 24)}>
+    <Box flexDirection="column" width="100%" height={Math.max(1, rows ?? 24)}>
       {/* Top brand header */}
       <Box flexDirection="column" flexShrink={0}>
         <Text>
