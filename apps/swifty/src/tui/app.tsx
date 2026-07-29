@@ -692,40 +692,6 @@ export function App({
       setMessages((prev) => [...prev, { role: "system", content: lines.join("\n") }]);
       return true;
     }
-    if (cmd.name === "permission") {
-      const parts = parsed.args.trim().split(/\s+/);
-      const modes: PermissionMode[] = ["default", "acceptEdits", "plan", "bypassPermissions"];
-      if (parts[0] === "mode" && parts[1]) {
-        // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
-        if (modes.includes(parts[1] as PermissionMode)) {
-          // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
-          setPermMode(parts[1] as PermissionMode);
-          setMessages((prev) => [
-            ...prev,
-            { role: "system", content: `Permission mode → ${parts[1]}` },
-          ]);
-        } else {
-          setMessages((prev) => [
-            ...prev,
-            {
-              role: "system",
-              content: `Unknown mode '${parts[1]}'. Valid: ${modes.join(", ")}`,
-            },
-          ]);
-        }
-      } else {
-        setMessages((prev) => [
-          ...prev,
-          {
-            role: "system",
-            content:
-              `Permission mode: ${permMode}\n` +
-              "Change with shift+tab, or /permission mode <default|acceptEdits|plan|bypassPermissions>",
-          },
-        ]);
-      }
-      return true;
-    }
     if (cmd.name === "memory") {
       const sub = parsed.args.trim().split(/\s+/)[0];
       const mgr = new MemoryManager(workDir);

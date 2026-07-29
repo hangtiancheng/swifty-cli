@@ -245,10 +245,45 @@ function loadRulesFile(path: string): Rule[] {
   return rules;
 }
 
+// 在给定规则集上裁决，优先级 deny > ask > allow。
+// 没有任何规则命中时返回 null。
+export function evaluateRules(rules: Rule[], toolName: string, content: string): RuleEffect | null {
+  let hit: RuleEffect | null = null;
+  for (const r of rules) {
+    if (r.tool !== toolName && r.tool !== "*") {
+      continue;
+    }
+    if (!globMatch(r.pattern, content)) {
+      continue;
+    }
+    // deny 已是最严效果，不可能再被压过，直接返回
+    if (r.effect === "deny") {
+      return "deny";
+    }
+    if (r.effect === "ask") {
+      hit = "ask";
+    }
+    // allow 最弱，只在还没命中更严的效果时记录
+    else {
+      hit ??= "allow";
+    }
+  }
+  return hit;
+}
+
+// 单个规则文件的解析结果。mtime + size 一起作为文件是否变动的依据，
+// 只比 mtime 不够：同一毫秒内的连续改写时间戳可能不变。
+interface CachedRules {
+  mtimeNs: bigint;
+  size: bigint;
+  rules: Rule[];
+}
+
 export class RuleEngine {
   private userPath: string;
   private projectPath: string;
   private localPath: string;
+  private cache = new Map<string, CachedRules>();
 
   constructor(workDir: string) {
     this.userPath = join(homedir(), ".swifty", "permissions.yaml");
@@ -256,23 +291,39 @@ export class RuleEngine {
     this.localPath = join(workDir, ".swifty", "permissions.local.yaml");
   }
 
-  // Loads the three rule files fresh on every call (so a just-written
-  // "allow always" rule takes effect immediately) and returns the first match
-  // scanning user → project → local, last-rule-wins within each file.
-  evaluate(toolName: string, content: string): RuleEffect | null {
-    for (const path of [this.userPath, this.projectPath, this.localPath]) {
-      const rules = loadRulesFile(path);
-      for (let i = rules.length - 1; i >= 0; i--) {
-        const r = rules[i];
-        if (r.tool !== toolName && r.tool !== "*") {
-          continue;
-        }
-        if (globMatch(r.pattern, content)) {
-          return r.effect;
-        }
-      }
+  // 读取单个规则文件，命中缓存时不读盘也不解析。
+  private rulesFor(path: string): Rule[] {
+    let st;
+    try {
+      st = statSync(path, { bigint: true });
+    } catch {
+      // 文件不存在或读不到，按空规则处理，同时清掉可能存在的旧缓存
+      this.cache.delete(path);
+      return [];
     }
-    return null;
+
+    const cached = this.cache.get(path);
+    if (cached?.mtimeNs === st.mtimeNs && cached.size === st.size) {
+      return cached.rules;
+    }
+
+    const rules = loadRulesFile(path);
+    this.cache.set(path, { mtimeNs: st.mtimeNs, size: st.size, rules });
+    return rules;
+  }
+
+  // 取三份规则文件的合并快照。文件没变动时直接复用上次的解析结果，
+  // 变动了才重新读盘，因此改完规则文件下次评估即刻生效，反复评估也不会重复解析。
+  // 一次工具调用取一次快照，复合命令逐条检查子命令时共用它。
+  snapshot(): Rule[] {
+    return [this.userPath, this.projectPath, this.localPath].flatMap((p) => this.rulesFor(p));
+  }
+
+  // 取一次快照后裁决：文件没变动时复用上次的解析结果，刚写入的 "allow always" 立即生效。
+  // 优先级 deny > ask > allow：规则写在哪一层、写在文件第几行都不影响裁决，
+  // 因此一条 deny 无法被其他层的 allow 抵消。没有任何规则命中时返回 null。
+  evaluate(toolName: string, content: string): RuleEffect | null {
+    return evaluateRules(this.snapshot(), toolName, content);
   }
 
   // Persists a rule to the project-local YAML file in Go's `Tool(pattern)`
@@ -352,9 +403,6 @@ export class PermissionChecker {
   sandboxAutoAllow = false;
   private sandbox: PathSandbox;
   private ruleEngine: RuleEngine;
-  // Layer 4b: Session-level temporary allowlist (in-memory, invalidated on process exit)
-  // Key format: "ToolName:pattern". Matches are allowed directly without writing to disk.
-  private sessionAllowed = new Set<string>();
 
   constructor(workDir: string, mode: PermissionMode = "default") {
     this.mode = mode;
@@ -368,6 +416,11 @@ export class PermissionChecker {
     args: Record<string, unknown>,
   ): Decision {
     const content = extractContent(toolName, args);
+
+    // 规则快照按需取一次：安全命令、危险命令这些在前面几层就返回，压根不必碰规则文件；
+    // 复合命令逐条检查子命令时共用同一份快照，不重复读盘
+    let snapshot: Rule[] | null = null;
+    const rules = (): Rule[] => (snapshot ??= this.ruleEngine.snapshot());
 
     // Layer 0: plan-mode plan-file write exception.
     // Both WriteFile and EditFile targeting the plan file are allowed so the
@@ -405,7 +458,7 @@ export class PermissionChecker {
         .filter(Boolean);
       let hasAsk = false;
       for (const sub of subcommands) {
-        const ruleResult = this.ruleEngine.evaluate(toolName, sub);
+        const ruleResult = evaluateRules(rules(), toolName, sub);
         if (ruleResult === "deny") {
           return { effect: "deny", reason: "Permission rule: deny" };
         }
@@ -447,14 +500,8 @@ export class PermissionChecker {
       }
     }
 
-    // Layer 4b: Session-level temporary allow — check the in-memory sessionAllowed set
-    const sessionKey = `${toolName}:${content}`;
-    if (this.sessionAllowed.has(sessionKey)) {
-      return { effect: "allow", reason: "Session allow: previously approved" };
-    }
-
     // Layer 5: rule engine — per-tool content + glob match.
-    const ruleEffect = this.ruleEngine.evaluate(toolName, content);
+    const ruleEffect = evaluateRules(rules(), toolName, content);
     if (ruleEffect) {
       return { effect: ruleEffect, reason: `Permission rule: ${ruleEffect}` };
     }
@@ -466,10 +513,10 @@ export class PermissionChecker {
     };
   }
 
-  // Session-level allow: effective only during the current process lifecycle, not persisted to disk
-  allowForSession(toolName: string, args: Record<string, unknown>): void {
-    const content = extractContent(toolName, args);
-    this.sessionAllowed.add(`${toolName}:${content}`);
+  // 放开一个项目根之外的目录。后台 Agent 需要读写用户级数据（如用户级记忆目录）时，
+  // 由调用方显式声明，沙箱基线本身保持在项目根不变。
+  allowExtraRoot(path: string): void {
+    this.sandbox.addRoot(path);
   }
 
   // Persist a scoped "allow always" rule.

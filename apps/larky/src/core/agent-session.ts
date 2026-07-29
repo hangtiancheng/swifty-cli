@@ -1233,27 +1233,6 @@ export class AgentSession {
       this.commandDone();
       return;
     }
-    if (cmd.name === "permission") {
-      const parts = parsed.args.trim().split(/\s+/);
-      const modes: PermissionMode[] = ["default", "acceptEdits", "plan", "bypassPermissions"];
-      if (parts[0] === "mode" && parts[1]) {
-        // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
-        if (modes.includes(parts[1] as PermissionMode)) {
-          // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
-          this.setMode(parts[1] as PermissionMode);
-          this.systemMessage(`Permission mode → ${parts[1]}`);
-        } else {
-          this.systemMessage(`Unknown mode '${parts[1]}'. Valid: ${modes.join(", ")}`);
-        }
-      } else {
-        this.systemMessage(
-          `Permission mode: ${this.permMode}\n` +
-            "Change with shift+tab, or /permission mode <default|acceptEdits|plan|bypassPermissions>",
-        );
-      }
-      this.commandDone();
-      return;
-    }
     if (cmd.name === "memory") {
       const sub = parsed.args.trim().split(/\s+/)[0];
       const mgr = new MemoryManager(this.workDir);

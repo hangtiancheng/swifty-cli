@@ -20,11 +20,15 @@
  * SOFTWARE.
  */
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { mkdtempSync, writeFileSync, mkdirSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 import { PermissionChecker } from "../src/permissions/checker.js";
+import { homedir } from "node:os";
+import { MemoryConsolidator } from "@/memory/consolidation.js";
+import { Agent } from "../src/agent/agent.js";
+import type { LLMClient } from "../src/llm/client.js";
 
 function makeTmpDir(): string {
   return mkdtempSync(join(tmpdir(), "swifty-test-"));
@@ -69,5 +73,235 @@ describe("sandbox auto-allow respects deny/ask rules", () => {
       command: "git push origin main",
     });
     expect(result.effect).toBe("ask");
+  });
+});
+
+describe("extra allowed roots", () => {
+  it("opens a path outside the project once declared", () => {
+    const dir = makeTmpDir();
+    const outside = makeTmpDir();
+    const checker = new PermissionChecker(dir, "default");
+    const target = join(outside, "MEMORY.md");
+
+    const before = checker.check("WriteFile", "write", { file_path: target });
+    expect(before.reason).toContain("outside allowed directories");
+
+    checker.allowExtraRoot(outside);
+
+    const after = checker.check("WriteFile", "write", { file_path: target });
+    expect(after.reason).not.toContain("outside allowed directories");
+  });
+});
+
+describe("protected paths under bypass", () => {
+  const protectedRels = [
+    ".swifty/permissions.local.yaml",
+    ".swifty/config.yaml",
+    ".swifty/skills/evil/SKILL.md",
+  ];
+
+  it("denies writing protected paths even in bypass mode", () => {
+    const dir = makeTmpDir();
+    const checker = new PermissionChecker(dir, "bypassPermissions");
+    for (const rel of protectedRels) {
+      const result = checker.check("WriteFile", "write", { file_path: join(dir, rel) });
+      expect(result.effect).toBe("deny");
+    }
+  });
+
+  it("leaves ordinary files alone", () => {
+    const dir = makeTmpDir();
+    const checker = new PermissionChecker(dir, "bypassPermissions");
+    const result = checker.check("WriteFile", "write", { file_path: join(dir, "a.txt") });
+    expect(result.effect).not.toBe("deny");
+  });
+});
+
+// 把项目级和本地级规则文件分别写好，用于验证跨文件合并
+function makeCheckerWithTiers(tmpDir: string, projectRules: string, localRules: string) {
+  const rulesDir = join(tmpDir, ".swifty");
+  mkdirSync(rulesDir, { recursive: true });
+  writeFileSync(join(rulesDir, "permissions.yaml"), projectRules);
+  writeFileSync(join(rulesDir, "permissions.local.yaml"), localRules);
+  return new PermissionChecker(tmpDir, "default");
+}
+
+describe("rule merging across files", () => {
+  const allow = '- rule: "Bash(git *)"\n  effect: allow';
+  const deny = '- rule: "Bash(git *)"\n  effect: deny';
+  const ask = '- rule: "Bash(git *)"\n  effect: ask';
+
+  it("deny in project beats allow in local", () => {
+    const checker = makeCheckerWithTiers(makeTmpDir(), deny, allow);
+    expect(checker.check("Bash", "command", { command: "git push origin main" }).effect).toBe(
+      "deny",
+    );
+  });
+
+  it("deny in local beats allow in project", () => {
+    const checker = makeCheckerWithTiers(makeTmpDir(), allow, deny);
+    expect(checker.check("Bash", "command", { command: "git push origin main" }).effect).toBe(
+      "deny",
+    );
+  });
+
+  it("ask beats allow", () => {
+    const checker = makeCheckerWithTiers(makeTmpDir(), allow, ask);
+    expect(checker.check("Bash", "command", { command: "git push origin main" }).effect).toBe(
+      "ask",
+    );
+  });
+
+  it("picks up rule file changes without restart", () => {
+    const dir = makeTmpDir();
+    const rulesDir = join(dir, ".swifty");
+    mkdirSync(rulesDir, { recursive: true });
+    const rulesFile = join(rulesDir, "permissions.yaml");
+
+    writeFileSync(rulesFile, allow);
+    const checker = new PermissionChecker(dir, "default");
+    expect(checker.check("Bash", "command", { command: "git push origin main" }).effect).toBe(
+      "allow",
+    );
+
+    // 同一个 checker 实例，改完规则文件后立即生效
+    writeFileSync(rulesFile, deny);
+    expect(checker.check("Bash", "command", { command: "git push origin main" }).effect).toBe(
+      "deny",
+    );
+  });
+
+  it("deny beats allow regardless of order in the same file", () => {
+    for (const body of [`${allow}\n${deny}`, `${deny}\n${allow}`]) {
+      const checker = makeCheckerWithTiers(makeTmpDir(), body, "");
+      expect(checker.check("Bash", "command", { command: "git push origin main" }).effect).toBe(
+        "deny",
+      );
+    }
+  });
+});
+
+describe("memory background agent sandbox", () => {
+  it("opens the user-level memory dir for the consolidation sub-agent", async () => {
+    // 拦下子 Agent 的执行，只取它拿到的权限检查器，不真的发起 LLM 请求
+    const captured: PermissionChecker[] = [];
+    // eslint-disable-next-line require-yield, @typescript-eslint/require-await
+    const spy = vi.spyOn(Agent.prototype, "run").mockImplementation(async function* (this: Agent) {
+      // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+      captured.push(Reflect.get(this, "checker") as PermissionChecker);
+    });
+
+    try {
+      const dir = makeTmpDir();
+      const memDir = join(dir, ".swifty", "memory");
+      mkdirSync(memDir, { recursive: true });
+
+      const fakeClient: LLMClient = {
+        setSystemPrompt(_prompt: string) {
+          /** noop */
+        },
+        async *stream() {
+          /** noop */
+        },
+      };
+      const consolidator = new MemoryConsolidator(fakeClient, dir);
+      await consolidator.run(memDir, [], 0);
+
+      expect(captured.length).toBe(1);
+      const checker = captured[0];
+
+      // 后台 Agent 跑在 bypass 模式下会跳过路径沙箱，临时切回 default 才能观察沙箱本身的判定
+      checker.mode = "default";
+
+      const userMemFile = join(homedir(), ".swifty", "memory", "MEMORY.md");
+      const allowed = checker.check("WriteFile", "write", { file_path: userMemFile });
+      expect(allowed.reason).not.toContain("outside allowed directories");
+
+      // 其他项目外目录不受影响，仍然被沙箱挡住
+      const unrelated = join(homedir(), "unrelated-dir", "x.txt");
+      const blocked = checker.check("WriteFile", "write", { file_path: unrelated });
+      expect(blocked.reason).toContain("outside allowed directories");
+    } finally {
+      spy.mockRestore();
+    }
+  });
+});
+
+describe("rule file caching", () => {
+  const allowRule = '- rule: "Bash(git *)"\n  effect: allow\n';
+  // 与 allowRule 等长，用尾随空格补齐，YAML 解析时会被忽略
+  const denyRuleSameSize = '- rule: "Bash(git *)"\n  effect: deny \n';
+
+  it("reuses parsed rules when the file looks unchanged", async () => {
+    const { utimesSync } = await import("node:fs");
+    const dir = makeTmpDir();
+    const rulesDir = join(dir, ".swifty");
+    mkdirSync(rulesDir, { recursive: true });
+    const rulesFile = join(rulesDir, "permissions.yaml");
+
+    expect(allowRule.length).toBe(denyRuleSameSize.length);
+
+    // 两次写入都把时间戳钉到同一个值：utimesSync 只有毫秒精度，
+    // 拿写入后的实际 mtime 去还原会丢掉纳秒部分，钉死才能构造出「看起来没动过」
+    const fixed = new Date(Date.now() - 60_000);
+
+    writeFileSync(rulesFile, allowRule);
+    utimesSync(rulesFile, fixed, fixed);
+    const checker = new PermissionChecker(dir, "default");
+    expect(checker.check("Bash", "command", { command: "git push origin main" }).effect).toBe(
+      "allow",
+    );
+
+    // 偷偷把内容换成 deny，size 和 mtime 都跟上一次一致：
+    // 引擎看不出文件动过，应当继续用缓存里的解析结果
+    writeFileSync(rulesFile, denyRuleSameSize);
+    utimesSync(rulesFile, fixed, fixed);
+
+    expect(checker.check("Bash", "command", { command: "git push origin main" }).effect).toBe(
+      "allow",
+    );
+  });
+
+  it("re-parses when only the mtime moves", async () => {
+    const { utimesSync } = await import("node:fs");
+    const dir = makeTmpDir();
+    const rulesDir = join(dir, ".swifty");
+    mkdirSync(rulesDir, { recursive: true });
+    const rulesFile = join(rulesDir, "permissions.yaml");
+
+    writeFileSync(rulesFile, allowRule);
+    const checker = new PermissionChecker(dir, "default");
+    expect(checker.check("Bash", "command", { command: "git push origin main" }).effect).toBe(
+      "allow",
+    );
+
+    writeFileSync(rulesFile, denyRuleSameSize);
+    // 把修改时间显式前移，模拟低精度时间戳文件系统上的一次真实改动
+    const future = new Date(Date.now() + 2000);
+    utimesSync(rulesFile, future, future);
+
+    expect(checker.check("Bash", "command", { command: "git push origin main" }).effect).toBe(
+      "deny",
+    );
+  });
+
+  it("drops the cache when the file is removed", async () => {
+    const { unlinkSync } = await import("node:fs");
+    const dir = makeTmpDir();
+    const rulesDir = join(dir, ".swifty");
+    mkdirSync(rulesDir, { recursive: true });
+    const rulesFile = join(rulesDir, "permissions.yaml");
+
+    writeFileSync(rulesFile, '- rule: "Bash(git *)"\n  effect: deny\n');
+    const checker = new PermissionChecker(dir, "default");
+    expect(checker.check("Bash", "command", { command: "git push origin main" }).effect).toBe(
+      "deny",
+    );
+
+    unlinkSync(rulesFile);
+    // 规则没了就落到模式兜底，default 下命令类是 ask
+    expect(checker.check("Bash", "command", { command: "git push origin main" }).effect).toBe(
+      "ask",
+    );
   });
 });
