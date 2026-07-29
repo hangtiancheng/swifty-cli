@@ -912,11 +912,13 @@ export function App({ client, provider, permissionMode, onSessionChange }: Props
             scrollback. This keeps the complete transcript selectable and
             copyable while only the active turn is re-rendered by Ink. */}
         <Static
-          key={sessionIdRef.current}
+          key={`transcript-${sessionIdRef.current}`}
           items={[
             {
               type: "brand" as const,
               _key: "brand",
+              model: provider.model || provider.name,
+              workDir,
             },
             ...messages.slice(0, committedIndexRef.current).map((message, index) => ({
               type: "message" as const,
@@ -929,22 +931,19 @@ export function App({ client, provider, permissionMode, onSessionChange }: Props
             item.type === "brand" ? (
               <Box key={item._key} flexDirection="column">
                 <Text>
-                  <Text color={BORDER_COLORS.focused}> /\_/\ </Text>
+                  <Text color={BORDER_COLORS.focused}>{" /\\_/\\  "}</Text>
                   <Text dimColor>
                     Larky v{version}
-                    {connected ? "" : "  (connecting…)"}
+                    {connected ? " " : "  (connecting…)"}
                   </Text>
                 </Text>
                 <Text>
-                  <Text color={BORDER_COLORS.focused}>( o.o ) </Text>
-                  <Text dimColor>{provider.model || provider.name}</Text>
+                  <Text color={BORDER_COLORS.focused}>{"( o o ) "}</Text>
+                  <Text dimColor>{item.model}</Text>
                 </Text>
                 <Text>
-                  <Text color={BORDER_COLORS.focused}>
-                    {" "}
-                    {">"} ^ {"<"}{" "}
-                  </Text>
-                  <Text dimColor>{workDir}</Text>
+                  <Text color={BORDER_COLORS.focused}>{" >   <  "}</Text>
+                  <Text dimColor>{item.workDir}</Text>
                 </Text>
                 <Text> </Text>
               </Box>

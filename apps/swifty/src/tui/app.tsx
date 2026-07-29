@@ -1721,18 +1721,15 @@ export function App({
             item.type === "brand" ? (
               <Box key={item._key} flexDirection="column">
                 <Text>
-                  <Text color={BORDER_COLORS.focused}> /\_/\ </Text>
+                  <Text color={BORDER_COLORS.focused}>{" /\\_/\\  "}</Text>
                   <Text dimColor>Swifty v{version}</Text>
                 </Text>
                 <Text>
-                  <Text color={BORDER_COLORS.focused}>( o.o ) </Text>
+                  <Text color={BORDER_COLORS.focused}>{"( o o ) "}</Text>
                   <Text dimColor>{item.model}</Text>
                 </Text>
                 <Text>
-                  <Text color={BORDER_COLORS.focused}>
-                    {" "}
-                    {">"} ^ {"<"}{" "}
-                  </Text>
+                  <Text color={BORDER_COLORS.focused}>{" >   <  "}</Text>
                   <Text dimColor>{item.workDir}</Text>
                 </Text>
                 <Text> </Text>
