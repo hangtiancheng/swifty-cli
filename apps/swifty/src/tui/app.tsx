@@ -21,7 +21,7 @@
  */
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Box, Text, useApp, useInput, useStdout, measureElement, type DOMElement } from "ink";
+import { Box, Static, Text, useApp, useInput } from "ink";
 import type {
   ProviderConfig,
   MCPServerConfig,
@@ -104,7 +104,6 @@ import { AskUserDialog } from "./ask-user-dialog.js";
 import { TeammateSpinnerTree } from "./teammate-spinner-tree.js";
 import { TeamStatus } from "./team-status.js";
 import { TeamsDialog } from "./teams-dialog.js";
-import { enableMouseTracking, disableMouseTracking, parseWheel } from "./mouse.js";
 import type { TeammateUIState } from "../teams/progress.js";
 import { AskUserQuestionTool, type Question } from "../tools/ask-user.js";
 import { existsSync, readFileSync } from "node:fs";
@@ -113,10 +112,10 @@ import * as sessionMod from "../session/session.js";
 import * as historyMod from "../history/history.js";
 import { ProviderSelect } from "./provider-select.js";
 import { InputBox } from "./input.js";
-import { ChatView, type ChatMessage, type ToolSummaryItem } from "./chat.js";
+import { ChatView, CommittedMessage, type ChatMessage, type ToolSummaryItem } from "./chat.js";
 import { ToolDisplay, type ToolBlockInfo } from "./tool-display.js";
 import Spinner from "./spinner.js";
-import { BORDER_COLORS, COLORS, ICONS } from "./styles.js";
+import { ICONS } from "./styles.js";
 import { CommandUsageTracker } from "../commands/usage-tracker.js";
 import { randomCompletionVerb } from "./verbs.js";
 import { asErrorString, asRecord, strArg } from "@/utils/index.js";
@@ -208,8 +207,6 @@ export function App({
   forkDisabled,
 }: Props) {
   const { exit } = useApp();
-  const { stdout } = useStdout();
-  // const { rows: terminalRows } = useWindowSize();
   const [appState, setAppState] = useState<AppState>(
     providers.length === 1 ? "chat" : "providerSelect",
   );
@@ -222,7 +219,6 @@ export function App({
   const streamingTextRef = useRef("");
   const streamThrottleRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const committedIndexRef = useRef(0);
-  const headerPrintedRef = useRef(false);
   const [activeTools, setActiveTools] = useState<ToolBlockInfo[]>([]);
   const [inputTokens, setInputTokens] = useState(0);
   const [outputTokens, setOutputTokens] = useState(0);
@@ -604,13 +600,6 @@ export function App({
     if (appState === "chat" && !clientRef.current) {
       void initClient(selectedProvider);
     }
-    // The brand header is now drawn at the top of the render tree (see render
-    // below): console.log writes to the terminal scrollback buffer, but the
-    // alt-screen has no scrollback region, so once the content grows it would
-    // be pushed off screen.
-    if (appState === "chat" && !headerPrintedRef.current) {
-      headerPrintedRef.current = true;
-    }
   }, [appState, selectedProvider, initClient]);
 
   const handleProviderSelect = (provider: ProviderConfig) => {
@@ -723,15 +712,9 @@ export function App({
           // Reset memory extraction state
           memCursorRef.current = 0;
           memExtractingRef.current = false;
-          // Redraw the header (the <Static> output is cleared, so reprint it)
-          const p = COLORS.primary;
-          const d = COLORS.dim;
-          process.stdout.write(
-            "\x1b[2J\x1b[3J\x1b[H" +
-              `\n${p(" /\\_/\\    ")}${d(`Swifty v${version}`)}\n` +
-              `${p("( o.o )   ")}${d(selectedProvider.model || selectedProvider.name)}\n` +
-              `${p(" > ^ <    ")}${d(workDir)}\n\n`,
-          );
+          // Clear both the visible screen and terminal scrollback. Changing the
+          // session ID remounts the static brand block on the next render.
+          process.stdout.write("\x1b[2J\x1b[3J\x1b[H");
           break;
         }
         case "quit":
@@ -1708,260 +1691,200 @@ export function App({
     }
   };
 
-  // ── Scroll viewport ─────────────────────────────────────────────────────
-  // The alt-screen has no native terminal scrollback region, so the message
-  // history is scrolled by the app itself: the outer box has a fixed height
-  // and clips overflow, while the inner box is shifted up by scrollTop lines
-  // (negative marginTop) — equivalent to "translate the content, then clip to
-  // the viewport".
-  const viewportRef = useRef<DOMElement | null>(null);
-  const contentRef = useRef<DOMElement | null>(null);
-  const [scrollTop, setScrollTop] = useState(0);
-  const [contentHeight, setContentHeight] = useState(0);
-  const [viewportHeight, setViewportHeight] = useState(0);
-  // Stick-to-bottom follow: auto-scroll to the latest content as it arrives;
-  // stop following once the user scrolls up manually.
-  const stickToBottomRef = useRef(true);
-
-  const maxScroll = Math.max(0, contentHeight - viewportHeight);
-
-  // Enable SGR mouse tracking so the wheel is reported as mouse sequences
-  // instead of being translated by the terminal into ↑/↓ that misfire the input history.
-  useEffect(() => {
-    enableMouseTracking(stdout);
-    return () => {
-      disableMouseTracking(stdout);
-    };
-  }, [stdout]);
-
-  // Measure the content and viewport heights once after each render, used to
-  // compute the scrollable range.
-  useEffect(() => {
-    if (contentRef.current) {
-      const h = measureElement(contentRef.current).height;
-      setContentHeight((prev) => (prev === h ? prev : h));
-    }
-    if (viewportRef.current) {
-      const h = measureElement(viewportRef.current).height;
-      setViewportHeight((prev) => (prev === h ? prev : h));
-    }
-  });
-
-  // When the content grows: follow to the latest if stuck to the bottom;
-  // otherwise keep the current position, clamped to the valid range.
-  useEffect(() => {
-    setScrollTop((prev) => (stickToBottomRef.current ? maxScroll : Math.min(prev, maxScroll)));
-  }, [maxScroll]);
-
-  const scrollBy = useCallback(
-    (delta: number) => {
-      setScrollTop((prev) => {
-        const next = Math.max(0, Math.min(prev + delta, maxScroll));
-        stickToBottomRef.current = next >= maxScroll;
-        return next;
-      });
-    },
-    [maxScroll],
-  );
-
-  // The wheel and page keys drive scrolling. Mouse sequences never reach the
-  // input box (they are already filtered by SGR format inside InputBox).
-  useInput((input, key) => {
-    const wheel = parseWheel(input);
-    if (wheel) {
-      scrollBy(wheel === "up" ? -3 : 3);
-      return;
-    }
-    if (key.pageUp) {
-      scrollBy(-Math.max(1, viewportHeight - 2));
-    } else if (key.pageDown) {
-      scrollBy(Math.max(1, viewportHeight - 2));
-    }
-  });
-
   if (appState === "providerSelect") {
     return <ProviderSelect providers={providers} onSelect={handleProviderSelect} />;
   }
 
   return (
-    <Box flexDirection="column" width="100%" height={Math.max(1, stdout.rows ?? 24)}>
-      {/* Top brand header: fixed and non-shrinking within the render tree, so it stays on screen even in long conversations */}
-      <Box flexDirection="column" flexShrink={0}>
-        <Text>
-          <Text color={BORDER_COLORS.focused}> /\_/\ </Text>
-          <Text dimColor>Swifty v{version}</Text>
-        </Text>
-        <Text>
-          <Text color={BORDER_COLORS.focused}>( o.o ) </Text>
-          <Text dimColor>{selectedProvider.model || selectedProvider.name}</Text>
-        </Text>
-        <Text>
-          <Text color={BORDER_COLORS.focused}>
-            {" "}
-            {">"} ^ {"<"}{" "}
-          </Text>
-          <Text dimColor>{workDir}</Text>
-        </Text>
-      </Box>
-
-      {/* Scroll viewport: fills the remaining middle space and clips overflow.
-          minHeight={0} is critical: the content box's flexShrink={0} would otherwise
-          push the viewport's minimum height up to the full content height, causing the
-          bottom input box — once it grows — to push the total height past the root
-          container and leave erase-misalignment artifacts. */}
-      <Box
-        ref={viewportRef}
-        flexGrow={1}
-        flexShrink={1}
-        minHeight={0}
-        flexDirection="column"
-        overflowY="hidden"
-      >
-        <Box ref={contentRef} flexDirection="column" flexShrink={0} marginTop={-scrollTop}>
-          {/* All messages live inside the render tree: scrolling is handled by the viewport, no longer relying on the terminal scrollback buffer */}
-          <ChatView
-            messages={messages}
-            streamingText={isStreaming ? streamingText : undefined}
-            expanded={toolsExpanded}
-          />
-
-          {activeTools.length > 0 && !askRequest && <ToolDisplay tools={activeTools} />}
-
-          {subagents.length > 0 && !askRequest && (
-            <Box flexDirection="column" paddingLeft={1}>
-              {subagents.map((s) => (
-                <Text key={s.id} color="magenta">
-                  {ICONS.dot} {s.label} subagent · turn {s.turn}
-                  {s.lastTool ? ` · ${s.lastTool}` : ""}
+    <Box flexDirection="column" width="100%">
+      <Box flexDirection="column" paddingTop={0} flexGrow={1}>
+        {/* Finalized messages are written once into the terminal's native
+            scrollback. This keeps the complete transcript selectable and
+            copyable while only the active turn is re-rendered by Ink. */}
+        <Static
+          key={`transcript-${sessionIdRef.current}`}
+          items={[
+            {
+              kind: "brand" as const,
+              _key: "brand",
+              model: selectedProvider.model || selectedProvider.name,
+              workDir,
+            },
+            ...messages.slice(0, committedIndexRef.current).map((message, index) => ({
+              kind: "message" as const,
+              _key: `message-${String(index)}`,
+              message,
+            })),
+          ]}
+        >
+          {(item) =>
+            item.kind === "brand" ? (
+              <Box key={item._key} flexDirection="column">
+                <Text>
+                  <Text color="#42b883"> /\_/\ </Text>
+                  <Text dimColor>Swifty v{version}</Text>
                 </Text>
-              ))}
-            </Box>
-          )}
+                <Text>
+                  <Text color="#42b883">( o.o ) </Text>
+                  <Text dimColor>{item.model}</Text>
+                </Text>
+                <Text>
+                  <Text color="#42b883">
+                    {" "}
+                    {">"} ^ {"<"}{" "}
+                  </Text>
+                  <Text dimColor>{item.workDir}</Text>
+                </Text>
+                <Text> </Text>
+              </Box>
+            ) : (
+              <CommittedMessage key={item._key} message={item.message} expanded={toolsExpanded} />
+            )
+          }
+        </Static>
 
-          {isStreaming && !askRequest && (
-            <Box paddingLeft={1} flexDirection="column">
-              <Spinner inputTokens={inputTokens} outputTokens={outputTokens} />
-              {teammateStates.length > 0 && (
-                <TeammateSpinnerTree
-                  teammates={teammateStates}
-                  leaderTokens={inputTokens + outputTokens}
-                />
-              )}
-            </Box>
-          )}
-          {!isStreaming && teammateStates.some((t) => t.status === "running") && (
-            <Box paddingLeft={1}>
-              <TeammateSpinnerTree teammates={teammateStates} />
-            </Box>
-          )}
+        <ChatView
+          messages={messages.slice(committedIndexRef.current)}
+          streamingText={isStreaming ? streamingText : undefined}
+          expanded={toolsExpanded}
+        />
 
-          {error && (
-            <Box paddingLeft={1}>
-              <Text color="red">{error}</Text>
-            </Box>
-          )}
+        {activeTools.length > 0 && !askRequest && <ToolDisplay tools={activeTools} />}
 
-          {!isStreaming && completionMark && !askRequest && !permissionRequest && (
-            <Box paddingLeft={1}>
-              <Text dimColor>{completionMark}</Text>
-            </Box>
-          )}
-        </Box>
-      </Box>
-      {/* Bottom region is fixed and non-shrinking: dialogs, team status, and the input box always render fully at the bottom of the screen */}
-      <Box flexDirection="column" flexShrink={0}>
-        {planApprovalActive && <PlanApprovalDialog onSelect={handlePlanApproval} />}
-
-        {rewindDialogActive && (
-          <RewindDialog
-            snapshots={rewindSnapshots}
-            onComplete={handleRewindAction}
-            onCancel={() => {
-              setRewindDialogActive(false);
-            }}
-          />
-        )}
-
-        {permissionRequest && (
-          <PermissionDialog
-            toolName={permissionRequest.toolName}
-            argsSummary={permissionRequest.argsSummary}
-            reason={permissionRequest.reason}
-            onComplete={(action: PermissionAction) => {
-              permissionResolveRef.current?.(action);
-              permissionResolveRef.current = null;
-              setPermissionRequest(null);
-            }}
-          />
-        )}
-
-        {askRequest && (
-          <AskUserDialog
-            questions={askRequest}
-            onComplete={(answers) => {
-              askResolveRef.current?.(answers);
-              askResolveRef.current = null;
-              setAskRequest(null);
-            }}
-          />
-        )}
-
-        {teamsDialogOpen && (
-          <TeamsDialog
-            teammates={teammateStates}
-            onClose={() => {
-              setTeamsDialogOpen(false);
-            }}
-            onKill={(name, teamName) => {
-              const team = teamManagerRef.current.get(teamName);
-              if (team) {
-                void team.stopMember(name);
-              }
-            }}
-            onShutdown={(name, teamName) => {
-              const team = teamManagerRef.current.get(teamName);
-              if (team) {
-                void team.sendMessage("lead", name, "[shutdown] Please finish and exit");
-              }
-            }}
-          />
-        )}
-
-        {ctrlCHint && (
-          <Box paddingLeft={1}>
-            <Text dimColor>Press Ctrl+C again to exit.</Text>
+        {subagents.length > 0 && !askRequest && (
+          <Box flexDirection="column" paddingLeft={1}>
+            {subagents.map((s) => (
+              <Text key={s.id} color="magenta">
+                {ICONS.dot} {s.label} subagent · turn {s.turn}
+                {s.lastTool ? ` · ${s.lastTool}` : ""}
+              </Text>
+            ))}
           </Box>
         )}
-        <TeamStatus
-          count={teammateStates.filter((t) => t.status === "running" || t.status === "idle").length}
+
+        {isStreaming && !askRequest && (
+          <Box paddingLeft={1} flexDirection="column">
+            <Spinner inputTokens={inputTokens} outputTokens={outputTokens} />
+            {teammateStates.length > 0 && (
+              <TeammateSpinnerTree
+                teammates={teammateStates}
+                leaderTokens={inputTokens + outputTokens}
+              />
+            )}
+          </Box>
+        )}
+        {!isStreaming && teammateStates.some((t) => t.status === "running") && (
+          <Box paddingLeft={1}>
+            <TeammateSpinnerTree teammates={teammateStates} />
+          </Box>
+        )}
+
+        {error && (
+          <Box paddingLeft={1}>
+            <Text color="red">{error}</Text>
+          </Box>
+        )}
+
+        {!isStreaming && completionMark && !askRequest && !permissionRequest && (
+          <Box paddingLeft={1}>
+            <Text dimColor>{completionMark}</Text>
+          </Box>
+        )}
+
+        <Text> </Text>
+      </Box>
+
+      {planApprovalActive && <PlanApprovalDialog onSelect={handlePlanApproval} />}
+
+      {rewindDialogActive && (
+        <RewindDialog
+          snapshots={rewindSnapshots}
+          onComplete={handleRewindAction}
+          onCancel={() => {
+            setRewindDialogActive(false);
+          }}
         />
-        <InputBox
-          onSubmit={(text: string) => {
-            void handleSubmit(text);
+      )}
+
+      {permissionRequest && (
+        <PermissionDialog
+          toolName={permissionRequest.toolName}
+          argsSummary={permissionRequest.argsSummary}
+          reason={permissionRequest.reason}
+          onComplete={(action: PermissionAction) => {
+            permissionResolveRef.current?.(action);
+            permissionResolveRef.current = null;
+            setPermissionRequest(null);
           }}
-          disabled={rewindDialogActive || permissionRequest !== null || askRequest !== null}
-          history={promptHistory}
-          commands={cmdRegistryRef.current.listCommands()}
-          usageTracker={usageTrackerRef.current}
-          inputState={
-            error
-              ? "error"
-              : isStreaming || rewindDialogActive || permissionRequest
-                ? "idle"
-                : "focused"
-          }
-          permMode={permMode}
-          onModeChange={(mode) => {
-            setPermMode(mode);
+        />
+      )}
+
+      {askRequest && (
+        <AskUserDialog
+          questions={askRequest}
+          onComplete={(answers) => {
+            askResolveRef.current?.(answers);
+            askResolveRef.current = null;
+            setAskRequest(null);
           }}
-          workDir={workDir}
-          onEscape={() => {
-            if (isStreaming) {
-              abortControllerRef.current?.abort();
+        />
+      )}
+
+      {teamsDialogOpen && (
+        <TeamsDialog
+          teammates={teammateStates}
+          onClose={() => {
+            setTeamsDialogOpen(false);
+          }}
+          onKill={(name, teamName) => {
+            const team = teamManagerRef.current.get(teamName);
+            if (team) {
+              void team.stopMember(name);
+            }
+          }}
+          onShutdown={(name, teamName) => {
+            const team = teamManagerRef.current.get(teamName);
+            if (team) {
+              void team.sendMessage("lead", name, "[shutdown] Please finish and exit");
             }
           }}
         />
-      </Box>
+      )}
+
+      {ctrlCHint && (
+        <Box paddingLeft={1}>
+          <Text dimColor>Press Ctrl+C again to exit.</Text>
+        </Box>
+      )}
+      <TeamStatus
+        count={teammateStates.filter((t) => t.status === "running" || t.status === "idle").length}
+      />
+      <InputBox
+        onSubmit={(text: string) => {
+          void handleSubmit(text);
+        }}
+        disabled={rewindDialogActive || permissionRequest !== null || askRequest !== null}
+        history={promptHistory}
+        commands={cmdRegistryRef.current.listCommands()}
+        usageTracker={usageTrackerRef.current}
+        inputState={
+          error
+            ? "error"
+            : isStreaming || rewindDialogActive || permissionRequest
+              ? "idle"
+              : "focused"
+        }
+        permMode={permMode}
+        onModeChange={(mode) => {
+          setPermMode(mode);
+        }}
+        workDir={workDir}
+        onEscape={() => {
+          if (isStreaming) {
+            abortControllerRef.current?.abort();
+          }
+        }}
+      />
     </Box>
   );
 }
