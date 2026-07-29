@@ -53,7 +53,7 @@ let workDir: string;
 const t0 = 1_700_000_000;
 
 beforeEach(() => {
-  workDir = mkdtempSync(join(tmpdir(), "larky-session-img-"));
+  workDir = mkdtempSync(join(tmpdir(), "larky-sess-img-"));
 });
 
 afterEach(() => {
@@ -94,7 +94,14 @@ describe("session image persistence", () => {
   it("round-trips tool_result image refs", () => {
     const id = newSessionId();
     const records = toolResultsToRecords(
-      [{ toolUseId: "t1", content: "[image: shot.png]", isError: false, images: [img()] }],
+      [
+        {
+          toolUseId: "t1",
+          content: "[image: shot.png]",
+          isError: false,
+          images: [img()],
+        },
+      ],
       { workDir, sessionId: id },
     );
     saveMessage(workDir, id, {

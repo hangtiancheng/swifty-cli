@@ -25,16 +25,7 @@
 // renders the event stream and answers interaction requests via RPCs.
 // Local-only concerns: prompt history, @-file completion, scrolling, theme.
 import { useState, useEffect, useRef, useCallback } from "react";
-import {
-  Box,
-  Text,
-  useApp,
-  useInput,
-  measureElement,
-  type DOMElement,
-  useStdout,
-  useWindowSize,
-} from "ink";
+import { Box, Static, Text, useApp, useInput } from "ink";
 
 import type { ProviderConfig } from "../config/config.js";
 import type { PermissionMode } from "../permissions/checker.js";
@@ -58,9 +49,8 @@ import { PlanApprovalDialog, type PlanChoice } from "./plan-approval.js";
 import { TeammateSpinnerTree } from "./teammate-spinner-tree.js";
 import { TeamStatus } from "./team-status.js";
 import { TeamsDialog } from "./teams-dialog.js";
-import { enableMouseTracking, disableMouseTracking, parseWheel } from "./mouse.js";
 import { InputBox } from "./input.js";
-import { ChatView, type ChatMessage, type ToolSummaryItem } from "./chat.js";
+import { ChatView, CommittedMessage, type ChatMessage, type ToolSummaryItem } from "./chat.js";
 import { ToolDisplay, type ToolBlockInfo } from "./tool-display.js";
 import Spinner from "./spinner.js";
 import { BORDER_COLORS, ICONS } from "./styles.js";
@@ -147,8 +137,6 @@ const SESSION_NOT_FOUND = -32010;
 
 export function App({ client, provider, permissionMode, onSessionChange }: Props) {
   const { exit } = useApp();
-  const { stdout } = useStdout();
-  const { rows } = useWindowSize();
   const workDir = process.cwd();
   const historyDir = `${workDir}/.larky`;
 
@@ -306,7 +294,7 @@ export function App({ client, provider, permissionMode, onSessionChange }: Props
       const event: Event = parsed.data;
 
       // Session filtering: ignore events for other sessions. While our own
-      // session id is unknown (startup / just reset), any session-scoped
+      // session id is unknown (startup / just reset), any sess-scoped
       // event necessarily belongs to someone else — drop it too.
       if ("session_id" in event && event.session_id) {
         if (!sessionIdRef.current || event.session_id !== sessionIdRef.current) {
@@ -632,7 +620,9 @@ export function App({ client, provider, permissionMode, onSessionChange }: Props
           // Detect it before subscribing so we never replay a dead run.
           if (sessionIdRef.current) {
             try {
-              await client.sendCommand("command.list", { session_id: sessionIdRef.current });
+              await client.sendCommand("command.list", {
+                session_id: sessionIdRef.current,
+              });
             } catch (probeErr) {
               if (probeErr instanceof IpcError && probeErr.code === SESSION_NOT_FOUND) {
                 sessionIdRef.current = "";
@@ -765,7 +755,10 @@ export function App({ client, provider, permissionMode, onSessionChange }: Props
         // Everything else runs daemon-side (one-shot -32010 recovery).
         setMessages((prev) => [...prev, { role: "user", content: text }]);
         try {
-          await sendCommand("command.run", { session_id: sessionIdRef.current, input: text });
+          await sendCommand("command.run", {
+            session_id: sessionIdRef.current,
+            input: text,
+          });
         } catch (err) {
           if (err instanceof IpcError && err.code === SESSION_NOT_FOUND) {
             try {
@@ -773,7 +766,10 @@ export function App({ client, provider, permissionMode, onSessionChange }: Props
               lastRunIdRef.current = null;
               replayedCountRef.current = 0;
               await createSession();
-              await sendCommand("command.run", { session_id: sessionIdRef.current, input: text });
+              await sendCommand("command.run", {
+                session_id: sessionIdRef.current,
+                input: text,
+              });
               return;
             } catch (retryErr) {
               pushSystem(
@@ -907,235 +903,188 @@ export function App({ client, provider, permissionMode, onSessionChange }: Props
     },
     [rpc],
   );
-
-  // ── Scroll viewport ─────────────────────────────────────────────────────
-  const viewportRef = useRef<DOMElement | null>(null);
-  const contentRef = useRef<DOMElement | null>(null);
-  const [scrollTop, setScrollTop] = useState(0);
-  const [contentHeight, setContentHeight] = useState(0);
-  const [viewportHeight, setViewportHeight] = useState(0);
-  const stickToBottomRef = useRef(true);
-
-  const maxScroll = Math.max(0, contentHeight - viewportHeight);
-
-  useEffect(() => {
-    enableMouseTracking(stdout);
-    return () => {
-      disableMouseTracking(stdout);
-    };
-  }, [stdout]);
-
-  useEffect(() => {
-    if (contentRef.current) {
-      const h = measureElement(contentRef.current).height;
-      setContentHeight((prev) => (prev === h ? prev : h));
-    }
-    if (viewportRef.current) {
-      const h = measureElement(viewportRef.current).height;
-      setViewportHeight((prev) => (prev === h ? prev : h));
-    }
-  });
-
-  useEffect(() => {
-    setScrollTop((prev) => (stickToBottomRef.current ? maxScroll : Math.min(prev, maxScroll)));
-  }, [maxScroll]);
-
-  const scrollBy = useCallback(
-    (delta: number) => {
-      setScrollTop((prev) => {
-        const next = Math.max(0, Math.min(prev + delta, maxScroll));
-        stickToBottomRef.current = next >= maxScroll;
-        return next;
-      });
-    },
-    [maxScroll],
-  );
-
-  // The wheel and page keys drive scrolling. Mouse sequences never reach the
-  // input box (they are already filtered by SGR format inside InputBox).
-  useInput((input, key) => {
-    const wheel = parseWheel(input);
-    if (wheel) {
-      scrollBy(wheel === "up" ? -3 : 3);
-      return;
-    }
-    if (key.pageUp) {
-      scrollBy(-Math.max(1, viewportHeight - 2));
-    } else if (key.pageDown) {
-      scrollBy(Math.max(1, viewportHeight - 2));
-    }
-  });
-
   const activePermission = permissionQueue[0] ?? null;
 
   return (
-    <Box flexDirection="column" width="100%" height={Math.max(1, rows ?? 24)}>
-      {/* Top brand header */}
-      <Box flexDirection="column" flexShrink={0}>
-        <Text>
-          <Text color={BORDER_COLORS.focused}> /\_/\ </Text>
-          <Text dimColor>
-            Larky v{version}
-            {connected ? "" : "  (connecting…)"}
-          </Text>
-        </Text>
-        <Text>
-          <Text color={BORDER_COLORS.focused}>( o.o ) </Text>
-          <Text dimColor>{provider.model || provider.name}</Text>
-        </Text>
-        <Text>
-          <Text color={BORDER_COLORS.focused}>
-            {" "}
-            {">"} ^ {"<"}{" "}
-          </Text>
-          <Text dimColor>{workDir}</Text>
-        </Text>
-      </Box>
-
-      {/* Scroll viewport */}
-      <Box
-        ref={viewportRef}
-        flexGrow={1}
-        flexShrink={1}
-        minHeight={0}
-        flexDirection="column"
-        overflowY="hidden"
-      >
-        <Box ref={contentRef} flexDirection="column" flexShrink={0} marginTop={-scrollTop}>
-          <ChatView
-            messages={messages}
-            streamingText={isStreaming ? streamingText : undefined}
-            expanded={toolsExpanded}
-          />
-
-          {activeTools.length > 0 && !askRequest && <ToolDisplay tools={activeTools} />}
-
-          {subagents.length > 0 && !askRequest && (
-            <Box flexDirection="column" paddingLeft={1}>
-              {subagents.map((s) => (
-                <Text key={s.id} color="magenta">
-                  {ICONS.dot} {s.label} subagent
-                  {s.detail ? ` · ${s.detail}` : ""}
+    <Box flexDirection="column" width="100%">
+      <Box flexDirection="column" paddingTop={0} flexGrow={1}>
+        {/* Finalized messages are written once into the terminal's native
+            scrollback. This keeps the complete transcript selectable and
+            copyable while only the active turn is re-rendered by Ink. */}
+        <Static
+          key={sessionIdRef.current}
+          items={[
+            {
+              type: "brand" as const,
+              _key: "brand",
+            },
+            ...messages.slice(0, committedIndexRef.current).map((message, index) => ({
+              type: "message" as const,
+              _key: `message-${String(index)}`,
+              message,
+            })),
+          ]}
+        >
+          {(item) =>
+            item.type === "brand" ? (
+              <Box key={item._key} flexDirection="column">
+                <Text>
+                  <Text color={BORDER_COLORS.focused}> /\_/\ </Text>
+                  <Text dimColor>
+                    Larky v{version}
+                    {connected ? "" : "  (connecting…)"}
+                  </Text>
                 </Text>
-              ))}
-            </Box>
-          )}
+                <Text>
+                  <Text color={BORDER_COLORS.focused}>( o.o ) </Text>
+                  <Text dimColor>{provider.model || provider.name}</Text>
+                </Text>
+                <Text>
+                  <Text color={BORDER_COLORS.focused}>
+                    {" "}
+                    {">"} ^ {"<"}{" "}
+                  </Text>
+                  <Text dimColor>{workDir}</Text>
+                </Text>
+                <Text> </Text>
+              </Box>
+            ) : (
+              <CommittedMessage key={item._key} message={item.message} expanded={toolsExpanded} />
+            )
+          }
+        </Static>
 
-          {isStreaming && !askRequest && (
-            <Box paddingLeft={1} flexDirection="column">
-              <Spinner inputTokens={inputTokens} outputTokens={outputTokens} />
-              {teammateStates.length > 0 && (
-                <TeammateSpinnerTree
-                  teammates={teammateStates}
-                  leaderTokens={inputTokens + outputTokens}
-                />
-              )}
-            </Box>
-          )}
-          {!isStreaming && teammateStates.some((t) => t.status === "running") && (
-            <Box paddingLeft={1}>
-              <TeammateSpinnerTree teammates={teammateStates} />
-            </Box>
-          )}
+        <ChatView
+          messages={messages.slice(committedIndexRef.current)}
+          streamingText={isStreaming ? streamingText : undefined}
+          expanded={toolsExpanded}
+        />
 
-          {error && (
-            <Box paddingLeft={1}>
-              <Text color="red">{error}</Text>
-            </Box>
-          )}
+        {activeTools.length > 0 && !askRequest && <ToolDisplay tools={activeTools} />}
 
-          {!isStreaming && completionMark && !askRequest && !activePermission && (
-            <Box paddingLeft={1}>
-              <Text dimColor>{completionMark}</Text>
-            </Box>
-          )}
-        </Box>
-      </Box>
-
-      {/* Bottom fixed region: dialogs + input */}
-      <Box flexDirection="column" flexShrink={0}>
-        {planRequest && <PlanApprovalDialog onSelect={handlePlanApproval} />}
-
-        {rewindDialogActive && (
-          <RewindDialog
-            snapshots={rewindSnapshots}
-            onComplete={handleRewindAction}
-            onCancel={() => {
-              setRewindDialogActive(false);
-            }}
-          />
-        )}
-
-        {activePermission && (
-          <PermissionDialog
-            toolName={activePermission.toolName}
-            argsSummary={activePermission.argsSummary}
-            reason={activePermission.reason}
-            onComplete={(action: PermissionAction) => {
-              handlePermissionComplete(activePermission.id, action);
-            }}
-          />
-        )}
-
-        {askRequest && (
-          <AskUserDialog
-            questions={askRequest.questions}
-            onComplete={(answers) => {
-              const req = askRequest;
-              setAskRequest(null);
-              rpc("ask_user.respond", { id: req.id, answers });
-            }}
-          />
-        )}
-
-        {teamsDialogOpen && (
-          <TeamsDialog
-            teammates={teammateStates}
-            onClose={() => {
-              setTeamsDialogOpen(false);
-            }}
-            onKill={() => {
-              // Teams management runs daemon-side; direct kill not yet wired.
-            }}
-            onShutdown={() => {
-              // Teams management runs daemon-side; direct shutdown not yet wired.
-            }}
-          />
-        )}
-
-        {ctrlCHint && (
-          <Box paddingLeft={1}>
-            <Text dimColor>Press Ctrl+C again to exit.</Text>
+        {subagents.length > 0 && !askRequest && (
+          <Box flexDirection="column" paddingLeft={1}>
+            {subagents.map((s) => (
+              <Text key={s.id} color="magenta">
+                {ICONS.dot} {s.label} subagent
+                {s.detail ? ` · ${s.detail}` : ""}
+              </Text>
+            ))}
           </Box>
         )}
-        <TeamStatus
-          count={teammateStates.filter((t) => t.status === "running" || t.status === "idle").length}
-        />
-        <InputBox
-          onSubmit={(text: string) => {
-            void handleSubmit(text);
-          }}
-          disabled={rewindDialogActive || activePermission !== null || askRequest !== null}
-          history={promptHistory}
-          commands={commands}
-          usageTracker={usageTrackerRef.current}
-          inputState={
-            error
-              ? "error"
-              : isStreaming || rewindDialogActive || activePermission
-                ? "idle"
-                : "focused"
-          }
-          permMode={permMode}
-          onModeChange={handleModeChange}
-          workDir={workDir}
-          onEscape={() => {
-            if (isStreamingRef.current && sessionIdRef.current) {
-              rpc("run.cancel", { session_id: sessionIdRef.current });
-            }
-          }}
-        />
+
+        {isStreaming && !askRequest && (
+          <Box paddingLeft={1} flexDirection="column">
+            <Spinner inputTokens={inputTokens} outputTokens={outputTokens} />
+            {teammateStates.length > 0 && (
+              <TeammateSpinnerTree
+                teammates={teammateStates}
+                leaderTokens={inputTokens + outputTokens}
+              />
+            )}
+          </Box>
+        )}
+        {!isStreaming && teammateStates.some((t) => t.status === "running") && (
+          <Box paddingLeft={1}>
+            <TeammateSpinnerTree teammates={teammateStates} />
+          </Box>
+        )}
+
+        {error && (
+          <Box paddingLeft={1}>
+            <Text color="red">{error}</Text>
+          </Box>
+        )}
+
+        {!isStreaming && completionMark && !askRequest && !activePermission && (
+          <Box paddingLeft={1}>
+            <Text dimColor>{completionMark}</Text>
+          </Box>
+        )}
+        <Text> </Text>
       </Box>
+
+      {planRequest && <PlanApprovalDialog onSelect={handlePlanApproval} />}
+
+      {rewindDialogActive && (
+        <RewindDialog
+          snapshots={rewindSnapshots}
+          onComplete={handleRewindAction}
+          onCancel={() => {
+            setRewindDialogActive(false);
+          }}
+        />
+      )}
+
+      {activePermission && (
+        <PermissionDialog
+          toolName={activePermission.toolName}
+          argsSummary={activePermission.argsSummary}
+          reason={activePermission.reason}
+          onComplete={(action: PermissionAction) => {
+            handlePermissionComplete(activePermission.id, action);
+          }}
+        />
+      )}
+
+      {askRequest && (
+        <AskUserDialog
+          questions={askRequest.questions}
+          onComplete={(answers) => {
+            const req = askRequest;
+            setAskRequest(null);
+            rpc("ask_user.respond", { id: req.id, answers });
+          }}
+        />
+      )}
+
+      {teamsDialogOpen && (
+        <TeamsDialog
+          teammates={teammateStates}
+          onClose={() => {
+            setTeamsDialogOpen(false);
+          }}
+          onKill={() => {
+            // Teams management runs daemon-side; direct kill not yet wired.
+          }}
+          onShutdown={() => {
+            // Teams management runs daemon-side; direct shutdown not yet wired.
+          }}
+        />
+      )}
+
+      {ctrlCHint && (
+        <Box paddingLeft={1}>
+          <Text dimColor>Press Ctrl+C again to exit.</Text>
+        </Box>
+      )}
+      <TeamStatus
+        count={teammateStates.filter((t) => t.status === "running" || t.status === "idle").length}
+      />
+      <InputBox
+        onSubmit={(text: string) => {
+          void handleSubmit(text);
+        }}
+        disabled={rewindDialogActive || activePermission !== null || askRequest !== null}
+        history={promptHistory}
+        commands={commands}
+        usageTracker={usageTrackerRef.current}
+        inputState={
+          error
+            ? "error"
+            : isStreaming || rewindDialogActive || activePermission
+              ? "idle"
+              : "focused"
+        }
+        permMode={permMode}
+        onModeChange={handleModeChange}
+        workDir={workDir}
+        onEscape={() => {
+          if (isStreamingRef.current && sessionIdRef.current) {
+            rpc("run.cancel", { session_id: sessionIdRef.current });
+          }
+        }}
+      />
     </Box>
   );
 }

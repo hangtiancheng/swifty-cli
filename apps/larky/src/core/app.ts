@@ -127,7 +127,7 @@ export class CoreApp {
 
   // -- Interaction broker -----------------------------------------------------
   // Delegated to InteractionHub (core/interaction-hub.ts): pending maps,
-  // exactly-once settlement, abort/disconnect/session-close cancellation.
+  // exactly-once settlement, abort/disconnect/sess-close cancellation.
 
   // -- Session helpers ----------------------------------------------------------
 
@@ -639,7 +639,12 @@ export function snapshotReplayLinesFromFile(
 export async function handleEventSubscribe(
   broadcaster: IpcEventBroadcaster,
   writer: net.Socket,
-  cmd: { topics: string[]; scope: string; replay_from_run: string | null; replay_offset?: number },
+  cmd: {
+    topics: string[];
+    scope: string;
+    replay_from_run: string | null;
+    replay_offset?: number;
+  },
   snapshotFn: (runId: string, topics: string[], offset: number) => string[],
 ): Promise<unknown> {
   let replayLines: string[] = [];

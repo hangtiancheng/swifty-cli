@@ -42,7 +42,7 @@ const t4 = t0 + 4;
 
 describe("session save/load round-trip", () => {
   it("persists messages and loads them back in order", () => {
-    const workDir = mkdtempSync(join(tmpdir(), "larky-session-"));
+    const workDir = mkdtempSync(join(tmpdir(), "larky-sess-"));
     const id = newSessionId();
 
     saveMessage(workDir, id, {
@@ -63,7 +63,7 @@ describe("session save/load round-trip", () => {
   });
 
   it("skips malformed and empty-content lines instead of crashing", () => {
-    const workDir = mkdtempSync(join(tmpdir(), "larky-session-"));
+    const workDir = mkdtempSync(join(tmpdir(), "larky-sess-"));
     const id = "broken";
     const dir = join(workDir, ".larky", "sessions");
     mkdirSync(dir, { recursive: true });
@@ -82,7 +82,7 @@ describe("session save/load round-trip", () => {
   });
 
   it("labels a session by its first user message", () => {
-    const workDir = mkdtempSync(join(tmpdir(), "larky-session-"));
+    const workDir = mkdtempSync(join(tmpdir(), "larky-sess-"));
     const id = newSessionId();
     // First persisted line is a system message; the label should skip to user.
     saveMessage(workDir, id, {
@@ -104,7 +104,7 @@ describe("session save/load round-trip", () => {
 
 describe("rebuildFromSession (compacted-state resume)", () => {
   it("rebuilds the compacted state from the last compact_boundary", () => {
-    const workDir = mkdtempSync(join(tmpdir(), "larky-session-"));
+    const workDir = mkdtempSync(join(tmpdir(), "larky-sess-"));
     const id = newSessionId();
 
     // Original pre-boundary history that compaction summarized away. These must
@@ -168,7 +168,7 @@ describe("rebuildFromSession (compacted-state resume)", () => {
   });
 
   it("uses only the LAST boundary when a session was compacted twice (chaining)", () => {
-    const workDir = mkdtempSync(join(tmpdir(), "larky-session-"));
+    const workDir = mkdtempSync(join(tmpdir(), "larky-sess-"));
     const id = newSessionId();
 
     saveMessage(workDir, id, {
@@ -209,7 +209,7 @@ describe("rebuildFromSession (compacted-state resume)", () => {
   });
 
   it("full-replays an old session with no boundary (backward compatible)", () => {
-    const workDir = mkdtempSync(join(tmpdir(), "larky-session-"));
+    const workDir = mkdtempSync(join(tmpdir(), "larky-sess-"));
     const id = newSessionId();
 
     saveMessage(workDir, id, { role: "user", content: "q1", timestamp: t0 });
@@ -229,13 +229,16 @@ describe("rebuildFromSession (compacted-state resume)", () => {
   });
 
   it("persists the boundary as a COMPACT_BOUNDARY-typed record on disk", () => {
-    const workDir = mkdtempSync(join(tmpdir(), "larky-session-"));
+    const workDir = mkdtempSync(join(tmpdir(), "larky-sess-"));
     const id = newSessionId();
     saveCompactBoundary(workDir, id, { summary: "s", keep: [] });
 
     const saved = loadSession(workDir, id);
     expect(saved).toHaveLength(1);
     expect(saved[0].type).toBe(COMPACT_BOUNDARY);
-    expect(JSON.parse(saved[0].content ?? "{}")).toEqual({ summary: "s", keep: [] });
+    expect(JSON.parse(saved[0].content ?? "{}")).toEqual({
+      summary: "s",
+      keep: [],
+    });
   });
 });

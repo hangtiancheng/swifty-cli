@@ -70,14 +70,6 @@ export async function launchTUI(): Promise<void> {
   const larkyCfg = getConfig();
   const client = new SocketClient(larkyCfg.host, larkyCfg.port);
 
-  // The alt-screen escape sequence must be emitted before installSyncOutput,
-  // otherwise it gets wrapped by BSU/ESU markers and rendered ineffective.
-  // Capture the raw write so the exit sequence bypasses the sync-output patch.
-  const rawStdoutWrite = process.stdout.write.bind(process.stdout);
-  // After entering alt-screen, clear and home the cursor: ?1049h alone leaves
-  // the cursor at its pre-switch position, pinning output to the bottom.
-  process.stdout.write("\x1b[?1049h\x1b[2J\x1b[H");
-
   initLogger({ sessionId: newSessionId(), mode: "tui" });
 
   installSyncOutput();
@@ -104,5 +96,4 @@ export async function launchTUI(): Promise<void> {
     ]);
   }
   client.close();
-  rawStdoutWrite("\x1b[?1049l");
 }

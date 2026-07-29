@@ -1439,7 +1439,7 @@ export class RemoteServer {
       if (sessions.length > 20) {
         lines.push(`  ... and ${String(sessions.length - 20)} more`);
       }
-      lines.push("\nUsage: /resume <number> or /resume <session-id>");
+      lines.push("\nUsage: /resume <number> or /resume <sess-id>");
       this.broadcast({ type: "system", data: { message: lines.join("\n") } });
       this.broadcast({ type: "command_done", data: null });
       return;

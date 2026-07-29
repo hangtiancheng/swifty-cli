@@ -115,7 +115,7 @@ import { InputBox } from "./input.js";
 import { ChatView, CommittedMessage, type ChatMessage, type ToolSummaryItem } from "./chat.js";
 import { ToolDisplay, type ToolBlockInfo } from "./tool-display.js";
 import Spinner from "./spinner.js";
-import { ICONS } from "./styles.js";
+import { BORDER_COLORS, ICONS } from "./styles.js";
 import { CommandUsageTracker } from "../commands/usage-tracker.js";
 import { randomCompletionVerb } from "./verbs.js";
 import { asErrorString, asRecord, strArg } from "@/utils/index.js";
@@ -1705,31 +1705,31 @@ export function App({
           key={`transcript-${sessionIdRef.current}`}
           items={[
             {
-              kind: "brand" as const,
+              type: "brand" as const,
               _key: "brand",
               model: selectedProvider.model || selectedProvider.name,
               workDir,
             },
             ...messages.slice(0, committedIndexRef.current).map((message, index) => ({
-              kind: "message" as const,
+              type: "message" as const,
               _key: `message-${String(index)}`,
               message,
             })),
           ]}
         >
           {(item) =>
-            item.kind === "brand" ? (
+            item.type === "brand" ? (
               <Box key={item._key} flexDirection="column">
                 <Text>
-                  <Text color="#42b883"> /\_/\ </Text>
+                  <Text color={BORDER_COLORS.focused}> /\_/\ </Text>
                   <Text dimColor>Swifty v{version}</Text>
                 </Text>
                 <Text>
-                  <Text color="#42b883">( o.o ) </Text>
+                  <Text color={BORDER_COLORS.focused}>( o.o ) </Text>
                   <Text dimColor>{item.model}</Text>
                 </Text>
                 <Text>
-                  <Text color="#42b883">
+                  <Text color={BORDER_COLORS.focused}>
                     {" "}
                     {">"} ^ {"<"}{" "}
                   </Text>

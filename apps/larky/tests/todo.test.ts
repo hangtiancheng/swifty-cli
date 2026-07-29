@@ -28,7 +28,7 @@ import { TaskList } from "../src/todo/todo.js";
 import { TaskStore } from "../src/todo/store.js";
 
 describe("todo store-backed persistence", () => {
-  it("persists tasks to a session-scoped file and reloads them", () => {
+  it("persists tasks to a sess-scoped file and reloads them", () => {
     const workDir = mkdtempSync(join(tmpdir(), "larky-todo-"));
     const list = new TaskList(new TaskStore(workDir, "sess1"));
     list.create("first task", "do the thing");

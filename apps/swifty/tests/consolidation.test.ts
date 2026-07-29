@@ -64,7 +64,7 @@ function createSessions(dir: string, count: number) {
   mkdirSync(sessDir, { recursive: true });
   for (let i = 0; i < count; i++) {
     writeFileSync(
-      join(sessDir, `session-${String(i)}.jsonl`),
+      join(sessDir, `sess-${String(i)}.jsonl`),
       `{"role":"user","content":"test ${String(i)}","ts":${String(Date.now())}}\n`,
     );
   }
