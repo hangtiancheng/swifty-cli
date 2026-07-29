@@ -21,8 +21,8 @@
     "dist"
   ],
   "scripts": {
-    "build": "rollup -c",
-    "prepack": "npm run build",
+    "build": "rollup -c ./rollup.config.js",
+    "prepack": "pnpm build",
     "test": "vitest run",
     "test:watch": "vitest"
   },

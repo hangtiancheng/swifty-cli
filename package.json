@@ -1,18 +1,30 @@
 {
   "name": "swifty-cli",
   "version": "0.0.1",
-  "description": "",
+  "description": "swifty cli",
   "private": true,
   "scripts": {
     "git:commit": "git add -A && git commit -m \"feat: Introduce new features\"",
     "git:commit:n": "git add -A && git commit -m \"feat: Introduce new features\" --no-verify",
     "git:push": "pnpm git:commit && git push origin main",
     "git:push:n": "pnpm git:commit:n && git push origin main",
-    "format": "shfmt -w ./install.sh",
+    "format:sh": "shfmt -w ./install.sh ./larky.sh ./swiftx.sh",
+    "format": "concurrently \"pnpm format:swifty\" \"pnpm format:larky\"",
+    "format:swifty": "pnpm --filter @swifty.js/swifty format",
+    "format:larky": "pnpm --filter @swifty.js/larky format",
+    "build": "concurrently \"pnpm build:swifty\" \"pnpm build:larky\" \"pnpm build:swiftx\"",
+    "build:swifty": "pnpm --filter @swifty.js/swifty build",
+    "build:larky": "pnpm --filter @swifty.js/larky build",
+    "build:swiftx": "pnpm --filter @swifty.js/swiftx build",
+    "build:addon": "pnpm --filter @swifty.js/glob-addon build",
+    "build:wasm": "pnpm --filter @swifty.js/glob-wasm asbuild:release",
+    "build:marked-terminal": "pnpm --filter @swifty.js/marked-terminal build",
+    "prebuild": "concurrently \"pnpm build:addon\" \"pnpm build:wasm\" \"pnpm build:marked-terminal\"",
     "prepare": "husky"
   },
   "keywords": [],
   "devDependencies": {
+    "concurrently": "^9.2.4",
     "husky": "^9.1.7",
     "lint-staged": "^17.0.8"
   },

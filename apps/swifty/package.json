@@ -37,7 +37,6 @@
     "fe:dev": "cd src/remote/fe && tsup --watch",
     "fe:build": "cd src/remote/fe && tsup",
     "fe:preview": "npx -y serve src/remote/fe/dist",
-    "prebuild": "pnpm --filter @swifty.js/glob-addon build && pnpm --filter @swifty.js/glob-wasm asbuild:release",
     "dev": "tsx ./src/main.tsx",
     "build": "tsup",
     "lint": "eslint ./src ./tests",
