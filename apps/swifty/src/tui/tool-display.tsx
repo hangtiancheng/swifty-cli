@@ -51,7 +51,7 @@ function ToolBlock(props: ToolBlockProps) {
       <Box>
         <Text>
           <Text color="magenta">●</Text> {COLORS.tool(tool.toolName)}
-          {argSummary ? <Text dimColor>{argSummary}</Text> : null}
+          {argSummary ? <Text dimColor> {argSummary}</Text> : null}
         </Text>
       </Box>
     );

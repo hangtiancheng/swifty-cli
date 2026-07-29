@@ -120,8 +120,8 @@ import { BORDER_COLORS, COLORS, ICONS } from "./styles.js";
 import { CommandUsageTracker } from "../commands/usage-tracker.js";
 import { randomCompletionVerb } from "./verbs.js";
 import { asErrorString, asRecord, strArg } from "@/utils/index.js";
-import { version } from "./version.js";
 import type { ToolSchema } from "@/tools/types.js";
+import { version } from "./version.js";
 
 type AppState = "providerSelect" | "chat";
 
@@ -610,11 +610,6 @@ export function App({
     // be pushed off screen.
     if (appState === "chat" && !headerPrintedRef.current) {
       headerPrintedRef.current = true;
-      const p = COLORS.primary;
-      const d = COLORS.dim;
-      console.log(`\n${p(" /\\_/\\    ")}${d(`Swifty v${version}`)}`);
-      console.log(`${p("( o.o )   ")}${d(selectedProvider.model || selectedProvider.name)}`);
-      console.log(`${p(" > ^ <    ")}${d(workDir)}\n`);
     }
   }, [appState, selectedProvider, initClient]);
 
@@ -733,7 +728,7 @@ export function App({
           const d = COLORS.dim;
           process.stdout.write(
             "\x1b[2J\x1b[3J\x1b[H" +
-              `\n${p(" /\\_/\\    ")}${d("Swifty v0.1.0")}\n` +
+              `\n${p(" /\\_/\\    ")}${d(`Swifty v${version}`)}\n` +
               `${p("( o.o )   ")}${d(selectedProvider.model || selectedProvider.name)}\n` +
               `${p(" > ^ <    ")}${d(workDir)}\n\n`,
           );
@@ -1794,7 +1789,7 @@ export function App({
       <Box flexDirection="column" flexShrink={0}>
         <Text>
           <Text color={BORDER_COLORS.focused}> /\_/\ </Text>
-          <Text dimColor>Swifty v0.1.0</Text>
+          <Text dimColor>Swifty v{version}</Text>
         </Text>
         <Text>
           <Text color={BORDER_COLORS.focused}>( o.o ) </Text>

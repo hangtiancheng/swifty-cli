@@ -289,7 +289,7 @@ function TurnSummaryBlock(props: TurnSummaryBlockProps) {
       )}
       {toolSummary.map((t, i) => {
         const icon = t.isError ? COLORS.error(ICONS.error) : COLORS.success(ICONS.success);
-        const timeStr = t.elapsed ? ` (${t.elapsed.toFixed(1)}s)` : "";
+        const timeStr = t.elapsed !== undefined ? ` (${t.elapsed.toFixed(1)}s)` : "";
 
         const isDiff = isDiffTool(t.toolName);
         const showOutput = isDiff || expanded;
