@@ -1,6 +1,6 @@
 {
   "name": "@swifty.js/swiftx",
-  "version": "0.0.1",
+  "version": "0.0.2-alpha",
   "description": "Swiftx — Native CLI coding agent",
   "keywords": [
     "ai",
@@ -39,8 +39,8 @@
   ],
   "type": "module",
   "scripts": {
-    "build": "tsc",
-    "prepublishOnly": "node build.js && tsc"
+    "build": "node build.js && tsc",
+    "prepublishOnly": "pnpm build"
   },
   "devDependencies": {
     "@types/node": "24.13.3",
