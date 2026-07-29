@@ -145,7 +145,7 @@ function RewindDialog(props: Props) {
 }
 
 function formatAgo(timestamp: string): string {
-  const diff = performance.now() - new Date(timestamp).getTime();
+  const diff = Date.now() - new Date(timestamp).getTime();
   const secs = Math.floor(diff / 1000);
   if (secs < 60) {
     return `${String(secs)}s ago`;

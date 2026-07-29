@@ -507,7 +507,7 @@ export class AnthropicClient implements LLMClient {
           } // end case "message_delta"
 
           case "message_start": {
-            startTime = performance.now();
+            startTime = Date.now();
             inputTokens = event.message.usage.input_tokens;
             outputTokens = event.message.usage.output_tokens;
             cacheReadInputTokens = event.message.usage.cache_read_input_tokens ?? 0;
@@ -516,7 +516,7 @@ export class AnthropicClient implements LLMClient {
           } // end "message_start"
 
           case "message_stop": {
-            const stopTime = performance.now();
+            const stopTime = Date.now();
             const elapsed = stopTime - startTime;
             log.debug({ elapsedMs: elapsed }, "message stream complete");
             break;

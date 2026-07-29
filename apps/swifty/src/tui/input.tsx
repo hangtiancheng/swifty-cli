@@ -419,10 +419,6 @@ export function InputBox(props: InputBoxProps) {
         return;
       }
       if (isMultiline && cursorLine > 0) {
-        setCursorLine((c) => c - 1);
-        return;
-      }
-      if (isMultiline && cursorLine > 0) {
         const targetLine = lines[cursorLine - 1] ?? "";
         setCursorLine(cursorLine - 1);
         setCursorCol(Math.min(cursorCol, targetLine.length));

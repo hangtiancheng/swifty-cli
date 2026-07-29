@@ -48,9 +48,9 @@ function Spinner(props: SpinnerProps) {
   const verbRef = useRef(label ?? randomVerb());
 
   useEffect(() => {
-    const start = performance.now();
+    const start = Date.now();
     const timer = setInterval(() => {
-      setElapsed(Math.floor(performance.now() - start) / 1000);
+      setElapsed(Math.floor((Date.now() - start) / 1000));
     }, 1000);
     return () => {
       clearInterval(timer);

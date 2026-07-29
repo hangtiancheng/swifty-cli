@@ -29,7 +29,7 @@ import { marked } from "marked";
 import { markedTerminal } from "@swifty.js/marked-terminal";
 import { COLORS, ICONS } from "./styles.js";
 import { Box, Text, useStdout } from "ink";
-import { useRef } from "react";
+import React, { useRef } from "react";
 import { DiffLines } from "./diff-render.js";
 import { isDiffTool } from "./is-diff-tool.js";
 
@@ -156,7 +156,7 @@ function StreamingText({ text }: { text: string }) {
   );
 }
 
-export function ChatView(props: ChatViewProps) {
+export const ChatView = React.memo(function (props: ChatViewProps) {
   const { messages, streamingText, expanded = false } = props;
   return (
     <Box flexDirection="column" paddingLeft={1}>
@@ -175,7 +175,7 @@ export function ChatView(props: ChatViewProps) {
       )}
     </Box>
   );
-}
+});
 
 /**
  * CommittedMessage renders a single finalized message for use inside Ink's
