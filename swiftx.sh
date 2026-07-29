@@ -254,4 +254,4 @@ else
 	warn "  export PATH=\"$NPM_BIN:\$PATH\""
 fi
 
-ok 'Love & Peace, Enjoy Swifty!!!'
+ok 'Thank you for downloading, enjoy swiftx!!!'

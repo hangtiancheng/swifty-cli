@@ -209,4 +209,4 @@ else
 	warn "  export PATH=\"$NPM_BIN:\$PATH\""
 fi
 
-ok 'Love & Peace, Enjoy Swifty Code!!!'
+ok 'Thank you for downloading, enjoy larky!!!'
