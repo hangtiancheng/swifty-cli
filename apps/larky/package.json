@@ -37,7 +37,7 @@
   "scripts": {
     "fe:dev": "cd src/remote/fe && tsup --watch",
     "fe:build": "cd src/remote/fe && tsup",
-    "fe:preview": "npx -y serve src/remote/fe/dist",
+    "fe:preview": "pnpm dlx serve src/remote/fe/dist",
     "build": "tsup",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "lint": "eslint ./scripts ./src ./tests",
