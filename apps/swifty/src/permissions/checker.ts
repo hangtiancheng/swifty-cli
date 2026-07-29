@@ -245,8 +245,8 @@ function loadRulesFile(path: string): Rule[] {
   return rules;
 }
 
-// 在给定规则集上裁决，优先级 deny > ask > allow。
-// 没有任何规则命中时返回 null。
+// Adjudicate over the given rule set with priority deny > ask > allow.
+// Returns null when no rule matches.
 export function evaluateRules(rules: Rule[], toolName: string, content: string): RuleEffect | null {
   let hit: RuleEffect | null = null;
   for (const r of rules) {
@@ -256,14 +256,14 @@ export function evaluateRules(rules: Rule[], toolName: string, content: string):
     if (!globMatch(r.pattern, content)) {
       continue;
     }
-    // deny 已是最严效果，不可能再被压过，直接返回
+    // deny is the strictest effect and cannot be overridden; return immediately
     if (r.effect === "deny") {
       return "deny";
     }
     if (r.effect === "ask") {
       hit = "ask";
     }
-    // allow 最弱，只在还没命中更严的效果时记录
+    // allow is the weakest effect; record only when no stricter effect has matched yet
     else {
       hit ??= "allow";
     }
@@ -271,8 +271,9 @@ export function evaluateRules(rules: Rule[], toolName: string, content: string):
   return hit;
 }
 
-// 单个规则文件的解析结果。mtime + size 一起作为文件是否变动的依据，
-// 只比 mtime 不够：同一毫秒内的连续改写时间戳可能不变。
+// Parse result for a single rules file. mtime + size together serve as the
+// change indicator — mtime alone is insufficient because consecutive writes
+// within the same millisecond may leave the timestamp unchanged.
 interface CachedRules {
   mtimeNs: bigint;
   size: bigint;
@@ -291,13 +292,13 @@ export class RuleEngine {
     this.localPath = join(workDir, ".swifty", "permissions.local.yaml");
   }
 
-  // 读取单个规则文件，命中缓存时不读盘也不解析。
+  // Read a single rules file; skips disk I/O and parsing on cache hit.
   private rulesFor(path: string): Rule[] {
     let st;
     try {
       st = statSync(path, { bigint: true });
     } catch {
-      // 文件不存在或读不到，按空规则处理，同时清掉可能存在的旧缓存
+      // File missing or unreadable — treat as empty rules and clear any stale cache entry
       this.cache.delete(path);
       return [];
     }
@@ -312,16 +313,19 @@ export class RuleEngine {
     return rules;
   }
 
-  // 取三份规则文件的合并快照。文件没变动时直接复用上次的解析结果，
-  // 变动了才重新读盘，因此改完规则文件下次评估即刻生效，反复评估也不会重复解析。
-  // 一次工具调用取一次快照，复合命令逐条检查子命令时共用它。
+  // Return the merged snapshot of all three rules files. Reuses the previous
+  // parse result when files are unchanged; re-reads only on change, so edits
+  // take effect on the next evaluation without redundant parsing. One snapshot
+  // is taken per tool call and shared across sub-command checks.
   snapshot(): Rule[] {
     return [this.userPath, this.projectPath, this.localPath].flatMap((p) => this.rulesFor(p));
   }
 
-  // 取一次快照后裁决：文件没变动时复用上次的解析结果，刚写入的 "allow always" 立即生效。
-  // 优先级 deny > ask > allow：规则写在哪一层、写在文件第几行都不影响裁决，
-  // 因此一条 deny 无法被其他层的 allow 抵消。没有任何规则命中时返回 null。
+  // Take a snapshot then adjudicate: reuses the previous parse result when
+  // files are unchanged; a freshly written "allow always" rule takes effect
+  // immediately. Priority is deny > ask > allow regardless of which layer or
+  // line a rule resides on, so a deny cannot be overridden by an allow from
+  // another layer. Returns null when no rule matches.
   evaluate(toolName: string, content: string): RuleEffect | null {
     return evaluateRules(this.snapshot(), toolName, content);
   }
@@ -417,8 +421,9 @@ export class PermissionChecker {
   ): Decision {
     const content = extractContent(toolName, args);
 
-    // 规则快照按需取一次：安全命令、危险命令这些在前面几层就返回，压根不必碰规则文件；
-    // 复合命令逐条检查子命令时共用同一份快照，不重复读盘
+    // Rules snapshot is fetched lazily once: safe/dangerous commands return in
+    // earlier layers without touching the rules file; compound commands share
+    // the same snapshot across sub-command checks to avoid redundant disk reads.
     let snapshot: Rule[] | null = null;
     const rules = (): Rule[] => (snapshot ??= this.ruleEngine.snapshot());
 
@@ -513,8 +518,9 @@ export class PermissionChecker {
     };
   }
 
-  // 放开一个项目根之外的目录。后台 Agent 需要读写用户级数据（如用户级记忆目录）时，
-  // 由调用方显式声明，沙箱基线本身保持在项目根不变。
+  // Allow an extra directory outside the project root. When a background agent
+  // needs read/write access to user-level data (e.g., user-level memory dir),
+  // the caller declares it explicitly; the sandbox baseline stays at the project root.
   allowExtraRoot(path: string): void {
     this.sandbox.addRoot(path);
   }

@@ -79,7 +79,7 @@ describe("sandbox auto-allow respects deny/ask rules", () => {
 describe("extra allowed roots", () => {
   it("opens a path outside the project once declared", () => {
     const dir = makeTmpDir();
-    // 不能用 makeTmpDir()：系统临时目录本身就在沙箱默认允许列表里，要挑一个真正的项目外路径
+    // makeTmpDir() won't work here: the system temp directory is already in the sandbox default allow list, so pick a path genuinely outside the project
     const outside = join(homedir(), ".extra-root");
     const checker = new PermissionChecker(dir, "default");
     const target = join(outside, "MEMORY.md");
@@ -118,7 +118,7 @@ describe("protected paths under bypass", () => {
   });
 });
 
-// 把项目级和本地级规则文件分别写好，用于验证跨文件合并
+// Writes the project-level and local-level rule files separately to verify cross-file merging
 function makeCheckerWithTiers(tmpDir: string, projectRules: string, localRules: string) {
   const rulesDir = join(tmpDir, ".swifty");
   mkdirSync(rulesDir, { recursive: true });
@@ -165,7 +165,7 @@ describe("rule merging across files", () => {
       "allow",
     );
 
-    // 同一个 checker 实例，改完规则文件后立即生效
+    // Same checker instance: rule file edits take effect immediately
     writeFileSync(rulesFile, deny);
     expect(checker.check("Bash", "command", { command: "git push origin main" }).effect).toBe(
       "deny",
@@ -184,7 +184,7 @@ describe("rule merging across files", () => {
 
 describe("memory background agent sandbox", () => {
   it("opens the user-level memory dir for the consolidation sub-agent", async () => {
-    // 拦下子 Agent 的执行，只取它拿到的权限检查器，不真的发起 LLM 请求
+    // Intercept the sub-agent run to capture its permission checker without issuing a real LLM request
     const captured: PermissionChecker[] = [];
     // eslint-disable-next-line require-yield, @typescript-eslint/require-await
     const spy = vi.spyOn(Agent.prototype, "run").mockImplementation(async function* (this: Agent) {
@@ -211,14 +211,14 @@ describe("memory background agent sandbox", () => {
       expect(captured.length).toBe(1);
       const checker = captured[0];
 
-      // 后台 Agent 跑在 bypass 模式下会跳过路径沙箱，临时切回 default 才能观察沙箱本身的判定
+      // The background agent runs in bypass mode, which skips the path sandbox; switch back to default to observe the sandbox verdict itself
       checker.mode = "default";
 
       const userMemFile = join(homedir(), ".swifty", "memory", "MEMORY.md");
       const allowed = checker.check("WriteFile", "write", { file_path: userMemFile });
       expect(allowed.reason).not.toContain("outside allowed directories");
 
-      // 其他项目外目录不受影响，仍然被沙箱挡住
+      // Other directories outside the project are unaffected and still blocked by the sandbox
       const unrelated = join(homedir(), "unrelated-dir", "x.txt");
       const blocked = checker.check("WriteFile", "write", { file_path: unrelated });
       expect(blocked.reason).toContain("outside allowed directories");
@@ -230,7 +230,7 @@ describe("memory background agent sandbox", () => {
 
 describe("rule file caching", () => {
   const allowRule = '- rule: "Bash(git *)"\n  effect: allow\n';
-  // 与 allowRule 等长，用尾随空格补齐，YAML 解析时会被忽略
+  // Same length as allowRule, padded with trailing whitespace that YAML parsing ignores
   const denyRuleSameSize = '- rule: "Bash(git *)"\n  effect: deny \n';
 
   it("reuses parsed rules when the file looks unchanged", async () => {
@@ -242,8 +242,8 @@ describe("rule file caching", () => {
 
     expect(allowRule.length).toBe(denyRuleSameSize.length);
 
-    // 两次写入都把时间戳钉到同一个值：utimesSync 只有毫秒精度，
-    // 拿写入后的实际 mtime 去还原会丢掉纳秒部分，钉死才能构造出「看起来没动过」
+    // Both writes pin the timestamp to the same value: utimesSync only has millisecond precision,
+    // and restoring from the actual post-write mtime would drop the nanosecond portion, so pinning is needed to craft a "looks unchanged" state
     const fixed = new Date(Date.now() - 60_000);
 
     writeFileSync(rulesFile, allowRule);
@@ -253,8 +253,8 @@ describe("rule file caching", () => {
       "allow",
     );
 
-    // 偷偷把内容换成 deny，size 和 mtime 都跟上一次一致：
-    // 引擎看不出文件动过，应当继续用缓存里的解析结果
+    // Silently swap the content to deny while keeping size and mtime identical to the previous write:
+    // the engine cannot tell the file changed and should keep using the cached parse result
     writeFileSync(rulesFile, denyRuleSameSize);
     utimesSync(rulesFile, fixed, fixed);
 
@@ -277,7 +277,7 @@ describe("rule file caching", () => {
     );
 
     writeFileSync(rulesFile, denyRuleSameSize);
-    // 把修改时间显式前移，模拟低精度时间戳文件系统上的一次真实改动
+    // Explicitly move the modification time forward to simulate a real change on a low-precision timestamp filesystem
     const future = new Date(Date.now() + 2000);
     utimesSync(rulesFile, future, future);
 
@@ -300,7 +300,7 @@ describe("rule file caching", () => {
     );
 
     unlinkSync(rulesFile);
-    // 规则没了就落到模式兜底，default 下命令类是 ask
+    // With no rules left, fall back to the mode default; under default mode the command class is ask
     expect(checker.check("Bash", "command", { command: "git push origin main" }).effect).toBe(
       "ask",
     );

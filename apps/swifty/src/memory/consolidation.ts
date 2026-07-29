@@ -138,7 +138,7 @@ export class MemoryConsolidator {
     subRegistry.register(new BashTool());
 
     const subChecker = new PermissionChecker(this.workDir, "bypassPermissions");
-    // 用户级记忆目录在项目根之外，整理时要往里写，显式放开
+    // The user-level memory dir lives outside the project root; consolidation writes there, so allow it explicitly.
     subChecker.allowExtraRoot(join(homedir(), ".swifty", "memory"));
 
     const conv = new ConversationManager();

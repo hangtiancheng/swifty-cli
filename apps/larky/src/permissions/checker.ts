@@ -245,10 +245,46 @@ function loadRulesFile(path: string): Rule[] {
   return rules;
 }
 
+// Adjudicate over the given rule set with priority deny > ask > allow.
+// Returns null when no rule matches.
+export function evaluateRules(rules: Rule[], toolName: string, content: string): RuleEffect | null {
+  let hit: RuleEffect | null = null;
+  for (const r of rules) {
+    if (r.tool !== toolName && r.tool !== "*") {
+      continue;
+    }
+    if (!globMatch(r.pattern, content)) {
+      continue;
+    }
+    // deny is the strictest effect and cannot be overridden; return immediately
+    if (r.effect === "deny") {
+      return "deny";
+    }
+    if (r.effect === "ask") {
+      hit = "ask";
+    }
+    // allow is the weakest effect; record only when no stricter effect has matched yet
+    else {
+      hit ??= "allow";
+    }
+  }
+  return hit;
+}
+
+// Parse result for a single rules file. mtime + size together serve as the
+// change indicator — mtime alone is insufficient because consecutive writes
+// within the same millisecond may leave the timestamp unchanged.
+interface CachedRules {
+  mtimeNs: bigint;
+  size: bigint;
+  rules: Rule[];
+}
+
 export class RuleEngine {
   private userPath: string;
   private projectPath: string;
   private localPath: string;
+  private cache = new Map<string, CachedRules>();
 
   constructor(workDir: string) {
     this.userPath = join(homedir(), ".larky", "permissions.yaml");
@@ -256,23 +292,42 @@ export class RuleEngine {
     this.localPath = join(workDir, ".larky", "permissions.local.yaml");
   }
 
-  // Loads the three rule files fresh on every call (so a just-written
-  // "allow always" rule takes effect immediately) and returns the first match
-  // scanning user → project → local, last-rule-wins within each file.
-  evaluate(toolName: string, content: string): RuleEffect | null {
-    for (const path of [this.userPath, this.projectPath, this.localPath]) {
-      const rules = loadRulesFile(path);
-      for (let i = rules.length - 1; i >= 0; i--) {
-        const r = rules[i];
-        if (r.tool !== toolName && r.tool !== "*") {
-          continue;
-        }
-        if (globMatch(r.pattern, content)) {
-          return r.effect;
-        }
-      }
+  // Read a single rules file; skips disk I/O and parsing on cache hit.
+  private rulesFor(path: string): Rule[] {
+    let st;
+    try {
+      st = statSync(path, { bigint: true });
+    } catch {
+      // File missing or unreadable — treat as empty rules and clear any stale cache entry
+      this.cache.delete(path);
+      return [];
     }
-    return null;
+
+    const cached = this.cache.get(path);
+    if (cached?.mtimeNs === st.mtimeNs && cached.size === st.size) {
+      return cached.rules;
+    }
+
+    const rules = loadRulesFile(path);
+    this.cache.set(path, { mtimeNs: st.mtimeNs, size: st.size, rules });
+    return rules;
+  }
+
+  // Return the merged snapshot of all three rules files. Reuses the previous
+  // parse result when files are unchanged; re-reads only on change, so edits
+  // take effect on the next evaluation without redundant parsing. One snapshot
+  // is taken per tool call and shared across sub-command checks.
+  snapshot(): Rule[] {
+    return [this.userPath, this.projectPath, this.localPath].flatMap((p) => this.rulesFor(p));
+  }
+
+  // Take a snapshot then adjudicate: reuses the previous parse result when
+  // files are unchanged; a freshly written "allow always" rule takes effect
+  // immediately. Priority is deny > ask > allow regardless of which layer or
+  // line a rule resides on, so a deny cannot be overridden by an allow from
+  // another layer. Returns null when no rule matches.
+  evaluate(toolName: string, content: string): RuleEffect | null {
+    return evaluateRules(this.snapshot(), toolName, content);
   }
 
   // Persists a rule to the project-local YAML file in Go's `Tool(pattern)`
@@ -352,9 +407,6 @@ export class PermissionChecker {
   sandboxAutoAllow = false;
   private sandbox: PathSandbox;
   private ruleEngine: RuleEngine;
-  // Layer 4b: Session-level temporary allowlist (in-memory, invalidated on process exit)
-  // Key format: "ToolName:pattern". Matches are allowed directly without writing to disk.
-  private sessionAllowed = new Set<string>();
 
   constructor(workDir: string, mode: PermissionMode = "default") {
     this.mode = mode;
@@ -368,6 +420,12 @@ export class PermissionChecker {
     args: Record<string, unknown>,
   ): Decision {
     const content = extractContent(toolName, args);
+
+    // Rules snapshot is fetched lazily once: safe/dangerous commands return in
+    // earlier layers without touching the rules file; compound commands share
+    // the same snapshot across sub-command checks to avoid redundant disk reads.
+    let snapshot: Rule[] | null = null;
+    const rules = (): Rule[] => (snapshot ??= this.ruleEngine.snapshot());
 
     // Layer 0: plan-mode plan-file write exception.
     // Both WriteFile and EditFile targeting the plan file are allowed so the
@@ -405,7 +463,7 @@ export class PermissionChecker {
         .filter(Boolean);
       let hasAsk = false;
       for (const sub of subcommands) {
-        const ruleResult = this.ruleEngine.evaluate(toolName, sub);
+        const ruleResult = evaluateRules(rules(), toolName, sub);
         if (ruleResult === "deny") {
           return { effect: "deny", reason: "Permission rule: deny" };
         }
@@ -447,14 +505,8 @@ export class PermissionChecker {
       }
     }
 
-    // Layer 4b: Session-level temporary allow — check the in-memory sessionAllowed set
-    const sessionKey = `${toolName}:${content}`;
-    if (this.sessionAllowed.has(sessionKey)) {
-      return { effect: "allow", reason: "Session allow: previously approved" };
-    }
-
     // Layer 5: rule engine — per-tool content + glob match.
-    const ruleEffect = this.ruleEngine.evaluate(toolName, content);
+    const ruleEffect = evaluateRules(rules(), toolName, content);
     if (ruleEffect) {
       return { effect: ruleEffect, reason: `Permission rule: ${ruleEffect}` };
     }
@@ -466,10 +518,11 @@ export class PermissionChecker {
     };
   }
 
-  // Session-level allow: effective only during the current process lifecycle, not persisted to disk
-  allowForSession(toolName: string, args: Record<string, unknown>): void {
-    const content = extractContent(toolName, args);
-    this.sessionAllowed.add(`${toolName}:${content}`);
+  // Allow an extra directory outside the project root. When a background agent
+  // needs read/write access to user-level data (e.g., user-level memory dir),
+  // the caller declares it explicitly; the sandbox baseline stays at the project root.
+  allowExtraRoot(path: string): void {
+    this.sandbox.addRoot(path);
   }
 
   // Persist a scoped "allow always" rule.

@@ -278,14 +278,6 @@ export function createDefaultRegistry(): CommandRegistry {
     handler: () => "memory",
   });
 
-  // registry.register({
-  //   name: "permission",
-  //   aliases: ["perm"],
-  //   type: "local",
-  //   description: "Show/change permission mode",
-  //   handler: () => "permission",
-  // });
-
   registry.register({
     name: "skills",
     aliases: [],

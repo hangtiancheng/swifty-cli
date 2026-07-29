@@ -219,7 +219,7 @@ export class MemoryExtractor {
 
     // Bypass permissions (background agent requires no user confirmation)
     const subChecker = new PermissionChecker(this.workDir, "bypassPermissions");
-    // 用户级记忆目录在项目根之外，提取时要往里写，显式放开
+    // The user-level memory dir lives outside the project root; extraction writes there, so allow it explicitly.
     subChecker.allowExtraRoot(join(homedir(), ".swifty", "memory"));
 
     const forkedConv = new ConversationManager();

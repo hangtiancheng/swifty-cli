@@ -138,6 +138,8 @@ export class MemoryConsolidator {
     subRegistry.register(new BashTool());
 
     const subChecker = new PermissionChecker(this.workDir, "bypassPermissions");
+    // The user-level memory dir lives outside the project root; consolidation writes there, so allow it explicitly.
+    subChecker.allowExtraRoot(join(homedir(), ".larky", "memory"));
 
     const conv = new ConversationManager();
     conv.addUserMessage(prompt);
