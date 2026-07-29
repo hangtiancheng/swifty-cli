@@ -79,7 +79,8 @@ describe("sandbox auto-allow respects deny/ask rules", () => {
 describe("extra allowed roots", () => {
   it("opens a path outside the project once declared", () => {
     const dir = makeTmpDir();
-    const outside = makeTmpDir();
+    // 不能用 makeTmpDir()：系统临时目录本身就在沙箱默认允许列表里，要挑一个真正的项目外路径
+    const outside = join(homedir(), ".extra-root");
     const checker = new PermissionChecker(dir, "default");
     const target = join(outside, "MEMORY.md");
 
@@ -94,7 +95,7 @@ describe("extra allowed roots", () => {
 });
 
 describe("protected paths under bypass", () => {
-  const protectedRels = [
+  const protectedRelatives = [
     ".swifty/permissions.local.yaml",
     ".swifty/config.yaml",
     ".swifty/skills/evil/SKILL.md",
@@ -103,7 +104,7 @@ describe("protected paths under bypass", () => {
   it("denies writing protected paths even in bypass mode", () => {
     const dir = makeTmpDir();
     const checker = new PermissionChecker(dir, "bypassPermissions");
-    for (const rel of protectedRels) {
+    for (const rel of protectedRelatives) {
       const result = checker.check("WriteFile", "write", { file_path: join(dir, rel) });
       expect(result.effect).toBe("deny");
     }
