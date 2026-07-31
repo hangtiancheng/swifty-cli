@@ -239,9 +239,39 @@ else
 fi
 
 info "Installing $PKG_VERSION globally..."
-npm install -g "$PKG_VERSION" --registry=https://registry.npmjs.org/
+# --foreground-scripts surfaces the postinstall binary download logs and
+# ensures the script runs even in CI-ish npm setups that background scripts.
+npm install -g "$PKG_VERSION" --registry=https://registry.npmjs.org/ --foreground-scripts
 
 # ── Verify ────────────────────────────────────────────────────────────
+# The postinstall (install.mjs) downloads the platform binary from GitHub
+# Releases into the package's build/ dir. Verify it actually landed — npm
+# configs with ignore-scripts=true silently skip postinstall.
+case "$(uname -s)" in
+Darwin) PLAT="darwin" ;;
+Linux) PLAT="linux" ;;
+*) PLAT="" ;;
+esac
+case "$(uname -m)" in
+x86_64 | amd64) ARCH="x64" ;;
+arm64 | aarch64) ARCH="arm64" ;;
+*) ARCH="" ;;
+esac
+if [ -n "$PLAT" ] && [ -n "$ARCH" ]; then
+	PKG_ROOT="$(npm root -g 2>/dev/null)/$PACKAGE"
+	BINARY="$PKG_ROOT/build/swiftx-$PLAT-$ARCH"
+	if [ -x "$BINARY" ]; then
+		ok "Binary present: $BINARY"
+	else
+		err "swiftx binary not found at $BINARY"
+		err "The postinstall download may have been skipped (npm ignore-scripts?) or failed."
+		err "Retry with:  npm rebuild -g $PACKAGE --foreground-scripts"
+		exit 1
+	fi
+else
+	warn "Unrecognized platform $(uname -s)/$(uname -m); skipping binary check."
+fi
+
 # npm global bin should be on PATH. If not, print the prefix/bin hint.
 NPM_BIN="$(npm config get prefix 2>/dev/null)/bin"
 if command -v swiftx >/dev/null 2>&1; then
