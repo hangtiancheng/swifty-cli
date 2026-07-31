@@ -30,6 +30,7 @@ import WebSocket from "ws";
 
 export class WebSocketTransport implements Transport {
   private ws: WebSocket | null = null;
+  private closeEmitted = false;
 
   onclose?: () => void;
   onerror?: (error: Error) => void;
@@ -39,6 +40,17 @@ export class WebSocketTransport implements Transport {
     private url: string,
     private headers: Record<string, string> = {},
   ) {}
+
+  // The SDK's Protocol._onclose tears down state and rejects pending
+  // requests; manual close() plus the ws 'close' event must collapse into a
+  // single emission.
+  private emitClose(): void {
+    if (this.closeEmitted) {
+      return;
+    }
+    this.closeEmitted = true;
+    this.onclose?.();
+  }
 
   async start(): Promise<void> {
     if (this.ws) {
@@ -73,7 +85,7 @@ export class WebSocketTransport implements Transport {
       this.onerror?.(err instanceof Error ? err : new Error(String(err)));
     });
     ws.on("close", () => {
-      this.onclose?.();
+      this.emitClose();
     });
   }
 
@@ -100,7 +112,7 @@ export class WebSocketTransport implements Transport {
     ) {
       this.ws.close();
     }
-    this.onclose?.();
+    this.emitClose();
     return Promise.resolve();
   }
 }

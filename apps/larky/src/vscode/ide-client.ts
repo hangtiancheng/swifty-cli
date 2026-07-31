@@ -93,7 +93,9 @@ export async function connectToIde(opts: {
     return null;
   }
 
-  transport.onclose = () => {
+  // Protocol.connect() wraps transport.onclose for its own teardown, so we
+  // must not overwrite it; the SDK re-exposes the close signal as client.onclose.
+  client.onclose = () => {
     opts.onDisconnect?.();
   };
 
@@ -121,7 +123,7 @@ export async function connectToIde(opts: {
   return {
     ideName: ide.ideName,
     close: async () => {
-      transport.onclose = undefined;
+      client.onclose = undefined;
       try {
         await client.close();
       } catch (err) {

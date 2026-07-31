@@ -23,9 +23,6 @@
 // Note that because some servers are still using SSE, clients may need to support both transports during the migration period.
 
 import { createChildLogger } from "../logger/index.js";
-
-const log = createChildLogger({ module: "mcp" });
-
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import {
@@ -38,7 +35,9 @@ import {
 } from "@modelcontextprotocol/sdk/client/sse.js";
 import type { MCPServerConfig } from "../config/config.js";
 import type { ToolSchema } from "@/tools/types.js";
+import { version } from "@/tui/version.js";
 
+const log = createChildLogger({ module: "mcp" });
 type MCPTransport =
   | StdioClientTransport
   | StreamableHTTPClientTransport
@@ -127,7 +126,7 @@ export class MCPClient {
       );
     }
 
-    this.client = new Client({ name: "swifty", version: "0.1.0" }, {});
+    this.client = new Client({ name: "swifty", version }, {});
     await this.client.connect(this.transport);
   }
 

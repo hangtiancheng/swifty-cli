@@ -694,7 +694,7 @@ export function App({ client, provider, permissionMode, onSessionChange }: Props
             mention += `-${String(lineEnd)}`;
           }
         }
-        insertInputTextRef.current?.(mention);
+        insertInputTextRef.current?.(mention + " ");
       },
     }).then((c) => {
       if (!c) {

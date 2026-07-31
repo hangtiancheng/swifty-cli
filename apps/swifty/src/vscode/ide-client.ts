@@ -30,6 +30,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { z } from "zod";
 import { detectIde } from "./lockfile.js";
 import { WebSocketTransport } from "./ws-transport.js";
+import { version } from "@/tui/version.js";
 
 const log = createChildLogger({ module: "vscode" });
 
@@ -84,7 +85,7 @@ export async function connectToIde(opts: {
   const transport = new WebSocketTransport(ide.url, {
     ...(ide.authToken && { "X-Claude-Code-Ide-Authorization": ide.authToken }),
   });
-  const client = new Client({ name: "swifty", version: "0.1.0" }, {});
+  const client = new Client({ name: "swifty", version }, {});
 
   try {
     await client.connect(transport);
@@ -93,7 +94,9 @@ export async function connectToIde(opts: {
     return null;
   }
 
-  transport.onclose = () => {
+  // Protocol.connect() wraps transport.onclose for its own teardown, so we
+  // must not overwrite it; the SDK re-exposes the close signal as client.onclose.
+  client.onclose = () => {
     opts.onDisconnect?.();
   };
 
@@ -121,7 +124,7 @@ export async function connectToIde(opts: {
   return {
     ideName: ide.ideName,
     close: async () => {
-      transport.onclose = undefined;
+      client.onclose = undefined;
       try {
         await client.close();
       } catch (err) {

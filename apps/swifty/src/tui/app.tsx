@@ -375,7 +375,7 @@ export function App({
             mention += `-${String(lineEnd)}`;
           }
         }
-        insertInputTextRef.current?.(mention);
+        insertInputTextRef.current?.(mention + " ");
       },
     }).then((c) => {
       if (!c) {

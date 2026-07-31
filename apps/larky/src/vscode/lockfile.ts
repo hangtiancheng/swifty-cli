@@ -93,6 +93,15 @@ async function readLockfile(dir: string, filename: string): Promise<DetectedIde 
   }
 }
 
+function isPidAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 // Finds the extension instance for this terminal. A lockfile matches when its
 // port equals CLAUDE_CODE_SSE_PORT (set by the extension in its integrated
 // terminal), or as a fallback when cwd is inside its workspace folders and
@@ -107,7 +116,9 @@ export async function detectIde(cwd: string): Promise<DetectedIde | null> {
   }
 
   const lockfiles = (await Promise.all(filenames.map((f) => readLockfile(dir, f)))).filter(
-    (l): l is DetectedIde => l !== null,
+    // Stale lockfiles (extension crashed without cleanup) would win the
+    // workspace match or make it ambiguous; drop entries with a dead pid.
+    (l): l is DetectedIde => l !== null && (l.pid === undefined || isPidAlive(l.pid)),
   );
 
   const envPort = process.env.CLAUDE_CODE_SSE_PORT
