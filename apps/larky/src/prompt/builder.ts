@@ -21,9 +21,6 @@
  */
 
 import { createChildLogger } from "../logger/index.js";
-
-const log = createChildLogger({ module: "prompt" });
-
 import { execSync } from "node:child_process";
 import { platform, arch } from "node:os";
 import type { Section, EnvironmentContext } from "./sections.js";
@@ -37,6 +34,7 @@ import {
   outputEfficiencySection,
   environmentSection,
 } from "./sections.js";
+const log = createChildLogger({ module: "prompt" });
 
 export class PromptBuilder {
   private sections: Section[] = [];
@@ -89,14 +87,12 @@ export function detectEnvironment(workDir: string): EnvironmentContext {
   return env;
 }
 
-export interface BuildOptions {
-  // Description text injected into the system prompt by the skill system.
-  // Project instructions and auto-memory are injected into the conversation
-  // as system-reminder messages by conversation.injectLongTermMemory instead.
-  skillSection?: string;
-}
-
-export function buildSystemPrompt(env: EnvironmentContext, opts: BuildOptions = {}): string {
+// The system prompt contains only project-agnostic product definitions so it stays
+// as a single global copy and keeps hitting the same cache across projects.
+// Project instructions, auto-memories, and the skill listing are all project-scoped
+// and injected into the conversation via conversation.injectLongTermMemory as a
+// system-reminder message.
+export function buildSystemPrompt(env: EnvironmentContext): string {
   const b = new PromptBuilder();
   b.add(identitySection());
   b.add(systemSection());
@@ -106,10 +102,5 @@ export function buildSystemPrompt(env: EnvironmentContext, opts: BuildOptions = 
   b.add(toneStyleSection());
   b.add(outputEfficiencySection());
   b.add(environmentSection(env));
-
-  if (opts.skillSection) {
-    b.add({ name: "Skills", priority: 90, content: opts.skillSection });
-  }
-
   return b.build();
 }

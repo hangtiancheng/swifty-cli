@@ -1,6 +1,3 @@
-
-
-
 /* eslint-disable @typescript-eslint/consistent-type-assertions */
 /**
  * Copyright (c) 2026 hangtiancheng
@@ -91,6 +88,10 @@ export interface AgentConfig {
   // Project instructions and memory content, need re-injection after compaction
   instructions?: string;
   memoryContent?: string;
+  /** Available skill listing. Project-scoped, so injected via the first system-reminder instead of the system prompt */
+  skillSection?: string;
+  /** Returns newly discovered skills since the last call; previously notified ones are excluded */
+  skillDeltaFn?: () => string;
   // Non-blocking memory recall: prefetch promise runs in parallel with the main LLM call, injected after tool execution
   memoryRecallPromise?: Promise<string>;
   onPermissionRequest?: (
@@ -127,6 +128,8 @@ export class Agent {
   activeSkills: Map<string, string>;
   private instructions: string;
   private memoryContent: string;
+  private skillSection: string;
+  private skillDeltaFn?: () => string;
   private memoryRecallPromise?: Promise<string>;
   private memoryRecallConsumed = false;
 
@@ -156,6 +159,8 @@ export class Agent {
     this.coordinatorActiveFn = config.coordinatorActiveFn;
     this.instructions = config.instructions ?? "";
     this.memoryContent = config.memoryContent ?? "";
+    this.skillSection = config.skillSection ?? "";
+    this.skillDeltaFn = config.skillDeltaFn;
     this.memoryRecallPromise = config.memoryRecallPromise;
   }
 
@@ -223,6 +228,14 @@ export class Agent {
             this.conversation.addSystemReminder(note);
           }
         }
+        // Skills added mid-conversation: only send the delta, not the full listing,
+        // and never touch the system prompt to avoid invalidating the cache prefix.
+        if (this.skillDeltaFn) {
+          const delta = this.skillDeltaFn();
+          if (delta) {
+            this.conversation.addSystemReminder("The following skills became available:\n" + delta);
+          }
+        }
 
         await this.fireLifecycle("turn_start");
         await this.fireLifecycle("pre_send");
@@ -247,7 +260,11 @@ export class Agent {
         }
         if (mc.compacted) {
           // replaceWithCompacted
-          this.conversation.injectLongTermMemory(this.instructions, this.memoryContent);
+          this.conversation.injectLongTermMemory(
+            this.instructions,
+            this.memoryContent,
+            this.skillSection,
+          );
         }
 
         try {
@@ -327,7 +344,11 @@ export class Agent {
                 this.sessionFilePath,
               );
               this.conversation.clearUsageAnchor();
-              this.conversation.injectLongTermMemory(this.instructions, this.memoryContent);
+              this.conversation.injectLongTermMemory(
+                this.instructions,
+                this.memoryContent,
+                this.skillSection,
+              );
               yield {
                 type: "compact",
                 message: "Auto-compacted due to context length: " + result.message,

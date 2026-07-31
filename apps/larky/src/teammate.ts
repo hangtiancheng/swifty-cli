@@ -223,9 +223,9 @@ export async function runTeammate(args: TeammateArgs): Promise<void> {
 
   const env = detectEnvironment(workDir);
   env.model = provider.model;
-  const systemPrompt = buildSystemPrompt(env, {
-    skillSection: buildSkillSection(catalog, workDir),
-  });
+  // The system prompt contains only project-agnostic product definitions; the skill
+  // listing is project-scoped and injected via the first system-reminder message
+  const systemPrompt = buildSystemPrompt(env);
   const client = await createClient(provider, systemPrompt);
 
   const registry = await buildTeammateRegistry({
@@ -246,6 +246,7 @@ export async function runTeammate(args: TeammateArgs): Promise<void> {
     conversation,
     workDir: process.cwd(),
     fileStateCache: new FileStateCache(),
+    skillSection: buildSkillSection(catalog, workDir),
   });
 
   // Start with initial task

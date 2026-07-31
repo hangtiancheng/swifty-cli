@@ -120,7 +120,7 @@ export class ConversationManager {
     });
   }
 
-  injectLongTermMemory(instructions: string, memories: string): void {
+  injectLongTermMemory(instructions: string, memories: string, skills = ""): void {
     if (this.longTermMemoryInjected) {
       return;
     }
@@ -133,6 +133,12 @@ export class ConversationManager {
     }
     if (memories) {
       sections.push("# Auto Memory\n" + memories);
+    }
+    // The skill listing is project-scoped; putting it in the system prompt would give
+    // each project its own copy and break cross-project caching, so it lives in this
+    // message alongside instructions and memories
+    if (skills) {
+      sections.push("# availableSkills\n" + skills);
     }
     if (sections.length === 0) {
       return;

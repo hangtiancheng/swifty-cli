@@ -21,12 +21,10 @@
  */
 
 import { createChildLogger } from "../logger/index.js";
-
-const log = createChildLogger({ module: "memory" });
-
 import { readFileSync, existsSync } from "node:fs";
 import { join, dirname, resolve, isAbsolute, relative } from "node:path";
 import { homedir } from "node:os";
+const log = createChildLogger({ module: "memory" });
 
 /** Maximum recursion depth for @include to prevent infinite nesting */
 const MAX_INCLUDE_DEPTH = 5;
@@ -38,19 +36,20 @@ export interface InstructionSource {
 }
 
 /**
- * Discovers and concatenates all project-level and user-level instruction files.
+ * Discovers and concatenates all project- and user-level instruction files.
  *
- * Discovery order (later entries have higher priority, drawing more model attention):
+ * Discovery order (later entries take higher precedence — the model attends
+ * more to content appearing later):
  *  1. User-global: ~/.larky/LARKY.md, ~/.larky/AGENTS.md
- *  2. Project: LARKY.md and AGENTS.md in every directory from the git root to workDir
- *  3. workDir/.larky/INSTRUCTIONS.md (legacy format compatibility)
- *  4. workDir/LARKY.local.md (local private override)
+ *  2. Project: LARKY.md, AGENTS.md, and .larky/LARKY.md in every
+ *     directory from the git root down to workDir
+ *  3. workDir/LARKY.local.md (local private override)
  *
- * Supports @include directive:
+ * Supports @include directives:
  *  - @./relative/path, @~/home/path, @/absolute/path
- *  - Resolved relative to the directory containing the including file
+ *  - Resolved relative to the directory of the containing file
  *  - Ignored inside fenced code blocks
- *  - Cycle detection (the same absolute path will not be included twice)
+ *  - Cycle detection (the same absolute path is never included twice)
  */
 export function loadInstructions(workDir: string): string {
   const sources = discoverInstructions(workDir);
@@ -100,12 +99,11 @@ export function discoverInstructions(workDir: string): InstructionSource[] {
   for (const dir of dirs) {
     addSource(sources, seen, join(dir, "LARKY.md"));
     addSource(sources, seen, join(dir, "AGENTS.md"));
+    // Same-named file under .larky/: for projects that want instructions in .gitignore
+    addSource(sources, seen, join(dir, ".larky", "LARKY.md"));
   }
 
-  // 3. Legacy format compatibility
-  addSource(sources, seen, join(workDir, ".larky", "INSTRUCTIONS.md"));
-
-  // 4. Local private override
+  // 3. private override
   addSource(sources, seen, join(workDir, "LARKY.local.md"));
 
   return sources;

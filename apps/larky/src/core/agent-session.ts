@@ -66,7 +66,7 @@ import { loadInstructions } from "../memory/instructions.js";
 import { MemoryManager } from "../memory/manager.js";
 import { MemoryConsolidator } from "../memory/consolidation.js";
 import { MemoryExtractor } from "../memory/extractor.js";
-import { SkillCatalog, buildSkillSection } from "../skills/catalog.js";
+import { SkillCatalog } from "../skills/catalog.js";
 import type { SkillForkHost, SkillHost } from "../skills/skill.js";
 import { LoadSkillTool } from "../skills/load-skill-tool.js";
 import { InstallSkillTool } from "../skills/install-tool.js";
@@ -177,6 +177,9 @@ export class AgentSession {
   cmdRegistry!: CommandRegistry;
   taskList!: TaskList;
   skillCatalog: SkillCatalog | null = null;
+  // 已经告诉过模型的 Skill 名字。会话首条 system-reminder 带全量清单，
+  // 之后只补新增的，避免重复占上下文。
+  private announcedSkills = new Set<string>();
   activeSkills = new Map<string, string>();
   toolFilter: ((name: string) => boolean) | null = null;
   skillHost: SkillHost;
@@ -319,18 +322,14 @@ export class AgentSession {
     const catalog = new SkillCatalog();
     catalog.load(workDir);
     s.skillCatalog = catalog;
-    const skillSection = buildSkillSection(catalog, workDir);
-    if (skillSection) {
-      s.client.setSystemPrompt(buildSystemPrompt(env, { skillSection }));
-    }
+    // Skill 清单跟着项目走，不进系统提示词，由 Agent 随首条
+    // system-reminder 注入，会话中途新增的再由 skillDelta 追加。
     registry.register(new LoadSkillTool(catalog, s.skillHost));
     registry.register(
       new InstallSkillTool(workDir, catalog, () => {
+        // 只重连斜杠命令，系统提示词不动。新装的 Skill 由 skillDelta
+        // 在下一轮以 system-reminder 补进对话。
         wireSkillsToRegistry(catalog, s.cmdRegistry, s.skillHost);
-        const updatedSection = buildSkillSection(catalog, workDir);
-        const updatedEnv = detectEnvironment(workDir);
-        updatedEnv.model = provider.model;
-        s.client.setSystemPrompt(buildSystemPrompt(updatedEnv, { skillSection: updatedSection }));
       }),
     );
 
@@ -781,6 +780,9 @@ export class AgentSession {
         maxOutput: getMaxOutputTokens(this.provider),
         recoveryState: this.recoveryState,
         activeSkills: this.activeSkills,
+        // 首条 system-reminder 带全量 Skill 清单，之后只补新增的
+        skillSection: this.skillDelta(),
+        skillDeltaFn: () => this.skillDelta(),
         memoryRecallPromise: recallPromise,
         toolFilter: (name: string) => {
           if (!coordinatorToolFilter(this.enableCoordinatorMode)(name)) {
@@ -1057,6 +1059,30 @@ export class AgentSession {
       });
   }
 
+  /** 返回还没通知过模型的 Skill 清单，并记进 announcedSkills。 */
+  private skillDelta(): string {
+    const catalog = this.skillCatalog;
+    if (!catalog) {
+      return "";
+    }
+    const lines: string[] = [];
+    for (const meta of catalog.list()) {
+      if (this.announcedSkills.has(meta.name)) {
+        continue;
+      }
+      this.announcedSkills.add(meta.name);
+      const desc =
+        meta.description.length > 200 ? meta.description.slice(0, 200) + "…" : meta.description;
+      lines.push(`- /${meta.name}: ${desc}`);
+    }
+    return lines.join("\n");
+  }
+
+  /**
+   * 每轮对话前检查 skill 目录变化，变了就 reload catalog 并重连斜杠命令。
+   * 系统提示词不动：新增的 Skill 由 skillDelta 在下一轮以 system-reminder
+   * 补进对话，改系统提示词会让整段缓存前缀失效。
+   */
   private refreshSkillsIfNeeded(): void {
     const catalog = this.skillCatalog;
     if (!catalog?.needsReload()) {
@@ -1064,10 +1090,6 @@ export class AgentSession {
     }
     catalog.reload();
     wireSkillsToRegistry(catalog, this.cmdRegistry, this.skillHost);
-    const env = detectEnvironment(this.workDir);
-    env.model = this.provider.model;
-    const skillSection = buildSkillSection(catalog, this.workDir);
-    this.client.setSystemPrompt(buildSystemPrompt(env, { skillSection }));
   }
 
   // -- Session resume -----------------------------------------------------------
@@ -1450,13 +1472,7 @@ export class AgentSession {
         } else if (args.trim() === "reload") {
           catalog.reload();
           wireSkillsToRegistry(catalog, this.cmdRegistry, this.skillHost);
-          const env = detectEnvironment(this.workDir);
-          env.model = this.provider.model;
-          this.client.setSystemPrompt(
-            buildSystemPrompt(env, {
-              skillSection: buildSkillSection(catalog, this.workDir),
-            }),
-          );
+          // 系统提示词不动，新增的 Skill 走 skillDelta 下一轮补发
           this.systemMessage(
             `Skills reloaded. ${String(catalog.list().length)} skill(s) available.`,
           );

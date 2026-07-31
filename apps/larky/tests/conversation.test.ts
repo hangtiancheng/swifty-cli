@@ -86,6 +86,38 @@ describe("ConversationManager", () => {
     expect(mgr.getMessages()[0].content).toContain("system-reminder");
   });
 
+  // The skill listing is project-scoped, so it must live in the first system-reminder
+  // rather than the system prompt — otherwise each project gets its own system prompt
+  // and cross-project prompt caching breaks entirely.
+  it("carries the skill listing in the injected message", () => {
+    const mgr = new ConversationManager();
+    mgr.addUserMessage("hello");
+    mgr.injectLongTermMemory("rules", "mems", "- /pdf: fill forms");
+
+    const injected = mgr.getMessages()[0].content;
+    expect(injected).toContain("availableSkills");
+    expect(injected).toContain("- /pdf: fill forms");
+    // All three sections share one message at fixed positions to keep the cache prefix stable
+    expect(injected).toContain("rules");
+    expect(injected).toContain("mems");
+    expect(mgr.getMessages()[1].content).toBe("hello");
+  });
+
+  // A project may have no LARKY.md and no memories — injection should still happen when only skills are present
+  it("injects when only skills are present", () => {
+    const mgr = new ConversationManager();
+    mgr.injectLongTermMemory("", "", "- /review: review code");
+
+    expect(mgr.len()).toBe(1);
+    expect(mgr.getMessages()[0].content).toContain("- /review: review code");
+  });
+
+  it("injects nothing when all three are empty", () => {
+    const mgr = new ConversationManager();
+    mgr.injectLongTermMemory("", "", "");
+    expect(mgr.len()).toBe(0);
+  });
+
   describe("buildAnthropicMessages", () => {
     it("serializes tool use messages", () => {
       const mgr = new ConversationManager();
