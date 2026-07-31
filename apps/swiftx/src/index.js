@@ -21,7 +21,9 @@
  * SOFTWARE.
  */
 
-// Unified entry point for the Swifty CLI.
+// @ts-check
+
+// Unified entry point for the Swiftx CLI.
 // Picks the binary matching the current platform/arch from ../build.
 
 import { spawn } from "node:child_process";
@@ -31,14 +33,24 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-const PLATFORM_MAP: Partial<Record<NodeJS.Platform, string>> = {
+/**
+ * Map of Node.js platform names to binary file name segments.
+ *
+ * @type {Partial<Record<NodeJS.Platform, string>>}
+ */
+const PLATFORM_MAP = {
   darwin: "darwin",
   linux: "linux",
   android: "linux",
   win32: "windows",
 };
 
-const ARCH_MAP: Partial<Record<NodeJS.Architecture, string>> = {
+/**
+ * Map of Node.js architecture names to binary file name segments.
+ *
+ * @type {Partial<Record<NodeJS.Architecture, string>>}
+ */
+const ARCH_MAP = {
   x64: "x64",
   arm64: "arm64",
 };
@@ -48,17 +60,25 @@ const platformName = PLATFORM_MAP[platform];
 const archName = ARCH_MAP[arch];
 
 if (!platformName || !archName) {
-  console.error(`[swifty] Unsupported platform: ${platform} (${arch})`);
+  console.error(`[swiftx] Unsupported platform: ${platform} (${arch})`);
   process.exit(1);
 }
 
 const ext = platformName === "windows" ? ".exe" : "";
-const binaryPath = join(__dirname, "..", "build", `swifty-${platformName}-${archName}${ext}`);
+const binaryPath = join(
+  __dirname,
+  "..",
+  "build",
+  `swiftx-${platformName}-${archName}${ext}`,
+);
 
 if (!existsSync(binaryPath)) {
   console.error(
-    `[swifty] Missing binary: ${binaryPath}\n` +
-      "Reinstall: npm install -g @swifty.js/swiftx@latest",
+    `[swiftx] Missing binary: ${binaryPath}\n` +
+      "Run: node " +
+      join(__dirname, "..", "install.mjs") +
+      "\n" +
+      "Or reinstall: npm install -g @swifty.js/swiftx@latest",
   );
   process.exit(1);
 }
@@ -75,7 +95,14 @@ child.on("error", (err) => {
   process.exit(1);
 });
 
-const forwardSignal = (signal: NodeJS.Signals): void => {
+/**
+ * Forward a received signal to the child process, ignoring failures from an
+ * already-exited child.
+ *
+ * @param {NodeJS.Signals} signal - The signal to forward.
+ * @returns {void}
+ */
+const forwardSignal = (signal) => {
   if (child.killed) {
     return;
   }
@@ -86,21 +113,30 @@ const forwardSignal = (signal: NodeJS.Signals): void => {
   }
 };
 
-(["SIGINT", "SIGTERM", "SIGHUP"] as const).forEach((sig) => {
+/** @type {readonly NodeJS.Signals[]} */
+const FORWARDED_SIGNALS = ["SIGINT", "SIGTERM", "SIGHUP"];
+
+FORWARDED_SIGNALS.forEach((sig) => {
   process.on(sig, () => forwardSignal(sig));
 });
 
-type ChildResult = { type: "signal"; signal: NodeJS.Signals } | { type: "code"; exitCode: number };
+/**
+ * How the child process terminated: killed by a signal, or exited with a code.
+ *
+ * @typedef {{ type: "signal", signal: NodeJS.Signals } | { type: "code", exitCode: number }} ChildResult
+ */
 
-const childResult = await new Promise<ChildResult>((resolve) => {
-  child.on("exit", (code, signal) => {
-    if (signal) {
-      resolve({ type: "signal", signal });
-    } else {
-      resolve({ type: "code", exitCode: code ?? 1 });
-    }
-  });
-});
+const childResult = await /** @type {Promise<ChildResult>} */ (
+  new Promise((resolve) => {
+    child.on("exit", (code, signal) => {
+      if (signal) {
+        resolve({ type: "signal", signal });
+      } else {
+        resolve({ type: "code", exitCode: code ?? 1 });
+      }
+    });
+  })
+);
 
 if (childResult.type === "signal") {
   // Re-emit the same signal so the parent exits with 128 + n semantics.

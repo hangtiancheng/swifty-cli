@@ -1,7 +1,8 @@
 {
   "compilerOptions": {
-    "declaration": false, // 不输出 .d.ts
-    "declarationMap": false, // 不输出 .d.ts.map
+    "allowJs": true, // 纳入 .js 文件
+    "checkJs": true, // 对 .js 启用类型检查（配合 JSDoc）
+    "noEmit": true, // 纯类型检查，不产出任何文件
     "exactOptionalPropertyTypes": false,
     "isolatedModules": true,
     "lib": ["esnext"],
@@ -15,14 +16,10 @@
     "noUncheckedSideEffectImports": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
-    "outDir": "./dist", // 输出目录
-    "removeComments": true, // 移除注释
-    "rootDir": "./src", // 源码目录
     "skipLibCheck": true,
-    "sourceMap": false, // 不输出 .js.map
     "strict": true,
     "target": "esnext",
-    "types": ["node"],
-    "verbatimModuleSyntax": true // 纯类型导入必须使用 import type
-  }
+    "types": ["node"]
+  },
+  "include": ["src/**/*.js", "install.mjs", "build.js"]
 }

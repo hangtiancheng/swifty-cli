@@ -85,7 +85,9 @@ try {
   rmSync(buildDestDir, { recursive: true, force: true });
   cpSync(buildSrcDir, buildDestDir, { recursive: true });
 } catch (err) {
-  fail(`failed to copy build output: ${err instanceof Error ? err.message : String(err)}`);
+  fail(
+    `failed to copy build output: ${err instanceof Error ? err.message : String(err)}`,
+  );
 }
 
 console.log(`[swiftx] build copied to ${buildDestDir}`);

@@ -1,0 +1,151 @@
+#!/usr/bin/env node
+/**
+ * Copyright (c) 2026 hangtiancheng
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+ */
+
+// @ts-check
+
+// postinstall: download the platform-specific swiftx binary from GitHub
+// Releases instead of shipping all targets inside the npm tarball.
+//
+// Env overrides:
+//   SWIFTX_SKIP_DOWNLOAD=1        skip the download entirely
+//   SWIFTX_DOWNLOAD_BASE=<url>    mirror base URL (default: GitHub Releases)
+
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+} from "node:fs";
+import { createWriteStream } from "node:fs";
+import { dirname, join } from "node:path";
+import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
+import { fileURLToPath } from "node:url";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+
+/**
+ * Map of Node.js platform names to binary file name segments.
+ *
+ * @type {Partial<Record<NodeJS.Platform, string>>}
+ */
+const PLATFORM_MAP = {
+  darwin: "darwin",
+  linux: "linux",
+  android: "linux",
+  win32: "windows",
+};
+
+/**
+ * Map of Node.js architecture names to binary file name segments.
+ *
+ * @type {Partial<Record<NodeJS.Architecture, string>>}
+ */
+const ARCH_MAP = { x64: "x64", arm64: "arm64" };
+
+/**
+ * Print an informational message with the `[swiftx]` prefix.
+ *
+ * @param {string} message - The message to print.
+ * @returns {void}
+ */
+function log(message) {
+  console.log(`[swiftx] ${message}`);
+}
+
+/**
+ * Print an error message and exit with a non-zero status.
+ *
+ * @param {string} message - The error message.
+ * @returns {never}
+ */
+function fail(message) {
+  console.error(`[swiftx] ${message}`);
+  process.exit(1);
+}
+
+if (process.env["SWIFTX_SKIP_DOWNLOAD"] === "1") {
+  log("SWIFTX_SKIP_DOWNLOAD=1, skipping binary download");
+  process.exit(0);
+}
+
+// A git checkout of the monorepo (npm tarball does not include build.js): the
+// binary is produced locally via `pnpm build`, not downloaded.
+if (existsSync(join(__dirname, "build.js"))) {
+  log("detected repository checkout, skipping binary download");
+  process.exit(0);
+}
+
+const platformName = PLATFORM_MAP[process.platform];
+const archName = ARCH_MAP[process.arch];
+if (!platformName || !archName) {
+  fail(`unsupported platform: ${process.platform} (${process.arch})`);
+}
+
+const { version } = JSON.parse(
+  readFileSync(join(__dirname, "package.json"), "utf8"),
+);
+const ext = platformName === "windows" ? ".exe" : "";
+const asset = `swiftx-${platformName}-${archName}${ext}`;
+const buildDir = join(__dirname, "build");
+const binaryPath = join(buildDir, asset);
+
+if (existsSync(binaryPath)) {
+  log(`binary already present: ${binaryPath}`);
+  process.exit(0);
+}
+
+const base =
+  process.env["SWIFTX_DOWNLOAD_BASE"] ??
+  "https://github.com/hangtiancheng/swifty.go/releases/download";
+const url = `${base}/swiftx-v${version}/${asset}`;
+
+log(`downloading ${url}`);
+
+mkdirSync(buildDir, { recursive: true });
+const tmpPath = `${binaryPath}.download`;
+
+try {
+  const res = await fetch(url, { redirect: "follow" });
+  if (!res.ok || !res.body) {
+    fail(`download failed: HTTP ${res.status} ${res.statusText} (${url})`);
+  }
+  await pipeline(
+    Readable.fromWeb(res.body),
+    createWriteStream(tmpPath, { mode: 0o755 }),
+  );
+  renameSync(tmpPath, binaryPath);
+  chmodSync(binaryPath, 0o755);
+} catch (err) {
+  rmSync(tmpPath, { force: true });
+  fail(
+    `download failed: ${err instanceof Error ? err.message : String(err)}\n` +
+      `URL: ${url}\n` +
+      "If you are behind a firewall, set SWIFTX_DOWNLOAD_BASE to a mirror,\n" +
+      "or download the binary manually into the package's build/ directory.",
+  );
+}
+
+log(`installed ${binaryPath}`);

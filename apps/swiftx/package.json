@@ -1,6 +1,6 @@
 {
   "name": "@swifty.js/swiftx",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "description": "Swiftx — Native CLI coding agent",
   "keywords": [
     "ai",
@@ -18,15 +18,15 @@
   "author": "https://github.com/hangtiancheng",
   "repository": {
     "type": "git",
-    "url": "https://github.com/hangtiancheng/swifty-cli.git",
+    "url": "https://github.com/hangtiancheng/swifty.go.git",
     "directory": "apps/swiftx"
   },
   "bin": {
-    "swiftx": "dist/index.js"
+    "swiftx": "src/index.js"
   },
   "files": [
-    "dist/index.js",
-    "build/"
+    "src/index.js",
+    "install.mjs"
   ],
   "os": [
     "darwin",
@@ -39,8 +39,10 @@
   ],
   "type": "module",
   "scripts": {
-    "build": "node build.js && tsc",
-    "prepublishOnly": "pnpm build"
+    "build": "node build.js",
+    "check": "tsc",
+    "postinstall": "node install.mjs",
+    "prepublishOnly": "pnpm check && pnpm build"
   },
   "devDependencies": {
     "@types/node": "24.13.3",
