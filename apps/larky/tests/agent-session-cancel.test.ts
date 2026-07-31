@@ -507,7 +507,7 @@ describe("agent-session cancel & steering", () => {
     session.startRun("plan something");
     await waitFor(() => client.started.length === 1);
 
-    // Esc: interrupt the run — swifty parity pops the approval dialog anyway.
+    // Esc: interrupt the run
     expect(session.cancel()).toBe(true);
     await waitFor(() => harness.planPending.length === 1);
 

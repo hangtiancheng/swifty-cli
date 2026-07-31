@@ -580,9 +580,9 @@ export class AgentSession {
     opts?: {
       displayText?: string;
       skipUserMessage?: boolean;
-      // Rendered prompts are inserted verbatim (swifty parity): no @-expansion.
+      // Rendered prompts are inserted verbatim: no @-expansion.
       skipExpand?: boolean;
-      // e.g. /do approval text is never persisted (swifty parity).
+      // e.g. /do approval text is never persisted.
       skipPersist?: boolean;
       // Persist this instead of displayText (prompt commands persist the
       // rendered prompt so /resume rebuilds the real instruction).
@@ -946,7 +946,7 @@ export class AgentSession {
       });
     }
 
-    // Plan-mode approval: align with swifty — any non-error completion in
+    // Plan-mode approval — any non-error completion in
     // plan mode pops the approval dialog, including Esc-interrupted runs.
     // A superseded (steered) run skips it: the user already moved on.
     if (this.permMode === "plan" && stopReason !== "error" && this.currentRunId === runId) {
@@ -1103,7 +1103,7 @@ export class AgentSession {
       throw new Error(`Session "${resumeId}" not found or empty.`);
     }
     const conv = new ConversationManager();
-    // Reload long-term memory at resume time (parity with swifty /resume):
+    // Reload long-term memory at resume time:
     // instructions/memories may have changed since this session was created.
     this.ltmInstructions = loadInstructions(this.workDir);
     this.ltmMemoryContent = this.memoryManager.buildSystemReminder();
@@ -1221,8 +1221,7 @@ export class AgentSession {
     }
 
     // Busy guard: commands that rewrite/replace the conversation must not
-    // race the in-flight agent loop (swifty serialized these via its
-    // submitting lock). Read-only commands and steering-style prompt
+    // race the in-flight agent loop. Read-only commands and steering-style prompt
     // commands remain allowed.
     if (this.isRunning && this.isBusyBlocked(cmd, parsed.args)) {
       this.systemMessage(
@@ -1295,7 +1294,7 @@ export class AgentSession {
         this.commandDone();
         if (promptText.trim()) {
           const displayText = parsed.args ? `/${parsed.name} ${parsed.args}` : `/${parsed.name}`;
-          // swifty parity: persist the rendered prompt (so /resume rebuilds
+          // persist the rendered prompt (so /resume rebuilds
           // the real instruction) and insert it verbatim, no @-expansion.
           this.startRun(promptText, { displayText, skipExpand: true, persistText: promptText });
         }

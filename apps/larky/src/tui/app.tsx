@@ -241,8 +241,7 @@ export function App({ client, provider, permissionMode, onSessionChange }: Props
   // session. Uses only refs and stable props, so the mount-time closure in
   // the connection loop stays valid.
   const createSession = useCallback(async () => {
-    // LARKY_BYPASS_PERMISSIONS must reach the daemon (swifty parity where the
-    // env directly drove the permission checker), not just the local UI badge.
+    // LARKY_BYPASS_PERMISSIONS must reach the daemon, not just the local UI badge.
     const envBypass = process.env.LARKY_BYPASS_PERMISSIONS === "1";
     const res = await client.sendCommand("session.create", {
       permission_mode: envBypass

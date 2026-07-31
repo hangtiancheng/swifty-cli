@@ -31,7 +31,8 @@ import { asErrorString, strArg } from "@/utils/index.js";
 export class LoadSkillTool implements Tool {
   name = "LoadSkill";
   description =
-    "Activate a skill by name. Returns the full SOP body so you can follow its instructions. Use this when a task matches an available skill's description.";
+    "Activate a skill by name. Returns the full SOP body so you can follow its instructions.. Call this when the user's request matches one of the available " +
+    "Skills listed in the available-skills section. Pass the Skill name without a leading slash.";
   category = "read" as const;
 
   constructor(

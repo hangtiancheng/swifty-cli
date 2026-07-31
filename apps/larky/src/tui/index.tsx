@@ -42,7 +42,7 @@ interface AppShellProps {
   onSessionChange: (id: string) => void;
 }
 
-// Mirrors swifty's provider gate: with multiple configured providers, show
+// With multiple configured providers, show
 // the picker before mounting App so session.create carries the chosen one.
 // eslint-disable-next-line react-refresh/only-export-components
 function AppShell({ client, providers, permissionMode, onSessionChange }: AppShellProps) {
