@@ -32,7 +32,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterEach, beforeEach } from "vitest";
 
 import { AgentSession, type InteractionBroker } from "../src/core/agent-session.js";
 import { InteractionHub } from "../src/core/interaction-hub.js";
@@ -42,6 +42,34 @@ import type { ConversationManager } from "../src/conversation/conversation.js";
 import type { LLMClient } from "../src/llm/client.js";
 import type { StreamEvent } from "../src/llm/events.js";
 import type { ToolSchema } from "../src/tools/types.js";
+
+// The session's per-run memory recall scans <home>/.larky/memory and, when
+// memory files exist, issues a selector LLM call through the session client —
+// the same GateClient the tests script. That extra call consumes a script slot
+// and breaks the strict `started.length === 1` waits. Redirect the entire home
+// directory to an empty temp dir so recall never fires. os.homedir() reads
+// USERPROFILE on Windows and HOME on other platforms, so set both.
+let realHome: string | undefined;
+let realUserProfile: string | undefined;
+beforeEach(() => {
+  realHome = process.env.HOME;
+  realUserProfile = process.env.USERPROFILE;
+  const tmp = mkdtempSync(join(tmpdir(), "larky-home-"));
+  process.env.HOME = tmp;
+  process.env.USERPROFILE = tmp;
+});
+afterEach(() => {
+  if (realHome === undefined) {
+    delete process.env.HOME;
+  } else {
+    process.env.HOME = realHome;
+  }
+  if (realUserProfile === undefined) {
+    delete process.env.USERPROFILE;
+  } else {
+    process.env.USERPROFILE = realUserProfile;
+  }
+});
 
 const PROVIDER: ProviderConfig = {
   name: "mock",
