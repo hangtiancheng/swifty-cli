@@ -107,7 +107,8 @@ import { TeamsDialog } from "./teams-dialog.js";
 import type { TeammateUIState } from "../teams/progress.js";
 import { AskUserQuestionTool, type Question } from "../tools/ask-user.js";
 import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative } from "node:path";
+import { connectToIde, type IdeConnection } from "../vscode/ide-client.js";
 import * as sessionMod from "../session/session.js";
 import * as historyMod from "../history/history.js";
 import { ProviderSelect } from "./provider-select.js";
@@ -355,6 +356,49 @@ export function App({
       clearInterval(timer);
     };
   }, []);
+
+  // VSCode integration: connect to the Claude Code extension's MCP server so
+  // Cmd+Option+K in the editor inserts @file#Lx-y references into the input.
+  const insertInputTextRef = useRef<((text: string) => void) | null>(null);
+  useEffect(() => {
+    let conn: IdeConnection | null = null;
+    let cancelled = false;
+    void connectToIde({
+      cwd: workDir,
+      onAtMentioned: ({ filePath, lineStart, lineEnd }) => {
+        const rel = relative(workDir, filePath);
+        const shown = rel && !rel.startsWith("..") ? rel : filePath;
+        let mention = `@${shown}`;
+        if (lineStart !== undefined) {
+          mention += `#L${String(lineStart)}`;
+          if (lineEnd !== undefined && lineEnd !== lineStart) {
+            mention += `-${String(lineEnd)}`;
+          }
+        }
+        insertInputTextRef.current?.(mention);
+      },
+    }).then((c) => {
+      if (!c) {
+        return;
+      }
+      if (cancelled) {
+        void c.close();
+        return;
+      }
+      conn = c;
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "system",
+          content: `IDE connected: ${c.ideName} — select code and press Cmd+Option+K to reference it here`,
+        },
+      ]);
+    });
+    return () => {
+      cancelled = true;
+      void conn?.close();
+    };
+  }, [workDir]);
 
   // Mode cycling logic for InputBox useInput (input.tsx),
   // app raw stdin listener.
@@ -1887,6 +1931,7 @@ export function App({
           setPermMode(mode);
         }}
         workDir={workDir}
+        insertTextRef={insertInputTextRef}
         onEscape={() => {
           if (isStreaming) {
             abortControllerRef.current?.abort();

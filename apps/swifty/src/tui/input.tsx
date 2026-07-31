@@ -31,7 +31,7 @@ import { SKIP_DIRS } from "@/tools/types.js";
 import { readdirSync, statSync } from "fs";
 import { join } from "path";
 import { Box, Text, useInput } from "ink";
-import { useState, useMemo, useRef } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import { BORDER_COLORS, COLORS, ICONS } from "./styles.js";
 import Fuse from "fuse.js";
 
@@ -95,6 +95,9 @@ interface InputBoxProps {
   permMode?: PermissionMode;
   onModeChange?: (mode: PermissionMode) => void;
   workDir?: string;
+  /** Receives an insert-at-cursor function so the parent can inject text
+   *  (e.g. IDE at-mentions) into the input programmatically. */
+  insertTextRef?: { current: ((text: string) => void) | null };
 }
 
 export function InputBox(props: InputBoxProps) {
@@ -109,6 +112,7 @@ export function InputBox(props: InputBoxProps) {
     permMode = "default",
     onModeChange,
     workDir = ".",
+    insertTextRef,
   } = props;
 
   const [lines, setLines] = useState<string[]>([""]);
@@ -117,6 +121,29 @@ export function InputBox(props: InputBoxProps) {
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [dropdownIndex, setDropdownIndex] = useState(0);
   const [dropdownDismissed, setDropdownDismissed] = useState(false);
+
+  useEffect(() => {
+    if (!insertTextRef) {
+      return;
+    }
+    insertTextRef.current = (text: string) => {
+      const line = lines[cursorLine] ?? "";
+      const col = Math.min(cursorCol, line.length);
+      const before = line.slice(0, col);
+      const pad = before.length > 0 && !/\s$/.test(before) ? " " : "";
+      const inserted = pad + text;
+      setLines((prev) => {
+        const updated = [...prev];
+        const l = updated[cursorLine] ?? "";
+        updated[cursorLine] = l.slice(0, col) + inserted + l.slice(col);
+        return updated;
+      });
+      setCursorCol(col + inserted.length);
+    };
+    return () => {
+      insertTextRef.current = null;
+    };
+  }, [insertTextRef, lines, cursorLine, cursorCol]);
 
   const isMultiline = lines.length > 1;
 

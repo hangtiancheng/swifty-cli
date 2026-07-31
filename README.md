@@ -1,19 +1,4 @@
-swifty-cli.code-workspace
-
-```json
-{
-  "folders": [
-    {
-      "name": "swifty-cli",
-      "path": "./"
-    },
-    {
-      "name": "reference",
-      "path": "/Users/whoami/Downloads/reference"
-    }
-  ]
-}
-```
+Swifty/Larky/Swiftx
 
 ```bash
 # Supports: --uninstall, --version vX.Y.Z, --alpha, --beta, --rc, --canary, --nightly, --tag=NAME
