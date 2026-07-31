@@ -177,8 +177,8 @@ export class AgentSession {
   cmdRegistry!: CommandRegistry;
   taskList!: TaskList;
   skillCatalog: SkillCatalog | null = null;
-  // 已经告诉过模型的 Skill 名字。会话首条 system-reminder 带全量清单，
-  // 之后只补新增的，避免重复占上下文。
+  // Skill names already announced to the model. The first system-reminder carries
+  // the full catalog; subsequent turns only append new ones to avoid redundant context.
   private announcedSkills = new Set<string>();
   activeSkills = new Map<string, string>();
   toolFilter: ((name: string) => boolean) | null = null;
@@ -322,13 +322,14 @@ export class AgentSession {
     const catalog = new SkillCatalog();
     catalog.load(workDir);
     s.skillCatalog = catalog;
-    // Skill 清单跟着项目走，不进系统提示词，由 Agent 随首条
-    // system-reminder 注入，会话中途新增的再由 skillDelta 追加。
+    // The skill catalog is project-scoped, not baked into the system prompt.
+    // It is injected via the first system-reminder; skills added mid-session
+    // are appended by skillDelta.
     registry.register(new LoadSkillTool(catalog, s.skillHost));
     registry.register(
       new InstallSkillTool(workDir, catalog, () => {
-        // 只重连斜杠命令，系统提示词不动。新装的 Skill 由 skillDelta
-        // 在下一轮以 system-reminder 补进对话。
+        // Only rewire slash commands; the system prompt stays untouched.
+        // Newly installed skills are delivered via skillDelta in the next turn's system-reminder.
         wireSkillsToRegistry(catalog, s.cmdRegistry, s.skillHost);
       }),
     );
@@ -780,7 +781,7 @@ export class AgentSession {
         maxOutput: getMaxOutputTokens(this.provider),
         recoveryState: this.recoveryState,
         activeSkills: this.activeSkills,
-        // 首条 system-reminder 带全量 Skill 清单，之后只补新增的
+        // First system-reminder carries the full skill catalog; subsequent turns only append new ones
         skillSection: this.skillDelta(),
         skillDeltaFn: () => this.skillDelta(),
         memoryRecallPromise: recallPromise,
@@ -1059,7 +1060,7 @@ export class AgentSession {
       });
   }
 
-  /** 返回还没通知过模型的 Skill 清单，并记进 announcedSkills。 */
+  /** Returns skills not yet announced to the model and records them in announcedSkills. */
   private skillDelta(): string {
     const catalog = this.skillCatalog;
     if (!catalog) {
@@ -1079,9 +1080,10 @@ export class AgentSession {
   }
 
   /**
-   * 每轮对话前检查 skill 目录变化，变了就 reload catalog 并重连斜杠命令。
-   * 系统提示词不动：新增的 Skill 由 skillDelta 在下一轮以 system-reminder
-   * 补进对话，改系统提示词会让整段缓存前缀失效。
+   * Before each turn, check for skill directory changes; if changed, reload the
+   * catalog and rewire slash commands. The system prompt stays untouched: new
+   * skills are delivered via skillDelta in the next turn's system-reminder.
+   * Mutating the system prompt would invalidate the entire cached prefix.
    */
   private refreshSkillsIfNeeded(): void {
     const catalog = this.skillCatalog;
@@ -1472,7 +1474,7 @@ export class AgentSession {
         } else if (args.trim() === "reload") {
           catalog.reload();
           wireSkillsToRegistry(catalog, this.cmdRegistry, this.skillHost);
-          // 系统提示词不动，新增的 Skill 走 skillDelta 下一轮补发
+          // System prompt stays untouched; new skills are delivered via skillDelta in the next turn
           this.systemMessage(
             `Skills reloaded. ${String(catalog.list().length)} skill(s) available.`,
           );
