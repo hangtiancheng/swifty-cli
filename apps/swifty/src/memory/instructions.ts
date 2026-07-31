@@ -21,12 +21,10 @@
  */
 
 import { createChildLogger } from "../logger/index.js";
-
-const log = createChildLogger({ module: "memory" });
-
 import { readFileSync, existsSync } from "node:fs";
 import { join, dirname, resolve, isAbsolute, relative } from "node:path";
 import { homedir } from "node:os";
+const log = createChildLogger({ module: "memory" });
 
 /** Maximum recursion depth for @include to prevent infinite nesting */
 const MAX_INCLUDE_DEPTH = 5;
@@ -38,19 +36,19 @@ export interface InstructionSource {
 }
 
 /**
- * Discovers and concatenates all project-level and user-level instruction files.
+ * 发现并拼接所有项目和用户级指令文件。
  *
- * Discovery order (later entries have higher priority, drawing more model attention):
- *  1. User-global: ~/.swifty/SWIFTY.md, ~/.swifty/AGENTS.md
- *  2. Project: SWIFTY.md and AGENTS.md in every directory from the git root to workDir
- *  3. workDir/.swifty/INSTRUCTIONS.md (legacy format compatibility)
- *  4. workDir/SWIFTY.local.md (local private override)
+ * 发现顺序（越靠后优先级越高，模型注意力优先关注后面的内容）：
+ *  1. 用户全局: ~/.swifty/SWIFTY.md, ~/.swifty/AGENTS.md
+ *  2. 项目: 从 git root 到 workDir 路径上每个目录的 SWIFTY.md、AGENTS.md
+ *     和 .swifty/SWIFTY.md
+ *  3. workDir/SWIFTY.local.md（本地私有覆盖）
  *
- * Supports @include directive:
+ * 支持 @include 指令：
  *  - @./relative/path, @~/home/path, @/absolute/path
- *  - Resolved relative to the directory containing the including file
- *  - Ignored inside fenced code blocks
- *  - Cycle detection (the same absolute path will not be included twice)
+ *  - 相对于包含文件所在目录解析
+ *  - 在 fenced code block 内忽略
+ *  - 循环检测（同一绝对路径不会被包含两次）
  */
 export function loadInstructions(workDir: string): string {
   const sources = discoverInstructions(workDir);
@@ -100,12 +98,11 @@ export function discoverInstructions(workDir: string): InstructionSource[] {
   for (const dir of dirs) {
     addSource(sources, seen, join(dir, "SWIFTY.md"));
     addSource(sources, seen, join(dir, "AGENTS.md"));
+    // .swifty/ 下的同名文件：想让指令进 .gitignore 的项目放这里
+    addSource(sources, seen, join(dir, ".swifty", "SWIFTY.md"));
   }
 
-  // 3. Legacy format compatibility
-  addSource(sources, seen, join(workDir, ".swifty", "INSTRUCTIONS.md"));
-
-  // 4. Local private override
+  // 3. private override
   addSource(sources, seen, join(workDir, "SWIFTY.local.md"));
 
   return sources;

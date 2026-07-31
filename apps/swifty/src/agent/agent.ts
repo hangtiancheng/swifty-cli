@@ -88,6 +88,10 @@ export interface AgentConfig {
   // Project instructions and memory content, need re-injection after compaction
   instructions?: string;
   memoryContent?: string;
+  /** 可用 Skill 清单。跟着项目走，所以不进系统提示词，随首条 system-reminder 注入 */
+  skillSection?: string;
+  /** 返回本轮新出现的 Skill 清单，已通知过的不再返回 */
+  skillDeltaFn?: () => string;
   // Non-blocking memory recall: prefetch promise runs in parallel with the main LLM call, injected after tool execution
   memoryRecallPromise?: Promise<string>;
   onPermissionRequest?: (
@@ -124,6 +128,8 @@ export class Agent {
   activeSkills: Map<string, string>;
   private instructions: string;
   private memoryContent: string;
+  private skillSection: string;
+  private skillDeltaFn?: () => string;
   private memoryRecallPromise?: Promise<string>;
   private memoryRecallConsumed = false;
 
@@ -153,6 +159,8 @@ export class Agent {
     this.coordinatorActiveFn = config.coordinatorActiveFn;
     this.instructions = config.instructions ?? "";
     this.memoryContent = config.memoryContent ?? "";
+    this.skillSection = config.skillSection ?? "";
+    this.skillDeltaFn = config.skillDeltaFn;
     this.memoryRecallPromise = config.memoryRecallPromise;
   }
 
@@ -220,6 +228,14 @@ export class Agent {
             this.conversation.addSystemReminder(note);
           }
         }
+        // 会话中途新增的 Skill：只补新出现的那几条，不重发整份清单，
+        // 更不动系统提示词，避免把缓存前缀顶掉。
+        if (this.skillDeltaFn) {
+          const delta = this.skillDeltaFn();
+          if (delta) {
+            this.conversation.addSystemReminder("The following skills became available:\n" + delta);
+          }
+        }
 
         await this.fireLifecycle("turn_start");
         await this.fireLifecycle("pre_send");
@@ -244,7 +260,11 @@ export class Agent {
         }
         if (mc.compacted) {
           // replaceWithCompacted
-          this.conversation.injectLongTermMemory(this.instructions, this.memoryContent);
+          this.conversation.injectLongTermMemory(
+            this.instructions,
+            this.memoryContent,
+            this.skillSection,
+          );
         }
 
         try {
@@ -324,7 +344,11 @@ export class Agent {
                 this.sessionFilePath,
               );
               this.conversation.clearUsageAnchor();
-              this.conversation.injectLongTermMemory(this.instructions, this.memoryContent);
+              this.conversation.injectLongTermMemory(
+                this.instructions,
+                this.memoryContent,
+                this.skillSection,
+              );
               yield {
                 type: "compact",
                 message: "Auto-compacted due to context length: " + result.message,

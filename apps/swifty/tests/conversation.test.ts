@@ -86,6 +86,37 @@ describe("ConversationManager", () => {
     expect(mgr.getMessages()[0].content).toContain("system-reminder");
   });
 
+  // Skill 清单跟着项目走，必须待在首条 system-reminder 里，不进 System Prompt，
+  // 否则每个项目各有一份 System Prompt，跨项目缓存全部失效。
+  it("carries the skill listing in the injected message", () => {
+    const mgr = new ConversationManager();
+    mgr.addUserMessage("hello");
+    mgr.injectLongTermMemory("rules", "mems", "- /pdf: fill forms");
+
+    const injected = mgr.getMessages()[0].content;
+    expect(injected).toContain("availableSkills");
+    expect(injected).toContain("- /pdf: fill forms");
+    // 三样内容同处一条消息，位置固定，缓存前缀才稳
+    expect(injected).toContain("rules");
+    expect(injected).toContain("mems");
+    expect(mgr.getMessages()[1].content).toBe("hello");
+  });
+
+  // 项目可能没写 SWIFTY.md 也没有记忆，只有 Skill 时同样要注入
+  it("injects when only skills are present", () => {
+    const mgr = new ConversationManager();
+    mgr.injectLongTermMemory("", "", "- /review: review code");
+
+    expect(mgr.len()).toBe(1);
+    expect(mgr.getMessages()[0].content).toContain("- /review: review code");
+  });
+
+  it("injects nothing when all three are empty", () => {
+    const mgr = new ConversationManager();
+    mgr.injectLongTermMemory("", "", "");
+    expect(mgr.len()).toBe(0);
+  });
+
   describe("buildAnthropicMessages", () => {
     it("serializes tool use messages", () => {
       const mgr = new ConversationManager();

@@ -62,7 +62,7 @@ import { MCPToolWrapper } from "../mcp/tool-wrapper.js";
 import { loadInstructions } from "../memory/instructions.js";
 import { MemoryManager } from "../memory/manager.js";
 import { MemoryExtractor } from "../memory/extractor.js";
-import { SkillCatalog, buildSkillSection } from "../skills/catalog.js";
+import { SkillCatalog } from "../skills/catalog.js";
 import { TaskList } from "../todo/todo.js";
 import { TaskCreateTool, TaskGetTool, TaskListTool, TaskUpdateTool } from "../todo/tools.js";
 import { TaskStore } from "../todo/store.js";
@@ -278,6 +278,29 @@ export function App({
   const mcpManagerRef = useRef<MCPManager | null>(null);
   const hookEngineRef = useRef<HookEngine | null>(null);
   const skillCatalogRef = useRef<SkillCatalog | null>(null);
+  // 已经告诉过模型的 Skill 名字。会话首条 system-reminder 带全量清单，
+  // 之后只补新增的，避免重复占上下文。
+  const announcedSkillsRef = useRef<Set<string>>(new Set());
+
+  // 返回还没通知过模型的 Skill 清单，并记进 announcedSkillsRef。
+  const skillDelta = (): string => {
+    const catalog = skillCatalogRef.current;
+    if (!catalog) {
+      return "";
+    }
+    const lines: string[] = [];
+    for (const meta of catalog.list()) {
+      if (announcedSkillsRef.current.has(meta.name)) {
+        continue;
+      }
+      announcedSkillsRef.current.add(meta.name);
+      const desc =
+        meta.description.length > 200 ? meta.description.slice(0, 200) + "…" : meta.description;
+      lines.push(`- /${meta.name}: ${desc}`);
+    }
+    return lines.join("\n");
+  };
+
   const recoveryStateRef = useRef(new RecoveryState());
   const memCursorRef = useRef(0);
   const memExtractingRef = useRef(false);
@@ -439,12 +462,8 @@ export function App({
         catalog.load(workDir);
         skillCatalogRef.current = catalog;
 
-        // Update skill section after installation
-        const skillSection = buildSkillSection(catalog, workDir);
-        if (skillSection) {
-          const fullPrompt = buildSystemPrompt(env, { skillSection });
-          client.setSystemPrompt(fullPrompt);
-        }
+        // Skill 清单跟着项目走，不进系统提示词，由 Agent 随首条
+        // system-reminder 注入，会话中途新增的再由 skillDelta 追加。
 
         // Register the LoadSkill tool so the model can activate skills on demand.
         registryRef.current.register(new LoadSkillTool(catalog, skillHostRef.current));
@@ -453,14 +472,9 @@ export function App({
         // skill is immediately available as /<name> without a TUI restart.
         registryRef.current.register(
           new InstallSkillTool(workDir, catalog, () => {
+            // 只重连斜杠命令，系统提示词不动。新装的 Skill 由 skillDelta
+            // 在下一轮以 system-reminder 补进对话。
             wireSkillsToRegistry(catalog, cmdRegistryRef.current, skillHostRef.current);
-            // Refresh the skill section in the system prompt
-            const updatedSection = buildSkillSection(catalog, workDir);
-            const updatedPrompt = buildSystemPrompt(
-              { ...detectEnvironment(workDir), model: selectedProvider.model },
-              { skillSection: updatedSection },
-            );
-            clientRef.current?.setSystemPrompt(updatedPrompt);
           }),
         );
 
@@ -900,12 +914,7 @@ export function App({
             // /skills reload — hot-reload the catalog from disk
             catalog.reload();
             wireSkillsToRegistry(catalog, cmdRegistryRef.current, skillHostRef.current);
-            if (clientRef.current) {
-              const env = detectEnvironment(workDir);
-              env.model = selectedProvider.model;
-              const section = buildSkillSection(catalog, workDir);
-              clientRef.current.setSystemPrompt(buildSystemPrompt(env, { skillSection: section }));
-            }
+            // 系统提示词不动，新增的 Skill 走 skillDelta 下一轮补发
             const count = catalog.list().length;
             setMessages((prev) => [
               ...prev,
@@ -1229,6 +1238,9 @@ export function App({
       maxOutput: getMaxOutputTokens(selectedProvider),
       recoveryState: recoveryStateRef.current,
       activeSkills: activeSkillsRef.current,
+      // 首条 system-reminder 带全量 Skill 清单，之后只补新增的
+      skillSection: skillDelta(),
+      skillDeltaFn: skillDelta,
       memoryRecallPromise: recallPromise,
       toolFilter: buildComposedToolFilter(
         coordinatorToolFilter(enableCoordinatorMode ?? false),
@@ -1573,11 +1585,14 @@ export function App({
     [rewindSnapshots],
   );
 
-  /** Check skill directory changes before each turn to auto-reload catalog + system prompt. */
+  /**
+   * 每轮对话前检查 skill 目录变化，变了就 reload catalog 并重连斜杠命令。
+   * 系统提示词不动：新增的 Skill 由 skillDelta 在下一轮以 system-reminder
+   * 补进对话，改系统提示词会让整段缓存前缀失效。
+   */
   const refreshSkillsIfNeeded = () => {
     const catalog = skillCatalogRef.current;
-    const client = clientRef.current;
-    if (!catalog || !client) {
+    if (!catalog) {
       return;
     }
     if (!catalog.needsReload()) {
@@ -1585,10 +1600,6 @@ export function App({
     }
     catalog.reload();
     wireSkillsToRegistry(catalog, cmdRegistryRef.current, skillHostRef.current);
-    const env = detectEnvironment(workDir);
-    env.model = selectedProvider.model;
-    const skillSection = buildSkillSection(catalog, workDir);
-    client.setSystemPrompt(buildSystemPrompt(env, { skillSection }));
   };
 
   const submittingRef = useRef(false);

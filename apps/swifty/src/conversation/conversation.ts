@@ -120,7 +120,7 @@ export class ConversationManager {
     });
   }
 
-  injectLongTermMemory(instructions: string, memories: string): void {
+  injectLongTermMemory(instructions: string, memories: string, skills = ""): void {
     if (this.longTermMemoryInjected) {
       return;
     }
@@ -133,6 +133,11 @@ export class ConversationManager {
     }
     if (memories) {
       sections.push("# Auto Memory\n" + memories);
+    }
+    // Skill 清单跟着项目走，放系统提示词会让每个项目各有一份、跨项目缓存全失效，
+    // 所以和指令、记忆一样放在这条消息里
+    if (skills) {
+      sections.push("# availableSkills\n" + skills);
     }
     if (sections.length === 0) {
       return;
