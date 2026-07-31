@@ -209,4 +209,4 @@ else
 	warn "  export PATH=\"$NPM_BIN:\$PATH\""
 fi
 
-ok 'Thank you for downloading, enjoy larky!!!'
+ok 'Download Claude Code VSCode plugin and enjoy larky!!!'

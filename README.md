@@ -1,5 +1,7 @@
 Swifty/Larky/Swiftx
 
+> Download Claude Code VSCode Plugin
+
 ```bash
 # Supports: --uninstall, --version vX.Y.Z, --alpha, --beta, --rc, --canary, --nightly, --tag=NAME
 
