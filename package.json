@@ -26,7 +26,7 @@
   "devDependencies": {
     "concurrently": "^9.2.4",
     "husky": "^9.1.7",
-    "lint-staged": "^17.0.8"
+    "lint-staged": "^17.2.0"
   },
   "lint-staged": {
     "apps/swifty/**/*.{json,jsonc,js,cjs,mjs,jsx,ts,cts,mts,tsx,html,vue,css,scss,md,mdx}": [

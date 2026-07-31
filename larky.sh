@@ -98,16 +98,16 @@ fi
 
 # ── Write default config (skip if it already exists) ─────────────────
 CONFIG_DIR="$HOME/.larky"
-CONFIG_FILE="$CONFIG_DIR/config.toml"
+CONFIG_FILE="$CONFIG_DIR/config.yaml"
 if [ -f "$CONFIG_FILE" ]; then
 	info "Config already exists at $CONFIG_FILE."
 else
 	mkdir -p "$CONFIG_DIR"
 	cat >"$CONFIG_FILE" <<'EOF'
-# Larky project-level configuration (.larky/config.toml)
+# Larky project-level configuration (.larky/config.yaml)
 #
 # Precedence (lowest to highest):
-#   built-in defaults < ~/.larky/config.toml (global) < .larky/config.toml (project) < .env < LARKY_* environment variables
+#   built-in defaults < ~/.larky/config.yaml (global) < .larky/config.yaml (project) < .env < LARKY_* environment variables
 # If the LARKY_CONFIG environment variable is set, only that single file is loaded instead.
 #
 # Every section and every key below is OPTIONAL unless marked required.

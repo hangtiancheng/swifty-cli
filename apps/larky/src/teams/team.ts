@@ -22,7 +22,7 @@
 
 import { createChildLogger } from "../logger/index.js";
 import { join } from "node:path";
-import { mkdirSync, readFileSync, rmSync } from "node:fs";
+import { mkdirSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { FileMailbox, type FileMailMessage } from "./file-mailbox.js";
 import {
   MSG_PLAN_APPROVAL_RESPONSE,
@@ -232,6 +232,13 @@ export class Team {
     // Flag names align with parseTeammateFlags in teammate.ts. The team name is
     // passed explicitly so the shared task board resolves to the same tasks.json.
     let entry = process.argv[1] ?? "src/cli/main.ts";
+    try {
+      // npm global installs launch via a bin symlink (.../bin/larky) —
+      // resolve it so the path-based rewrites below can match.
+      entry = realpathSync(entry);
+    } catch {
+      // keep as-is
+    }
     entry = entry
       .replace(/core[/\\]app\.js$/, "cli/main.js")
       .replace(/core[/\\]app\.ts$/, "cli/main.ts");

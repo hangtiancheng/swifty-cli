@@ -34,8 +34,11 @@ import { pingDaemon } from "../../core/commands/ping.js";
 const PID_FILE = path.join(homedir(), ".larky", "larky-core.pid");
 
 // B-12: guard against PID reuse — before killing, verify the process command
-// line looks like our daemon ("larky" or "node"). Uses `ps` (darwin/linux);
-// any failure (ps missing, pid gone, unexpected output) counts as no-match.
+// line looks like our daemon. Uses `ps` (darwin/linux); any failure (ps
+// missing, pid gone, unexpected output) counts as no-match. Deliberately does
+// NOT match bare "node": after PID reuse that would SIGTERM an unrelated node
+// process. The real daemon command always contains "larky" (package/repo dir)
+// or the core/app entry path.
 function pidLooksLikeLarky(pid: number): boolean {
   try {
     const out = execFileSync("ps", ["-p", String(pid), "-o", "command="], {
@@ -43,7 +46,7 @@ function pidLooksLikeLarky(pid: number): boolean {
     })
       .trim()
       .toLowerCase();
-    return out.includes("larky") || out.includes("node");
+    return out.includes("larky") || /core[/\\]app\.(js|ts)/.test(out);
   } catch {
     return false;
   }
@@ -82,12 +85,13 @@ export async function cmdCoreStatus(config: LarkyConfig): Promise<void> {
   }
 }
 
-export function cmdCoreStart(config: LarkyConfig): void {
+// Returns the spawned daemon PID, or null when a daemon was already running.
+export function cmdCoreStart(config: LarkyConfig, ownerPid?: number): number | null {
   // Check if already running
   const pid = runningPid();
   if (pid) {
     console.log(`already running  pid=${String(pid)}  (${config.host}:${String(config.port)})`);
-    return;
+    return null;
   }
 
   // Resolve daemon entry point — works in both dev (src/) and dist (bundle).
@@ -97,9 +101,20 @@ export function cmdCoreStart(config: LarkyConfig): void {
   const distDaemon = path.resolve(__dirname, "../core/app.js");
   const srcDaemon = path.resolve(__dirname, "../../core/app.ts");
   const daemonPath = existsSync(distDaemon) ? distDaemon : srcDaemon;
+  // LARKY_OWNER_PID lets the daemon self-terminate if the owning process dies
+  // without running cleanup handlers (kill -9, segfault, OOM). Strip any
+  // inherited value when no owner is given (manual `larky core start`), so
+  // the daemon never watches an unrelated PID from the caller's environment.
+  const env = { ...process.env };
+  if (ownerPid === undefined) {
+    delete env.LARKY_OWNER_PID;
+  } else {
+    env.LARKY_OWNER_PID = String(ownerPid);
+  }
   const child = spawn(process.execPath, [daemonPath], {
     detached: true,
     stdio: "ignore",
+    env,
   });
   child.unref();
 
@@ -111,37 +126,67 @@ export function cmdCoreStart(config: LarkyConfig): void {
   writeFileSync(PID_FILE, String(child.pid), "utf-8");
 
   console.log(`started  pid=${String(child.pid)}  (${config.host}:${String(config.port)})`);
+  return child.pid ?? null;
 }
 
 // Start the daemon if it is not reachable, then wait until it answers ping.
-// Returns true if this process spawned the daemon, false if it was already running.
-export async function ensureDaemonRunning(config: LarkyConfig): Promise<boolean> {
+// Returns the spawned daemon PID if this process spawned it, null if a daemon
+// was already running.
+export async function ensureDaemonRunning(config: LarkyConfig): Promise<number | null> {
   const outcome = await pingDaemon(config);
   if (outcome.ok) {
-    return false;
+    return null;
   }
 
-  cmdCoreStart(config);
+  const spawnedPid = cmdCoreStart(config, process.pid);
 
   for (let i = 0; i < 20; i++) {
     await new Promise((resolve) => setTimeout(resolve, 250));
     const retry = await pingDaemon(config);
     if (retry.ok) {
-      return true;
+      return spawnedPid;
     }
   }
 
   console.error(`Error: daemon did not become reachable at ${config.host}:${String(config.port)}`);
   // Clean up the daemon we just spawned so it is not left orphaned
-  cmdCoreStop(config);
+  if (spawnedPid !== null) {
+    stopSpawnedDaemon(spawnedPid);
+  }
   process.exit(1);
 }
 
-// Gracefully stop the daemon when this process terminates for any reason:
-// normal exit, termination signals, or crashes (uncaught exception/rejection).
-// Only called when this process spawned the daemon, so a daemon the user
-// started manually is left untouched.
-export function stopDaemonOnExit(config: LarkyConfig): void {
+// SIGTERM exactly the daemon we spawned (never the PID-file one: by exit time
+// the file may point at a daemon the user manually restarted). Removes the
+// PID file only when it still refers to that same process.
+function stopSpawnedDaemon(spawnedPid: number): void {
+  try {
+    process.kill(spawnedPid, 0);
+  } catch {
+    return; // already gone
+  }
+  if (!pidLooksLikeLarky(spawnedPid)) {
+    return; // PID reused by an unrelated process — do not kill
+  }
+  try {
+    process.kill(spawnedPid, "SIGTERM");
+  } catch {
+    return;
+  }
+  try {
+    if (existsSync(PID_FILE) && Number(readFileSync(PID_FILE, "utf-8").trim()) === spawnedPid) {
+      unlinkSync(PID_FILE);
+    }
+  } catch {
+    // best effort
+  }
+}
+
+// Gracefully stop the daemon we spawned when this process terminates for any
+// reason: normal exit, termination signals, or crashes (uncaught
+// exception/rejection). Only ever kills the exact PID we spawned, so a daemon
+// the user started (or restarted) manually is left untouched.
+export function stopDaemonOnExit(_config: LarkyConfig, spawnedPid: number): void {
   let done = false;
   const stopOnce = (): void => {
     if (done) {
@@ -149,7 +194,7 @@ export function stopDaemonOnExit(config: LarkyConfig): void {
     }
     done = true;
     try {
-      cmdCoreStop(config);
+      stopSpawnedDaemon(spawnedPid);
     } catch {
       // best effort: never let cleanup itself throw during shutdown
     }

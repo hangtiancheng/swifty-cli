@@ -23,10 +23,19 @@
 // larky-core daemon: hosts the full larky agent stack behind a TCP JSON-RPC
 // server. Clients (TUI / print mode) drive sessions via RPCs and receive
 // progress through the event stream (with per-run events.jsonl replay).
-import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+import {
+  appendFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  unlinkSync,
+} from "node:fs";
 import { readdir, rm, stat } from "node:fs/promises";
+import { homedir } from "node:os";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
+import { fileURLToPath } from "node:url";
 import type net from "node:net";
 
 import picomatch from "picomatch";
@@ -540,9 +549,40 @@ export class CoreApp {
     process.on("SIGINT", onSignal);
     process.on("SIGTERM", onSignal);
 
+    // Owner watchdog: when spawned by a TUI (LARKY_OWNER_PID), exit if that
+    // process dies without cleanup (kill -9, segfault, OOM — its exit/signal
+    // handlers never ran, so no `larky core stop` will ever arrive). Other
+    // clients may still be attached; defer shutdown until the last one leaves.
+    let ownerWatchTimer: ReturnType<typeof setInterval> | null = null;
+    const ownerPid = Number(process.env.LARKY_OWNER_PID ?? "");
+    if (Number.isInteger(ownerPid) && ownerPid > 0) {
+      ownerWatchTimer = setInterval(() => {
+        try {
+          process.kill(ownerPid, 0);
+        } catch {
+          if ((this._broadcaster?.subscriptionCount() ?? 0) > 0) {
+            return; // owner gone but other clients attached — keep serving
+          }
+          logger.info(`owner pid=${String(ownerPid)} gone; shutting down`);
+          shutdownResolve?.();
+        }
+      }, 2000);
+      ownerWatchTimer.unref?.();
+    }
+
     await shutdownPromise;
 
     logger.info("shutting down");
+    // Hard-exit backstop: a hung session/MCP close must never zombie the
+    // daemon after shutdown was decided.
+    const hardExitTimer = setTimeout(() => {
+      removeOwnPidFile();
+      process.exit(0);
+    }, 10_000);
+    hardExitTimer.unref?.();
+    if (ownerWatchTimer) {
+      clearInterval(ownerWatchTimer);
+    }
     if (this._teammatePollTimer) {
       clearInterval(this._teammatePollTimer);
     }
@@ -710,14 +750,40 @@ export async function cleanExpiredRunDirs(workDir: string): Promise<number> {
   return removed;
 }
 
+// Best-effort: remove the PID file written by the CLI, but only when it still
+// holds our own PID — a stale file left after self-exit is a PID-reuse hazard
+// for the next `larky core stop`.
+export function removeOwnPidFile(): void {
+  const pidFile = path.join(homedir(), ".larky", "larky-core.pid");
+  try {
+    if (existsSync(pidFile) && Number(readFileSync(pidFile, "utf-8").trim()) === process.pid) {
+      unlinkSync(pidFile);
+    }
+  } catch {
+    // best effort
+  }
+}
+
 // Daemon entry point
 async function main(): Promise<void> {
   await new CoreApp().run();
+  removeOwnPidFile();
   process.exit(0);
 }
 
-const entryPath = process.argv[1] ?? "";
-const isDirectRun = entryPath.endsWith("/app.ts") || entryPath.endsWith("/app.js");
+// argv[1] may be a symlink (or otherwise not literally end in app.js) —
+// resolve both sides before comparing, same as cli/main.ts.
+const isDirectRun = (() => {
+  const argv1 = process.argv[1];
+  if (!argv1) {
+    return false;
+  }
+  try {
+    return realpathSync(argv1) === realpathSync(fileURLToPath(import.meta.url));
+  } catch {
+    return false;
+  }
+})();
 
 if (isDirectRun) {
   void main();

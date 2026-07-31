@@ -26,7 +26,9 @@
 //   larky --teammate ...  → teammate subprocess entry (tmux/iterm team backends)
 //   larky --remote [addr] → Koa+WS remote server (in-process agent)
 //   larky ping|version|core start|stop|status|trace ...
+import { realpathSync } from "node:fs";
 import process from "node:process";
+import { fileURLToPath } from "node:url";
 
 import { getConfig } from "../core/config.js";
 import { setupLogging } from "../core/logging.js";
@@ -147,9 +149,9 @@ async function main(): Promise<void> {
   // No command: launch the terminal UI, starting the daemon if needed.
   // If this process spawned the daemon, shut it down when the TUI exits.
   if (args.length === 0) {
-    const startedDaemon = await ensureDaemonRunning(config);
-    if (startedDaemon) {
-      stopDaemonOnExit(config);
+    const spawnedPid = await ensureDaemonRunning(config);
+    if (spawnedPid !== null) {
+      stopDaemonOnExit(config, spawnedPid);
     }
     const { launchTUI } = await import("../tui/index.js");
     await launchTUI();
@@ -246,7 +248,19 @@ process.on("uncaughtException", (err) => {
   process.exit(1);
 });
 
-const isDirectRun = process.argv[1].endsWith("/main.ts") || process.argv[1].endsWith("/main.js");
+// argv[1] is the npm bin symlink (e.g. .../bin/larky) when installed globally,
+// so resolve symlinks before comparing against this module's path.
+const isDirectRun = (() => {
+  const argv1 = process.argv[1];
+  if (!argv1) {
+    return false;
+  }
+  try {
+    return realpathSync(argv1) === realpathSync(fileURLToPath(import.meta.url));
+  } catch {
+    return false;
+  }
+})();
 
 if (isDirectRun) {
   main().catch((err: unknown) => {
