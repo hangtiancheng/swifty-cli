@@ -97,7 +97,7 @@ if [ "$ACTION" = "uninstall" ]; then
 fi
 
 # ── Write default config (skip if it already exists) ─────────────────
-CONFIG_DIR="$HOME/.swifty"
+CONFIG_DIR="$HOME/.larky"
 CONFIG_FILE="$CONFIG_DIR/config.toml"
 if [ -f "$CONFIG_FILE" ]; then
 	info "Config already exists at $CONFIG_FILE."
@@ -201,8 +201,8 @@ npm install -g "$PKG_VERSION" --registry=https://registry.npmjs.org/
 NPM_BIN="$(npm config get prefix 2>/dev/null)/bin"
 if command -v larky >/dev/null 2>&1; then
 	ok "larky installed successfully"
-	SWIFTY_VERSION="$(npm ls -g "$PACKAGE" --depth=0 2>/dev/null | grep -o "$PACKAGE@[^ ]*" | head -n1 || true)"
-	[ -n "$SWIFTY_VERSION" ] && info "Installed: $SWIFTY_VERSION"
+	LARKY_VERSION="$(npm ls -g "$PACKAGE" --depth=0 2>/dev/null | grep -o "$PACKAGE@[^ ]*" | head -n1 || true)"
+	[ -n "$LARKY_VERSION" ] && info "Installed: $LARKY_VERSION"
 else
 	warn "Installation completed but 'larky' is not on your PATH."
 	warn "Add npm's global bin to your shell profile (~/.bashrc / ~/.zshrc):"
