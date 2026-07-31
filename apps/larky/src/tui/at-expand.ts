@@ -30,6 +30,25 @@ import type { ImageAttachment } from "@/images/types.js";
 
 const log = createChildLogger({ module: "tui" });
 const MAX_INLINE_BYTES = 100_000;
+// Files larger than this are never read, even for a narrow line range.
+const MAX_RANGE_FILE_BYTES = 10_000_000;
+
+// An @ref may carry a #L3 or #L3-10 suffix (inserted via the IDE integration).
+function parseRef(ref: string): { path: string; lineStart?: number; lineEnd?: number } {
+  const m = /^(.+)#L(\d+)(?:-(\d+))?$/.exec(ref);
+  if (!m) {
+    return { path: ref };
+  }
+  const lineStart = Number.parseInt(m[2], 10);
+  return { path: m[1], lineStart, lineEnd: m[3] ? Number.parseInt(m[3], 10) : lineStart };
+}
+
+function sliceLines(content: string, lineStart: number, lineEnd: number): string {
+  const all = content.split("\n");
+  const from = Math.max(1, lineStart);
+  const to = Math.min(all.length, Math.max(lineEnd, from));
+  return all.slice(from - 1, to).join("\n");
+}
 
 // Expand @path references in a user message by inlining the referenced files'
 // contents (resolved relative to workDir). Tokens that don't resolve to a small
@@ -47,10 +66,21 @@ export function expandAtRefs(text: string, workDir: string): string {
       continue;
     }
     seen.add(ref);
-    const p = isAbsolute(ref) ? ref : join(workDir, ref);
+    const { path: refPath, lineStart, lineEnd } = parseRef(ref);
+    const p = isAbsolute(refPath) ? refPath : join(workDir, refPath);
     try {
       const st = statSync(p);
-      if (st.isFile() && st.size <= MAX_INLINE_BYTES) {
+      if (!st.isFile()) {
+        continue;
+      }
+      if (lineStart !== undefined && lineEnd !== undefined) {
+        if (st.size <= MAX_RANGE_FILE_BYTES) {
+          const snippet = sliceLines(readFileSync(p, "utf-8"), lineStart, lineEnd);
+          if (snippet.length <= MAX_INLINE_BYTES) {
+            appendix += `\n\n<file path="${refPath}" lines="${String(lineStart)}-${String(lineEnd)}">\n${snippet}\n</file>`;
+          }
+        }
+      } else if (st.size <= MAX_INLINE_BYTES) {
         appendix += `\n\n<file path="${ref}">\n${readFileSync(p, "utf-8")}\n</file>`;
       }
     } catch (err) {
@@ -83,7 +113,8 @@ export async function expandAtRefsWithImages(
       continue;
     }
     seen.add(ref);
-    const p = isAbsolute(ref) ? ref : join(workDir, ref);
+    const { path: refPath, lineStart, lineEnd } = parseRef(ref);
+    const p = isAbsolute(refPath) ? refPath : join(workDir, refPath);
     try {
       const st = statSync(p);
       if (!st.isFile()) {
@@ -91,15 +122,22 @@ export async function expandAtRefsWithImages(
       }
       if (isImagePath(p)) {
         if (images.length >= MAX_IMAGES_PER_MESSAGE) {
-          appendix += `\n\n<file path="${ref}">Error: too many images attached (limit ${String(MAX_IMAGES_PER_MESSAGE)} per message)</file>`;
+          appendix += `\n\n<file path="${refPath}">Error: too many images attached (limit ${String(MAX_IMAGES_PER_MESSAGE)} per message)</file>`;
           continue;
         }
         try {
           images.push(await loadImageAttachment(p));
-          appendix += `\n\n<attached-image path="${ref}"/>`;
+          appendix += `\n\n<attached-image path="${refPath}"/>`;
         } catch (imgErr) {
           log.error({ err: imgErr }, "tui operation failed");
-          appendix += `\n\n<file path="${ref}">Error: ${imgErr instanceof Error ? imgErr.message : String(imgErr)}</file>`;
+          appendix += `\n\n<file path="${refPath}">Error: ${imgErr instanceof Error ? imgErr.message : String(imgErr)}</file>`;
+        }
+      } else if (lineStart !== undefined && lineEnd !== undefined) {
+        if (st.size <= MAX_RANGE_FILE_BYTES) {
+          const snippet = sliceLines(readFileSync(p, "utf-8"), lineStart, lineEnd);
+          if (snippet.length <= MAX_INLINE_BYTES) {
+            appendix += `\n\n<file path="${refPath}" lines="${String(lineStart)}-${String(lineEnd)}">\n${snippet}\n</file>`;
+          }
         }
       } else if (st.size <= MAX_INLINE_BYTES) {
         appendix += `\n\n<file path="${ref}">\n${readFileSync(p, "utf-8")}\n</file>`;

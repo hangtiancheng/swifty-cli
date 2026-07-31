@@ -69,11 +69,36 @@ const DRY_RUN = !process.argv.includes("--write");
 
 // The 29 business module directories (matches migrate.md §2.3).
 const SRC_DIRS = [
-  "agent", "llm", "conversation", "tools", "tool-result", "prompt",
-  "permissions", "sandbox", "config", "session", "compact", "memory",
-  "skills", "commands", "subagent", "teams", "hooks", "mcp", "worktree",
-  "code-review", "file-history", "plan-file", "todo", "history", "logger",
-  "utils", "tui", "remote", "images",
+  "agent",
+  "llm",
+  "conversation",
+  "tools",
+  "tool-result",
+  "prompt",
+  "permissions",
+  "sandbox",
+  "config",
+  "session",
+  "compact",
+  "memory",
+  "skills",
+  "commands",
+  "subagent",
+  "teams",
+  "hooks",
+  "mcp",
+  "worktree",
+  "code-review",
+  "file-history",
+  "plan-file",
+  "todo",
+  "history",
+  "logger",
+  "utils",
+  "tui",
+  "remote",
+  "images",
+  "vscode",
 ];
 
 // Top-level single files. main.tsx is intentionally excluded: it has been
@@ -83,7 +108,7 @@ const SRC_FILES = ["print-mode.ts", "teammate.ts"];
 // Files already reworked for larky's dual-process architecture — never
 // overwritten (paths relative to the larky root).
 const PROTECTED = new Set([
-  "src/tui/app.tsx",   // rewritten as the SocketClient event-driven TUI
+  "src/tui/app.tsx", // rewritten as the SocketClient event-driven TUI
   "src/tui/index.tsx", // launchTUI: alt-screen + SocketClient wiring
   "src/teams/team.ts", // teammate external-backend entry redirected to cli/main
 ]);
@@ -95,8 +120,20 @@ const IGNORE = new Set(["node_modules", "dist", ".DS_Store"]);
 // Brand renaming applies to text files only; everything else (wasm, images,
 // native binaries) is copied byte-for-byte.
 const TEXT_EXTS = new Set([
-  ".ts", ".tsx", ".js", ".mjs", ".cjs", ".jsx", ".json", ".md", ".yml",
-  ".yaml", ".html", ".css", ".txt", ".toml",
+  ".ts",
+  ".tsx",
+  ".js",
+  ".mjs",
+  ".cjs",
+  ".jsx",
+  ".json",
+  ".md",
+  ".yml",
+  ".yaml",
+  ".html",
+  ".css",
+  ".txt",
+  ".toml",
 ]);
 
 /**
@@ -277,15 +314,19 @@ function main() {
     `  new ${stats.new}  updated ${stats.update}  identical after transform (skipped) ${stats.same}`,
   );
   if (missingSources.length > 0) {
-    console.log(`  missing on the swifty side (not copied): ${missingSources.join(", ")}`);
+    console.log(
+      `  missing on the swifty side (not copied): ${missingSources.join(", ")}`,
+    );
   }
   if (skippedProtected.length > 0) {
-    console.log("\n== protected files left untouched (larky dual-process versions) ==");
+    console.log(
+      "\n== protected files left untouched (larky dual-process versions) ==",
+    );
     for (const f of skippedProtected) console.log(`  [skip  ] ${f}`);
     console.log(
       "  note: swifty-branded names inside the files above and in larky-native files\n" +
-      "  (core/agent-session.ts, core/app.ts, cli/main.ts, tui/index.tsx, ...) are\n" +
-      "  outside this script's scope and must be renamed manually.",
+        "  (core/agent-session.ts, core/app.ts, cli/main.ts, tui/index.tsx, ...) are\n" +
+        "  outside this script's scope and must be renamed manually.",
     );
   }
 
@@ -293,7 +334,9 @@ function main() {
   //    not copy. Fully unmigrated directories are collapsed to "<dir>/*".
   const unmigrated = [];
   collectUnmigrated(SWIFTY, "", unmigrated);
-  console.log(`\n== not migrated (relative to apps/swifty, ${String(unmigrated.length)} entries) ==`);
+  console.log(
+    `\n== not migrated (relative to apps/swifty, ${String(unmigrated.length)} entries) ==`,
+  );
   for (const f of unmigrated) console.log(`  ${f}`);
 }
 

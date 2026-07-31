@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **apps/swifty**: VSCode integration — select code in the editor and press `Cmd+Option+K` (macOS; `Ctrl+Alt+K` elsewhere) to insert a `@path#L3-10` reference into the CLI input box. Implemented by reusing the already-installed `anthropic.claude-code` VSCode extension's embedded WebSocket MCP server; the extension side needs no changes and swifty ships no extension of its own.
+  - New module `src/vscode/` (3 files):
+    - `lockfile.ts` — service discovery. Scans `~/.claude/ide/<port>.lock` (honors the `CLAUDE_CONFIG_DIR` env override), validates lockfile JSON with a zod schema (`workspaceFolders`, `pid`, `ideName`, `transport`, `authToken`), and picks the extension instance for this terminal: first by `CLAUDE_CODE_SSE_PORT` env match (injected by the extension into its integrated terminals), falling back to an unambiguous cwd-inside-workspaceFolders match (NFC-normalized for macOS NFD paths). Only `transport: "ws"` lockfiles are supported.
+    - `ws-transport.ts` — an MCP `Transport` implementation over `ws` (the MCP SDK ships no WebSocket client transport), connecting with subprotocol `mcp` and explicitly converting `RawData` (`Buffer | ArrayBuffer | Buffer[]`) to utf-8 before JSON parsing.
+    - `ide-client.ts` — `connectToIde()`: polls discovery for up to 30s when inside an IDE terminal (`CLAUDE_CODE_SSE_PORT` set or `TERM_PROGRAM=vscode`), authenticates with the `X-Claude-Code-Ide-Authorization: <authToken>` header, announces itself with an `ide_connected { pid }` notification (the extension routes the keybinding to the CLI whose pid sits in the active terminal's process tree), and registers a handler for `at_mentioned { filePath, lineStart, lineEnd }` notifications (0-based lines, converted to 1-based). Note: the extension sends a file-path/line-range reference, not the selected text itself.
+  - `src/tui/input.tsx`: `InputBox` gained an `insertTextRef` prop exposing an insert-at-cursor function (pads a leading space when the preceding character is not whitespace), enabling programmatic text injection without refactoring the component.
+  - `src/tui/app.tsx`: connects on mount, shows an "IDE connected: <name>" system message, and turns each `at_mentioned` notification into `@<relative-path>#L<start>[-<end>]` inserted at the input cursor.
+  - `src/tui/at-expand.ts`: `expandAtRefs` / `expandAtRefsWithImages` now parse an optional `#L3` / `#L3-10` suffix and inline only the referenced lines as `<file path="…" lines="3-10">…</file>` at submit time (files up to 10 MB are sliced; the resulting snippet still honors the 100 KB inline cap).
+  - Caveat: this depends on the third-party extension's undocumented protocol (lockfile format, auth header, notification methods), which may change without notice; if another Claude-compatible CLI runs in the same window, the extension routes the keybinding by terminal pid.
+- **apps/larky**: same `Cmd+Option+K` capability, adapted to the dual-process architecture:
+  - `src/vscode/`, `src/tui/input.tsx`, and `src/tui/at-expand.ts` arrived via `apps/swifty-to-larky.mjs` (the `vscode` directory was added to the script's `SRC_DIRS`; brand renaming turns the MCP client name into `larky` automatically).
+  - `src/tui/app.tsx` (PROTECTED, hand-edited): the IDE connection lives in the **TUI process**, because it is the process running inside the IDE's integrated terminal — the extension routes the keybinding by terminal pid, which the background daemon can never satisfy. Mentions are inserted locally via `insertTextRef`; the submitted text travels to the daemon unchanged over the existing `session.send_message` RPC.
+  - The **daemon needed zero changes**: `core/agent-session.ts` already expands `@` references at submit time through `expandAtRefsWithImages`, which picked up `#L` range support from the synced `at-expand.ts`.
+  - Verification for both apps: typecheck, eslint, and full test suites pass (swifty 278, larky 373). End-to-end behavior requires a real VSCode window with the Claude Code extension: launch the CLI in the integrated terminal, wait for "IDE connected", select code, press `Cmd+Option+K`.
+
 ### Changed
 
 - **apps/larky**: Aligned with the latest `apps/swifty` changes via `apps/swifty-to-larky.mjs` plus a manual rework of the dual-process-specific `src/core/agent-session.ts`:

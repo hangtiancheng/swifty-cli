@@ -37,6 +37,8 @@ import type { Snapshot } from "../file-history/file-history.js";
 import { TeammateUIStateSchema, type TeammateUIState } from "../teams/progress.js";
 import { strArg } from "../utils/index.js";
 import { z } from "zod";
+import { relative } from "node:path";
+import { connectToIde, type IdeConnection } from "../vscode/ide-client.js";
 
 import { IpcError, type SocketClient } from "../core/transport/socket-client.js";
 import { EventSchema, type Event } from "../core/bus/events.js";
@@ -672,6 +674,47 @@ export function App({ client, provider, permissionMode, onSessionChange }: Props
     };
   }, []);
 
+  // -- VSCode integration ------------------------------------------------------
+  // Lives in the TUI process: it runs inside the IDE's integrated terminal, so
+  // the extension can route Cmd+Option+K to us by terminal pid. The daemon is
+  // untouched — @file#Lx-y refs are expanded daemon-side at submit time.
+  const insertInputTextRef = useRef<((text: string) => void) | null>(null);
+  useEffect(() => {
+    let conn: IdeConnection | null = null;
+    let cancelled = false;
+    void connectToIde({
+      cwd: workDir,
+      onAtMentioned: ({ filePath, lineStart, lineEnd }) => {
+        const rel = relative(workDir, filePath);
+        const shown = rel && !rel.startsWith("..") ? rel : filePath;
+        let mention = `@${shown}`;
+        if (lineStart !== undefined) {
+          mention += `#L${String(lineStart)}`;
+          if (lineEnd !== undefined && lineEnd !== lineStart) {
+            mention += `-${String(lineEnd)}`;
+          }
+        }
+        insertInputTextRef.current?.(mention);
+      },
+    }).then((c) => {
+      if (!c) {
+        return;
+      }
+      if (cancelled) {
+        void c.close();
+        return;
+      }
+      conn = c;
+      pushSystem(
+        `IDE connected: ${c.ideName} — select code and press Cmd+Option+K to reference it here`,
+      );
+    });
+    return () => {
+      cancelled = true;
+      void conn?.close();
+    };
+  }, [workDir, pushSystem]);
+
   // -- Keyboard shortcuts ----------------------------------------------------
 
   const ctrlCCountRef = useRef(0);
@@ -1077,6 +1120,7 @@ export function App({ client, provider, permissionMode, onSessionChange }: Props
         permMode={permMode}
         onModeChange={handleModeChange}
         workDir={workDir}
+        insertTextRef={insertInputTextRef}
         onEscape={() => {
           if (isStreamingRef.current && sessionIdRef.current) {
             rpc("run.cancel", { session_id: sessionIdRef.current });
