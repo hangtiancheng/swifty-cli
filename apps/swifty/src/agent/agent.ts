@@ -88,9 +88,9 @@ export interface AgentConfig {
   // Project instructions and memory content, need re-injection after compaction
   instructions?: string;
   memoryContent?: string;
-  /** 可用 Skill 清单。跟着项目走，所以不进系统提示词，随首条 system-reminder 注入 */
+  /** Available skill listing. Project-scoped, so injected via the first system-reminder instead of the system prompt */
   skillSection?: string;
-  /** 返回本轮新出现的 Skill 清单，已通知过的不再返回 */
+  /** Returns newly discovered skills since the last call; previously notified ones are excluded */
   skillDeltaFn?: () => string;
   // Non-blocking memory recall: prefetch promise runs in parallel with the main LLM call, injected after tool execution
   memoryRecallPromise?: Promise<string>;
@@ -228,8 +228,8 @@ export class Agent {
             this.conversation.addSystemReminder(note);
           }
         }
-        // 会话中途新增的 Skill：只补新出现的那几条，不重发整份清单，
-        // 更不动系统提示词，避免把缓存前缀顶掉。
+        // Skills added mid-conversation: only send the delta, not the full listing,
+        // and never touch the system prompt to avoid invalidating the cache prefix.
         if (this.skillDeltaFn) {
           const delta = this.skillDeltaFn();
           if (delta) {

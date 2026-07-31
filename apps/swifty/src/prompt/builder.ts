@@ -87,9 +87,11 @@ export function detectEnvironment(workDir: string): EnvironmentContext {
   return env;
 }
 
-// System Prompt 只放跟项目无关的产品定义，这样它全局一份、换项目也能继续
-// 命中同一份缓存。项目指令、自动记忆、Skill 清单都跟着项目走，由
-// conversation.injectLongTermMemory 以 system-reminder 消息注入对话。
+// The system prompt contains only project-agnostic product definitions so it stays
+// as a single global copy and keeps hitting the same cache across projects.
+// Project instructions, auto-memories, and the skill listing are all project-scoped
+// and injected into the conversation via conversation.injectLongTermMemory as a
+// system-reminder message.
 export function buildSystemPrompt(env: EnvironmentContext): string {
   const b = new PromptBuilder();
   b.add(identitySection());

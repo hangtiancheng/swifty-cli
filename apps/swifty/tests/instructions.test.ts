@@ -11,8 +11,8 @@ function makeRepo(prefix: string): string {
   return dir;
 }
 
-describe("指令文件加载", () => {
-  it("同一目录下 .swifty/SWIFTY.md 排在 SWIFTY.md 之后", () => {
+describe("instruction file loading", () => {
+  it(".swifty/SWIFTY.md is ordered after SWIFTY.md in the same directory", () => {
     const dir = makeRepo("swifty-instr-");
     writeFileSync(join(dir, "SWIFTY.md"), "plain file");
     mkdirSync(join(dir, ".swifty"), { recursive: true });
@@ -21,11 +21,11 @@ describe("指令文件加载", () => {
     const out = loadInstructions(dir);
     expect(out).toContain("plain file");
     expect(out).toContain("dotdir file");
-    // 排在后面的优先级更高
+    // Later entries take higher precedence
     expect(out.indexOf("plain file")).toBeLessThan(out.indexOf("dotdir file"));
   });
 
-  it(".swifty/SWIFTY.md 参与逐级遍历，深层目录排在后面", () => {
+  it(".swifty/SWIFTY.md participates in directory traversal with deeper dirs ordered later", () => {
     const root = makeRepo("swifty-instr-walk-");
     const sub = join(root, "pkg", "deep");
     mkdirSync(sub, { recursive: true });

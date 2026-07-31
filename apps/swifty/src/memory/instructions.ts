@@ -36,19 +36,20 @@ export interface InstructionSource {
 }
 
 /**
- * 发现并拼接所有项目和用户级指令文件。
+ * Discovers and concatenates all project- and user-level instruction files.
  *
- * 发现顺序（越靠后优先级越高，模型注意力优先关注后面的内容）：
- *  1. 用户全局: ~/.swifty/SWIFTY.md, ~/.swifty/AGENTS.md
- *  2. 项目: 从 git root 到 workDir 路径上每个目录的 SWIFTY.md、AGENTS.md
- *     和 .swifty/SWIFTY.md
- *  3. workDir/SWIFTY.local.md（本地私有覆盖）
+ * Discovery order (later entries take higher precedence — the model attends
+ * more to content appearing later):
+ *  1. User-global: ~/.swifty/SWIFTY.md, ~/.swifty/AGENTS.md
+ *  2. Project: SWIFTY.md, AGENTS.md, and .swifty/SWIFTY.md in every
+ *     directory from the git root down to workDir
+ *  3. workDir/SWIFTY.local.md (local private override)
  *
- * 支持 @include 指令：
+ * Supports @include directives:
  *  - @./relative/path, @~/home/path, @/absolute/path
- *  - 相对于包含文件所在目录解析
- *  - 在 fenced code block 内忽略
- *  - 循环检测（同一绝对路径不会被包含两次）
+ *  - Resolved relative to the directory of the containing file
+ *  - Ignored inside fenced code blocks
+ *  - Cycle detection (the same absolute path is never included twice)
  */
 export function loadInstructions(workDir: string): string {
   const sources = discoverInstructions(workDir);
@@ -98,7 +99,7 @@ export function discoverInstructions(workDir: string): InstructionSource[] {
   for (const dir of dirs) {
     addSource(sources, seen, join(dir, "SWIFTY.md"));
     addSource(sources, seen, join(dir, "AGENTS.md"));
-    // .swifty/ 下的同名文件：想让指令进 .gitignore 的项目放这里
+    // Same-named file under .swifty/: for projects that want instructions in .gitignore
     addSource(sources, seen, join(dir, ".swifty", "SWIFTY.md"));
   }
 

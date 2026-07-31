@@ -223,8 +223,8 @@ export async function runTeammate(args: TeammateArgs): Promise<void> {
 
   const env = detectEnvironment(workDir);
   env.model = provider.model;
-  // 系统提示词只放跟项目无关的产品定义，Skill 清单跟着项目走，
-  // 随首条 system-reminder 注入对话
+  // The system prompt contains only project-agnostic product definitions; the skill
+  // listing is project-scoped and injected via the first system-reminder message
   const systemPrompt = buildSystemPrompt(env);
   const client = await createClient(provider, systemPrompt);
 
