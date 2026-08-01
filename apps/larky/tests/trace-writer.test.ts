@@ -20,11 +20,13 @@
  * SOFTWARE.
  */
 
-import { describe, expect, test } from "vitest";
-import { TraceWriter } from "../src/core/trace/writer.js";
 import { readFileSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+
+import { describe, expect, test } from "vitest";
+
+import { TraceWriter } from "../src/core/trace/writer.js";
 
 describe("TraceWriter", () => {
   // Feature: Verify TraceWriter writes trace records to file

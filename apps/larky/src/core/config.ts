@@ -25,8 +25,8 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 
-import toml from "toml";
 import { config as dotenvConfig } from "dotenv";
+import toml from "toml";
 import { z } from "zod";
 
 // Print config error message to stderr and exit with code 1 (matches Python SystemExit behavior)

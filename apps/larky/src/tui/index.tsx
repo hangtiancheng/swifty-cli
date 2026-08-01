@@ -24,13 +24,15 @@
 // Connects a SocketClient to the daemon, enters the alt screen, installs the
 // BSU/ESU sync-output patch, renders the Ink App, and restores the primary
 // screen on exit.
-import { useState } from "react";
 import { render } from "ink";
+import { useState } from "react";
+
 import { loadConfig, type ProviderConfig } from "../config/config.js";
 import { getConfig } from "../core/config.js";
 import { SocketClient } from "../core/transport/socket-client.js";
 import { initLogger } from "../logger/index.js";
 import { newSessionId } from "../session/session.js";
+
 import { App } from "./app.js";
 import { ProviderSelect } from "./provider-select.js";
 import { installSyncOutput } from "./sync-output.js";

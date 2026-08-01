@@ -21,9 +21,9 @@
  */
 
 // TCP client: connect to core daemon, send commands and receive events
+import { randomUUID } from "node:crypto";
 import net from "node:net";
 import { createInterface } from "node:readline";
-import { randomUUID } from "node:crypto";
 
 import { z } from "zod";
 

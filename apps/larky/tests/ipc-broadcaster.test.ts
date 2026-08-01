@@ -26,9 +26,9 @@ import net from "node:net";
 
 import { describe, expect, test } from "vitest";
 
+import { isRecord } from "../src/core/bus/envelope.js";
 import type { Event } from "../src/core/bus/events.js";
 import { IpcEventBroadcaster } from "../src/core/transport/ipc-broadcaster.js";
-import { isRecord } from "../src/core/bus/envelope.js";
 
 // Write tracker to capture socket write calls without type assertions
 interface WriteTracker {

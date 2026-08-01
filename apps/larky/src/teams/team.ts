@@ -20,10 +20,20 @@
  * SOFTWARE.
  */
 
-import { createChildLogger } from "../logger/index.js";
-import { join } from "node:path";
 import { mkdirSync, readFileSync, realpathSync, rmSync } from "node:fs";
+import { join } from "node:path";
+
+import type { ConversationManager } from "../conversation/conversation.js";
+import { createChildLogger } from "../logger/index.js";
+import type { PermissionChecker } from "../permissions/checker.js";
+import { getOrCreatePlanPath } from "../plan-file/plan-file.js";
+import { randomVerb } from "../tui/verbs.js";
+
+import { detectBackend, spawnTeammate as spawnTeammateProcess } from "./backend.js";
+import type { SpawnConfig } from "./backend.js";
 import { FileMailbox, type FileMailMessage } from "./file-mailbox.js";
+import type { TeammateUIState } from "./progress.js";
+import { createProgress, recordToolUse, recordTokens } from "./progress.js";
 import {
   MSG_PLAN_APPROVAL_RESPONSE,
   MSG_SHUTDOWN_REQUEST,
@@ -33,19 +43,12 @@ import {
   shutdownRequest,
   shutdownResponse,
 } from "./protocol.js";
-import { readTeamFile, teamDir, writeTeamFile, type TeamFile } from "./team-file.js";
-import { detectBackend, spawnTeammate as spawnTeammateProcess } from "./backend.js";
-import type { SpawnConfig } from "./backend.js";
-import type { TeammateUIState } from "./progress.js";
-import { createProgress, recordToolUse, recordTokens } from "./progress.js";
-import { randomVerb } from "../tui/verbs.js";
-import type { ConversationManager } from "../conversation/conversation.js";
-import { saveTranscript } from "./transcript.js";
-import { asErrorString } from "@/utils/index.js";
-import { SharedTaskStore } from "./shared-task.js";
 import { getNameRegistry } from "./registry.js";
-import { getOrCreatePlanPath } from "../plan-file/plan-file.js";
-import type { PermissionChecker } from "../permissions/checker.js";
+import { SharedTaskStore } from "./shared-task.js";
+import { readTeamFile, teamDir, writeTeamFile, type TeamFile } from "./team-file.js";
+import { saveTranscript } from "./transcript.js";
+
+import { asErrorString } from "@/utils/index.js";
 
 const log = createChildLogger({ module: "teams" });
 export type TeamMode = "in-process" | "tmux" | "iterm";

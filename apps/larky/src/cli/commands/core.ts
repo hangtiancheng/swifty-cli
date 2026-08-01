@@ -28,8 +28,8 @@ import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 
-import type { LarkyConfig } from "../../core/config.js";
 import { pingDaemon } from "../../core/commands/ping.js";
+import type { LarkyConfig } from "../../core/config.js";
 
 const PID_FILE = path.join(homedir(), ".larky", "larky-core.pid");
 

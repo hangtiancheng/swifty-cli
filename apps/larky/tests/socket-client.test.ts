@@ -20,10 +20,12 @@
  * SOFTWARE.
  */
 
+import net from "node:net";
+
 import { describe, expect, test } from "vitest";
+
 import { SocketClient } from "../src/core/transport/socket-client.js";
 import { SocketServer } from "../src/core/transport/socket-server.js";
-import net from "node:net";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);

@@ -24,7 +24,9 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import net from "node:net";
 import { createInterface } from "node:readline";
+
 import { ZodError } from "zod";
+
 import {
   HandlerError,
   INTERNAL_ERROR,
@@ -36,8 +38,8 @@ import {
   makeError,
 } from "../bus/envelope.js";
 import type { JsonRpcSuccess } from "../bus/envelope.js";
-import type { TraceWriter } from "../trace/writer.js";
 import { makeCommandTrace, makeErrorTrace, makeResponseTrace } from "../trace/record.js";
+import type { TraceWriter } from "../trace/writer.js";
 
 export type CommandHandler = (params: Record<string, unknown>) => Promise<unknown>;
 

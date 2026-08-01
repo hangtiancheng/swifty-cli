@@ -20,12 +20,14 @@
  * SOFTWARE.
  */
 
-import { describe, expect, test } from "vitest";
-import { EventWriter } from "../src/core/events/writer.js";
-import { EventBus } from "../src/core/events/bus.js";
 import { readFileSync, mkdirSync, rmSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+
+import { describe, expect, test } from "vitest";
+
+import { EventBus } from "../src/core/events/bus.js";
+import { EventWriter } from "../src/core/events/writer.js";
 
 describe("EventWriter", () => {
   // Feature: Verify EventWriter writes events to JSONL file

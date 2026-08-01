@@ -32,23 +32,22 @@ import {
   unlinkSync,
 } from "node:fs";
 import { readdir, rm, stat } from "node:fs/promises";
+import type net from "node:net";
 import { homedir } from "node:os";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
-import type net from "node:net";
 
 import picomatch from "picomatch";
 
-import { getConfig, expandUser } from "./config.js";
-import { setupLogging } from "./logging.js";
+import { loadConfig as loadLarkyConfig, forkEnabled } from "../config/config.js";
+import type { AppConfig } from "../config/config.js";
+import { initLogger } from "../logger/index.js";
+import type { PermissionMode } from "../permissions/checker.js";
+import * as sessionMod from "../session/session.js";
 import { version } from "../version.js";
-import { EventBus } from "./events/bus.js";
-import { SocketServer, getConnectionWriter } from "./transport/socket-server.js";
-import { IpcEventBroadcaster } from "./transport/ipc-broadcaster.js";
-import { TraceWriter } from "./trace/writer.js";
-import { makeEventTrace } from "./trace/record.js";
-import { HandlerError, isRecord } from "./bus/envelope.js";
+
+import { AgentSession } from "./agent-session.js";
 import {
   PingCommandSchema,
   CoreStatusCommandSchema,
@@ -69,15 +68,16 @@ import {
   RewindListCommandSchema,
   RewindApplyCommandSchema,
 } from "./bus/commands.js";
+import { HandlerError, isRecord } from "./bus/envelope.js";
 import type { Event } from "./bus/events.js";
-
-import { AgentSession } from "./agent-session.js";
+import { getConfig, expandUser } from "./config.js";
+import { EventBus } from "./events/bus.js";
 import { InteractionHub } from "./interaction-hub.js";
-import { loadConfig as loadLarkyConfig, forkEnabled } from "../config/config.js";
-import type { AppConfig } from "../config/config.js";
-import type { PermissionMode } from "../permissions/checker.js";
-import * as sessionMod from "../session/session.js";
-import { initLogger } from "../logger/index.js";
+import { setupLogging } from "./logging.js";
+import { makeEventTrace } from "./trace/record.js";
+import { TraceWriter } from "./trace/writer.js";
+import { IpcEventBroadcaster } from "./transport/ipc-broadcaster.js";
+import { SocketServer, getConnectionWriter } from "./transport/socket-server.js";
 
 const SESSION_NOT_FOUND = -32010;
 const SESSION_BUSY = -32012;

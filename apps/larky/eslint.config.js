@@ -23,12 +23,13 @@
 // @ts-check
 
 import eslint from "@eslint/js";
-import tseslint from "typescript-eslint";
-import unicorn from "eslint-plugin-unicorn";
 import { defineConfig, globalIgnores } from "eslint/config";
 import reactHooks from "eslint-plugin-react-hooks";
 import reactRefresh from "eslint-plugin-react-refresh";
+import unicorn from "eslint-plugin-unicorn";
 import globals from "globals";
+import tseslint from "typescript-eslint";
+import importPlugin from "eslint-plugin-import";
 
 export default defineConfig(
   globalIgnores([
@@ -59,14 +60,15 @@ export default defineConfig(
     },
     plugins: {
       unicorn,
-      ["react-hooks"]: reactHooks,
+      "react-hooks": reactHooks,
+      import: importPlugin,
     },
     rules: {
       ...reactHooks.configs.recommended.rules,
       "@typescript-eslint/consistent-type-imports": ["error", { prefer: "type-imports" }],
       "@typescript-eslint/no-floating-promises": ["error", { ignoreVoid: true }],
       "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_" }],
-      "@typescript-eslint/no-unnecessary-condition": "off",
+      "@typescript-eslint/no-unnecessary-condition": "warn",
       "@typescript-eslint/ban-ts-comment": "error",
       "@typescript-eslint/consistent-type-assertions": [
         "error",
@@ -84,6 +86,15 @@ export default defineConfig(
       "no-console": "warn",
       curly: ["error", "all"],
       "no-control-regex": "warn",
+      "import/first": "error",
+      "import/order": [
+        "error",
+        {
+          groups: ["builtin", "external", "internal", "parent", "sibling", "index"],
+          "newlines-between": "always",
+          alphabetize: { order: "asc", caseInsensitive: true },
+        },
+      ],
     },
   },
   {

@@ -20,13 +20,14 @@
  * SOFTWARE.
  */
 
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { formatTextLine, RotatingFileDestination, setupLogging } from "../src/core/logging.js";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+
 import type { LarkyConfig } from "../src/core/config.js";
+import { formatTextLine, RotatingFileDestination, setupLogging } from "../src/core/logging.js";
 
 // Build a minimal LarkyConfig for logging tests
 function loggingConfig(format: string, file: string): LarkyConfig {

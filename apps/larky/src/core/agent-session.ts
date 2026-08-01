@@ -25,33 +25,11 @@
 // hooks, skills, teams, memory, file history) and bridges AgentEvents to wire
 // events. Blocking UI callbacks (permission / ask-user / plan approval) are
 // delegated to an InteractionBroker implemented by CoreApp with pending maps.
+import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { randomUUID } from "node:crypto";
 
-import type { HookConfig, MCPServerConfig, ProviderConfig } from "../config/config.js";
-import type { SandboxYamlConfig } from "../config/config.js";
-import { getContextWindow, getContextWindowAsync, getMaxOutputTokens } from "../config/config.js";
-import { createClient, type LLMClient } from "../llm/client.js";
-import { ConversationManager } from "../conversation/conversation.js";
-import { buildSystemPrompt, detectEnvironment } from "../prompt/builder.js";
-import { ToolRegistry } from "../tools/registry.js";
-import { ReadFileTool } from "../tools/read-file.js";
-import { BashTool } from "../tools/bash.js";
-import { GlobTool } from "../tools/glob.js";
-import { GrepTool } from "../tools/grep.js";
-import { WriteFileTool } from "../tools/write-file.js";
-import { EditFileTool } from "../tools/edit-file.js";
-import { ExitPlanModeTool } from "../tools/exit-plan-mode.js";
-import { ToolSearchTool } from "../tools/tool-search.js";
-import { EnterWorktreeTool } from "../tools/enter-worktree.js";
-import { ExitWorktreeTool } from "../tools/exit-worktree.js";
-import { AskUserQuestionTool, type Question } from "../tools/ask-user.js";
-import { FileStateCache } from "../tools/file-state-cache.js";
-import { SyntheticOutputTool } from "../tools/synthetic-output.js";
-import type { ToolSchema } from "../tools/types.js";
 import { Agent } from "../agent/agent.js";
-import { PermissionChecker, type Decision, type PermissionMode } from "../permissions/checker.js";
 import {
   parse as parseCommand,
   createDefaultRegistry as createCommandRegistry,
@@ -60,23 +38,45 @@ import {
   type CommandContext,
 } from "../commands/commands.js";
 import { loadUserCommands } from "../commands/loader.js";
+import { forceCompact } from "../compact/compact.js";
+import { RecoveryState } from "../compact/recovery.js";
+import type { HookConfig, MCPServerConfig, ProviderConfig } from "../config/config.js";
+import type { SandboxYamlConfig } from "../config/config.js";
+import { getContextWindow, getContextWindowAsync, getMaxOutputTokens } from "../config/config.js";
+import { ConversationManager } from "../conversation/conversation.js";
+import { FileHistory, type Snapshot } from "../file-history/file-history.js";
+import { HookEngine, validate as validateHooks } from "../hooks/hooks.js";
+import { saveSessionImages } from "../images/store.js";
+import { createClient, type LLMClient } from "../llm/client.js";
+import { createChildLogger } from "../logger/index.js";
 import { MCPManager } from "../mcp/manager.js";
 import { MCPToolWrapper } from "../mcp/tool-wrapper.js";
-import { loadInstructions } from "../memory/instructions.js";
-import { MemoryManager } from "../memory/manager.js";
 import { MemoryConsolidator } from "../memory/consolidation.js";
 import { MemoryExtractor } from "../memory/extractor.js";
+import { loadInstructions } from "../memory/instructions.js";
+import { MemoryManager } from "../memory/manager.js";
+import { PermissionChecker, type Decision, type PermissionMode } from "../permissions/checker.js";
+import {
+  getOrCreatePlanPath,
+  loadPlan,
+  planExists,
+  resetPlanPath,
+} from "../plan-file/plan-file.js";
+import { buildSystemPrompt, detectEnvironment } from "../prompt/builder.js";
+import { buildPlanModeExitReminder, buildPlanModeReentryReminder } from "../prompt/plan-mode.js";
+import { createSandbox, type Sandbox } from "../sandbox/index.js";
+import * as sessionMod from "../session/session.js";
 import { SkillCatalog } from "../skills/catalog.js";
-import type { SkillForkHost, SkillHost } from "../skills/skill.js";
-import { LoadSkillTool } from "../skills/load-skill-tool.js";
-import { InstallSkillTool } from "../skills/install-tool.js";
 import { runInline as runSkillInline, runFork as runSkillFork } from "../skills/executor.js";
-import { TaskList } from "../todo/todo.js";
-import { TaskCreateTool, TaskGetTool, TaskListTool, TaskUpdateTool } from "../todo/tools.js";
-import { TaskStore } from "../todo/store.js";
+import { InstallSkillTool } from "../skills/install-tool.js";
+import { LoadSkillTool } from "../skills/load-skill-tool.js";
+import type { SkillForkHost, SkillHost } from "../skills/skill.js";
 import { AgentTool } from "../subagent/agent-tool.js";
-import { spawnSubagent } from "../subagent/spawn.js";
 import { BUILTIN_AGENTS } from "../subagent/definition.js";
+import { spawnSubagent } from "../subagent/spawn.js";
+import { coordinatorToolFilter, coordinatorActive } from "../teams/coordinator.js";
+import { TaskStopTool } from "../teams/task-stop.js";
+import { TeamManager, type RunAgent } from "../teams/team.js";
 import {
   TeamCreateTool,
   SendMessageTool,
@@ -84,29 +84,29 @@ import {
   SpawnTeammateTool,
   ListTeamsTool,
 } from "../teams/tools.js";
-import { TeamManager, type RunAgent } from "../teams/team.js";
-import { TaskStopTool } from "../teams/task-stop.js";
-import { coordinatorToolFilter, coordinatorActive } from "../teams/coordinator.js";
-import { HookEngine, validate as validateHooks } from "../hooks/hooks.js";
-import { forceCompact } from "../compact/compact.js";
-import { RecoveryState } from "../compact/recovery.js";
-import {
-  getOrCreatePlanPath,
-  loadPlan,
-  planExists,
-  resetPlanPath,
-} from "../plan-file/plan-file.js";
-import { buildPlanModeExitReminder, buildPlanModeReentryReminder } from "../prompt/plan-mode.js";
-import { FileHistory, type Snapshot } from "../file-history/file-history.js";
-import { createSandbox, type Sandbox } from "../sandbox/index.js";
-import * as sessionMod from "../session/session.js";
+import { TaskStore } from "../todo/store.js";
+import { TaskList } from "../todo/todo.js";
+import { TaskCreateTool, TaskGetTool, TaskListTool, TaskUpdateTool } from "../todo/tools.js";
+import { AskUserQuestionTool, type Question } from "../tools/ask-user.js";
+import { BashTool } from "../tools/bash.js";
+import { EditFileTool } from "../tools/edit-file.js";
+import { EnterWorktreeTool } from "../tools/enter-worktree.js";
+import { ExitPlanModeTool } from "../tools/exit-plan-mode.js";
+import { ExitWorktreeTool } from "../tools/exit-worktree.js";
+import { FileStateCache } from "../tools/file-state-cache.js";
+import { GlobTool } from "../tools/glob.js";
+import { GrepTool } from "../tools/grep.js";
+import { ReadFileTool } from "../tools/read-file.js";
+import { ToolRegistry } from "../tools/registry.js";
+import { SyntheticOutputTool } from "../tools/synthetic-output.js";
+import { ToolSearchTool } from "../tools/tool-search.js";
+import type { ToolSchema } from "../tools/types.js";
+import { WriteFileTool } from "../tools/write-file.js";
 import { expandAtRefsWithImages } from "../tui/at-expand.js";
-import { saveSessionImages } from "../images/store.js";
-import { createChildLogger } from "../logger/index.js";
 import { asErrorString } from "../utils/index.js";
 
-import type { Event } from "./bus/events.js";
 import type { WirePlanChoice } from "./bus/commands.js";
+import type { Event } from "./bus/events.js";
 
 const log = createChildLogger({ module: "agent-session" });
 

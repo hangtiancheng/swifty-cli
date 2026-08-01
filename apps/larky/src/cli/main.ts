@@ -30,10 +30,16 @@ import { realpathSync } from "node:fs";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 
+import { forkEnabled, loadConfig } from "../config/config.js";
+import { cmdPing } from "../core/commands/ping.js";
 import { getConfig } from "../core/config.js";
 import { setupLogging } from "../core/logging.js";
-import { cmdPing } from "../core/commands/ping.js";
-import { cmdVersion } from "./commands/version.js";
+import { initLogger, closeLogger, logger } from "../logger/index.js";
+import { parsePrintFlags, runPrintMode } from "../print-mode.js";
+import { newSessionId } from "../session/session.js";
+import { parseTeammateFlags, runTeammate } from "../teammate.js";
+import { asErrorString } from "../utils/index.js";
+
 import {
   cmdCoreStart,
   cmdCoreStop,
@@ -42,13 +48,7 @@ import {
   stopDaemonOnExit,
 } from "./commands/core.js";
 import { cmdTrace } from "./commands/trace.js";
-
-import { forkEnabled, loadConfig } from "../config/config.js";
-import { parseTeammateFlags, runTeammate } from "../teammate.js";
-import { parsePrintFlags, runPrintMode } from "../print-mode.js";
-import { initLogger, closeLogger, logger } from "../logger/index.js";
-import { newSessionId } from "../session/session.js";
-import { asErrorString } from "../utils/index.js";
+import { cmdVersion } from "./commands/version.js";
 
 const VALID_TRACE_LAYERS = ["ipc", "event", "llm"];
 

@@ -34,11 +34,11 @@ import { join } from "node:path";
 
 import { describe, it, expect, afterEach, beforeEach } from "vitest";
 
-import { AgentSession, type InteractionBroker } from "../src/core/agent-session.js";
-import { InteractionHub } from "../src/core/interaction-hub.js";
-import type { Event } from "../src/core/bus/events.js";
 import type { ProviderConfig } from "../src/config/config.js";
 import type { ConversationManager } from "../src/conversation/conversation.js";
+import { AgentSession, type InteractionBroker } from "../src/core/agent-session.js";
+import type { Event } from "../src/core/bus/events.js";
+import { InteractionHub } from "../src/core/interaction-hub.js";
 import type { LLMClient } from "../src/llm/client.js";
 import type { StreamEvent } from "../src/llm/events.js";
 import type { ToolSchema } from "../src/tools/types.js";

@@ -23,13 +23,13 @@
 // Feature: Verify SocketServer basic start/stop and connection cleanup
 // Design: Use real TCP connections to verify server lifecycle behavior
 import net from "node:net";
-import { z } from "zod";
 
 import { afterEach, describe, expect, test } from "vitest";
+import { z } from "zod";
 
-import { SocketServer, getConnectionWriter } from "../src/core/transport/socket-server.js";
-import { IpcEventBroadcaster } from "../src/core/transport/ipc-broadcaster.js";
 import { isRecord } from "../src/core/bus/envelope.js";
+import { IpcEventBroadcaster } from "../src/core/transport/ipc-broadcaster.js";
+import { SocketServer, getConnectionWriter } from "../src/core/transport/socket-server.js";
 
 // Get a random available port
 function freePort(): Promise<number> {

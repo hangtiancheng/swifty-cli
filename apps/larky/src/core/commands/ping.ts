@@ -24,10 +24,11 @@
 import net from "node:net";
 import { performance } from "node:perf_hooks";
 
-import { version } from "../../version.js";
-import type { LarkyConfig } from "../config.js";
 import { safeParseAsync } from "zod";
+
+import { version } from "../../version.js";
 import { JsonRpcErrorObjectSchema, PongResultSchema } from "../bus/index.js";
+import type { LarkyConfig } from "../config.js";
 
 export interface PingOutcome {
   ok: boolean;

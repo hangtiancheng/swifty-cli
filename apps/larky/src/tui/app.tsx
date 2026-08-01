@@ -24,38 +24,38 @@
 // (LLM, tools, permissions, sessions) lives daemon-side; this component
 // renders the event stream and answers interaction requests via RPCs.
 // Local-only concerns: prompt history, @-file completion, scrolling, theme.
-import { useState, useEffect, useRef, useCallback } from "react";
-import { Box, Static, Text, useApp, useInput } from "ink";
+import { relative } from "node:path";
 
-import type { ProviderConfig } from "../config/config.js";
-import type { PermissionMode } from "../permissions/checker.js";
+import { Box, Static, Text, useApp, useInput } from "ink";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { z } from "zod";
+
 import type { Command } from "../commands/commands.js";
 import { CommandUsageTracker } from "../commands/usage-tracker.js";
-import * as historyMod from "../history/history.js";
-import type { Question } from "../tools/ask-user.js";
+import type { ProviderConfig } from "../config/config.js";
+import { EventSchema, type Event } from "../core/bus/events.js";
+import { IpcError, type SocketClient } from "../core/transport/socket-client.js";
 import type { Snapshot } from "../file-history/file-history.js";
+import * as historyMod from "../history/history.js";
+import type { PermissionMode } from "../permissions/checker.js";
 import { TeammateUIStateSchema, type TeammateUIState } from "../teams/progress.js";
+import type { Question } from "../tools/ask-user.js";
 import { strArg } from "../utils/index.js";
-import { z } from "zod";
-import { relative } from "node:path";
 import { connectToIde, type IdeConnection } from "../vscode/ide-client.js";
 
-import { IpcError, type SocketClient } from "../core/transport/socket-client.js";
-import { EventSchema, type Event } from "../core/bus/events.js";
-import { advanceReplayCursor, isStaleRunEvent } from "./run-filter.js";
-
-import RewindDialog, { type RewindAction } from "./rewind-dialog.js";
-import { PermissionDialog, type PermissionAction } from "./permission-dialog.js";
 import { AskUserDialog } from "./ask-user-dialog.js";
-import { PlanApprovalDialog, type PlanChoice } from "./plan-approval.js";
-import { TeammateSpinnerTree } from "./teammate-spinner-tree.js";
-import { TeamStatus } from "./team-status.js";
-import { TeamsDialog } from "./teams-dialog.js";
-import { InputBox } from "./input.js";
 import { ChatView, CommittedMessage, type ChatMessage, type ToolSummaryItem } from "./chat.js";
-import { ToolDisplay, type ToolBlockInfo } from "./tool-display.js";
+import { InputBox } from "./input.js";
+import { PermissionDialog, type PermissionAction } from "./permission-dialog.js";
+import { PlanApprovalDialog, type PlanChoice } from "./plan-approval.js";
+import RewindDialog, { type RewindAction } from "./rewind-dialog.js";
+import { advanceReplayCursor, isStaleRunEvent } from "./run-filter.js";
 import Spinner from "./spinner.js";
 import { BORDER_COLORS, ICONS } from "./styles.js";
+import { TeamStatus } from "./team-status.js";
+import { TeammateSpinnerTree } from "./teammate-spinner-tree.js";
+import { TeamsDialog } from "./teams-dialog.js";
+import { ToolDisplay, type ToolBlockInfo } from "./tool-display.js";
 import { randomCompletionVerb } from "./verbs.js";
 import { version } from "./version.js";
 
@@ -158,6 +158,9 @@ export function App({ client, provider, permissionMode, onSessionChange }: Props
   const [teammateStates, setTeammateStates] = useState<TeammateUIState[]>([]);
   const [teamsDialogOpen, setTeamsDialogOpen] = useState(false);
   const [subagents, setSubagents] = useState<{ id: string; label: string; detail: string }[]>([]);
+  // Bumped on ui.clear: Static's internal cursor never rewinds, so a shrunk
+  // items array must remount the transcript via a new key.
+  const [transcriptGen, setTranscriptGen] = useState(0);
 
   const [permMode, setPermMode] = useState<PermissionMode>(() => {
     if (process.env.LARKY_BYPASS_PERMISSIONS === "1") {
@@ -192,7 +195,6 @@ export function App({ client, provider, permissionMode, onSessionChange }: Props
   const streamingTextRef = useRef("");
   const fullTextRef = useRef("");
   const streamThrottleRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const committedIndexRef = useRef(0);
   const usageTrackerRef = useRef(new CommandUsageTracker(workDir));
 
   // Per-turn accumulators for the folded turn_summary display.
@@ -431,11 +433,7 @@ export function App({ client, provider, permissionMode, onSessionChange }: Props
               toolSummary:
                 turnToolCallsRef.current.length > 0 ? [...turnToolCallsRef.current] : undefined,
             };
-            setMessages((prev) => {
-              const next = [...prev, summary];
-              committedIndexRef.current = next.length;
-              return next;
-            });
+            setMessages((prev) => [...prev, summary]);
           }
           resetTurnAccumulators();
           break;
@@ -449,16 +447,10 @@ export function App({ client, provider, permissionMode, onSessionChange }: Props
           streamingTextRef.current = "";
           if (fullText) {
             const suffix = event.stop_reason === "interrupted" ? "\n\n*[cancelled]*" : "";
-            setMessages((prev) => {
-              const next = [...prev, { role: "assistant" as const, content: fullText + suffix }];
-              committedIndexRef.current = next.length;
-              return next;
-            });
-          } else {
-            setMessages((prev) => {
-              committedIndexRef.current = prev.length;
-              return prev;
-            });
+            setMessages((prev) => [
+              ...prev,
+              { role: "assistant" as const, content: fullText + suffix },
+            ]);
           }
           setActiveTools([]);
           resetTurnAccumulators();
@@ -485,24 +477,21 @@ export function App({ client, provider, permissionMode, onSessionChange }: Props
 
         case "ui.clear":
           setMessages([]);
-          committedIndexRef.current = 0;
+          setTranscriptGen((g) => g + 1);
+          process.stdout.write("\x1b[2J\x1b[3J\x1b[H");
           setInputTokens(0);
           setOutputTokens(0);
           setCompletionMark(null);
           break;
 
         case "replay.message":
-          setMessages((prev) => {
-            const next: ChatMessage[] = [
-              ...prev,
-              {
-                role: event.role === "user" ? ("user" as const) : ("assistant" as const),
-                content: event.content,
-              },
-            ];
-            committedIndexRef.current = next.length;
-            return next;
-          });
+          setMessages((prev) => [
+            ...prev,
+            {
+              role: event.role === "user" ? ("user" as const) : ("assistant" as const),
+              content: event.content,
+            },
+          ]);
           break;
 
         case "mode.changed":
@@ -954,7 +943,7 @@ export function App({ client, provider, permissionMode, onSessionChange }: Props
             scrollback. This keeps the complete transcript selectable and
             copyable while only the active turn is re-rendered by Ink. */}
         <Static
-          key={`transcript-${sessionIdRef.current}`}
+          key={`transcript-${sessionIdRef.current}-${String(transcriptGen)}`}
           items={[
             {
               type: "brand" as const,
@@ -962,7 +951,7 @@ export function App({ client, provider, permissionMode, onSessionChange }: Props
               model: provider.model || provider.name,
               workDir,
             },
-            ...messages.slice(0, committedIndexRef.current).map((message, index) => ({
+            ...messages.map((message, index) => ({
               type: "message" as const,
               _key: `message-${String(index)}`,
               message,
@@ -996,7 +985,7 @@ export function App({ client, provider, permissionMode, onSessionChange }: Props
         </Static>
 
         <ChatView
-          messages={messages.slice(committedIndexRef.current)}
+          messages={[]}
           streamingText={isStreaming ? streamingText : undefined}
           expanded={toolsExpanded}
         />

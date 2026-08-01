@@ -24,9 +24,9 @@
 // Design: write agent events to a temp events.jsonl, snapshot with topic
 // filters, and verify handleEventSubscribe replays before live subscription
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import net from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import net from "node:net";
 
 import { describe, expect, test } from "vitest";
 

@@ -27,9 +27,9 @@ import type net from "node:net";
 import picomatch from "picomatch";
 
 import type { Event } from "../bus/events.js";
-import type { TraceWriter } from "../trace/writer.js";
-import { makePushTrace } from "../trace/record.js";
 import { getLogger } from "../logging.js";
+import { makePushTrace } from "../trace/record.js";
+import type { TraceWriter } from "../trace/writer.js";
 
 interface Subscription {
   subId: string;

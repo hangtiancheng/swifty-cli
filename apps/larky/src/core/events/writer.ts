@@ -25,6 +25,7 @@ import { mkdirSync, appendFileSync } from "node:fs";
 import path from "node:path";
 
 import type { Event } from "../bus/events.js";
+
 import type { EventBus } from "./bus.js";
 
 export class EventWriter {
