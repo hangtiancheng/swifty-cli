@@ -21,6 +21,7 @@
  */
 
 import { Text, Box } from "ink";
+
 import type { TeammateUIState } from "../teams/progress.js";
 import { summarizeActivities, formatTokens } from "../teams/progress.js";
 

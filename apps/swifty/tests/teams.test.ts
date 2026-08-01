@@ -21,10 +21,12 @@
  */
 
 /* eslint-disable @typescript-eslint/require-await */
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
+
 import { TeamManager } from "../src/teams/team.js";
 import {
   TeamCreateTool,

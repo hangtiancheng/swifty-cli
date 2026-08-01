@@ -20,9 +20,6 @@
  * SOFTWARE.
  */
 
-import { createChildLogger } from "../logger/index.js";
-
-const log = createChildLogger({ module: "memory" });
 
 import {
   readFileSync,
@@ -33,13 +30,19 @@ import {
   writeFileSync,
   statSync,
 } from "node:fs";
-import { join, relative, basename } from "node:path";
 import { homedir } from "node:os";
+import { join, relative, basename } from "node:path";
+
 import yaml from "js-yaml";
-import type { LLMClient } from "../llm/client.js";
-import { ConversationManager } from "../conversation/conversation.js";
 import z, { parse } from "zod";
+
+import { ConversationManager } from "../conversation/conversation.js";
+import type { LLMClient } from "../llm/client.js";
+import { createChildLogger } from "../logger/index.js";
+
 import { memoryAge, memoryFreshnessText } from "./memory-age.js";
+
+const log = createChildLogger({ module: "memory" });
 
 /** Caps for MEMORY.md index content: 200 lines or 25KB, whichever is hit first. */
 const MAX_ENTRYPOINT_LINES = 200;

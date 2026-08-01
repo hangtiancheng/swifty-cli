@@ -20,13 +20,14 @@
  * SOFTWARE.
  */
 
-import { createChildLogger } from "@/logger/index.js";
 import { readFileSync, statSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
+
 import { isImagePath } from "@/images/detect.js";
 import { MAX_IMAGES_PER_MESSAGE } from "@/images/limits.js";
 import { loadImageAttachment } from "@/images/load.js";
 import type { ImageAttachment } from "@/images/types.js";
+import { createChildLogger } from "@/logger/index.js";
 
 const log = createChildLogger({ module: "tui" });
 const MAX_INLINE_BYTES = 100_000;

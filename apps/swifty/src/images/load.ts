@@ -22,6 +22,7 @@
 
 import { readFileSync, statSync } from "node:fs";
 import { basename } from "node:path";
+
 import { sniffMediaType } from "./detect.js";
 import { maybeResizeAndDownsampleImage } from "./resize.js";
 import type { ImageAttachment } from "./types.js";

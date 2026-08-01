@@ -20,10 +20,12 @@
  * SOFTWARE.
  */
 
-import { describe, it, expect } from "vitest";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+
+import { describe, it, expect } from "vitest";
+
 import { expandAtRefs, expandAtRefsWithImages } from "@/tui/at-expand.js";
 
 const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);

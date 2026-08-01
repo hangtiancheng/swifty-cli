@@ -21,10 +21,12 @@
  */
 
 import { Box, Text } from "ink";
-import { COLORS, ICONS } from "./styles.js";
-import { strArg } from "@/utils/index.js";
+
 import { DiffLines } from "./diff-render.js";
 import { isDiffTool } from "./is-diff-tool.js";
+import { COLORS, ICONS } from "./styles.js";
+
+import { strArg } from "@/utils/index.js";
 
 export interface ToolBlockInfo {
   toolName: string;

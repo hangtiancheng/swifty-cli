@@ -20,13 +20,14 @@
  * SOFTWARE.
  */
 
-import { createChildLogger } from "../logger/index.js";
-
-const log = createChildLogger({ module: "file-history" });
 
 import { createHash } from "crypto";
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "fs";
 import { join, resolve } from "path";
+
+import { createChildLogger } from "../logger/index.js";
+
+const log = createChildLogger({ module: "file-history" });
 
 const MAX_SNAPSHOTS = 100;
 const MAX_SUMMARY_TEXT_LENGTH = 60;

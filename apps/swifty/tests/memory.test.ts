@@ -21,15 +21,18 @@
  */
 
 /* eslint-disable @typescript-eslint/require-await */
-import { describe, it, expect } from "vitest";
+import { writeFileSync } from "fs";
 import { mkdtempSync, existsSync, readFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { MemoryExtractor } from "../src/memory/extractor.js";
-import { MemoryManager } from "../src/memory/manager.js";
+
+import { describe, it, expect } from "vitest";
+
 import type { LLMClient } from "../src/llm/client.js";
 import type { StreamEvent } from "../src/llm/events.js";
-import { writeFileSync } from "fs";
+import { MemoryExtractor } from "../src/memory/extractor.js";
+import { MemoryManager } from "../src/memory/manager.js";
+
 
 class MockClient implements LLMClient {
   constructor(private text: string) {}

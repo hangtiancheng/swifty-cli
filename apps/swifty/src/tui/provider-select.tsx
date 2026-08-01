@@ -20,9 +20,11 @@
  * SOFTWARE.
  */
 
-import { useState } from "react";
 import { Box, Text, useInput } from "ink";
+import { useState } from "react";
+
 import type { ProviderConfig } from "../config/config.js";
+
 import { COLORS, ICONS } from "./styles.js";
 
 interface ProviderSelectProps {

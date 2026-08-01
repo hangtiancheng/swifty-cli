@@ -20,8 +20,9 @@
  * SOFTWARE.
  */
 
-import { asErrorString } from "@/utils/index.js";
 import type { Tool, ToolCategory, ToolContext, ToolResult, ToolSchema } from "./types.js";
+
+import { asErrorString } from "@/utils/index.js";
 
 /**
  * Lets the Agent deliver its final result as structured data. In

@@ -21,6 +21,7 @@
  */
 
 import { describe, test, expect, afterEach } from "vitest";
+
 import { detectBackend, detectBackendFromEnv } from "../src/teams/backend.js";
 
 const origTmux = process.env.TMUX;

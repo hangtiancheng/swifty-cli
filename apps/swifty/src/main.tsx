@@ -21,14 +21,15 @@
  */
 
 import { render } from "ink";
+
 import { forkEnabled, loadConfig } from "./config/config.js";
-import { App } from "./tui/app.js";
-import { parseTeammateFlags, runTeammate } from "./teammate.js";
-import { asErrorString } from "./utils/index.js";
 import { initLogger, closeLogger, logger } from "./logger/index.js";
-import { newSessionId } from "./session/session.js";
 import { parsePrintFlags, runPrintMode } from "./print-mode.js";
+import { newSessionId } from "./session/session.js";
+import { parseTeammateFlags, runTeammate } from "./teammate.js";
+import { App } from "./tui/app.js";
 import { installSyncOutput } from "./tui/sync-output.js";
+import { asErrorString } from "./utils/index.js";
 
 async function main() {
   const args = process.argv.slice(2);

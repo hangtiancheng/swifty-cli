@@ -20,8 +20,9 @@
  * SOFTWARE.
  */
 
-import { ICONS } from "./styles.js";
 import { Box, Text } from "ink";
+
+import { ICONS } from "./styles.js";
 
 interface StatusBarProps {
   /** Currently not used */

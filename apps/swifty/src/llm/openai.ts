@@ -20,16 +20,16 @@
  * SOFTWARE.
  */
 
-import { createChildLogger } from "../logger/index.js";
 
-const log = createChildLogger({ module: "llm" });
-
-import { ensureToolPairing } from "../conversation/pairing.js";
 import OpenAI from "openai";
+
 import { getMaxOutputTokens, type ProviderConfig, resolveAPIKey } from "../config/config.js";
 import type { ConversationManager, Message } from "../conversation/conversation.js";
+import { ensureToolPairing } from "../conversation/pairing.js";
 import type { ImageAttachment } from "../images/types.js";
+import { createChildLogger } from "../logger/index.js";
 import { asRecord, asString, DANGEROUSLY_JSON, isRecord, strArg } from "../utils/index.js";
+
 import type { LLMClient } from "./client.js";
 import {
   AuthenticationError,
@@ -39,7 +39,10 @@ import {
   RateLimitError,
 } from "./errors.js";
 import type { StreamEvent } from "./events.js";
+
 import type { ToolSchema } from "@/tools/types.js";
+
+const log = createChildLogger({ module: "llm" });
 
 enum OpenAIErrorCode {
   /** 413 Payload Too Large — The request entity is larger than the server is willing or able to process. */

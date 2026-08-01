@@ -21,38 +21,39 @@
  */
 
 import { basename, dirname } from "node:path";
-import { loadConfig } from "./config/config.js";
-import { createClient } from "./llm/client.js";
-import { ConversationManager } from "./conversation/conversation.js";
-import { buildSystemPrompt, detectEnvironment } from "./prompt/builder.js";
-import { ToolRegistry } from "./tools/registry.js";
-import { ReadFileTool } from "./tools/read-file.js";
-import { BashTool } from "./tools/bash.js";
-import { GlobTool } from "./tools/glob.js";
-import { GrepTool } from "./tools/grep.js";
-import { WriteFileTool } from "./tools/write-file.js";
-import { EditFileTool } from "./tools/edit-file.js";
-import { ToolSearchTool } from "./tools/tool-search.js";
-import { SyntheticOutputTool } from "./tools/synthetic-output.js";
-import { EnterWorktreeTool } from "./tools/enter-worktree.js";
-import { ExitWorktreeTool } from "./tools/exit-worktree.js";
-import { PermissionChecker } from "./permissions/checker.js";
+
 import { Agent } from "./agent/agent.js";
-import { FileStateCache } from "./tools/file-state-cache.js";
-import type { FileMailMessage } from "./teams/file-mailbox.js";
-import { FileMailbox } from "./teams/file-mailbox.js";
-import { TeamManager } from "./teams/team.js";
-import { SendMessageTool } from "./teams/tools.js";
-import { TaskCreateTool, TaskGetTool, TaskListTool, TaskUpdateTool } from "./teams/task-tools.js";
-import { SkillCatalog } from "./skills/catalog.js";
-import { buildSkillSection } from "./skills/catalog.js";
-import { LoadSkillTool } from "./skills/load-skill-tool.js";
-import { InstallSkillTool } from "./skills/install-tool.js";
-import type { SkillHost } from "./skills/skill.js";
+import { loadConfig } from "./config/config.js";
+import type { MCPServerConfig } from "./config/config.js";
+import { ConversationManager } from "./conversation/conversation.js";
+import { createClient } from "./llm/client.js";
+import { initLogger, closeLogger, createChildLogger, sanitizeNameSegment } from "./logger/index.js";
 import { MCPManager } from "./mcp/manager.js";
 import { MCPToolWrapper } from "./mcp/tool-wrapper.js";
-import type { MCPServerConfig } from "./config/config.js";
-import { initLogger, closeLogger, createChildLogger, sanitizeNameSegment } from "./logger/index.js";
+import { PermissionChecker } from "./permissions/checker.js";
+import { buildSystemPrompt, detectEnvironment } from "./prompt/builder.js";
+import { SkillCatalog } from "./skills/catalog.js";
+import { buildSkillSection } from "./skills/catalog.js";
+import { InstallSkillTool } from "./skills/install-tool.js";
+import { LoadSkillTool } from "./skills/load-skill-tool.js";
+import type { SkillHost } from "./skills/skill.js";
+import type { FileMailMessage } from "./teams/file-mailbox.js";
+import { FileMailbox } from "./teams/file-mailbox.js";
+import { TaskCreateTool, TaskGetTool, TaskListTool, TaskUpdateTool } from "./teams/task-tools.js";
+import { TeamManager } from "./teams/team.js";
+import { SendMessageTool } from "./teams/tools.js";
+import { BashTool } from "./tools/bash.js";
+import { EditFileTool } from "./tools/edit-file.js";
+import { EnterWorktreeTool } from "./tools/enter-worktree.js";
+import { ExitWorktreeTool } from "./tools/exit-worktree.js";
+import { FileStateCache } from "./tools/file-state-cache.js";
+import { GlobTool } from "./tools/glob.js";
+import { GrepTool } from "./tools/grep.js";
+import { ReadFileTool } from "./tools/read-file.js";
+import { ToolRegistry } from "./tools/registry.js";
+import { SyntheticOutputTool } from "./tools/synthetic-output.js";
+import { ToolSearchTool } from "./tools/tool-search.js";
+import { WriteFileTool } from "./tools/write-file.js";
 import { asErrorString } from "./utils/index.js";
 
 interface TeammateArgs {

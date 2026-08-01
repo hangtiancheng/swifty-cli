@@ -21,6 +21,7 @@
  */
 
 import { describe, it, expect } from "vitest";
+
 import { resolveModelId } from "../src/llm/model-resolver.js";
 import { BUILTIN_AGENTS } from "../src/subagent/definition.js";
 

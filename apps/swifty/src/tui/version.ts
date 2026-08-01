@@ -26,6 +26,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+
 import { z } from "zod";
 
 declare const __SWIFTY_VERSION__: string | undefined;

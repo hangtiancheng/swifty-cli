@@ -21,7 +21,7 @@
  */
 
 import sharp from "sharp";
-import { createChildLogger } from "@/logger/index.js";
+
 import {
   ImageTooLargeError,
   JPEG_QUALITY_LADDER,
@@ -30,6 +30,8 @@ import {
   MAX_IMAGE_BYTES_PASSTHROUGH,
 } from "./limits.js";
 import type { ImageMediaType } from "./types.js";
+
+import { createChildLogger } from "@/logger/index.js";
 
 const log = createChildLogger({ module: "images" });
 

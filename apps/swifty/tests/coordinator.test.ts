@@ -20,19 +20,21 @@
  * SOFTWARE.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { TeamManager } from "../src/teams/team.js";
+
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
+
+import { coordinatorReminder } from "../src/prompt/coordinator.js";
 import {
   isCoordinatorTool,
   coordinatorToolFilter,
   coordinatorActive,
 } from "../src/teams/coordinator.js";
 import { TaskStopTool } from "../src/teams/task-stop.js";
+import { TeamManager } from "../src/teams/team.js";
 import { SyntheticOutputTool } from "../src/tools/synthetic-output.js";
-import { coordinatorReminder } from "../src/prompt/coordinator.js";
 
 // The teams directory lives at <home>/.swifty/teams, so the tests redirect the
 // entire home directory to a temp dir to avoid leaving residue in the real

@@ -20,10 +20,12 @@
  * SOFTWARE.
  */
 
-import { useState } from "react";
-import type { Snapshot } from "@/file-history/file-history.js";
 import { Box, Text, useInput } from "ink";
+import { useState } from "react";
+
 import { COLORS, ICONS } from "./styles.js";
+
+import type { Snapshot } from "@/file-history/file-history.js";
 
 export type RewindAction =
   | { type: "code_and_conversation"; snapshotIndex: number }

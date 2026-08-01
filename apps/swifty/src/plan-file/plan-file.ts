@@ -20,12 +20,13 @@
  * SOFTWARE.
  */
 
-import { createChildLogger } from "../logger/index.js";
-
-const log = createChildLogger({ module: "plan-file" });
 
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { join, resolve } from "node:path";
+
+import { createChildLogger } from "../logger/index.js";
+
+const log = createChildLogger({ module: "plan-file" });
 
 const ADJECTIVES = [
   "brave",

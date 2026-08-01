@@ -20,20 +20,26 @@
  * SOFTWARE.
  */
 
+import { readdirSync, statSync } from "fs";
+import { join } from "path";
+
+import Fuse from "fuse.js";
+import { Box, Text, useInput } from "ink";
+import { useState, useMemo, useRef, useEffect } from "react";
+
 import { createChildLogger } from "../logger/index.js";
 
-const log = createChildLogger({ module: "tui" });
+import { BORDER_COLORS, COLORS, ICONS } from "./styles.js";
 
 import type { Command } from "@/commands/commands.js";
 import type { CommandUsageTracker } from "@/commands/usage-tracker.js";
 import type { PermissionMode } from "@/permissions/checker.js";
 import { SKIP_DIRS } from "@/tools/types.js";
-import { readdirSync, statSync } from "fs";
-import { join } from "path";
-import { Box, Text, useInput } from "ink";
-import { useState, useMemo, useRef, useEffect } from "react";
-import { BORDER_COLORS, COLORS, ICONS } from "./styles.js";
-import Fuse from "fuse.js";
+
+
+
+
+const log = createChildLogger({ module: "tui" });
 
 function scanWorkdirFiles(root: string, max = 2000): string[] {
   const out: string[] = [];

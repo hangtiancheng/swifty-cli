@@ -20,9 +20,11 @@
  * SOFTWARE.
  */
 
-import { strArg, strList } from "@/utils/index.js";
 import type { Tool, ToolContext, ToolResult, ToolSchema } from "../tools/types.js";
+
 import type { TeamManager } from "./team.js";
+
+import { strArg, strList } from "@/utils/index.js";
 
 // Team shared task-board tools: TaskCreate / TaskGet / TaskList / TaskUpdate.
 // All four tools operate on the same team's SharedTaskStore, so teammates share a single task list.

@@ -25,11 +25,13 @@
 // CLAUDE_CODE_SSE_PORT into its integrated terminals; any CLI can use those
 // to find and authenticate against the extension's WebSocket MCP server.
 
-import { createChildLogger } from "../logger/index.js";
 import { readdir, readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve, sep } from "node:path";
+
 import { z } from "zod";
+
+import { createChildLogger } from "../logger/index.js";
 
 const log = createChildLogger({ module: "vscode" });
 

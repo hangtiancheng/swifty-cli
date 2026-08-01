@@ -20,11 +20,14 @@
  * SOFTWARE.
  */
 
-import { createChildLogger } from "../logger/index.js";
 import { existsSync, readFileSync, statSync } from "fs";
+
 import { isImagePath } from "../images/detect.js";
 import { attachmentLabel, loadImageAttachment } from "../images/load.js";
+import { createChildLogger } from "../logger/index.js";
 import { asErrorString } from "../utils/index.js";
+import { intArg, strArg } from "../utils/index.js";
+
 import { READ_FILE_DESCRIPTION } from "./descriptions.js";
 import {
   type Tool,
@@ -33,7 +36,6 @@ import {
   type ToolResult,
   type ToolSchema,
 } from "./types.js";
-import { intArg, strArg } from "../utils/index.js";
 
 const log = createChildLogger({ module: "tools" });
 export class ReadFileTool implements Tool {

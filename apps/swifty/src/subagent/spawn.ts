@@ -20,16 +20,17 @@
  * SOFTWARE.
  */
 
+import { Agent } from "../agent/agent.js";
+import type { ProviderConfig } from "../config/config.js";
+import { ConversationManager } from "../conversation/conversation.js";
 import type { LLMClient } from "../llm/client.js";
 import { createClient } from "../llm/client.js";
 import { resolveModelId } from "../llm/model-resolver.js";
-import { ConversationManager } from "../conversation/conversation.js";
+import { PermissionChecker } from "../permissions/checker.js";
 import { buildSystemPrompt, detectEnvironment } from "../prompt/builder.js";
 import type { ToolRegistry } from "../tools/registry.js";
-import { PermissionChecker } from "../permissions/checker.js";
-import { Agent } from "../agent/agent.js";
+
 import type { AgentDefinition } from "./definition.js";
-import type { ProviderConfig } from "../config/config.js";
 import { filterToolsForAgent } from "./tool-filter.js";
 
 export type AgentEventSink = (event: {

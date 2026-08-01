@@ -20,15 +20,17 @@
  * SOFTWARE.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildTeammateRegistry, parseTeammateFlags } from "@/teammate.js";
+
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
+
 import { SkillCatalog } from "@/skills/catalog.js";
+import { ALL_AGENT_DISALLOWED_TOOLS, TEAMMATE_DISALLOWED_TOOLS } from "@/subagent/tool-filter.js";
+import { buildTeammateRegistry, parseTeammateFlags } from "@/teammate.js";
 import { ToolRegistry } from "@/tools/registry.js";
 import type { Tool } from "@/tools/types.js";
-import { ALL_AGENT_DISALLOWED_TOOLS, TEAMMATE_DISALLOWED_TOOLS } from "@/subagent/tool-filter.js";
 
 // The team directory lives at <home>/.swifty/teams. Point HOME to a temp
 // directory to avoid leaving artifacts in the real ~/.swifty/teams.

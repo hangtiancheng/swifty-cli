@@ -20,14 +20,17 @@
  * SOFTWARE.
  */
 
-import { createChildLogger } from "../logger/index.js";
 
-const log = createChildLogger({ module: "commands" });
-
-import { isRecord } from "@/utils/index.js";
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "fs";
 import { join, dirname } from "path";
+
 import { safeParse, z } from "zod";
+
+import { createChildLogger } from "../logger/index.js";
+
+import { isRecord } from "@/utils/index.js";
+
+const log = createChildLogger({ module: "commands" });
 
 const UsageEntrySchema = z.object({
   usageCount: z.coerce.number(),

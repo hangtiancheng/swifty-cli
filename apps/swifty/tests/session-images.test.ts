@@ -23,7 +23,9 @@
 import { appendFileSync, mkdirSync, mkdtempSync, rmSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+
 import { saveSessionImages } from "@/images/store.js";
 import type { ImageAttachment } from "@/images/types.js";
 import {

@@ -20,11 +20,12 @@
  * SOFTWARE.
  */
 
-import { useEffect, useRef, useState } from "react";
-import { randomVerb } from "./verbs.js";
-import InkSpinner from "ink-spinner";
 import { Text } from "ink";
+import InkSpinner from "ink-spinner";
+import { useEffect, useRef, useState } from "react";
 import React from "react";
+
+import { randomVerb } from "./verbs.js";
 
 function formatTokens(n: number): string {
   if (n >= 1000000) {

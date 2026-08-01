@@ -20,14 +20,14 @@
  * SOFTWARE.
  */
 
-import { createChildLogger } from "../../logger/index.js";
-
-const log = createChildLogger({ module: "tools" });
-
 import { statSync } from "fs";
-import { Glob } from "@swifty.js/glob-addon";
 import { join } from "path";
+
+import { Glob } from "@swifty.js/glob-addon";
+
+import { createChildLogger } from "../../logger/index.js";
 import { asErrorString } from "../../utils/index.js";
+import { strArg } from "../../utils/index.js";
 import { GLOB_DESCRIPTION } from "../descriptions.js";
 import {
   SKIP_DIRS,
@@ -37,7 +37,8 @@ import {
   type ToolResult,
   type ToolSchema,
 } from "../types.js";
-import { strArg } from "../../utils/index.js";
+
+const log = createChildLogger({ module: "tools" });
 
 export class GlobTool implements Tool {
   // Use a hardcoded string instead of GlobTool.name.replace("Tool", "")

@@ -22,6 +22,7 @@
 
 import type Anthropic from "@anthropic-ai/sdk";
 import { describe, expect, it } from "vitest";
+
 import type { Message } from "@/conversation/conversation.js";
 import type { ImageAttachment } from "@/images/types.js";
 import { buildAnthropicMessages, markLastUserTailForCache } from "@/llm/anthropic.js";

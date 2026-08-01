@@ -20,16 +20,18 @@
  * SOFTWARE.
  */
 
-import { createChildLogger } from "../logger/index.js";
-
-const log = createChildLogger({ module: "permissions" });
 
 import { readFileSync, writeFileSync, mkdirSync, statSync } from "node:fs";
-import { join, resolve, dirname } from "node:path";
 import { homedir, tmpdir } from "node:os";
+import { join, resolve, dirname } from "node:path";
+
 import yaml from "js-yaml";
 import z, { parse } from "zod";
+
+import { createChildLogger } from "../logger/index.js";
 import { strArg } from "../utils/index.js";
+
+const log = createChildLogger({ module: "permissions" });
 
 export type DecisionEffect = "allow" | "deny" | "ask";
 export type PermissionMode = "default" | "acceptEdits" | "plan" | "bypassPermissions";

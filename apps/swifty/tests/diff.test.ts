@@ -21,6 +21,7 @@
  */
 
 import { describe, it, expect } from "vitest";
+
 import { buildDiff } from "../src/tools/diff.js";
 
 describe("buildDiff", () => {

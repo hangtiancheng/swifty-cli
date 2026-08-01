@@ -21,9 +21,10 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { buildChatCompletionMessages } from "../src/llm/openai.js";
-import type { Message } from "../src/conversation/conversation.js";
 import z, { safeParse } from "zod";
+
+import type { Message } from "../src/conversation/conversation.js";
+import { buildChatCompletionMessages } from "../src/llm/openai.js";
 
 describe("openai-compat chat message building", () => {
   it("preserves assistant tool_calls and tool-result turns", () => {

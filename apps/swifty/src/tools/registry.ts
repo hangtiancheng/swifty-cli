@@ -21,8 +21,9 @@
  */
 
 import type Anthropic from "@anthropic-ai/sdk";
-import type { Tool } from "./types.js";
 import type { FunctionTool as OpenAITool } from "openai/resources/responses/responses";
+
+import type { Tool } from "./types.js";
 
 export class ToolRegistry {
   private tools = new Map<string, Tool>();

@@ -21,6 +21,9 @@
  */
 
 import { spawnSync } from "node:child_process";
+
+import { intArg, strArg } from "../utils/index.js";
+
 import { BASH_DESCRIPTION } from "./descriptions.js";
 import {
   type Tool,
@@ -29,7 +32,7 @@ import {
   type ToolResult,
   type ToolSchema,
 } from "./types.js";
-import { intArg, strArg } from "../utils/index.js";
+
 import type { Sandbox, SandboxConfig } from "@/sandbox/index.js";
 
 const MAX_TIMEOUT = 600;

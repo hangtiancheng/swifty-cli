@@ -20,14 +20,16 @@
  * SOFTWARE.
  */
 
+
+import type { MCPServerConfig } from "../config/config.js";
 import { createChildLogger } from "../logger/index.js";
 
-const log = createChildLogger({ module: "mcp" });
-
-import { asErrorString } from "@/utils/index.js";
-import type { MCPServerConfig } from "../config/config.js";
 import { MCPClient } from "./client.js";
 import type { MCPTool } from "./client.js";
+
+import { asErrorString } from "@/utils/index.js";
+
+const log = createChildLogger({ module: "mcp" });
 
 export interface ConnectResult {
   tools: { serverName: string; tool: MCPTool }[];

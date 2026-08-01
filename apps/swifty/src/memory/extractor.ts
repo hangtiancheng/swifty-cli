@@ -21,19 +21,21 @@
  */
 
 import { readdirSync, readFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
-import { join, basename } from "node:path";
 import { homedir } from "node:os";
-import type { LLMClient } from "../llm/client.js";
+import { join, basename } from "node:path";
+
+import { Agent } from "../agent/agent.js";
 import { ConversationManager } from "../conversation/conversation.js";
-import { MemoryManager } from "./manager.js";
-import { ToolRegistry } from "../tools/registry.js";
-import { ReadFileTool } from "../tools/read-file.js";
-import { WriteFileTool } from "../tools/write-file.js";
+import type { LLMClient } from "../llm/client.js";
+import { PermissionChecker } from "../permissions/checker.js";
 import { EditFileTool } from "../tools/edit-file.js";
 import { GlobTool } from "../tools/glob.js";
 import { GrepTool } from "../tools/grep.js";
-import { Agent } from "../agent/agent.js";
-import { PermissionChecker } from "../permissions/checker.js";
+import { ReadFileTool } from "../tools/read-file.js";
+import { ToolRegistry } from "../tools/registry.js";
+import { WriteFileTool } from "../tools/write-file.js";
+
+import { MemoryManager } from "./manager.js";
 
 /** A memory block parsed from LLM streamed text (MEMORY_NAME/MEMORY_TYPE/MEMORY_DESC/MEMORY_BODY). */
 interface ParsedTextMemory {

@@ -20,19 +20,21 @@
  * SOFTWARE.
  */
 
-import type { LLMClient } from "../llm/client.js";
 import { ConversationManager } from "../conversation/conversation.js";
 import type { Message } from "../conversation/conversation.js";
-import type { RecoveryState } from "./recovery.js";
+import { saveSessionImages } from "../images/store.js";
+import type { LLMClient } from "../llm/client.js";
 import {
   type CompactBoundaryPayload,
   sessionCtxFromFilePath,
   toolUsesToRecords,
   toolResultsToRecords,
 } from "../session/session.js";
-import { saveSessionImages } from "../images/store.js";
-import { asErrorString } from "@/utils/index.js";
+
+import type { RecoveryState } from "./recovery.js";
+
 import type { ToolSchema } from "@/tools/types.js";
+import { asErrorString } from "@/utils/index.js";
 
 // Structured outcome of a compaction. When `compacted` is true, `boundary`
 // carries the summary plus the verbatim kept tail (inlined as role+text) so the

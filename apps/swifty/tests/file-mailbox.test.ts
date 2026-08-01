@@ -20,10 +20,12 @@
  * SOFTWARE.
  */
 
-import { describe, it, expect } from "vitest";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+
+import { describe, it, expect } from "vitest";
+
 import { FileMailbox } from "../src/teams/file-mailbox.js";
 
 describe("FileMailbox", () => {

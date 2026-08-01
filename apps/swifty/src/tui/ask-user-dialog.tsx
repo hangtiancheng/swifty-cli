@@ -20,8 +20,9 @@
  * SOFTWARE.
  */
 
-import { useReducer } from "react";
 import { Box, Text, useInput } from "ink";
+import { useReducer } from "react";
+
 import type { Question } from "../tools/ask-user.js";
 
 interface Props {

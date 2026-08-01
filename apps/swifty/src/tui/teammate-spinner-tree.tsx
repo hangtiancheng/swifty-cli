@@ -21,9 +21,11 @@
  */
 
 import { Box, Text } from "ink";
-import { TeammateSpinnerLine } from "./teammate-spinner-line.js";
+
 import type { TeammateUIState } from "../teams/progress.js";
 import { formatTokens } from "../teams/progress.js";
+
+import { TeammateSpinnerLine } from "./teammate-spinner-line.js";
 
 interface TeammateSpinnerTreeProps {
   teammates: TeammateUIState[];

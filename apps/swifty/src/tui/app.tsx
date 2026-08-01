@@ -20,34 +20,13 @@
  * SOFTWARE.
  */
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { existsSync, readFileSync } from "node:fs";
+import { join, relative } from "node:path";
+
 import { Box, Static, Text, useApp, useInput } from "ink";
-import type {
-  ProviderConfig,
-  MCPServerConfig,
-  HookConfig,
-  SandboxYamlConfig,
-} from "../config/config.js";
-import { getContextWindow, getContextWindowAsync, getMaxOutputTokens } from "../config/config.js";
-import { createSandbox, type Sandbox } from "../sandbox/index.js";
-import type { LLMClient } from "../llm/client.js";
-import { createClient } from "../llm/client.js";
-import { ConversationManager } from "../conversation/conversation.js";
-import { buildSystemPrompt, detectEnvironment } from "../prompt/builder.js";
-import { ToolRegistry } from "../tools/registry.js";
-import { ReadFileTool } from "../tools/read-file.js";
-import { BashTool } from "../tools/bash.js";
-import { GlobTool } from "../tools/glob.js";
-import { GrepTool } from "../tools/grep.js";
-import { WriteFileTool } from "../tools/write-file.js";
-import { EditFileTool } from "../tools/edit-file.js";
-import { ExitPlanModeTool } from "../tools/exit-plan-mode.js";
-import { PlanApprovalDialog, type PlanChoice } from "./plan-approval.js";
-import { ToolSearchTool } from "../tools/tool-search.js";
-import { EnterWorktreeTool } from "../tools/enter-worktree.js";
-import { ExitWorktreeTool } from "../tools/exit-worktree.js";
+import { useState, useEffect, useRef, useCallback } from "react";
+
 import { Agent } from "../agent/agent.js";
-import { PermissionChecker, type PermissionMode } from "../permissions/checker.js";
 import {
   parse as parseCommand,
   createDefaultRegistry as createCommandRegistry,
@@ -55,21 +34,53 @@ import {
   type Command,
 } from "../commands/commands.js";
 import { loadUserCommands } from "../commands/loader.js";
-import { expandAtRefsWithImages } from "./at-expand.js";
+import { CommandUsageTracker } from "../commands/usage-tracker.js";
+import { forceCompact } from "../compact/compact.js";
+import { RecoveryState } from "../compact/recovery.js";
+import type {
+  ProviderConfig,
+  MCPServerConfig,
+  HookConfig,
+  SandboxYamlConfig,
+} from "../config/config.js";
+import { getContextWindow, getContextWindowAsync, getMaxOutputTokens } from "../config/config.js";
+import { ConversationManager } from "../conversation/conversation.js";
+import { FileHistory } from "../file-history/file-history.js";
+import type { Snapshot } from "../file-history/file-history.js";
+import * as historyMod from "../history/history.js";
+import { HookEngine, validate as validateHooks } from "../hooks/hooks.js";
 import { saveSessionImages } from "../images/store.js";
+import type { LLMClient } from "../llm/client.js";
+import { createClient } from "../llm/client.js";
 import { MCPManager } from "../mcp/manager.js";
 import { MCPToolWrapper } from "../mcp/tool-wrapper.js";
+import { MemoryExtractor } from "../memory/extractor.js";
 import { loadInstructions } from "../memory/instructions.js";
 import { MemoryManager } from "../memory/manager.js";
-import { MemoryExtractor } from "../memory/extractor.js";
+import { PermissionChecker, type PermissionMode } from "../permissions/checker.js";
+import {
+  getOrCreatePlanPath,
+  loadPlan,
+  planExists,
+  resetPlanPath,
+} from "../plan-file/plan-file.js";
+import { buildSystemPrompt, detectEnvironment } from "../prompt/builder.js";
+import { buildPlanModeExitReminder, buildPlanModeReentryReminder } from "../prompt/plan-mode.js";
+import { createSandbox, type Sandbox } from "../sandbox/index.js";
+import * as sessionMod from "../session/session.js";
 import { SkillCatalog } from "../skills/catalog.js";
-import { TaskList } from "../todo/todo.js";
-import { TaskCreateTool, TaskGetTool, TaskListTool, TaskUpdateTool } from "../todo/tools.js";
-import { TaskStore } from "../todo/store.js";
+import { runInline as runSkillInline, runFork as runSkillFork } from "../skills/executor.js";
+import { InstallSkillTool } from "../skills/install-tool.js";
+import { LoadSkillTool } from "../skills/load-skill-tool.js";
+import type { SkillHost, SkillForkHost } from "../skills/skill.js";
 import { AgentTool } from "../subagent/agent-tool.js";
-import { spawnSubagent } from "../subagent/spawn.js";
 import { BUILTIN_AGENTS } from "../subagent/definition.js";
+import { spawnSubagent } from "../subagent/spawn.js";
+import { coordinatorToolFilter, coordinatorActive } from "../teams/coordinator.js";
+import type { TeammateUIState } from "../teams/progress.js";
+import { TaskStopTool } from "../teams/task-stop.js";
 import type { RunAgent } from "../teams/team.js";
+import { TeamManager } from "../teams/team.js";
 import {
   TeamCreateTool,
   SpawnTeammateTool,
@@ -77,51 +88,44 @@ import {
   ListTeamsTool,
   TeamDeleteTool,
 } from "../teams/tools.js";
-import { TaskStopTool } from "../teams/task-stop.js";
-import { SyntheticOutputTool } from "../tools/synthetic-output.js";
-import { HookEngine, validate as validateHooks } from "../hooks/hooks.js";
-import { forceCompact } from "../compact/compact.js";
-import { RecoveryState } from "../compact/recovery.js";
-import {
-  getOrCreatePlanPath,
-  loadPlan,
-  planExists,
-  resetPlanPath,
-} from "../plan-file/plan-file.js";
-import { buildPlanModeExitReminder, buildPlanModeReentryReminder } from "../prompt/plan-mode.js";
-import { runInline as runSkillInline, runFork as runSkillFork } from "../skills/executor.js";
-import { LoadSkillTool } from "../skills/load-skill-tool.js";
-import { InstallSkillTool } from "../skills/install-tool.js";
-import type { SkillHost, SkillForkHost } from "../skills/skill.js";
-import { TeamManager } from "../teams/team.js";
-import { coordinatorToolFilter, coordinatorActive } from "../teams/coordinator.js";
-import { FileHistory } from "../file-history/file-history.js";
-import { FileStateCache } from "../tools/file-state-cache.js";
-import type { Snapshot } from "../file-history/file-history.js";
-import RewindDialog, { type RewindAction } from "./rewind-dialog.js";
-import { PermissionDialog, type PermissionAction } from "./permission-dialog.js";
-import { AskUserDialog } from "./ask-user-dialog.js";
-import { TeammateSpinnerTree } from "./teammate-spinner-tree.js";
-import { TeamStatus } from "./team-status.js";
-import { TeamsDialog } from "./teams-dialog.js";
-import type { TeammateUIState } from "../teams/progress.js";
+import { TaskStore } from "../todo/store.js";
+import { TaskList } from "../todo/todo.js";
+import { TaskCreateTool, TaskGetTool, TaskListTool, TaskUpdateTool } from "../todo/tools.js";
 import { AskUserQuestionTool, type Question } from "../tools/ask-user.js";
-import { existsSync, readFileSync } from "node:fs";
-import { join, relative } from "node:path";
+import { BashTool } from "../tools/bash.js";
+import { EditFileTool } from "../tools/edit-file.js";
+import { EnterWorktreeTool } from "../tools/enter-worktree.js";
+import { ExitPlanModeTool } from "../tools/exit-plan-mode.js";
+import { ExitWorktreeTool } from "../tools/exit-worktree.js";
+import { FileStateCache } from "../tools/file-state-cache.js";
+import { GlobTool } from "../tools/glob.js";
+import { GrepTool } from "../tools/grep.js";
+import { ReadFileTool } from "../tools/read-file.js";
+import { ToolRegistry } from "../tools/registry.js";
+import { SyntheticOutputTool } from "../tools/synthetic-output.js";
+import { ToolSearchTool } from "../tools/tool-search.js";
+import { WriteFileTool } from "../tools/write-file.js";
 import { connectToIde, type IdeConnection } from "../vscode/ide-client.js";
-import * as sessionMod from "../session/session.js";
-import * as historyMod from "../history/history.js";
-import { ProviderSelect } from "./provider-select.js";
-import { InputBox } from "./input.js";
+
+import { AskUserDialog } from "./ask-user-dialog.js";
+import { expandAtRefsWithImages } from "./at-expand.js";
 import { ChatView, CommittedMessage, type ChatMessage, type ToolSummaryItem } from "./chat.js";
-import { ToolDisplay, type ToolBlockInfo } from "./tool-display.js";
+import { InputBox } from "./input.js";
+import { PermissionDialog, type PermissionAction } from "./permission-dialog.js";
+import { PlanApprovalDialog, type PlanChoice } from "./plan-approval.js";
+import { ProviderSelect } from "./provider-select.js";
+import RewindDialog, { type RewindAction } from "./rewind-dialog.js";
 import Spinner from "./spinner.js";
 import { BORDER_COLORS, ICONS } from "./styles.js";
-import { CommandUsageTracker } from "../commands/usage-tracker.js";
+import { TeamStatus } from "./team-status.js";
+import { TeammateSpinnerTree } from "./teammate-spinner-tree.js";
+import { TeamsDialog } from "./teams-dialog.js";
+import { ToolDisplay, type ToolBlockInfo } from "./tool-display.js";
 import { randomCompletionVerb } from "./verbs.js";
-import { asErrorString, asRecord, strArg } from "@/utils/index.js";
-import type { ToolSchema } from "@/tools/types.js";
 import { version } from "./version.js";
+
+import type { ToolSchema } from "@/tools/types.js";
+import { asErrorString, asRecord, strArg } from "@/utils/index.js";
 
 type AppState = "providerSelect" | "chat";
 

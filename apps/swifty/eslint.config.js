@@ -29,6 +29,7 @@ import reactRefresh from "eslint-plugin-react-refresh";
 import unicorn from "eslint-plugin-unicorn";
 import globals from "globals";
 import tseslint from "typescript-eslint";
+import importPlugin from "eslint-plugin-import";
 
 export default defineConfig(
   globalIgnores([
@@ -60,6 +61,7 @@ export default defineConfig(
     plugins: {
       unicorn,
       "react-hooks": reactHooks,
+      import: importPlugin,
     },
     rules: {
       ...reactHooks.configs.recommended.rules,
@@ -84,6 +86,12 @@ export default defineConfig(
       "no-console": "warn",
       curly: ["error", "all"],
       "no-control-regex": "warn",
+      "import/first": "error",
+           "import/order": ["error", {
+             groups: ["builtin", "external", "internal", "parent", "sibling", "index"],
+             "newlines-between": "always",
+             alphabetize: { order: "asc", caseInsensitive: true }
+           }]
     },
   },
   {

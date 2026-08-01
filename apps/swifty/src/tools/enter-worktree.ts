@@ -21,11 +21,10 @@
  */
 
 import { createChildLogger } from "../logger/index.js";
-
-const log = createChildLogger({ module: "tools" });
-
 import { asErrorString } from "../utils/index.js";
+import { strArg } from "../utils/index.js";
 import { createAgentWorktree } from "../worktree/worktree.js";
+
 import {
   type Tool,
   type ToolCategory,
@@ -33,7 +32,8 @@ import {
   type ToolResult,
   type ToolSchema,
 } from "./types.js";
-import { strArg } from "../utils/index.js";
+
+const log = createChildLogger({ module: "tools" });
 
 export class EnterWorktreeTool implements Tool {
   // Use a hardcoded string instead of EnterWorktreeTool.name.replace("Tool", "")

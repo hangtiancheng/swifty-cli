@@ -27,8 +27,10 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+
 import sharp, { type Sharp } from "sharp";
 import { beforeAll, describe, expect, it } from "vitest";
+
 import { isImagePath, mediaTypeForPath, sniffMediaType } from "@/images/detect.js";
 import {
   ImageTooLargeError,
