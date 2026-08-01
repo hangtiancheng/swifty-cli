@@ -20,7 +20,6 @@
  * SOFTWARE.
  */
 
-
 import { createHash } from "crypto";
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "fs";
 import { join, resolve } from "path";

@@ -20,7 +20,6 @@
  * SOFTWARE.
  */
 
-
 import type { MCPServerConfig } from "../config/config.js";
 import { createChildLogger } from "../logger/index.js";
 

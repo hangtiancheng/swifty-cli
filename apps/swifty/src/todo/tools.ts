@@ -28,7 +28,6 @@ import type { Tool, ToolResult, ToolContext, ToolSchema } from "../tools/types.j
 import type { TaskStatus } from "./store.js";
 import type { TaskList } from "./todo.js";
 
-
 import { asErrorString, strArg } from "@/utils/index.js";
 
 export class TaskCreateTool implements Tool {

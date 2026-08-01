@@ -20,7 +20,6 @@
  * SOFTWARE.
  */
 
-
 import type { Stats } from "node:fs";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { join, relative } from "node:path";

@@ -27,7 +27,6 @@ import { join } from "path";
 
 import { describe, it, expect, vi } from "vitest";
 
-
 import { Agent } from "../src/agent/agent.js";
 import type { LLMClient } from "../src/llm/client.js";
 import { PermissionChecker } from "../src/permissions/checker.js";

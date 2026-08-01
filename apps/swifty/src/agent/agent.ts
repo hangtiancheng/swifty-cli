@@ -48,8 +48,6 @@ import type { ToolRegistry } from "../tools/registry.js";
 import type { AgentEvent } from "./events.js";
 import { StreamingExecutor } from "./streaming-executor.js";
 
-
-
 import type { UsageInfo } from "@/llm/events.js";
 import type { ToolSchema } from "@/tools/types.js";
 import { asRecord, strArg } from "@/utils/index.js";

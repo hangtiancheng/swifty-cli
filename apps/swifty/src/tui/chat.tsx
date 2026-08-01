@@ -20,7 +20,6 @@
  * SOFTWARE.
  */
 
-
 import { markedTerminal } from "@swifty.js/marked-terminal";
 import chalk from "chalk";
 import { Box, Text, useStdout } from "ink";

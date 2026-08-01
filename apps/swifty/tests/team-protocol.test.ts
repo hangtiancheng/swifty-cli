@@ -26,7 +26,6 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 
-
 import type { FileMailMessage } from "../src/teams/file-mailbox.js";
 import {
   MSG_PLAN_APPROVAL_REQUEST,

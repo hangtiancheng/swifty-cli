@@ -36,9 +36,6 @@ import type { CommandUsageTracker } from "@/commands/usage-tracker.js";
 import type { PermissionMode } from "@/permissions/checker.js";
 import { SKIP_DIRS } from "@/tools/types.js";
 
-
-
-
 const log = createChildLogger({ module: "tui" });
 
 function scanWorkdirFiles(root: string, max = 2000): string[] {

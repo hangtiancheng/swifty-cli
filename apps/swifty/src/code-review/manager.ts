@@ -29,7 +29,6 @@ import { createChildLogger } from "../logger/index.js";
 import { detectBackend } from "../teams/backend.js";
 import type { TeamManager } from "../teams/team.js";
 
-
 const log = createChildLogger({ module: "code-review" });
 
 const CodeReviewMemberSchema = z.object({

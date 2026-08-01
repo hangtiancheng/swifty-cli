@@ -23,7 +23,6 @@
 import { Box, Text, useInput } from "ink";
 import { useState } from "react";
 
-
 import type { TeammateUIState } from "../teams/progress.js";
 import { formatTokens } from "../teams/progress.js";
 

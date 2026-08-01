@@ -33,7 +33,6 @@ import type { StreamEvent } from "../src/llm/events.js";
 import { MemoryExtractor } from "../src/memory/extractor.js";
 import { MemoryManager } from "../src/memory/manager.js";
 
-
 class MockClient implements LLMClient {
   constructor(private text: string) {}
   setSystemPrompt(_prompt: string): void {

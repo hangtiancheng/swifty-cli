@@ -20,7 +20,6 @@
  * SOFTWARE.
  */
 
-
 import {
   readFileSync,
   readdirSync,

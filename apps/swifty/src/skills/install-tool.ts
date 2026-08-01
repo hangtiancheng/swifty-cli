@@ -20,7 +20,6 @@
  * SOFTWARE.
  */
 
-
 import { mkdirSync, writeFileSync, readFileSync, existsSync } from "node:fs";
 import { join, isAbsolute, basename } from "node:path";
 

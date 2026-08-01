@@ -24,7 +24,6 @@ import { statSync } from "fs";
 
 import { createChildLogger } from "../logger/index.js";
 
-
 const log = createChildLogger({ module: "file-state-cache" });
 
 export class FileStateCache {

@@ -38,8 +38,6 @@ import { ALL_AGENT_DISALLOWED_TOOLS, TEAMMATE_DISALLOWED_TOOLS } from "./tool-fi
 
 import { asErrorString, boolArg, strArg } from "@/utils/index.js";
 
-
-
 const log = createChildLogger({ module: "subagent" });
 /** Fallback target when subagent_type is omitted and fork is disabled */
 const GENERAL_PURPOSE_AGENT_TYPE = "general-purpose";

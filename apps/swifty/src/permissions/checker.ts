@@ -20,7 +20,6 @@
  * SOFTWARE.
  */
 
-
 import { readFileSync, writeFileSync, mkdirSync, statSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join, resolve, dirname } from "node:path";

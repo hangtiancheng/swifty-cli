@@ -20,7 +20,6 @@
  * SOFTWARE.
  */
 
-
 import OpenAI from "openai";
 
 import { getMaxOutputTokens, type ProviderConfig, resolveAPIKey } from "../config/config.js";

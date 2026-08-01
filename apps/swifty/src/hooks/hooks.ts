@@ -20,7 +20,6 @@
  * SOFTWARE.
  */
 
-
 import { exec } from "node:child_process";
 
 import type { HookConfig } from "../config/config.js";

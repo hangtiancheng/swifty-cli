@@ -50,8 +50,6 @@ import { saveTranscript } from "./transcript.js";
 
 import { asErrorString } from "@/utils/index.js";
 
-
-
 const log = createChildLogger({ module: "teams" });
 export type TeamMode = "in-process" | "tmux" | "iterm";
 

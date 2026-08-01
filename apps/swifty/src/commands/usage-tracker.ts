@@ -20,7 +20,6 @@
  * SOFTWARE.
  */
 
-
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "fs";
 import { join, dirname } from "path";
 

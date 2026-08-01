@@ -20,7 +20,6 @@
  * SOFTWARE.
  */
 
-
 import { readdirSync, readFileSync, existsSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
