@@ -104,62 +104,113 @@ if [ -f "$CONFIG_FILE" ]; then
 else
 	mkdir -p "$CONFIG_DIR"
 	cat >"$CONFIG_FILE" <<'EOF'
+# Copyright (c) 2026 hangtiancheng
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in
+# all copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+
 # Larky project-level configuration (.larky/config.yaml)
 #
-# Precedence (lowest to highest):
-#   built-in defaults < ~/.larky/config.yaml (global) < .larky/config.yaml (project) < .env < LARKY_* environment variables
-# If the LARKY_CONFIG environment variable is set, only that single file is loaded instead.
+# Load order (later layers override earlier ones, see src/config/config.ts loadConfig):
+#   ~/.larky/config.yml -> ~/.larky/config.yaml -> ./.larky/config.yml -> ./.larky/config.yaml
+#   -> ./.larky/config.local.yml -> ./.larky/config.local.yaml
+# Merge semantics: `providers` replaced wholesale when the override layer is non-empty;
+# `permission_mode` overridden; `mcp_servers` merged by name; `hooks` appended;
+# `sandbox` shallow-merged; `enable_coordinator_mode` sticky once true.
 #
-# Every section and every key below is OPTIONAL unless marked required.
-# Omitted keys fall back to their defaults. Unknown sections or keys are fatal (startup exits with code 1).
-# Schema source: src/core/config.ts
+# Schema source: src/config/config.ts (AppConfigSchema)
 
-[core]
-host = "127.0.0.1" # optional, string, default: "127.0.0.1" — daemon listen address (env: LARKY_HOST)
-port = 5520 # optional, integer, default: 5520 — daemon listen port (env: LARKY_PORT)
+# core — daemon listen address
+core:
+  host: 127.0.0.1 # optional, string, default: "127.0.0.1"
+  port: 5520 # optional, integer, default: 5520
+  trace: true # optional, boolean, default: true — enable daemon trace recording
 
-[logging]
-file = "~/.larky/logs/core.log" # optional, string, default: "~/.larky/logs/core.log" — log file path (env: LARKY_LOG_FILE)
-format = "text" # optional, string, default: "text" — "text" or "json" (env: LARKY_LOG_FORMAT)
-level = "INFO" # optional, string, default: "INFO" — log level (env: LARKY_LOG_LEVEL)
+# permission_mode — optional, string, default: "default"
+# One of: "default" | "acceptEdits" | "plan" | "bypassPermissions"
+permission_mode: bypassPermissions
 
-[agent]
-max_steps = 20 # optional, positive integer, default: 20 — maximum agent steps per task (env: LARKY_MAX_STEPS)
+# providers — REQUIRED: at least one provider must be configured (after merging all layers).
+providers:
+  - name: anthropic # REQUIRED, string — unique provider name
+    protocol: anthropic # REQUIRED, enum: "anthropic" | "openai" | "openai-compat"
+    base_url: https://api.deepseek.com/anthropic # REQUIRED, string — API endpoint
+    model: "deepseek-v4-flash" # REQUIRED, string — model identifier
+    api_key:
+      "<your_api_key>" # optional, string, default: falls back to env var
+      #   (ANTHROPIC_API_KEY for protocol "anthropic",
+      #    OPENAI_API_KEY for "openai"/"openai-compat")
+    thinking: true # optional, boolean, default: false — enable extended thinking
+    context_window:
+      1000000 # optional, number, default: built-in lookup by model name
+      #   (claude -> 200000, gpt-4.1/1m -> 1000000, else 128000)
+    max_output_tokens: 128000 # optional, number, default: 8192 (64000 when thinking: true)
 
-[llm]
-default_model = "claude-sonnet-4-6" # optional, string, default: "claude-sonnet-4-6" — default model (env: LARKY_LLM_DEFAULT_MODEL)
-router = "static" # optional, string, default: "static" — model routing strategy; reserved, "static" is the only implemented strategy (no env override)
-base_url = "" # optional, string, default: "" — Anthropic API base URL; empty means SDK default (env: ANTHROPIC_BASE_URL)
-api_key = "" # optional, string, default: "" — Anthropic API key; must be set here or via env (env: ANTHROPIC_API_KEY)
+  - name: openai-compat
+    protocol: openai-compat
+    base_url: https://api.deepseek.com
+    model: "deepseek-v4-flash"
+    api_key: "<your_api_key>"
+    thinking: true
+    context_window: 1000000
+    max_output_tokens: 128000
 
-[trace]
-enabled = true # optional, boolean, default: true — enable tracing (env: LARKY_TRACE_ENABLED)
-file = "~/.larky/traces/daemon.jsonl" # optional, string, default: "~/.larky/traces/daemon.jsonl" — trace output file (env: LARKY_TRACE_FILE)
-include_llm_payload = true # optional, boolean, default: true — include LLM request/response payloads in traces (env: LARKY_TRACE_INCLUDE_LLM_PAYLOAD)
+# mcp_servers — optional, array, default: [] (no servers).
+# Each server needs either `command` (stdio transport) or `url` (http/sse transport).
+mcp_servers: []
+  # - name: filesystem                       # REQUIRED, string — unique server name
+  #   command: npx                           # optional, string — executable; presence selects stdio transport
+  #   args: ["-y", "@modelcontextprotocol/server-filesystem", "."]  # optional, string array, default: []
+  #   env: { API_KEY: "your-api-key" }       # optional, map<string, string>, default: {} — extra env vars
+  #
+  # - name: remote-server
+  #   url: https://example.com/mcp           # optional, string — presence selects http/sse transport
+  #   transport: sse                         # optional, string — "sse" for SSE; any other value/omitted
+  #                                          #   uses streamable HTTP (only relevant with `url`)
+  #   headers: { Authorization: "Bearer x" } # optional, map<string, string>, default: {} — HTTP headers
 
-[permission]
-timeout_s = 60.0 # optional, number >= 0, default: 60.0 — permission prompt timeout in seconds (env: LARKY_PERMISSION_TIMEOUT_S)
+# hooks — optional, array, default: []. Appended across config layers (never replaced).
+hooks: []
+  # - id: lint-on-edit                       # optional, string — hook identifier
+  #   event: post_tool_use                   # REQUIRED, enum: session_start | session_end | turn_start |
+  #                                          #   turn_end | pre_send | post_receive | pre_tool_use |
+  #                                          #   post_tool_use | shutdown
+  #   condition: 'tool == "EditFile"'        # optional, string — expression filtering when the hook fires
+  #   action:                                # REQUIRED, object
+  #     type: command                        # REQUIRED, enum: command | prompt | http | agent
+  #     command: npx eslint --fix "$LARKY_FILE_PATH"  # required for type "command" (also accepted by "agent")
+  #     # prompt: "..."                      # required for type "prompt" and "agent"
+  #     # url: https://example.com/webhook   # required for type "http"
+  #     # method: POST                       # optional, string — HTTP method for type "http"
+  #   reject: false                          # optional, boolean, default: false — block the tool call
+  #                                          #   (only effective on pre_tool_use)
+  #   once: false                            # optional, boolean, default: false — fire at most once per session
+  #   async: false                           # optional, boolean, default: false — run without awaiting result
+  #   on_error: ignore                       # optional, string, default: "ignore" — error handling policy
 
-[compaction]
-auto_threshold = 0.0 # optional, number in [0, 1], default: 0.0 (disabled) — auto-compaction trigger threshold (env: LARKY_COMPACT_THRESHOLD)
-tool_result_keep = 4000 # optional, positive integer, default: 4000 — length retained after truncation (env: LARKY_COMPACT_TOOL_KEEP)
-tool_result_limit = 8000 # optional, positive integer, default: 8000 — truncate tool results longer than this (env: LARKY_COMPACT_TOOL_LIMIT)
+# sandbox — optional, object, default: sandbox disabled.
+# sandbox:
+#   enabled: false                           # optional, boolean, default: false — wrap Bash commands in a sandbox
+#   auto_allow: false                        # optional, boolean, default: false — auto-approve sandboxed commands
+#   network_enabled: true                    # optional, boolean, default: true — allow network inside the sandbox
 
-# MCP servers — optional; default: [] (no servers). Declare one [[mcp.servers]] block per server.
-# No environment variable overrides exist for MCP servers.
-#
-# [[mcp.servers]]
-# name = "my-stdio-server"      # REQUIRED, non-empty string — unique server name
-# transport = "stdio"           # optional, "stdio" or "tcp", default: "stdio"
-# command = "npx"               # optional, string, default: "" — executable for stdio transport
-# args = ["-y", "@my/mcp-server"]        # optional, array of strings, default: []
-# env = { API_KEY = "your-api-key" }     # optional, table of strings, default: {}
-#
-# [[mcp.servers]]
-# name = "my-tcp-server"        # REQUIRED, non-empty string
-# transport = "tcp"             # optional, default: "stdio"
-# host = "localhost"            # optional, string, default: "localhost" — used by tcp transport
-# port = 3000                   # optional, integer, default: 3000 — used by tcp transport
+# enable_coordinator_mode — optional, boolean, default: false — enable multi-agent coordinator mode.
+# enable_coordinator_mode: false
 EOF
 	ok "Wrote default config to $CONFIG_FILE"
 fi
