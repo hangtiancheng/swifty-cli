@@ -124,7 +124,7 @@ else
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-# Swifty project-level configuration (.swiftx/config.yaml)
+# Swiftx project-level configuration (.swiftx/config.yaml)
 #
 # Load order (later layers override earlier ones, see src/config/config.ts loadConfig):
 #   ~/.swiftx/config.yml -> ~/.swiftx/config.yaml -> ./.swiftx/config.yml -> ./.swiftx/config.yaml
@@ -187,7 +187,7 @@ hooks: []
   #   condition: 'tool == "EditFile"'        # optional, string — expression filtering when the hook fires
   #   action:                                # REQUIRED, object
   #     type: command                        # REQUIRED, enum: command | prompt | http | agent
-  #     command: npx eslint --fix "$SWIFTY_FILE_PATH"  # required for type "command" (also accepted by "agent")
+  #     command: npx eslint --fix "$SWIFTX_FILE_PATH"  # required for type "command" (also accepted by "agent")
   #     # prompt: "..."                      # required for type "prompt" and "agent"
   #     # url: https://example.com/webhook   # required for type "http"
   #     # method: POST                       # optional, string — HTTP method for type "http"
