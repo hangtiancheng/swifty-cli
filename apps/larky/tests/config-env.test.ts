@@ -20,8 +20,8 @@
  * SOFTWARE.
  */
 
-// Feature: Verify 3-tier config priority chain (defaults → YAML → env vars)
-// Design: Use vitest temp directories and environment variable isolation to cover all config source behaviors
+// Feature: Verify 3-tier config priority chain (defaults → global YAML → local YAML)
+// Design: Use vitest temp directories to cover all config source behaviors
 import { mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -40,37 +40,15 @@ function makeTmpDir(): string {
   return dir;
 }
 
-// Environment variable names to save and restore
-const ENV_KEYS = [
-  "LARKY_CONFIG",
-  "LARKY_HOST",
-  "LARKY_PORT",
-  "LARKY_TRACE_ENABLED",
-  "LARKY_TRACE_FILE",
-];
-
 describe("config priority chain", () => {
   let origDir: string;
-  let savedEnv: Record<string, string | undefined>;
 
   beforeEach(() => {
     origDir = process.cwd();
-    savedEnv = {};
-    for (const key of ENV_KEYS) {
-      savedEnv[key] = process.env[key];
-      Reflect.deleteProperty(process.env, key);
-    }
   });
 
   afterEach(() => {
     process.chdir(origDir);
-    for (const key of ENV_KEYS) {
-      if (savedEnv[key] !== undefined) {
-        process.env[key] = savedEnv[key];
-      } else {
-        Reflect.deleteProperty(process.env, key);
-      }
-    }
   });
 
   // Feature: Verify silent skip when config file doesn't exist, use built-in defaults
@@ -80,40 +58,30 @@ describe("config priority chain", () => {
 
     const cfg = getConfig();
     expect(cfg.port).toBe(5520);
+    expect(cfg.host).toBe("127.0.0.1");
+    expect(cfg.trace.enable).toBe(true);
   });
 
-  // Feature: Verify LARKY_CONFIG environment variable correctly affects YAML config file load path
-  test("LARKY_CONFIG env var overrides YAML path", () => {
+  // Feature: Verify local .larky/config.yaml overrides defaults
+  test("local config.yaml overrides defaults", () => {
     const dir = makeTmpDir();
-    const yamlPath = path.join(dir, "custom.yaml");
-    writeFileSync(yamlPath, "core:\n  port: 5555\n");
+    mkdirSync(path.join(dir, ".larky"), { recursive: true });
+    writeFileSync(path.join(dir, ".larky", "config.yaml"), "core:\n  port: 5555\n");
     process.chdir(dir);
-    process.env.LARKY_CONFIG = yamlPath;
 
     const cfg = getConfig();
     expect(cfg.port).toBe(5555);
   });
 
-  // Feature: Verify full 3-tier priority chain: defaults(5520) → YAML(6000) → env var(8000)
-  test("full priority chain: env var wins", () => {
-    const dir = makeTmpDir();
-    const yamlPath = path.join(dir, "larky.yaml");
-    writeFileSync(yamlPath, "core:\n  port: 6000\n");
-    process.chdir(dir);
-    process.env.LARKY_CONFIG = yamlPath;
-    process.env.LARKY_PORT = "8000";
-
-    const cfg = getConfig();
-    expect(cfg.port).toBe(8000);
-  });
-
   // Feature: Verify unknown top-level sections are silently ignored (looseObject)
   test("unknown top-level section is ignored", () => {
     const dir = makeTmpDir();
-    const yamlPath = path.join(dir, "extra.yaml");
-    writeFileSync(yamlPath, "unknown_section:\n  foo: bar\ncore:\n  port: 7777\n");
+    mkdirSync(path.join(dir, ".larky"), { recursive: true });
+    writeFileSync(
+      path.join(dir, ".larky", "config.yaml"),
+      "unknown_section:\n  foo: bar\ncore:\n  port: 7777\n",
+    );
     process.chdir(dir);
-    process.env.LARKY_CONFIG = yamlPath;
 
     const cfg = getConfig();
     expect(cfg.port).toBe(7777);
@@ -122,10 +90,12 @@ describe("config priority chain", () => {
   // Feature: Verify unknown keys within a known section still cause an error
   test("unknown key inside core section calls process.exit", () => {
     const dir = makeTmpDir();
-    const yamlPath = path.join(dir, "bad.yaml");
-    writeFileSync(yamlPath, "core:\n  host: localhost\n  bogus: true\n");
+    mkdirSync(path.join(dir, ".larky"), { recursive: true });
+    writeFileSync(
+      path.join(dir, ".larky", "config.yaml"),
+      "core:\n  host: localhost\n  bogus: true\n",
+    );
     process.chdir(dir);
-    process.env.LARKY_CONFIG = yamlPath;
 
     const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {
       /** noop */
@@ -138,10 +108,12 @@ describe("config priority chain", () => {
   // Feature: Verify trace config is loaded from YAML
   test("trace section loaded from YAML", () => {
     const dir = makeTmpDir();
-    const yamlPath = path.join(dir, "trace.yaml");
-    writeFileSync(yamlPath, "trace:\n  enable: false\n  file: /tmp/my-trace.jsonl\n");
+    mkdirSync(path.join(dir, ".larky"), { recursive: true });
+    writeFileSync(
+      path.join(dir, ".larky", "config.yaml"),
+      "trace:\n  enable: false\n  file: /tmp/my-trace.jsonl\n",
+    );
     process.chdir(dir);
-    process.env.LARKY_CONFIG = yamlPath;
 
     const cfg = getConfig();
     expect(cfg.trace.enable).toBe(false);

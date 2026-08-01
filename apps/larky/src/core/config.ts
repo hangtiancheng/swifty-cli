@@ -20,7 +20,7 @@
  * SOFTWARE.
  */
 
-// Runtime config: 4-tier priority loading (defaults → ~/.larky/config.yaml → .larky/config.yaml → env vars)
+// Runtime config: 3-tier priority loading (defaults → ~/.larky/config.yaml → .larky/config.yaml)
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
@@ -28,7 +28,7 @@ import path from "node:path";
 import yaml from "js-yaml";
 import { z } from "zod";
 
-// Print config error message to stderr and exit with code 1 (matches Python SystemExit behavior)
+// Print config error message to stderr and exit with code 1
 function configExit(msg: string): never {
   console.error(msg);
   process.exit(1);
@@ -38,7 +38,6 @@ function configExit(msg: string): never {
 
 const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_PORT = 5520;
-const DEFAULT_CONFIG_PATH = "~/.larky/config.yaml";
 const DEFAULT_TRACE_FILE = "~/.larky/traces/daemon.jsonl";
 
 // ---- Config sub-structures ----
@@ -76,15 +75,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-// Build and return runtime config: defaults → global YAML → local YAML → env vars
+// Build and return runtime config: defaults → global YAML → local YAML
 export function getConfig(): LarkyConfig {
   const config = createDefaultConfig();
 
-  // Determine YAML config file paths
-  const explicit = process.env.LARKY_CONFIG;
-  const configPaths = explicit
-    ? [expandUser(explicit)]
-    : [expandUser(DEFAULT_CONFIG_PATH), path.resolve(".larky/config.yaml")];
+  const configPaths = [expandUser("~/.larky/config.yaml"), path.resolve(".larky/config.yaml")];
 
   for (const configPath of configPaths) {
     if (existsSync(configPath)) {
@@ -99,7 +94,6 @@ export function getConfig(): LarkyConfig {
     }
   }
 
-  applyEnv(config);
   return config;
 }
 
@@ -156,32 +150,5 @@ function applyFileConfig(config: LarkyConfig, data: Record<string, unknown>): vo
   }
   if (t.trace?.file !== undefined) {
     config.trace.file = t.trace.file;
-  }
-}
-
-// Override config fields from LARKY_* environment variables
-function applyEnv(config: LarkyConfig): void {
-  const host = process.env.LARKY_HOST;
-  if (host !== undefined) {
-    config.host = host;
-  }
-
-  const portStr = process.env.LARKY_PORT;
-  if (portStr !== undefined) {
-    const port = Number(portStr);
-    if (!Number.isInteger(port)) {
-      configExit(`Config error: LARKY_PORT must be an integer, got: ${JSON.stringify(portStr)}`);
-    }
-    config.port = port;
-  }
-
-  const traceEnabled = process.env.LARKY_TRACE_ENABLED;
-  if (traceEnabled !== undefined) {
-    config.trace.enable = !["0", "false", "no"].includes(traceEnabled.toLowerCase());
-  }
-
-  const traceFile = process.env.LARKY_TRACE_FILE;
-  if (traceFile !== undefined) {
-    config.trace.file = traceFile;
   }
 }

@@ -25,7 +25,9 @@
 // LLM-dependent RPCs (session.create → createClient) are exercised in the
 // manual smoke flow, not here, to keep CI hermetic.
 import { spawn, type ChildProcess } from "node:child_process";
+import { mkdirSync, writeFileSync, rmSync, symlinkSync } from "node:fs";
 import net from "node:net";
+import { tmpdir } from "node:os";
 import path from "node:path";
 
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
@@ -70,18 +72,35 @@ async function waitForPort(port: number, timeoutMs = 15_000): Promise<void> {
 describe("dual-process daemon", () => {
   let daemon: ChildProcess;
   let port: number;
+  let workDir: string;
 
   beforeAll(async () => {
     port = await freePort();
     const appRoot = path.resolve(import.meta.dirname, "..");
-    daemon = spawn(process.execPath, ["--import", "tsx", "src/core/app.ts"], {
-      cwd: appRoot,
-      env: {
-        ...process.env,
-        LARKY_PORT: String(port),
-        LARKY_LOG_FILE: "",
-        LARKY_TRACE_ENABLED: "0",
-      },
+
+    // Write a temporary .larky/config.yaml so the daemon picks up the port
+    workDir = path.join(
+      tmpdir(),
+      `larky-dual-${String(Date.now())}-${Math.random().toString(36).slice(2)}`,
+    );
+    mkdirSync(path.join(workDir, ".larky"), { recursive: true });
+    writeFileSync(
+      path.join(workDir, ".larky", "config.yaml"),
+      `core:\n  port: ${String(port)}\ntrace:\n  enable: false\n`,
+    );
+    // Symlink node_modules so the daemon can resolve packages
+    symlinkSync(path.join(appRoot, "node_modules"), path.join(workDir, "node_modules"));
+    // Write a tsconfig that extends the real one with absolute @/ paths
+    writeFileSync(
+      path.join(workDir, "tsconfig.json"),
+      JSON.stringify({
+        extends: path.join(appRoot, "tsconfig.json"),
+        compilerOptions: { paths: { "@/*": [path.join(appRoot, "src/*")] } },
+      }),
+    );
+
+    daemon = spawn(process.execPath, ["--import", "tsx", path.join(appRoot, "src/core/app.ts")], {
+      cwd: workDir,
       stdio: ["ignore", "ignore", "pipe"],
     });
     await waitForPort(port);
@@ -89,6 +108,7 @@ describe("dual-process daemon", () => {
 
   afterAll(() => {
     daemon.kill("SIGTERM");
+    rmSync(workDir, { recursive: true, force: true });
   });
 
   test("core.ping round-trip", async () => {
