@@ -73,16 +73,16 @@ export function newTraceId(): string {
   return `${ts}-${rand}`;
 }
 
-export function tracesDir(): string {
-  return expandUser("~/.larky/traces");
+export function tracesDir(workDir: string): string {
+  return path.join(workDir, ".larky", "traces");
 }
 
-export function getTraceFilePath(traceId: string): string {
-  return path.join(tracesDir(), `${traceId}.jsonl`);
+export function getTraceFilePath(workDir: string, traceId: string): string {
+  return path.join(tracesDir(workDir), `${traceId}.jsonl`);
 }
 
-export function findLatestTraceFile(): string | null {
-  const dir = tracesDir();
+export function findLatestTraceFile(workDir: string): string | null {
+  const dir = tracesDir(workDir);
   if (!existsSync(dir)) {
     return null;
   }

@@ -451,7 +451,7 @@ export class CoreApp {
 
     // Trace
     if (config.trace) {
-      const tracePath = getTraceFilePath(newTraceId());
+      const tracePath = getTraceFilePath(this._workDir, newTraceId());
       this._trace = new TraceWriter(tracePath);
       this._trace.start();
       this._bus.subscribe((e) => {

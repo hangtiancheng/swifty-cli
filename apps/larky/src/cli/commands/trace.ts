@@ -210,10 +210,11 @@ export function cmdTrace(
     follow?: boolean;
   },
 ): void {
-  const tracePath = findLatestTraceFile();
+  const cwd = process.cwd();
+  const tracePath = findLatestTraceFile(cwd);
 
   if (!tracePath) {
-    console.error("no trace files found in ~/.larky/traces/");
+    console.error(`no trace files found in ${cwd}`);
     process.exit(1);
   }
 
