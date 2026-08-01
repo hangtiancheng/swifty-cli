@@ -103,9 +103,6 @@ importers:
       dompurify:
         specifier: ^3.4.12
         version: 3.4.12
-      dotenv:
-        specifier: ^17.4.2
-        version: 17.4.2
       fuse.js:
         specifier: ^7.5.0
         version: 7.5.0
