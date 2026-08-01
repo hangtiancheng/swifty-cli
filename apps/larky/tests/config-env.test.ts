@@ -59,7 +59,7 @@ describe("config priority chain", () => {
     const cfg = getConfig();
     expect(cfg.port).toBe(5520);
     expect(cfg.host).toBe("127.0.0.1");
-    expect(cfg.trace.enable).toBe(true);
+    expect(cfg.trace).toBe(true);
   });
 
   // Feature: Verify local .larky/config.yaml overrides defaults
@@ -106,17 +106,13 @@ describe("config priority chain", () => {
   });
 
   // Feature: Verify trace config is loaded from YAML
-  test("trace section loaded from YAML", () => {
+  test("core.trace loaded from YAML", () => {
     const dir = makeTmpDir();
     mkdirSync(path.join(dir, ".larky"), { recursive: true });
-    writeFileSync(
-      path.join(dir, ".larky", "config.yaml"),
-      "trace:\n  enable: false\n  file: /tmp/my-trace.jsonl\n",
-    );
+    writeFileSync(path.join(dir, ".larky", "config.yaml"), "core:\n  trace: false\n");
     process.chdir(dir);
 
     const cfg = getConfig();
-    expect(cfg.trace.enable).toBe(false);
-    expect(cfg.trace.file).toBe("/tmp/my-trace.jsonl");
+    expect(cfg.trace).toBe(false);
   });
 });

@@ -26,7 +26,7 @@ import readline from "node:readline";
 
 import { z } from "zod";
 
-import { expandUser, type LarkyConfig } from "../../core/config.js";
+import { findLatestTraceFile } from "../../core/config.js";
 
 const COLORS: Record<string, string> = {
   "CLIENT→CORE": "\x1b[36m", // cyan
@@ -203,7 +203,6 @@ function processLine(
 
 export function cmdTrace(
   runId: string | null,
-  config: LarkyConfig,
   options?: {
     layer?: string;
     direction?: string;
@@ -211,18 +210,10 @@ export function cmdTrace(
     follow?: boolean;
   },
 ): void {
-  const tracePath = expandUser(config.trace.file);
+  const tracePath = findLatestTraceFile();
 
-  let exists = false;
-  try {
-    statSync(tracePath);
-    exists = true;
-  } catch {
-    // File not found
-  }
-
-  if (!exists) {
-    console.error(`trace file not found: ${tracePath}`);
+  if (!tracePath) {
+    console.error("no trace files found in ~/.larky/traces/");
     process.exit(1);
   }
 

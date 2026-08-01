@@ -70,7 +70,7 @@ import {
 } from "./bus/commands.js";
 import { HandlerError, isRecord } from "./bus/envelope.js";
 import type { Event } from "./bus/events.js";
-import { getConfig, expandUser } from "./config.js";
+import { getConfig, newTraceId, getTraceFilePath } from "./config.js";
 import { EventBus } from "./events/bus.js";
 import { InteractionHub } from "./interaction-hub.js";
 import { makeEventTrace } from "./trace/record.js";
@@ -450,8 +450,8 @@ export class CoreApp {
     initLogger({ sessionId: sessionMod.newSessionId(), mode: "remote" });
 
     // Trace
-    if (config.trace.enable) {
-      const tracePath = expandUser(config.trace.file);
+    if (config.trace) {
+      const tracePath = getTraceFilePath(newTraceId());
       this._trace = new TraceWriter(tracePath);
       this._trace.start();
       this._bus.subscribe((e) => {

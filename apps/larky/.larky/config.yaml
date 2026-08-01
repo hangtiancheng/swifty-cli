@@ -33,10 +33,7 @@
 core:
   host: 127.0.0.1 # optional, string, default: "127.0.0.1"
   port: 5520 # optional, integer, default: 5520
-
-trace:
-  enable: true
-  file: "~/.larky/traces/daemon.jsonl"
+  trace: true # optional, boolean, default: true — enable daemon trace recording
 
 # permission_mode — optional, string, default: "default"
 # One of: "default" | "acceptEdits" | "plan" | "bypassPermissions"

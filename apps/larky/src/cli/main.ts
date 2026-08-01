@@ -220,7 +220,7 @@ async function main(): Promise<void> {
       if (follow) {
         options.follow = true;
       }
-      cmdTrace(runId, config, options);
+      cmdTrace(runId, options);
       break;
     }
 

@@ -21,7 +21,8 @@
  */
 
 // Runtime config: 3-tier priority loading (defaults → ~/.larky/config.yaml → .larky/config.yaml)
-import { existsSync, readFileSync } from "node:fs";
+import { randomBytes } from "node:crypto";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 
@@ -38,19 +39,13 @@ function configExit(msg: string): never {
 
 const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_PORT = 5520;
-const DEFAULT_TRACE_FILE = "~/.larky/traces/daemon.jsonl";
 
-// ---- Config sub-structures ----
-
-export interface TraceConfig {
-  enable: boolean;
-  file: string;
-}
+// ---- Config structure ----
 
 export interface LarkyConfig {
   host: string;
   port: number;
-  trace: TraceConfig;
+  trace: boolean;
 }
 
 // Create default config
@@ -58,7 +53,7 @@ function createDefaultConfig(): LarkyConfig {
   return {
     host: DEFAULT_HOST,
     port: DEFAULT_PORT,
-    trace: { enable: true, file: DEFAULT_TRACE_FILE },
+    trace: true,
   };
 }
 
@@ -68,6 +63,44 @@ export function expandUser(p: string): string {
     return path.join(homedir(), p.slice(2));
   }
   return p;
+}
+
+// ---- Trace file helpers (same ID strategy as sessions) ----
+
+export function newTraceId(): string {
+  const ts = Date.now().toString(36);
+  const rand = randomBytes(4).toString("hex");
+  return `${ts}-${rand}`;
+}
+
+export function tracesDir(): string {
+  return expandUser("~/.larky/traces");
+}
+
+export function getTraceFilePath(traceId: string): string {
+  return path.join(tracesDir(), `${traceId}.jsonl`);
+}
+
+export function findLatestTraceFile(): string | null {
+  const dir = tracesDir();
+  if (!existsSync(dir)) {
+    return null;
+  }
+  const files = readdirSync(dir).filter((f) => f.endsWith(".jsonl"));
+  if (files.length === 0) {
+    return null;
+  }
+  let latest = "";
+  let latestMtime = 0;
+  for (const f of files) {
+    const fp = path.join(dir, f);
+    const st = statSync(fp);
+    if (st.mtimeMs > latestMtime) {
+      latestMtime = st.mtimeMs;
+      latest = fp;
+    }
+  }
+  return latest || null;
 }
 
 // Type guard: check if value is a plain object (not null, not array)
@@ -104,16 +137,11 @@ export function getConfig(): LarkyConfig {
 const CoreSectionSchema = z.strictObject({
   host: z.string().optional(),
   port: z.number().int().optional(),
-});
-
-const TraceSectionSchema = z.strictObject({
-  enable: z.boolean().optional(),
-  file: z.string().optional(),
+  trace: z.boolean().optional(),
 });
 
 const FileConfigSchema = z.looseObject({
   core: CoreSectionSchema.optional(),
-  trace: TraceSectionSchema.optional(),
 });
 
 // Render a zod issue in the established config error style
@@ -144,11 +172,7 @@ function applyFileConfig(config: LarkyConfig, data: Record<string, unknown>): vo
   if (t.core?.port !== undefined) {
     config.port = t.core.port;
   }
-
-  if (t.trace?.enable !== undefined) {
-    config.trace.enable = t.trace.enable;
-  }
-  if (t.trace?.file !== undefined) {
-    config.trace.file = t.trace.file;
+  if (t.core?.trace !== undefined) {
+    config.trace = t.core.trace;
   }
 }
