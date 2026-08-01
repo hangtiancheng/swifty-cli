@@ -389,13 +389,6 @@ export function App({
         return;
       }
       conn = c;
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: "system",
-          content: `IDE connected: ${c.ideName} — select code and press Cmd+Option+K to reference it here`,
-        },
-      ]);
     });
     return () => {
       cancelled = true;

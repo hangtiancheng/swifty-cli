@@ -694,9 +694,6 @@ export function App({ client, provider, permissionMode, onSessionChange }: Props
         return;
       }
       conn = c;
-      pushSystem(
-        `IDE connected: ${c.ideName} — select code and press Cmd+Option+K to reference it here`,
-      );
     });
     return () => {
       cancelled = true;
