@@ -20,8 +20,8 @@
  * SOFTWARE.
  */
 
-import { forwardRef, useImperativeHandle } from "react";
 import { Box } from "ink";
+import { forwardRef, useImperativeHandle } from "react";
 
 export interface ScrollBoxHandle {
   scrollToBottom: () => void;

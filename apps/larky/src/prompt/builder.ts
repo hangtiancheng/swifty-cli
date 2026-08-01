@@ -20,9 +20,11 @@
  * SOFTWARE.
  */
 
-import { createChildLogger } from "../logger/index.js";
 import { execSync } from "node:child_process";
 import { platform, arch } from "node:os";
+
+import { createChildLogger } from "../logger/index.js";
+
 import type { Section, EnvironmentContext } from "./sections.js";
 import {
   identitySection,

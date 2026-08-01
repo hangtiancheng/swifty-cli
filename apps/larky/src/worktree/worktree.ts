@@ -20,15 +20,15 @@
  * SOFTWARE.
  */
 
-import { createChildLogger } from "../logger/index.js";
-
-const log = createChildLogger({ module: "worktree" });
-
 import { exec } from "child_process";
 import { access, cp, mkdir, readFile, stat, symlink } from "fs/promises";
 import { dirname, isAbsolute, join } from "path";
 import { promisify } from "util";
+
+import { createChildLogger } from "../logger/index.js";
 import { asErrorString } from "../utils/index.js";
+
+const log = createChildLogger({ module: "worktree" });
 
 const execAsync = promisify(exec);
 

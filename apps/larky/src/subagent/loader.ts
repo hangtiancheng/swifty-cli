@@ -20,16 +20,18 @@
  * SOFTWARE.
  */
 
+import { readdirSync, readFileSync, existsSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
+
+import yaml from "js-yaml";
+import z, { parse } from "zod";
+
 import { createChildLogger } from "../logger/index.js";
 
-const log = createChildLogger({ module: "subagent" });
-
-import { readdirSync, readFileSync, existsSync } from "node:fs";
-import { join } from "node:path";
-import { homedir } from "node:os";
-import yaml from "js-yaml";
 import { BUILTIN_AGENTS, type AgentDefinition } from "./definition.js";
-import z, { parse } from "zod";
+
+const log = createChildLogger({ module: "subagent" });
 
 /**
  * Loads Agent definitions in order: built-in → user-level (~/.larky/agents/) → project-level (.larky/agents/).

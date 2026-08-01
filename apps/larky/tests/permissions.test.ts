@@ -20,15 +20,18 @@
  * SOFTWARE.
  */
 
-import { describe, it, expect, vi } from "vitest";
 import { mkdtempSync, writeFileSync, mkdirSync } from "fs";
-import { join } from "path";
-import { tmpdir } from "os";
-import { PermissionChecker } from "../src/permissions/checker.js";
 import { homedir } from "node:os";
-import { MemoryConsolidator } from "@/memory/consolidation.js";
+import { tmpdir } from "os";
+import { join } from "path";
+
+import { describe, it, expect, vi } from "vitest";
+
 import { Agent } from "../src/agent/agent.js";
 import type { LLMClient } from "../src/llm/client.js";
+import { PermissionChecker } from "../src/permissions/checker.js";
+
+import { MemoryConsolidator } from "@/memory/consolidation.js";
 
 function makeTmpDir(): string {
   return mkdtempSync(join(tmpdir(), "larky-test-"));

@@ -24,16 +24,17 @@
  * Status: Done
  */
 
-import { createChildLogger } from "../logger/index.js";
-
-const log = createChildLogger({ module: "config" });
-
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+
 import { safeParse } from "@modelcontextprotocol/sdk/server/zod-compat.js";
 import yaml from "js-yaml";
 import { z } from "zod";
+
+import { createChildLogger } from "../logger/index.js";
+
+const log = createChildLogger({ module: "config" });
 
 const ENV_KEY_MAP = {
   anthropic: "ANTHROPIC_API_KEY",

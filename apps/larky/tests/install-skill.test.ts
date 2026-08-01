@@ -20,12 +20,14 @@
  * SOFTWARE.
  */
 
-import { describe, it, expect } from "vitest";
 import { mkdtempSync, writeFileSync, existsSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { InstallSkillTool } from "../src/skills/install-tool.js";
+
+import { describe, it, expect } from "vitest";
+
 import { SkillCatalog } from "../src/skills/catalog.js";
+import { InstallSkillTool } from "../src/skills/install-tool.js";
 
 const SKILL = `---
 name: commit-helper

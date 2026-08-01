@@ -20,10 +20,6 @@
  * SOFTWARE.
  */
 
-import { createChildLogger } from "../logger/index.js";
-
-const log = createChildLogger({ module: "teams" });
-
 import {
   readFileSync,
   writeFileSync,
@@ -35,7 +31,12 @@ import {
   closeSync,
 } from "node:fs";
 import { join } from "node:path";
+
 import z, { safeParse } from "zod";
+
+import { createChildLogger } from "../logger/index.js";
+
+const log = createChildLogger({ module: "teams" });
 
 const FileMailMessageSchema = z.object({
   from: z.string(),

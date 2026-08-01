@@ -21,33 +21,36 @@
  * SOFTWARE.
  */
 
-import { saveMessage, toolUsesToRecords, toolResultsToRecords } from "../session/session.js";
+import { readFile } from "node:fs/promises";
+
+import { manageContext, forceCompact, AutoCompactTrackingState } from "../compact/compact.js";
+import { RecoveryState } from "../compact/recovery.js";
+import type { ConversationManager } from "../conversation/conversation.js";
+import type { ToolUseBlock, ToolResultBlock } from "../conversation/conversation.js";
+import { REJECTED_TOOL_RESULT } from "../conversation/pairing.js";
+import type { FileHistory } from "../file-history/file-history.js";
+import type { HookEngine, EventName } from "../hooks/hooks.js";
 import { isImagePath } from "../images/detect.js";
 import { saveSessionImages } from "../images/store.js";
 import type { ImageAttachment } from "../images/types.js";
-import { REJECTED_TOOL_RESULT } from "../conversation/pairing.js";
 import type { LLMClient } from "../llm/client.js";
-import type { ConversationManager } from "../conversation/conversation.js";
-import type { ToolUseBlock, ToolResultBlock } from "../conversation/conversation.js";
-import type { ToolRegistry } from "../tools/registry.js";
+import { ContextTooLongError, RateLimitError } from "../llm/errors.js";
 import type { PermissionChecker, Decision } from "../permissions/checker.js";
-import type { HookEngine, EventName } from "../hooks/hooks.js";
-import type { FileHistory } from "../file-history/file-history.js";
+import { getOrCreatePlanPath, planExists } from "../plan-file/plan-file.js";
+import { coordinatorReminder } from "../prompt/coordinator.js";
+import { buildPlanModeReminder } from "../prompt/plan-mode.js";
+import { saveMessage, toolUsesToRecords, toolResultsToRecords } from "../session/session.js";
+import { getSessionFilePath } from "../session/session.js";
+import { applyBudget, isSpillReadback, persistLargeResult } from "../tool-result/budget.js";
 import type { FileStateCache } from "../tools/file-state-cache.js";
+import type { ToolRegistry } from "../tools/registry.js";
+
 import type { AgentEvent } from "./events.js";
 import { StreamingExecutor } from "./streaming-executor.js";
-import { manageContext, forceCompact, AutoCompactTrackingState } from "../compact/compact.js";
-import { getSessionFilePath } from "../session/session.js";
-import { RecoveryState } from "../compact/recovery.js";
-import { ContextTooLongError, RateLimitError } from "../llm/errors.js";
-import { getOrCreatePlanPath, planExists } from "../plan-file/plan-file.js";
-import { buildPlanModeReminder } from "../prompt/plan-mode.js";
-import { coordinatorReminder } from "../prompt/coordinator.js";
-import { applyBudget, isSpillReadback, persistLargeResult } from "../tool-result/budget.js";
-import { readFile } from "node:fs/promises";
-import { asRecord, strArg } from "@/utils/index.js";
-import type { ToolSchema } from "@/tools/types.js";
+
 import type { UsageInfo } from "@/llm/events.js";
+import type { ToolSchema } from "@/tools/types.js";
+import { asRecord, strArg } from "@/utils/index.js";
 
 // When the model stops on max_tokens, escalate its output ceiling once to this
 // value, then attempt a bounded number of multi-turn recoveries. Mirrors Go.

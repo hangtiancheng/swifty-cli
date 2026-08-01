@@ -20,14 +20,14 @@
  * SOFTWARE.
  */
 
-import { createChildLogger } from "../logger/index.js";
-
-const log = createChildLogger({ module: "hooks" });
-
 import { exec } from "node:child_process";
+
 import type { HookConfig } from "../config/config.js";
+import { createChildLogger } from "../logger/index.js";
 import { asErrorString } from "../utils/index.js";
 import { strArg } from "../utils/index.js";
+
+const log = createChildLogger({ module: "hooks" });
 
 /** Async command execution for hooks — non-blocking, 30s timeout.
  *  Replaces execSync so the event loop isn't frozen during hook commands. */

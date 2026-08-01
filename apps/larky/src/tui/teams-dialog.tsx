@@ -20,11 +20,13 @@
  * SOFTWARE.
  */
 
-import { useState } from "react";
 import { Box, Text, useInput } from "ink";
-import { COLORS, ICONS } from "./styles.js";
+import { useState } from "react";
+
 import type { TeammateUIState } from "../teams/progress.js";
 import { formatTokens } from "../teams/progress.js";
+
+import { COLORS, ICONS } from "./styles.js";
 
 interface Props {
   teammates: TeammateUIState[];

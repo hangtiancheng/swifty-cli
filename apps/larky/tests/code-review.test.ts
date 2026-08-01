@@ -20,13 +20,15 @@
  * SOFTWARE.
  */
 
-import { describe, test, expect, beforeEach, afterEach } from "vitest";
-import { CodeReviewManager, createDefaultCodeReviewTeam } from "../src/code-review/manager.js";
-import { ReviewSession } from "../src/code-review/session.js";
-import { TeamManager } from "../src/teams/team.js";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+
+import { describe, test, expect, beforeEach, afterEach } from "vitest";
+
+import { CodeReviewManager, createDefaultCodeReviewTeam } from "../src/code-review/manager.js";
+import { ReviewSession } from "../src/code-review/session.js";
+import { TeamManager } from "../src/teams/team.js";
 
 // The teams directory lives at <home>/.larky/teams, so the tests redirect the
 // entire home directory to a temp dir to avoid leaving residue in the real

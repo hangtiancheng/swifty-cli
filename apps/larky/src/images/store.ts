@@ -23,8 +23,10 @@
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { createChildLogger } from "@/logger/index.js";
+
 import { asImageMediaType, type ImageAttachment } from "./types.js";
+
+import { createChildLogger } from "@/logger/index.js";
 
 const log = createChildLogger({ module: "images" });
 

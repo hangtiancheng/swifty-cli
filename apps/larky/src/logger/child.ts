@@ -25,6 +25,7 @@
 // { module: "session" } plus AsyncLocalStorage context (agentName, etc.).
 
 import pino, { type Logger } from "pino";
+
 import { getLogger, mergeContext } from "./logger.js";
 
 // A real silent pino logger used as the Proxy target for pre-init children.

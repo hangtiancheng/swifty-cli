@@ -24,12 +24,9 @@
  * Status: Done
  */
 
-import { createChildLogger } from "../logger/index.js";
-
-const log = createChildLogger({ module: "llm" });
-
 import Anthropic from "@anthropic-ai/sdk";
 import { safeParseAsync, z } from "zod";
+
 import {
   getContextWindow,
   getMaxOutputTokens,
@@ -37,9 +34,11 @@ import {
   resolveAPIKey,
 } from "../config/config.js";
 import type { ConversationManager, Message } from "../conversation/conversation.js";
-import { asErrorString, asRecord, asString, DANGEROUSLY_JSON, isRecord } from "../utils/index.js";
-import type { LLMClient } from "./client.js";
 import { ensureToolPairing } from "../conversation/pairing.js";
+import { createChildLogger } from "../logger/index.js";
+import { asErrorString, asRecord, asString, DANGEROUSLY_JSON, isRecord } from "../utils/index.js";
+
+import type { LLMClient } from "./client.js";
 import {
   AuthenticationError,
   ContextTooLongError,
@@ -48,9 +47,12 @@ import {
   RateLimitError,
 } from "./errors.js";
 import type { StreamEvent } from "./events.js";
-import type { ToolSchema } from "@/tools/types.js";
-import type { ImageAttachment } from "@/images/types.js";
+
 import { computeCompactThreshold } from "@/compact/compact.js";
+import type { ImageAttachment } from "@/images/types.js";
+import type { ToolSchema } from "@/tools/types.js";
+
+const log = createChildLogger({ module: "llm" });
 
 enum AnthropicErrorCode {
   /** 413 Payload Too Large — The request entity is larger than the server is willing or able to process. */

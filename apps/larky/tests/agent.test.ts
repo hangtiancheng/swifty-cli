@@ -22,15 +22,16 @@
 
 /* eslint-disable @typescript-eslint/require-await */
 import { describe, it, expect } from "vitest";
+
 import { Agent } from "../src/agent/agent.js";
+import type { AgentEvent } from "../src/agent/events.js";
 import { ConversationManager } from "../src/conversation/conversation.js";
-import { ToolRegistry } from "../src/tools/registry.js";
-import { PermissionChecker } from "../src/permissions/checker.js";
 import { HookEngine } from "../src/hooks/hooks.js";
 import type { LLMClient } from "../src/llm/client.js";
 import type { StreamEvent, UsageInfo } from "../src/llm/events.js";
+import { PermissionChecker } from "../src/permissions/checker.js";
+import { ToolRegistry } from "../src/tools/registry.js";
 import type { Tool } from "../src/tools/types.js";
-import type { AgentEvent } from "../src/agent/events.js";
 
 const USAGE: UsageInfo = {
   inputTokens: 1,

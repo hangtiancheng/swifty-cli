@@ -20,18 +20,19 @@
  * SOFTWARE.
  */
 
+import { markedTerminal } from "@swifty.js/marked-terminal";
+import chalk from "chalk";
+import { Box, Text, useStdout } from "ink";
+import { marked } from "marked";
+import React, { useRef } from "react";
+
 import { createChildLogger } from "../logger/index.js";
 
-const log = createChildLogger({ module: "tui" });
-
-import chalk from "chalk";
-import { marked } from "marked";
-import { markedTerminal } from "@swifty.js/marked-terminal";
-import { COLORS, ICONS } from "./styles.js";
-import { Box, Text, useStdout } from "ink";
-import React, { useRef } from "react";
 import { DiffLines } from "./diff-render.js";
 import { isDiffTool } from "./is-diff-tool.js";
+import { COLORS, ICONS } from "./styles.js";
+
+const log = createChildLogger({ module: "tui" });
 
 chalk.level = 3;
 marked.use(markedTerminal({ showSectionPrefix: false }));

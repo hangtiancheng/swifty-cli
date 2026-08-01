@@ -20,15 +20,17 @@
  * SOFTWARE.
  */
 
-import { createChildLogger } from "../logger/index.js";
-
-const log = createChildLogger({ module: "skills" });
-
 import { mkdirSync, writeFileSync, readFileSync, existsSync } from "node:fs";
 import { join, isAbsolute, basename } from "node:path";
+
+import { createChildLogger } from "../logger/index.js";
 import type { Tool, ToolContext, ToolResult, ToolSchema } from "../tools/types.js";
+
 import type { SkillCatalog } from "./catalog.js";
+
 import { asErrorString, strArg } from "@/utils/index.js";
+
+const log = createChildLogger({ module: "skills" });
 
 function nameFromFrontmatter(content: string): string {
   if (!content.startsWith("---")) {

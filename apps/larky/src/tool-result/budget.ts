@@ -20,10 +20,11 @@
  * SOFTWARE.
  */
 
-import { createChildLogger } from "../logger/index.js";
 import { writeFileSync, mkdirSync } from "node:fs";
 import { join, resolve } from "node:path";
+
 import type { ToolResultBlock } from "../conversation/conversation.js";
+import { createChildLogger } from "../logger/index.js";
 import { isObject } from "../utils/index.js";
 
 // Aggregate cap across all tool results within a single message. The size of

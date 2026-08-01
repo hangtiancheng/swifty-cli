@@ -25,11 +25,13 @@
 // const log = createChildLogger({ module: "commands" });
 
 import { readdirSync, readFileSync, statSync, existsSync } from "node:fs";
-import { join } from "node:path";
 import { homedir } from "node:os";
+import { join } from "node:path";
+
 import yaml from "js-yaml";
-import type { Command } from "./commands.js";
 import { z, parse } from "zod";
+
+import type { Command } from "./commands.js";
 
 // Loads user-defined slash commands from .larky/commands/*.md (user then
 // project, so project wins on a name collision). Subdirectories namespace the

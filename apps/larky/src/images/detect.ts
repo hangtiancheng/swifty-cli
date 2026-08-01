@@ -21,6 +21,7 @@
  */
 
 import { extname } from "node:path";
+
 import type { ImageMediaType } from "./types.js";
 
 const MEDIA_TYPE_BY_EXT: Record<string, ImageMediaType> = {

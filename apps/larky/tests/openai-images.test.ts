@@ -21,6 +21,7 @@
  */
 
 import { describe, expect, it } from "vitest";
+
 import type { Message } from "@/conversation/conversation.js";
 import type { ImageAttachment } from "@/images/types.js";
 import { buildChatCompletionMessages, buildOpenAIInput } from "@/llm/openai.js";

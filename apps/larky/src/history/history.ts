@@ -22,7 +22,9 @@
 
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
+
 import { parse, z } from "zod";
+
 import { createChildLogger } from "../logger/index.js";
 
 const log = createChildLogger({ module: "history" });

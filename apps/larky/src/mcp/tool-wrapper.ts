@@ -21,12 +21,13 @@
  */
 
 import { createChildLogger } from "../logger/index.js";
+import type { Tool, ToolResult, ToolContext, ToolCategory, ToolSchema } from "../tools/types.js";
 
-const log = createChildLogger({ module: "mcp" });
+import type { MCPClient, MCPTool } from "./client.js";
 
 import { asErrorString } from "@/utils/index.js";
-import type { Tool, ToolResult, ToolContext, ToolCategory, ToolSchema } from "../tools/types.js";
-import type { MCPClient, MCPTool } from "./client.js";
+
+const log = createChildLogger({ module: "mcp" });
 
 function sanitizeName(serverName: string, toolName: string): string {
   const clean = (s: string) => s.replace(/[^a-zA-Z0-9_-]/g, "_");

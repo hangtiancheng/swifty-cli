@@ -21,7 +21,6 @@
  * SOFTWARE.
  */
 
-import { describe, it, expect } from "vitest";
 import {
   mkdtempSync,
   writeFileSync,
@@ -32,7 +31,11 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+
+import { describe, it, expect } from "vitest";
+
 import { MemoryConsolidator } from "../src/memory/consolidation.js";
+
 import type { LLMClient } from "@/llm/client.js";
 
 function makeTempDir(): string {

@@ -21,6 +21,7 @@
  */
 
 import { ToolRegistry } from "../tools/registry.js";
+
 import type { AgentTool } from "./agent-tool.js";
 
 // Global list of tools disallowed for subagents — prevents recursive Agent calls or using main-thread-only tools

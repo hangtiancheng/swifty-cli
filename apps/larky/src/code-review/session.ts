@@ -22,9 +22,9 @@
 
 import { createChildLogger } from "../logger/index.js";
 
-const log = createChildLogger({ module: "code-review" });
-
 import type { CodeReviewManager, CodeReviewMember } from "./manager.js";
+
+const log = createChildLogger({ module: "code-review" });
 
 export interface ReviewRequest {
   id: string;

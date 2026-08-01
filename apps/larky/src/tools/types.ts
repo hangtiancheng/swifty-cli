@@ -20,9 +20,10 @@
  * SOFTWARE.
  */
 
+import type { FileStateCache } from "./file-state-cache.js";
+
 import type { FileHistory } from "@/file-history/file-history.js";
 import type { ImageAttachment } from "@/images/types.js";
-import type { FileStateCache } from "./file-state-cache.js";
 
 export type ToolCategory = "read" | "write" | "command";
 

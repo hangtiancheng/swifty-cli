@@ -20,13 +20,14 @@
  * SOFTWARE.
  */
 
-import { createChildLogger } from "../logger/index.js";
-
-const log = createChildLogger({ module: "tools" });
-
 import { readFile, writeFile } from "node:fs/promises";
+
+import { createChildLogger } from "../logger/index.js";
 import { asErrorString } from "../utils/index.js";
+import { boolArg, strArg } from "../utils/index.js";
+
 import { EDIT_FILE_DESCRIPTION } from "./descriptions.js";
+import { buildDiff } from "./diff.js";
 import {
   type Tool,
   type ToolCategory,
@@ -34,8 +35,8 @@ import {
   type ToolResult,
   type ToolSchema,
 } from "./types.js";
-import { boolArg, strArg } from "../utils/index.js";
-import { buildDiff } from "./diff.js";
+
+const log = createChildLogger({ module: "tools" });
 
 export class EditFileTool implements Tool {
   // Use a hardcoded string instead of EditFileTool.name.replace("Tool", "")

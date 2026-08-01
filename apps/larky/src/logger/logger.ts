@@ -31,11 +31,13 @@
 //   log calls are safe no-ops (startup errors should use console.error).
 // - At serialize time, AsyncLocalStorage context (agentName, etc.) is merged.
 
-import pino, { type Logger, type LoggerOptions } from "pino";
 import { openSync, closeSync, mkdirSync } from "node:fs";
 import { join, dirname } from "node:path";
-import { errSerializer } from "./serializers.js";
+
+import pino, { type Logger, type LoggerOptions } from "pino";
+
 import { getLogContext } from "./context.js";
+import { errSerializer } from "./serializers.js";
 
 /** Execution mode, written into the base field of every log entry. */
 export type LoggerMode = "tui" | "remote" | "teammate";

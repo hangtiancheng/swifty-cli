@@ -20,31 +20,31 @@
  * SOFTWARE.
  */
 
-import { forkEnabled, loadConfig } from "./config/config.js";
-import { getContextWindow, getMaxOutputTokens } from "./config/config.js";
-import { createClient } from "./llm/client.js";
-import { ConversationManager } from "./conversation/conversation.js";
-import { buildSystemPrompt, detectEnvironment } from "./prompt/builder.js";
-import { ToolRegistry } from "./tools/registry.js";
-import { ReadFileTool } from "./tools/read-file.js";
-import { BashTool } from "./tools/bash.js";
-import { GlobTool } from "./tools/glob.js";
-import { GrepTool } from "./tools/grep.js";
-import { WriteFileTool } from "./tools/write-file.js";
-import { EditFileTool } from "./tools/edit-file.js";
-import { ToolSearchTool } from "./tools/tool-search.js";
-import { PermissionChecker } from "./permissions/checker.js";
 import { Agent } from "./agent/agent.js";
 import type { AgentEvent } from "./agent/events.js";
-import { FileStateCache } from "./tools/file-state-cache.js";
+import { forkEnabled, loadConfig } from "./config/config.js";
+import { getContextWindow, getMaxOutputTokens } from "./config/config.js";
+import { ConversationManager } from "./conversation/conversation.js";
+import { createClient } from "./llm/client.js";
+import { PermissionChecker } from "./permissions/checker.js";
+import { buildSystemPrompt, detectEnvironment } from "./prompt/builder.js";
 import { AgentTool } from "./subagent/agent-tool.js";
-import { spawnSubagent } from "./subagent/spawn.js";
 import { BUILTIN_AGENTS } from "./subagent/definition.js";
+import { spawnSubagent } from "./subagent/spawn.js";
+import { coordinatorToolFilter, coordinatorActive } from "./teams/coordinator.js";
+import { TaskStopTool } from "./teams/task-stop.js";
 import { TeamManager } from "./teams/team.js";
 import { TeamCreateTool, SendMessageTool, TeamDeleteTool } from "./teams/tools.js";
-import { TaskStopTool } from "./teams/task-stop.js";
+import { BashTool } from "./tools/bash.js";
+import { EditFileTool } from "./tools/edit-file.js";
+import { FileStateCache } from "./tools/file-state-cache.js";
+import { GlobTool } from "./tools/glob.js";
+import { GrepTool } from "./tools/grep.js";
+import { ReadFileTool } from "./tools/read-file.js";
+import { ToolRegistry } from "./tools/registry.js";
 import { SyntheticOutputTool } from "./tools/synthetic-output.js";
-import { coordinatorToolFilter, coordinatorActive } from "./teams/coordinator.js";
+import { ToolSearchTool } from "./tools/tool-search.js";
+import { WriteFileTool } from "./tools/write-file.js";
 
 /** Supported output formats for -p (print) mode. */
 type OutputFormat = "text" | "stream-json";

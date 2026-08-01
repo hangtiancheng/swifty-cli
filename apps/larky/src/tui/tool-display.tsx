@@ -21,10 +21,12 @@
  */
 
 import { Box, Text } from "ink";
-import { COLORS, ICONS } from "./styles.js";
-import { strArg } from "@/utils/index.js";
+
 import { DiffLines } from "./diff-render.js";
 import { isDiffTool } from "./is-diff-tool.js";
+import { COLORS, ICONS } from "./styles.js";
+
+import { strArg } from "@/utils/index.js";
 
 export interface ToolBlockInfo {
   toolName: string;
@@ -60,6 +62,12 @@ function ToolBlock(props: ToolBlockProps) {
   const icon = tool.isError ? COLORS.error(ICONS.error) : COLORS.success(ICONS.success);
   const timeStr = tool.elapsed !== undefined ? `(${tool.elapsed.toFixed(1)}s)` : "";
 
+  // Keep the live (dynamic) region short: if it grows taller than the
+  // terminal, Ink can no longer repaint it correctly and the spinner
+  // overwrites earlier output. The full output lands in the Static
+  // turn_summary when the turn completes.
+  const clamped = tool.output ? clampLines(tool.output, 8) : "";
+
   return (
     <Box flexDirection="column">
       <Text>
@@ -67,19 +75,26 @@ function ToolBlock(props: ToolBlockProps) {
         {argSummary ? <Text dimColor> {argSummary}</Text> : null}
         <Text dimColor>{timeStr}</Text>
       </Text>
-      {tool.output && (
+      {clamped && (
         <Box paddingLeft={2} marginBottom={0}>
           {isDiffTool(tool.toolName) ? (
-            <DiffLines text={tool.output} />
+            <DiffLines text={clamped} />
           ) : (
-            <Text dimColor>
-              {tool.output.length > 500 ? tool.output.slice(0, 500) + "…" : tool.output}
-            </Text>
+            <Text dimColor>{clamped}</Text>
           )}
         </Box>
       )}
     </Box>
   );
+}
+
+function clampLines(text: string, max: number): string {
+  const truncated = text.length > 500 ? text.slice(0, 500) + "…" : text;
+  const lines = truncated.split("\n");
+  if (lines.length <= max) {
+    return truncated;
+  }
+  return lines.slice(0, max).join("\n") + `\n… (+${String(lines.length - max)} lines)`;
 }
 
 export function ToolDisplay(props: ToolDisplayProps) {

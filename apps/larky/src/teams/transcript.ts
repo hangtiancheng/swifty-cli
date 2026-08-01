@@ -20,14 +20,15 @@
  * SOFTWARE.
  */
 
+import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
+import { join } from "node:path";
+
+import z, { parse } from "zod";
+
+import type { ConversationManager } from "../conversation/conversation.js";
 import { createChildLogger } from "../logger/index.js";
 
 const log = createChildLogger({ module: "teams" });
-
-import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
-import { join } from "node:path";
-import type { ConversationManager } from "../conversation/conversation.js";
-import z, { parse } from "zod";
 
 // Serialized data structure
 const TranscriptToolUseSchema = z.object({

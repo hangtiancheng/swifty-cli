@@ -20,6 +20,8 @@
  * SOFTWARE.
  */
 
+import { intArg, strArg } from "../utils/index.js";
+
 import type { ToolRegistry } from "./registry.js";
 import {
   type Tool,
@@ -28,7 +30,6 @@ import {
   type ToolResult,
   type ToolSchema,
 } from "./types.js";
-import { intArg, strArg } from "../utils/index.js";
 
 export class ToolSearchTool implements Tool {
   name = "ToolSearch";

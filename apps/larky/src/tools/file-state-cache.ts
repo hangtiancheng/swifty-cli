@@ -20,11 +20,11 @@
  * SOFTWARE.
  */
 
+import { statSync } from "fs";
+
 import { createChildLogger } from "../logger/index.js";
 
 const log = createChildLogger({ module: "file-state-cache" });
-
-import { statSync } from "fs";
 
 export class FileStateCache {
   private cache = new Map<string, number>(); // path -> mtimeMs

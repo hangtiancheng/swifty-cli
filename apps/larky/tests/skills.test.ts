@@ -20,14 +20,16 @@
  * SOFTWARE.
  */
 
-import { describe, it, expect } from "vitest";
-import { runInline } from "../src/skills/executor.js";
-import type { Skill, SkillForkHost, SkillHost } from "../src/skills/skill.js";
-import { LoadSkillTool } from "../src/skills/load-skill-tool.js";
-import { SkillCatalog } from "../src/skills/catalog.js";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { describe, it, expect } from "vitest";
+
+import { SkillCatalog } from "../src/skills/catalog.js";
+import { runInline } from "../src/skills/executor.js";
+import { LoadSkillTool } from "../src/skills/load-skill-tool.js";
+import type { Skill, SkillForkHost, SkillHost } from "../src/skills/skill.js";
 function makeHost() {
   const activated: [string, string][] = [];
   const host: SkillHost = {

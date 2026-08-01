@@ -20,13 +20,11 @@
  * SOFTWARE.
  */
 
-import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { TeamManager } from "../src/teams/team.js";
-import { SendMessageTool } from "../src/teams/tools.js";
+import { afterEach, beforeEach, describe, expect, test } from "vitest";
 
 import type { FileMailMessage } from "../src/teams/file-mailbox.js";
 import {
@@ -42,6 +40,8 @@ import {
   shutdownRequest,
   shutdownResponse,
 } from "../src/teams/protocol.js";
+import { TeamManager } from "../src/teams/team.js";
+import { SendMessageTool } from "../src/teams/tools.js";
 
 const plain = (from: string, text: string): FileMailMessage => ({
   from,

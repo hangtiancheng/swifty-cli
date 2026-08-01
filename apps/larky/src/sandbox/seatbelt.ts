@@ -21,6 +21,7 @@
  */
 
 import { existsSync, statSync } from "node:fs";
+
 import type { Sandbox, SandboxConfig } from "./index.js";
 
 // Hardcoded path to prevent PATH injection attacks

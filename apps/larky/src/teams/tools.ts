@@ -21,10 +21,8 @@
  */
 
 import { createChildLogger } from "../logger/index.js";
-import { asErrorString, strArg } from "@/utils/index.js";
 import type { Tool, ToolContext, ToolResult, ToolSchema } from "../tools/types.js";
-import type { TeamManager, RunAgent, Team } from "./team.js";
-import { getNameRegistry } from "./registry.js";
+
 import {
   MSG_PLAN_APPROVAL_RESPONSE,
   MSG_SHUTDOWN_REQUEST,
@@ -34,6 +32,10 @@ import {
   shutdownRequest,
   shutdownResponse,
 } from "./protocol.js";
+import { getNameRegistry } from "./registry.js";
+import type { TeamManager, RunAgent, Team } from "./team.js";
+
+import { asErrorString, strArg } from "@/utils/index.js";
 
 const log = createChildLogger({ module: "teams" });
 export class TeamCreateTool implements Tool {

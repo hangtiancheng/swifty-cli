@@ -20,15 +20,15 @@
  * SOFTWARE.
  */
 
-import { createChildLogger } from "../../logger/index.js";
-
-const log = createChildLogger({ module: "tools" });
-
 import type { Stats } from "node:fs";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { join, relative } from "node:path";
+
 import { Glob } from "@swifty.js/glob-addon";
+
+import { createChildLogger } from "../../logger/index.js";
 import { asErrorString } from "../../utils/index.js";
+import { strArg } from "../../utils/index.js";
 import { GREP_DESCRIPTION } from "../descriptions.js";
 import {
   SKIP_DIRS,
@@ -38,7 +38,8 @@ import {
   type ToolResult,
   type ToolSchema,
 } from "../types.js";
-import { strArg } from "../../utils/index.js";
+
+const log = createChildLogger({ module: "tools" });
 
 const MAX_RESULTS = 500;
 

@@ -223,7 +223,6 @@ export function App({
   const streamStartRef = useRef(0);
   const streamingTextRef = useRef("");
   const streamThrottleRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const committedIndexRef = useRef(0);
   const [activeTools, setActiveTools] = useState<ToolBlockInfo[]>([]);
   const [inputTokens, setInputTokens] = useState(0);
   const [outputTokens, setOutputTokens] = useState(0);
@@ -762,7 +761,6 @@ export function App({
         case "clear": {
           // Clear messages and start a fresh conversation
           setMessages([]);
-          committedIndexRef.current = 0;
           convRef.current = new ConversationManager();
           // Reset the session ID and the stores derived from it
           sessionIdRef.current = sessionMod.newSessionId();
@@ -947,7 +945,6 @@ export function App({
               content: `⟲ Resumed session ${arg} (${String(restored.length)} messages).`,
             },
           ];
-          committedIndexRef.current = resumedMessages.length;
           setMessages(resumedMessages);
           break;
         }
@@ -1479,17 +1476,13 @@ export function App({
           // this turn with a single collapsed turn_summary message.
           const hasTurnContent = turnThinkingText || turnToolCalls.length > 0;
           if (hasTurnContent) {
-            setMessages((prev) => {
-              const summary: ChatMessage = {
-                role: "turn_summary",
-                content: turnThinkingText,
-                thinkingDuration: turnThinkingDuration > 0 ? turnThinkingDuration : undefined,
-                toolSummary: turnToolCalls.length > 0 ? turnToolCalls : undefined,
-              };
-              const next = [...prev, summary];
-              committedIndexRef.current = next.length;
-              return next;
-            });
+            const summary: ChatMessage = {
+              role: "turn_summary",
+              content: turnThinkingText,
+              thinkingDuration: turnThinkingDuration > 0 ? turnThinkingDuration : undefined,
+              toolSummary: turnToolCalls.length > 0 ? turnToolCalls : undefined,
+            };
+            setMessages((prev) => [...prev, summary]);
           }
           resetTurnAccumulators();
           break;
@@ -1502,19 +1495,9 @@ export function App({
           }
           setStreamingText("");
           if (fullText) {
-            setMessages((prev) => {
-              const next = [...prev, { role: "assistant" as const, content: fullText }];
-              committedIndexRef.current = next.length;
-              return next;
-            });
+            setMessages((prev) => [...prev, { role: "assistant" as const, content: fullText }]);
             // Assistant messages are persisted by the agent main loop as they
             // enter the conversation history (tool blocks included), so we don't duplicate that here
-          } else {
-            // Even when no final text, mark everything committed.
-            setMessages((prev) => {
-              committedIndexRef.current = prev.length;
-              return prev;
-            });
           }
           setActiveTools([]);
           resetTurnAccumulators();
@@ -1769,7 +1752,7 @@ export function App({
               model: selectedProvider.model || selectedProvider.name,
               workDir,
             },
-            ...messages.slice(0, committedIndexRef.current).map((message, index) => ({
+            ...messages.map((message, index) => ({
               type: "message" as const,
               _key: `message-${String(index)}`,
               message,
@@ -1800,7 +1783,7 @@ export function App({
         </Static>
 
         <ChatView
-          messages={messages.slice(committedIndexRef.current)}
+          messages={[]}
           streamingText={isStreaming ? streamingText : undefined}
           expanded={toolsExpanded}
         />

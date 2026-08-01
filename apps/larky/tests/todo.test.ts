@@ -20,12 +20,14 @@
  * SOFTWARE.
  */
 
-import { describe, it, expect } from "vitest";
 import { mkdtempSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { TaskList } from "../src/todo/todo.js";
+
+import { describe, it, expect } from "vitest";
+
 import { TaskStore } from "../src/todo/store.js";
+import { TaskList } from "../src/todo/todo.js";
 
 describe("todo store-backed persistence", () => {
   it("persists tasks to a sess-scoped file and reloads them", () => {

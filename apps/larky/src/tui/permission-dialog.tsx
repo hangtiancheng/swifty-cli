@@ -20,8 +20,9 @@
  * SOFTWARE.
  */
 
-import { useState } from "react";
 import { Box, Text, useInput } from "ink";
+import { useState } from "react";
+
 import { COLORS, ICONS } from "./styles.js";
 
 export type PermissionAction = "allow" | "deny" | "allowAlways";

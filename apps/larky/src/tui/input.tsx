@@ -20,20 +20,23 @@
  * SOFTWARE.
  */
 
+import { readdirSync, statSync } from "fs";
+import { join } from "path";
+
+import Fuse from "fuse.js";
+import { Box, Text, useInput } from "ink";
+import { useState, useMemo, useRef, useEffect } from "react";
+
 import { createChildLogger } from "../logger/index.js";
 
-const log = createChildLogger({ module: "tui" });
+import { BORDER_COLORS, COLORS, ICONS } from "./styles.js";
 
 import type { Command } from "@/commands/commands.js";
 import type { CommandUsageTracker } from "@/commands/usage-tracker.js";
 import type { PermissionMode } from "@/permissions/checker.js";
 import { SKIP_DIRS } from "@/tools/types.js";
-import { readdirSync, statSync } from "fs";
-import { join } from "path";
-import { Box, Text, useInput } from "ink";
-import { useState, useMemo, useRef, useEffect } from "react";
-import { BORDER_COLORS, COLORS, ICONS } from "./styles.js";
-import Fuse from "fuse.js";
+
+const log = createChildLogger({ module: "tui" });
 
 function scanWorkdirFiles(root: string, max = 2000): string[] {
   const out: string[] = [];
@@ -305,6 +308,31 @@ export function InputBox(props: InputBoxProps) {
 
     const hasReturn = key.return || input.includes("\r") || input.includes("\n");
     const cleanInput = input.replace(/[\r\n]/g, "");
+
+    // A chunk containing newlines plus other content is a paste, not an Enter
+    // press (Enter arrives as a lone "\r"/"\n"). Insert it as multi-line text
+    // at the cursor instead of submitting.
+    const normalized = input.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+    if (normalized.includes("\n") && normalized !== "\n") {
+      const pasteLines = normalized.split("\n");
+      const cl = cursorLine;
+      const col = Math.min(cursorCol, (lines[cl] ?? "").length);
+      const lastLen = pasteLines[pasteLines.length - 1].length;
+      setLines((prev) => {
+        const updated = [...prev];
+        const line = updated[cl] ?? "";
+        const segments = [...pasteLines];
+        segments[0] = line.slice(0, col) + segments[0];
+        segments[segments.length - 1] = segments[segments.length - 1] + line.slice(col);
+        updated.splice(cl, 1, ...segments);
+        return updated;
+      });
+      setCursorLine(cl + pasteLines.length - 1);
+      setCursorCol(lastLen);
+      setDropdownIndex(0);
+      setDropdownDismissed(false);
+      return;
+    }
 
     // Shift+Enter or Ctrl+J → newline
     if (hasReturn && (key.shift || (key.ctrl && input === "\n"))) {

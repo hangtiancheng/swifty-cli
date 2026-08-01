@@ -21,8 +21,9 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { ensureToolPairing, INTERRUPTED_TOOL_RESULT } from "../src/conversation/pairing.js";
+
 import type { Message } from "../src/conversation/conversation.js";
+import { ensureToolPairing, INTERRUPTED_TOOL_RESULT } from "../src/conversation/pairing.js";
 
 function assistantWithTool(id: string): Message {
   return {

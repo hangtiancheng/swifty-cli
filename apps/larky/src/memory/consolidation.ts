@@ -29,20 +29,21 @@ import {
   unlinkSync,
   utimesSync,
 } from "node:fs";
-import { join, basename } from "node:path";
 import { homedir } from "node:os";
-import type { LLMClient } from "../llm/client.js";
+import { join, basename } from "node:path";
+
+import { Agent } from "../agent/agent.js";
 import { ConversationManager } from "../conversation/conversation.js";
-import { ToolRegistry } from "../tools/registry.js";
-import { ReadFileTool } from "../tools/read-file.js";
-import { WriteFileTool } from "../tools/write-file.js";
+import type { LLMClient } from "../llm/client.js";
+import { PermissionChecker } from "../permissions/checker.js";
+import { listSessions } from "../session/session.js";
+import { BashTool } from "../tools/bash.js";
 import { EditFileTool } from "../tools/edit-file.js";
 import { GlobTool } from "../tools/glob.js";
 import { GrepTool } from "../tools/grep.js";
-import { BashTool } from "../tools/bash.js";
-import { Agent } from "../agent/agent.js";
-import { PermissionChecker } from "../permissions/checker.js";
-import { listSessions } from "../session/session.js";
+import { ReadFileTool } from "../tools/read-file.js";
+import { ToolRegistry } from "../tools/registry.js";
+import { WriteFileTool } from "../tools/write-file.js";
 
 const DEFAULT_MIN_HOURS = 24;
 const DEFAULT_MIN_SESSIONS = 5;

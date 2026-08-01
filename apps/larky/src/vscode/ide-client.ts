@@ -25,11 +25,15 @@
 // Cmd+Option+K to the CLI whose pid matches the active terminal) and listen
 // for `at_mentioned` notifications carrying file path + 0-based line range.
 
-import { createChildLogger } from "../logger/index.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { z } from "zod";
+
+import { createChildLogger } from "../logger/index.js";
+
 import { detectIde } from "./lockfile.js";
 import { WebSocketTransport } from "./ws-transport.js";
+
+import { version } from "@/tui/version.js";
 
 const log = createChildLogger({ module: "vscode" });
 
@@ -84,7 +88,7 @@ export async function connectToIde(opts: {
   const transport = new WebSocketTransport(ide.url, {
     ...(ide.authToken && { "X-Claude-Code-Ide-Authorization": ide.authToken }),
   });
-  const client = new Client({ name: "larky", version: "0.1.0" }, {});
+  const client = new Client({ name: "larky", version }, {});
 
   try {
     await client.connect(transport);

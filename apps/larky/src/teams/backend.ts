@@ -20,12 +20,13 @@
  * SOFTWARE.
  */
 
+import { execSync, spawn } from "node:child_process";
+
 import { createChildLogger } from "../logger/index.js";
 
-const log = createChildLogger({ module: "teams" });
-
-import { execSync, spawn } from "node:child_process";
 import type { TeamMode } from "./team.js";
+
+const log = createChildLogger({ module: "teams" });
 
 /**
  * Auto-detect the best backend for running teammates.

@@ -20,13 +20,13 @@
  * SOFTWARE.
  */
 
-import { createChildLogger } from "../logger/index.js";
-
-const log = createChildLogger({ module: "tools" });
-
 import { existsSync, mkdirSync, writeFileSync } from "fs";
 import { dirname } from "path";
+
+import { createChildLogger } from "../logger/index.js";
 import { asErrorString } from "../utils/index.js";
+import { strArg } from "../utils/index.js";
+
 import { WRITE_FILE_DESCRIPTION } from "./descriptions.js";
 import {
   type Tool,
@@ -35,7 +35,8 @@ import {
   type ToolResult,
   type ToolSchema,
 } from "./types.js";
-import { strArg } from "../utils/index.js";
+
+const log = createChildLogger({ module: "tools" });
 
 export class WriteFileTool implements Tool {
   // Use a hardcoded string instead of WriteFileTool.name.replace("Tool", "")
