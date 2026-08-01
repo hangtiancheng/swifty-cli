@@ -53,7 +53,7 @@ larky core start|stop|status # daemon lifecycle
 larky trace --layer ipc -f   # follow the wire trace
 ```
 
-Configuration lives in larky's `.larky/config.yaml` (providers, hooks, MCP, sandbox) plus larky's `~/.larky/config.toml` / `LARKY_*` env vars (host/port/logging/trace).
+Configuration lives in larky's `.larky/config.yaml` (providers, hooks, MCP, sandbox, core host/port, trace) plus `LARKY_*` env vars.
 
 ## Development
 

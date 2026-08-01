@@ -20,7 +20,7 @@
  * SOFTWARE.
  */
 
-// Feature: Verify 4-tier config priority chain (defaults → TOML → .env → environment variables)
+// Feature: Verify 3-tier config priority chain (defaults → YAML → env vars)
 // Design: Use vitest temp directories and environment variable isolation to cover all config source behaviors
 import { mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -45,18 +45,8 @@ const ENV_KEYS = [
   "LARKY_CONFIG",
   "LARKY_HOST",
   "LARKY_PORT",
-  "LARKY_LOG_LEVEL",
-  "LARKY_LOG_FILE",
-  "LARKY_LOG_FORMAT",
-  "LARKY_MAX_STEPS",
-  "LARKY_LLM_DEFAULT_MODEL",
   "LARKY_TRACE_ENABLED",
   "LARKY_TRACE_FILE",
-  "LARKY_TRACE_INCLUDE_LLM_PAYLOAD",
-  "LARKY_PERMISSION_TIMEOUT_S",
-  "LARKY_COMPACT_THRESHOLD",
-  "LARKY_COMPACT_TOOL_LIMIT",
-  "LARKY_COMPACT_TOOL_KEEP",
 ];
 
 describe("config priority chain", () => {
@@ -68,7 +58,6 @@ describe("config priority chain", () => {
     savedEnv = {};
     for (const key of ENV_KEYS) {
       savedEnv[key] = process.env[key];
-      // delete process.env[key];
       Reflect.deleteProperty(process.env, key);
     }
   });
@@ -79,15 +68,13 @@ describe("config priority chain", () => {
       if (savedEnv[key] !== undefined) {
         process.env[key] = savedEnv[key];
       } else {
-        // delete process.env[key];
         Reflect.deleteProperty(process.env, key);
       }
     }
   });
 
-  // Feature: Verify silent skip when .env file doesn't exist, use built-in defaults
-  // Design: chdir to empty directory, clear env vars, confirm getConfig() doesn't crash on missing .env
-  test("missing env file is silent, uses defaults", () => {
+  // Feature: Verify silent skip when config file doesn't exist, use built-in defaults
+  test("missing config file is silent, uses defaults", () => {
     const dir = makeTmpDir();
     process.chdir(dir);
 
@@ -95,73 +82,69 @@ describe("config priority chain", () => {
     expect(cfg.port).toBe(5520);
   });
 
-  // Feature: Verify .env file values are loaded correctly and override built-in defaults
-  // Design: Write .env to temp directory and chdir into it, confirm .env load path works
-  test("dotenv values loaded and override defaults", () => {
+  // Feature: Verify LARKY_CONFIG environment variable correctly affects YAML config file load path
+  test("LARKY_CONFIG env var overrides YAML path", () => {
     const dir = makeTmpDir();
-    writeFileSync(path.join(dir, ".env"), "LARKY_PORT=9999\n");
+    const yamlPath = path.join(dir, "custom.yaml");
+    writeFileSync(yamlPath, "core:\n  port: 5555\n");
     process.chdir(dir);
-
-    const cfg = getConfig();
-    expect(cfg.port).toBe(9999);
-  });
-
-  // Feature: Verify system environment variables have higher priority than .env file values
-  // Design: Write 9999 to .env, write 8888 to system env var, confirm final value is 8888
-  test("system env overrides dotenv", () => {
-    const dir = makeTmpDir();
-    writeFileSync(path.join(dir, ".env"), "LARKY_PORT=9999\n");
-    process.chdir(dir);
-    process.env.LARKY_PORT = "8888";
-
-    const cfg = getConfig();
-    expect(cfg.port).toBe(8888);
-  });
-
-  // Feature: Verify LARKY_CONFIG environment variable correctly affects TOML config file load path
-  // Design: Point env var to custom TOML file, write different port to TOML
-  test("LARKY_CONFIG env var overrides TOML path", () => {
-    const dir = makeTmpDir();
-    const tomlPath = path.join(dir, "custom.toml");
-    writeFileSync(tomlPath, "[core]\nport = 5555\n");
-    process.chdir(dir);
-    process.env.LARKY_CONFIG = tomlPath;
+    process.env.LARKY_CONFIG = yamlPath;
 
     const cfg = getConfig();
     expect(cfg.port).toBe(5555);
   });
 
-  // Feature: Verify full 4-tier priority chain: defaults(5520) → TOML(6000) → .env(7000) → env var(8000)
-  // Design: Set all 4 tiers simultaneously, confirm final value is highest priority env var
+  // Feature: Verify full 3-tier priority chain: defaults(5520) → YAML(6000) → env var(8000)
   test("full priority chain: env var wins", () => {
     const dir = makeTmpDir();
-    const tomlPath = path.join(dir, "larky.toml");
-    writeFileSync(tomlPath, "[core]\nport = 6000\n");
-    writeFileSync(path.join(dir, ".env"), "LARKY_PORT=7000\n");
+    const yamlPath = path.join(dir, "larky.yaml");
+    writeFileSync(yamlPath, "core:\n  port: 6000\n");
     process.chdir(dir);
-    process.env.LARKY_CONFIG = tomlPath;
+    process.env.LARKY_CONFIG = yamlPath;
     process.env.LARKY_PORT = "8000";
 
     const cfg = getConfig();
     expect(cfg.port).toBe(8000);
   });
 
-  // Feature: Verify process.exit when TOML contains unknown top-level section
-  // Design: Write TOML with unknown section, confirm getConfig emits error to stderr and calls process.exit
-  test("unknown TOML section calls process.exit with error message", () => {
+  // Feature: Verify unknown top-level sections are silently ignored (looseObject)
+  test("unknown top-level section is ignored", () => {
     const dir = makeTmpDir();
-    const tomlPath = path.join(dir, "bad.toml");
-    writeFileSync(tomlPath, '[unknown_section]\nfoo = "bar"\n');
+    const yamlPath = path.join(dir, "extra.yaml");
+    writeFileSync(yamlPath, "unknown_section:\n  foo: bar\ncore:\n  port: 7777\n");
     process.chdir(dir);
-    process.env.LARKY_CONFIG = tomlPath;
+    process.env.LARKY_CONFIG = yamlPath;
+
+    const cfg = getConfig();
+    expect(cfg.port).toBe(7777);
+  });
+
+  // Feature: Verify unknown keys within a known section still cause an error
+  test("unknown key inside core section calls process.exit", () => {
+    const dir = makeTmpDir();
+    const yamlPath = path.join(dir, "bad.yaml");
+    writeFileSync(yamlPath, "core:\n  host: localhost\n  bogus: true\n");
+    process.chdir(dir);
+    process.env.LARKY_CONFIG = yamlPath;
 
     const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {
       /** noop */
     });
     expect(() => getConfig()).toThrow();
-    expect(consoleSpy).toHaveBeenCalledWith(
-      expect.stringContaining("Unknown top-level config keys"),
-    );
+    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("Unknown [core] keys"));
     consoleSpy.mockRestore();
+  });
+
+  // Feature: Verify trace config is loaded from YAML
+  test("trace section loaded from YAML", () => {
+    const dir = makeTmpDir();
+    const yamlPath = path.join(dir, "trace.yaml");
+    writeFileSync(yamlPath, "trace:\n  enable: false\n  file: /tmp/my-trace.jsonl\n");
+    process.chdir(dir);
+    process.env.LARKY_CONFIG = yamlPath;
+
+    const cfg = getConfig();
+    expect(cfg.trace.enable).toBe(false);
+    expect(cfg.trace.file).toBe("/tmp/my-trace.jsonl");
   });
 });

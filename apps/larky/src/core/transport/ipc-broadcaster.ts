@@ -26,8 +26,8 @@ import type net from "node:net";
 
 import picomatch from "picomatch";
 
+import { logger } from "../../logger/index.js";
 import type { Event } from "../bus/events.js";
-import { getLogger } from "../logging.js";
 import { makePushTrace } from "../trace/record.js";
 import type { TraceWriter } from "../trace/writer.js";
 
@@ -116,7 +116,7 @@ export class IpcEventBroadcaster {
         .then(() => this._deliver(sub, event, eventType, runId))
         .catch((err: unknown) => {
           // Write failed: drop the dead subscriber; later events skip it
-          getLogger().debug(`broadcaster: dropping dead subscriber: ${String(err)}`);
+          logger.debug(`broadcaster: dropping dead subscriber: ${String(err)}`);
           this.unsubscribe(sub.socket);
         });
     }

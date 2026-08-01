@@ -42,7 +42,7 @@ import picomatch from "picomatch";
 
 import { loadConfig as loadLarkyConfig, forkEnabled } from "../config/config.js";
 import type { AppConfig } from "../config/config.js";
-import { initLogger } from "../logger/index.js";
+import { initLogger, logger } from "../logger/index.js";
 import type { PermissionMode } from "../permissions/checker.js";
 import * as sessionMod from "../session/session.js";
 import { version } from "../version.js";
@@ -73,7 +73,6 @@ import type { Event } from "./bus/events.js";
 import { getConfig, expandUser } from "./config.js";
 import { EventBus } from "./events/bus.js";
 import { InteractionHub } from "./interaction-hub.js";
-import { setupLogging } from "./logging.js";
 import { makeEventTrace } from "./trace/record.js";
 import { TraceWriter } from "./trace/writer.js";
 import { IpcEventBroadcaster } from "./transport/ipc-broadcaster.js";
@@ -447,13 +446,11 @@ export class CoreApp {
   async run(): Promise<void> {
     this._startTime = performance.now();
     const config = getConfig();
-    const logger = setupLogging(config);
-
     // larky file logger (used by all migrated business modules)
     initLogger({ sessionId: sessionMod.newSessionId(), mode: "remote" });
 
     // Trace
-    if (config.trace.enabled) {
+    if (config.trace.enable) {
       const tracePath = expandUser(config.trace.file);
       this._trace = new TraceWriter(tracePath);
       this._trace.start();

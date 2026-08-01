@@ -33,7 +33,6 @@ import { fileURLToPath } from "node:url";
 import { forkEnabled, loadConfig } from "../config/config.js";
 import { cmdPing } from "../core/commands/ping.js";
 import { getConfig } from "../core/config.js";
-import { setupLogging } from "../core/logging.js";
 import { initLogger, closeLogger, logger } from "../logger/index.js";
 import { parsePrintFlags, runPrintMode } from "../print-mode.js";
 import { newSessionId } from "../session/session.js";
@@ -144,7 +143,6 @@ async function main(): Promise<void> {
   }
 
   const config = getConfig();
-  setupLogging(config);
 
   // No command: launch the terminal UI, starting the daemon if needed.
   // If this process spawned the daemon, shut it down when the TUI exits.
