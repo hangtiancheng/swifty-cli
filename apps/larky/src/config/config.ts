@@ -273,7 +273,7 @@ const SandboxYamlConfigSchema = z.object({
 
 export type SandboxYamlConfig = z.infer<typeof SandboxYamlConfigSchema>;
 
-const AppConfigSchema = z.object({
+const AppConfigSchema = z.looseObject({
   providers: z.array(ProviderConfigSchema),
   permission_mode: z.string().optional(),
   mcp_servers: z.array(MCPServerConfigSchema).default([]),

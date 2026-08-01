@@ -208,5 +208,10 @@ target
 .larky/
 **/.larky/
 
-!apps/larky/.swifty/config.yaml
+!apps/swifty/.swifty/
+apps/swifty/.swifty/*
+!apps/swifty/.swifty/config.yaml
+
+!apps/larky/.larky/
+apps/larky/.larky/*
 !apps/larky/.larky/config.yaml
