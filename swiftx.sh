@@ -275,9 +275,9 @@ fi
 # npm global bin should be on PATH. If not, print the prefix/bin hint.
 NPM_BIN="$(npm config get prefix 2>/dev/null)/bin"
 if command -v swiftx >/dev/null 2>&1; then
-	ok "Swifty installed successfully"
-	SWIFTY_VERSION="$(npm ls -g "$PACKAGE" --depth=0 2>/dev/null | grep -o "$PACKAGE@[^ ]*" | head -n1 || true)"
-	[ -n "$SWIFTY_VERSION" ] && info "Installed: $SWIFTY_VERSION"
+	ok "Swiftx installed successfully"
+	SWIFTX_VERSION="$(npm ls -g "$PACKAGE" --depth=0 2>/dev/null | grep -o "$PACKAGE@[^ ]*" | head -n1 || true)"
+	[ -n "$SWIFTX_VERSION" ] && info "Installed: $SWIFTX_VERSION"
 else
 	warn "Installation completed but 'swiftx' is not on your PATH."
 	warn "Add npm's global bin to your shell profile (~/.bashrc / ~/.zshrc):"
