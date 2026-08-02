@@ -28,19 +28,11 @@
 //
 // Env overrides:
 //   SWIFTX_SKIP_DOWNLOAD=1        skip the download entirely
-//   SWIFTX_DOWNLOAD_BASE=<url>    mirror base URL (default: GitHub Releases)
 //
 // Standard proxy env vars (http_proxy, https_proxy, all_proxy and their
 // upper-case variants) are respected automatically.
 
-import {
-  chmodSync,
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  renameSync,
-  rmSync,
-} from "node:fs";
+import { chmodSync, existsSync, mkdirSync, renameSync, rmSync } from "node:fs";
 import { createWriteStream } from "node:fs";
 import { dirname, join } from "node:path";
 import { Readable } from "node:stream";
@@ -233,23 +225,13 @@ if (!platformName || !archName) {
   fail(`unsupported platform: ${process.platform} (${process.arch})`);
 }
 
-const { version } = JSON.parse(
-  readFileSync(join(__dirname, "package.json"), "utf8"),
-);
 const ext = platformName === "windows" ? ".exe" : "";
 const asset = `swiftx-${platformName}-${archName}${ext}`;
 const buildDir = join(__dirname, "build");
 const binaryPath = join(buildDir, asset);
 
-if (existsSync(binaryPath)) {
-  log(`binary already present: ${binaryPath}`);
-  process.exit(0);
-}
-
-const base =
-  process.env["SWIFTX_DOWNLOAD_BASE"] ??
-  "https://github.com/hangtiancheng/swifty.go/releases/download";
-const url = `${base}/swiftx-v${version}/${asset}`;
+const base = "https://github.com/hangtiancheng/swifty.go/releases/download";
+const url = `${base}/swiftx/${asset}`;
 
 log(`downloading ${url}`);
 
@@ -278,8 +260,7 @@ try {
   fail(
     `download failed: ${err instanceof Error ? err.message : String(err)}\n` +
       `URL: ${url}\n` +
-      "If you are behind a firewall, set SWIFTX_DOWNLOAD_BASE to a mirror,\n" +
-      "or download the binary manually into the package's build/ directory.",
+      "You can download the binary manually into the package's build/ directory.",
   );
 }
 
