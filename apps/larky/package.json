@@ -22,7 +22,8 @@
   },
   "bin": {
     "swifty": "src/swifty.js",
-    "swiftx": "src/swiftx.js"
+    "swiftx": "src/swiftx.js",
+    "larky": "src/larky.js"
   },
   "files": [
     "src"
