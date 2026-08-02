@@ -38,7 +38,7 @@ export interface ImageRef {
   source_path?: string | undefined;
 }
 
-const EXT_BY_MEDIA_TYPE: Record<string, string> = {
+const extNoDotByMediaType: Record<string, string> = {
   "image/png": "png",
   "image/jpeg": "jpg",
   "image/gif": "gif",
@@ -65,7 +65,7 @@ export function saveSessionImages(
     try {
       const buf = Buffer.from(img.data, "base64");
       const hash = createHash("sha256").update(buf).digest("hex").slice(0, 16);
-      const ext = EXT_BY_MEDIA_TYPE[img.mediaType] ?? "png";
+      const ext = extNoDotByMediaType[img.mediaType] ?? "png";
       const path = join(dir, `${hash}.${ext}`);
       if (!existsSync(path)) {
         mkdirSync(dir, { recursive: true });

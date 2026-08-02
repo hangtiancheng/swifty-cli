@@ -22,11 +22,9 @@
 
 import { ConversationManager } from "../conversation/conversation.js";
 import type { Message } from "../conversation/conversation.js";
-import { saveSessionImages } from "../images/store.js";
 import type { LLMClient } from "../llm/client.js";
 import {
   type CompactBoundaryPayload,
-  sessionCtxFromFilePath,
   toolUsesToRecords,
   toolResultsToRecords,
 } from "../session/session.js";
@@ -108,27 +106,18 @@ export interface UsageAnchor {
   anchorCount: number;
 }
 
-// Each image counts as a fixed char-equivalent (~1750 tokens, the order of
-// magnitude of Anthropic's per-image token cost). Without this, image-heavy
-// conversations systematically under-estimate and compaction fires too late.
-const IMAGE_CHAR_EQUIV = 7000;
-
 // Rough character-based token estimate over an explicit message slice. Used both
 // for the cold-start whole-transcript fallback and the post-anchor increment.
 export function estimateMessages(messages: Message[]): number {
   let totalChars = 0;
   for (const msg of messages) {
     totalChars += msg.content.length;
-    if (msg.images) {
-      totalChars += msg.images.length * IMAGE_CHAR_EQUIV;
-    }
     if (msg.toolUses) {
       totalChars += JSON.stringify(msg.toolUses).length;
     }
     if (msg.toolResults) {
       for (const tr of msg.toolResults) {
         totalChars += tr.content.length;
-        totalChars += (tr.images?.length ?? 0) * IMAGE_CHAR_EQUIV;
       }
     }
     if (msg.thinkingBlocks) {
@@ -445,11 +434,6 @@ function serializePrefixText(messages: Message[]): string {
   return messages
     .map((m) => {
       let text = `[${m.role}]: ${m.content}`;
-      if (m.images?.length) {
-        // The summarizer (possibly a text-only model) never sees base64 —
-        // images are represented by their source paths.
-        text += `\n[attached images: ${m.images.map((i) => i.sourcePath ?? "image").join(", ")}]`;
-      }
       if (m.toolUses) {
         text += `\n[tools: ${m.toolUses.map((t) => t.toolName).join(", ")}]`;
       }
@@ -564,32 +548,20 @@ async function doCompact(
   // baking it into the persisted boundary would be stale on the next resume.
   // The kept tail must be persisted together with its tool blocks so that the
   // full call chain is available when the session is restored.
-  // Images in the kept tail are persisted as refs when the session layout can
-  // be derived from sessionFilePath; content-addressed storage makes this
-  // idempotent with the refs already written by persistLastMessage. Without a
-  // ctx the images are dropped from the boundary with a placeholder note.
-  const imageCtx = sessionFilePath ? sessionCtxFromFilePath(sessionFilePath) : null;
   const keep = toKeep
     .filter(
       (m) =>
         (m.role === "user" || m.role === "assistant") &&
-        (m.content ||
-          (m.toolUses?.length ?? 0) ||
-          (m.toolResults?.length ?? 0) ||
-          (m.images?.length ?? 0)),
+        (m.content || (m.toolUses?.length ?? 0) || (m.toolResults?.length ?? 0)),
     )
     .map((m) => ({
       role: m.role,
-      content:
-        m.images?.length && !imageCtx
-          ? m.content + `\n[note: ${String(m.images.length)} image(s) omitted from compaction]`
-          : m.content,
+      content: m.content,
       ...(m.toolUses?.length ? { tool_uses: toolUsesToRecords(m.toolUses) } : {}),
       ...(m.toolResults?.length
-        ? { tool_results: toolResultsToRecords(m.toolResults, imageCtx ?? undefined) }
-        : {}),
-      ...(imageCtx && m.images?.length
-        ? { images: saveSessionImages(imageCtx.workDir, imageCtx.sessionId, m.images) }
+        ? {
+            tool_results: toolResultsToRecords(m.toolResults),
+          }
         : {}),
     }));
 

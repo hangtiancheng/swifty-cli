@@ -21,7 +21,6 @@
  */
 
 import { readFileSync, statSync } from "node:fs";
-import { basename } from "node:path";
 
 import { sniffMediaType } from "./detect.js";
 import { maybeResizeAndDownsampleImage } from "./resize.js";
@@ -51,21 +50,4 @@ export async function loadImageAttachment(absPath: string): Promise<ImageAttachm
     sourcePath: absPath,
     byteLength: resized.byteLength,
   };
-}
-
-function formatSize(bytes: number): string {
-  if (bytes >= 1024 * 1024) {
-    return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
-  }
-  if (bytes >= 1024) {
-    return `${String(Math.round(bytes / 1024))}KB`;
-  }
-  return `${String(bytes)}B`;
-}
-
-// Short human/model-readable placeholder, shared by TUI rendering and tool
-// output text.
-export function attachmentLabel(a: ImageAttachment): string {
-  const name = a.sourcePath ? basename(a.sourcePath) : "image";
-  return `[image: ${name} · ${a.mediaType} · ${formatSize(a.byteLength)}]`;
 }

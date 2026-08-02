@@ -20,10 +20,9 @@
  * SOFTWARE.
  */
 
-// Anthropic's hard limit is 5MB on the base64-encoded payload. base64 inflates
-// by 4/3, so the raw-byte target that always fits is 5MB * 3/4 = 3.75MB.
-export const MAX_API_IMAGE_BYTES = 5 * 1024 * 1024;
-export const MAX_IMAGE_BYTES_PASSTHROUGH = (MAX_API_IMAGE_BYTES * 3) / 4;
+// Hard limit is 5MB on the base64-encoded payload. base64 inflates by 4/3, so the raw-byte target that always fits is 5MB * 3/4 = 3.75MB.
+export const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+export const MAX_IMAGE_BYTES_PASSTHROUGH = (MAX_IMAGE_BYTES * 3) / 4;
 
 export const MAX_DIMENSION_PX = 2000;
 

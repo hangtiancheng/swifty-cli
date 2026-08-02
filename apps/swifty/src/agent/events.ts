@@ -20,7 +20,6 @@
  * SOFTWARE.
  */
 
-import type { ImageAttachment } from "../images/types.js";
 import type { UsageInfo } from "../llm/events.js";
 import type { CompactBoundaryPayload } from "../session/session.js";
 
@@ -41,7 +40,6 @@ export type AgentEvent =
       output: string;
       isError: boolean;
       elapsed: number;
-      images?: ImageAttachment[] | undefined;
     }
   | { type: "turn_complete" }
   | { type: "loop_complete"; stopReason: string }

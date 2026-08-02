@@ -49,7 +49,6 @@ import { FileHistory } from "../file-history/file-history.js";
 import type { Snapshot } from "../file-history/file-history.js";
 import * as historyMod from "../history/history.js";
 import { HookEngine, validate as validateHooks } from "../hooks/hooks.js";
-import { saveSessionImages } from "../images/store.js";
 import type { LLMClient } from "../llm/client.js";
 import { createClient } from "../llm/client.js";
 import { MCPManager } from "../mcp/manager.js";
@@ -108,7 +107,7 @@ import { WriteFileTool } from "../tools/write-file.js";
 import { connectToIde, type IdeConnection } from "../vscode/ide-client.js";
 
 import { AskUserDialog } from "./ask-user-dialog.js";
-import { expandAtRefsWithImages } from "./at-expand.js";
+import { expandAtRefs } from "./at-expand.js";
 import { ChatView, CommittedMessage, type ChatMessage, type ToolSummaryItem } from "./chat.js";
 import { InputBox } from "./input.js";
 import { PermissionDialog, type PermissionAction } from "./permission-dialog.js";
@@ -922,7 +921,7 @@ export function App({
                 })),
               );
             } else if (m.role === "user") {
-              conv.addUserMessage(m.content, m.images);
+              conv.addUserMessage(m.content);
             } else {
               conv.addAssistantMessage(m.content);
             }
@@ -1656,21 +1655,15 @@ export function App({
     }
 
     setMessages((prev) => [...prev, { role: "user", content: text }]);
-    // Inline any @file references for the model; @image references become
-    // native image attachments. The UI/session keep the original text the
-    // user typed.
-    const expanded = await expandAtRefsWithImages(text, workDir);
-    convRef.current.addUserMessage(expanded.text, expanded.images);
+    // Inline any @file references for the model; the UI/session keep the
+    // original text the user typed.
+    convRef.current.addUserMessage(expandAtRefs(text, workDir));
 
-    // Save to session (images as refs; binaries live under sessions/<id>/images/)
-    const imageRefs = expanded.images.length
-      ? saveSessionImages(workDir, sessionIdRef.current, expanded.images)
-      : [];
+    // Save to session
     sessionMod.saveMessage(workDir, sessionIdRef.current, {
       role: "user",
       content: text,
       timestamp: Math.floor(Date.now() / 1000),
-      ...(imageRefs.length ? { images: imageRefs } : {}),
     });
 
     // If currently streaming, interrupt first

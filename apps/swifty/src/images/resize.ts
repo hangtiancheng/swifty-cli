@@ -25,21 +25,17 @@ import sharp from "sharp";
 import {
   ImageTooLargeError,
   JPEG_QUALITY_LADDER,
-  MAX_API_IMAGE_BYTES,
+  MAX_IMAGE_BYTES,
   MAX_DIMENSION_PX,
   MAX_IMAGE_BYTES_PASSTHROUGH,
 } from "./limits.js";
-import type { ImageMediaType } from "./types.js";
+import type { ImageAttachment, ImageMediaType } from "./types.js";
 
 import { createChildLogger } from "@/logger/index.js";
 
 const log = createChildLogger({ module: "images" });
 
-export interface ResizedImage {
-  data: string;
-  mediaType: ImageMediaType;
-  byteLength: number;
-}
+export type ResizedImage = Omit<ImageAttachment, "sourcePath">;
 
 function toResult(buf: Buffer, mediaType: ImageMediaType): ResizedImage {
   return { data: buf.toString("base64"), mediaType, byteLength: buf.length };
@@ -80,9 +76,7 @@ export async function maybeResizeAndDownsampleImage(
     // limit — there is no valid passthrough, fail with context.
     log.warn({ err }, "sharp compression failed");
     throw new ImageTooLargeError(
-      `Image is ${formatMB(buf.length)} raw (${formatMB((buf.length * 4) / 3)} base64-encoded, ` +
-        `API limit ${formatMB(MAX_API_IMAGE_BYTES)}) and compression failed. ` +
-        `Please provide a smaller image.`,
+      `Image is ${formatMB(buf.length)} raw (${formatMB((buf.length * 4) / 3)} base64-encoded, API limit ${formatMB(MAX_IMAGE_BYTES)}) and compression failed. Please provide a smaller image.`,
     );
   }
 }
@@ -110,7 +104,7 @@ async function compressWithSharp(buf: Buffer, mediaType: ImageMediaType): Promis
     if (preservePng) {
       const png = await sharp(buf)
         .resize(width, height, { fit: "inside", withoutEnlargement: true })
-        .png({ compressionLevel: 9, palette: true })
+        .png({ compressionLevel: 8, palette: true })
         .toBuffer();
       if (png.length <= MAX_IMAGE_BYTES_PASSTHROUGH) {
         return toResult(png, "image/png");
@@ -130,7 +124,6 @@ async function compressWithSharp(buf: Buffer, mediaType: ImageMediaType): Promis
   }
 
   throw new ImageTooLargeError(
-    `Unable to compress image (${formatMB(buf.length)} raw) under the ` +
-      `${formatMB(MAX_API_IMAGE_BYTES)} API limit. Please provide a smaller image.`,
+    `Unable to compress image (${formatMB(buf.length)} raw) under the ${formatMB(MAX_IMAGE_BYTES)} API limit. Please provide a smaller image.`,
   );
 }

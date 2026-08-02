@@ -24,7 +24,7 @@ import { extname } from "node:path";
 
 import type { ImageMediaType } from "./types.js";
 
-const MEDIA_TYPE_BY_EXT: Record<string, ImageMediaType> = {
+const mediaType: Record<string, ImageMediaType> = {
   ".png": "image/png",
   ".jpg": "image/jpeg",
   ".jpeg": "image/jpeg",
@@ -32,14 +32,14 @@ const MEDIA_TYPE_BY_EXT: Record<string, ImageMediaType> = {
   ".webp": "image/webp",
 };
 
-export const IMAGE_EXTENSIONS: ReadonlySet<string> = new Set(Object.keys(MEDIA_TYPE_BY_EXT));
+export const imageExts: ReadonlySet<string> = new Set(Object.keys(mediaType));
 
-export function mediaTypeForPath(path: string): ImageMediaType | null {
-  return MEDIA_TYPE_BY_EXT[extname(path).toLowerCase()] ?? null;
+export function getMediaType(path: string): ImageMediaType | null {
+  return mediaType[extname(path).toLowerCase()] ?? null;
 }
 
 export function isImagePath(path: string): boolean {
-  return mediaTypeForPath(path) !== null;
+  return getMediaType(path) !== null;
 }
 
 // Detect the real format from magic bytes. Returns null when the buffer is

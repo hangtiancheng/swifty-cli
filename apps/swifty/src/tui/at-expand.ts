@@ -23,10 +23,6 @@
 import { readFileSync, statSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 
-import { isImagePath } from "@/images/detect.js";
-import { MAX_IMAGES_PER_MESSAGE } from "@/images/limits.js";
-import { loadImageAttachment } from "@/images/load.js";
-import type { ImageAttachment } from "@/images/types.js";
 import { createChildLogger } from "@/logger/index.js";
 
 const log = createChildLogger({ module: "tui" });
@@ -35,13 +31,21 @@ const MAX_INLINE_BYTES = 100_000;
 const MAX_RANGE_FILE_BYTES = 10_000_000;
 
 // An @ref may carry a #L3 or #L3-10 suffix (inserted via the IDE integration).
-function parseRef(ref: string): { path: string; lineStart?: number; lineEnd?: number } {
+function parseRef(ref: string): {
+  path: string;
+  lineStart?: number;
+  lineEnd?: number;
+} {
   const m = /^(.+)#L(\d+)(?:-(\d+))?$/.exec(ref);
   if (!m) {
     return { path: ref };
   }
   const lineStart = Number.parseInt(m[2], 10);
-  return { path: m[1], lineStart, lineEnd: m[3] ? Number.parseInt(m[3], 10) : lineStart };
+  return {
+    path: m[1],
+    lineStart,
+    lineEnd: m[3] ? Number.parseInt(m[3], 10) : lineStart,
+  };
 }
 
 function sliceLines(content: string, lineStart: number, lineEnd: number): string {
@@ -85,68 +89,9 @@ export function expandAtRefs(text: string, workDir: string): string {
         appendix += `\n\n<file path="${ref}">\n${readFileSync(p, "utf-8")}\n</file>`;
       }
     } catch (err) {
-      log.error({ err }, "tui operation failed");
+      log.error({ err }, "TUI operation failed");
       // not a readable file → leave the @token as literal text
     }
   }
   return appendix ? text + appendix : text;
-}
-
-// Like expandAtRefs, but @references to image files (png/jpg/gif/webp) are
-// loaded as ImageAttachments instead of being inlined as (garbled) utf-8
-// text. The appendix gets an <attached-image> placeholder so the model can
-// pair each attachment with its @token. Image load failures degrade to an
-// inline error note; non-image refs behave exactly like expandAtRefs.
-export async function expandAtRefsWithImages(
-  text: string,
-  workDir: string,
-): Promise<{ text: string; images: ImageAttachment[] }> {
-  const refs = [...text.matchAll(/(?:^|\s)@([^\s]+)/g)].map((m) => m[1]);
-  if (refs.length === 0) {
-    return { text, images: [] };
-  }
-
-  let appendix = "";
-  const images: ImageAttachment[] = [];
-  const seen = new Set<string>();
-  for (const ref of refs) {
-    if (seen.has(ref)) {
-      continue;
-    }
-    seen.add(ref);
-    const { path: refPath, lineStart, lineEnd } = parseRef(ref);
-    const p = isAbsolute(refPath) ? refPath : join(workDir, refPath);
-    try {
-      const st = statSync(p);
-      if (!st.isFile()) {
-        continue;
-      }
-      if (isImagePath(p)) {
-        if (images.length >= MAX_IMAGES_PER_MESSAGE) {
-          appendix += `\n\n<file path="${refPath}">Error: too many images attached (limit ${String(MAX_IMAGES_PER_MESSAGE)} per message)</file>`;
-          continue;
-        }
-        try {
-          images.push(await loadImageAttachment(p));
-          appendix += `\n\n<attached-image path="${refPath}"/>`;
-        } catch (imgErr) {
-          log.error({ err: imgErr }, "tui operation failed");
-          appendix += `\n\n<file path="${refPath}">Error: ${imgErr instanceof Error ? imgErr.message : String(imgErr)}</file>`;
-        }
-      } else if (lineStart !== undefined && lineEnd !== undefined) {
-        if (st.size <= MAX_RANGE_FILE_BYTES) {
-          const snippet = sliceLines(readFileSync(p, "utf-8"), lineStart, lineEnd);
-          if (snippet.length <= MAX_INLINE_BYTES) {
-            appendix += `\n\n<file path="${refPath}" lines="${String(lineStart)}-${String(lineEnd)}">\n${snippet}\n</file>`;
-          }
-        }
-      } else if (st.size <= MAX_INLINE_BYTES) {
-        appendix += `\n\n<file path="${ref}">\n${readFileSync(p, "utf-8")}\n</file>`;
-      }
-    } catch (err) {
-      log.error({ err }, "tui operation failed");
-      // not a readable file → leave the @token as literal text
-    }
-  }
-  return { text: appendix ? text + appendix : text, images };
 }

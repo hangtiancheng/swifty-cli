@@ -24,14 +24,15 @@
 // with sharp itself and tests/test.png is a real screenshot (JPEG bytes behind
 // a .png extension, which doubles as a magic-bytes-vs-extension fixture).
 
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import sharp, { type Sharp } from "sharp";
-import { beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
-import { isImagePath, mediaTypeForPath, sniffMediaType } from "@/images/detect.js";
+import { isImagePath, getMediaType, sniffMediaType } from "@/images/detect.js";
 import {
   ImageTooLargeError,
   MAX_DIMENSION_PX,
@@ -39,6 +40,8 @@ import {
 } from "@/images/limits.js";
 import { loadImageAttachment } from "@/images/load.js";
 import { maybeResizeAndDownsampleImage } from "@/images/resize.js";
+import { saveSessionImages, loadImageRef } from "@/images/store";
+import type { ImageAttachment } from "@/images/types";
 
 const TEST_PNG_PATH = join(dirname(fileURLToPath(import.meta.url)), "test.png");
 
@@ -50,6 +53,27 @@ const WEBP_MAGIC = Buffer.concat([
   Buffer.alloc(4),
   Buffer.from("WEBP", "ascii"),
 ]);
+
+function createImageAttachment(overrides: Partial<ImageAttachment> = {}): ImageAttachment {
+  const buf = Buffer.concat([PNG_MAGIC, Buffer.from("payload")]);
+  return {
+    mediaType: "image/png",
+    data: buf.toString("base64"),
+    sourcePath: "/tmp/original.png",
+    byteLength: buf.length,
+    ...overrides,
+  };
+}
+
+let workDir: string;
+
+beforeEach(() => {
+  workDir = mkdtempSync(join(tmpdir(), "swifty-image-store-"));
+});
+
+afterEach(() => {
+  rmSync(workDir, { recursive: true, force: true });
+});
 
 // Gaussian noise is nearly incompressible, which is the cheapest way to make
 // real oversized fixtures. Generated once and shared across tests.
@@ -82,12 +106,12 @@ beforeAll(async () => {
 
 describe("detect", () => {
   it("maps extensions to media types", () => {
-    expect(mediaTypeForPath("a/b/shot.png")).toBe("image/png");
-    expect(mediaTypeForPath("shot.JPG")).toBe("image/jpeg");
-    expect(mediaTypeForPath("shot.jpeg")).toBe("image/jpeg");
-    expect(mediaTypeForPath("anim.gif")).toBe("image/gif");
-    expect(mediaTypeForPath("pic.webp")).toBe("image/webp");
-    expect(mediaTypeForPath("doc.txt")).toBeNull();
+    expect(getMediaType("a/b/shot.png")).toBe("image/png");
+    expect(getMediaType("shot.JPG")).toBe("image/jpeg");
+    expect(getMediaType("shot.jpeg")).toBe("image/jpeg");
+    expect(getMediaType("anim.gif")).toBe("image/gif");
+    expect(getMediaType("pic.webp")).toBe("image/webp");
+    expect(getMediaType("doc.txt")).toBeNull();
     expect(isImagePath("x.png")).toBe(true);
     expect(isImagePath("x.ts")).toBe(false);
   });
@@ -103,7 +127,7 @@ describe("detect", () => {
 
   it("sniffs the real test image as JPEG despite its .png extension", () => {
     const buf = readFileSync(TEST_PNG_PATH);
-    expect(mediaTypeForPath(TEST_PNG_PATH)).toBe("image/png");
+    expect(getMediaType(TEST_PNG_PATH)).toBe("image/png");
     expect(sniffMediaType(buf)).toBe("image/jpeg");
   });
 });
@@ -185,5 +209,47 @@ describe("maybeResizeAndDownsampleImage (real sharp)", () => {
     const corrupt = Buffer.concat([PNG_MAGIC, Buffer.alloc(1024, 0xab)]);
     const result = await maybeResizeAndDownsampleImage(corrupt, "image/png");
     expect(result.data).toBe(corrupt.toString("base64"));
+  });
+});
+
+describe("saveSessionImages", () => {
+  it("writes binaries and returns refs", () => {
+    const refs = saveSessionImages(workDir, "sess1", [createImageAttachment()]);
+    expect(refs).toHaveLength(1);
+    expect(refs[0]?.path).toContain(join(".swifty", "sessions", "sess1", "images"));
+    expect(refs[0]?.media_type).toBe("image/png");
+    expect(refs[0]?.source_path).toBe("/tmp/original.png");
+  });
+
+  it("deduplicates identical content (content-addressed)", () => {
+    const refs = saveSessionImages(workDir, "sess1", [
+      createImageAttachment(),
+      createImageAttachment(),
+    ]);
+    expect(refs).toHaveLength(2);
+    expect(refs[0]?.path).toBe(refs[1]?.path);
+    const files = readdirSync(join(workDir, ".swifty", "sessions", "sess1", "images"));
+    expect(files).toHaveLength(1);
+  });
+});
+
+describe("loadImageRef", () => {
+  it("round-trips base64 exactly", () => {
+    const original = createImageAttachment();
+    const [ref] = saveSessionImages(workDir, "sess1", [original]);
+    const restored = loadImageRef(ref);
+    expect(restored).not.toBeNull();
+    expect(restored?.data).toBe(original.data);
+    expect(restored?.mediaType).toBe("image/png");
+    expect(restored?.sourcePath).toBe("/tmp/original.png");
+    expect(restored?.byteLength).toBe(original.byteLength);
+  });
+
+  it("returns null for a missing file", () => {
+    const restored = loadImageRef({
+      path: join(workDir, "nope.png"),
+      media_type: "image/png",
+    });
+    expect(restored).toBeNull();
   });
 });
