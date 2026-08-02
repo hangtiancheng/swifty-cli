@@ -1,6 +1,6 @@
 {
   "name": "@swifty.js/larky",
-  "version": "0.0.10",
+  "version": "0.0.11-alpha",
   "description": "Larky - Dual CLI coding agent",
   "keywords": [
     "ai",
@@ -31,7 +31,16 @@
   "publishConfig": {
     "access": "public"
   },
-  "scripts": {},
+  "scripts": {
+    "add:user": "npm adduser --registry=https://registry.npmjs.org/",
+    "publish:latest": "pnpm publish --access public --no-git-checks --registry=https://registry.npmjs.org/",
+    "publish:alpha": "pnpm publish --access public --no-git-checks --registry=https://registry.npmjs.org/ --tag alpha",
+    "publish:beta": "pnpm publish --access public --no-git-checks --registry=https://registry.npmjs.org/ --tag beta",
+    "publish:rc": "pnpm publish --access public --no-git-checks --registry=https://registry.npmjs.org/ --tag rc",
+    "publish:canary": "pnpm publish --access public --no-git-checks --registry=https://registry.npmjs.org/ --tag canary",
+    "publish:nightly": "pnpm publish --access public --no-git-checks --registry=https://registry.npmjs.org/ --tag nightly",
+    "publish:dev": "pnpm publish --access public --no-git-checks --registry=https://registry.npmjs.org/ --tag dev"
+  },
   "dependencies": {
     "@swifty.js/swifty": "workspace:*",
     "@swifty.js/swiftx": "workspace:*"
