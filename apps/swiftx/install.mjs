@@ -29,6 +29,9 @@
 // Env overrides:
 //   SWIFTX_SKIP_DOWNLOAD=1        skip the download entirely
 //   SWIFTX_DOWNLOAD_BASE=<url>    mirror base URL (default: GitHub Releases)
+//
+// Standard proxy env vars (http_proxy, https_proxy, all_proxy and their
+// upper-case variants) are respected automatically.
 
 import {
   chmodSync,
@@ -42,6 +45,8 @@ import { createWriteStream } from "node:fs";
 import { dirname, join } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
+import { request as httpRequest } from "node:http";
+import { request as httpsRequest } from "node:https";
 import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -86,6 +91,130 @@ function fail(message) {
   process.exit(1);
 }
 
+/**
+ * Resolve the proxy URL for a target from standard environment variables.
+ *
+ * @param {string} targetUrl - The URL being requested.
+ * @returns {string | undefined} The proxy URL, or undefined if none is set.
+ */
+function resolveProxy(targetUrl) {
+  const proto = new URL(targetUrl).protocol;
+  const env = process.env;
+  if (proto === "https:") {
+    return (
+      env["https_proxy"] ||
+      env["HTTPS_PROXY"] ||
+      env["all_proxy"] ||
+      env["ALL_PROXY"] ||
+      undefined
+    );
+  }
+  return (
+    env["http_proxy"] ||
+    env["HTTP_PROXY"] ||
+    env["all_proxy"] ||
+    env["ALL_PROXY"] ||
+    undefined
+  );
+}
+
+/**
+ * Download a file through an HTTP(S) proxy, following redirects.
+ * HTTPS targets are reached via a CONNECT tunnel; plain HTTP targets use
+ * absolute-form requests forwarded by the proxy.
+ *
+ * @param {string} url - URL to download.
+ * @param {string} destPath - Destination file path.
+ * @param {string} proxy - Proxy URL.
+ * @param {number} [redirects=5] - Remaining redirect budget.
+ * @returns {Promise<void>}
+ */
+function downloadViaProxy(url, destPath, proxy, redirects = 5) {
+  return new Promise((resolve, reject) => {
+    if (redirects < 0) {
+      reject(new Error("too many redirects"));
+      return;
+    }
+    const target = new URL(url);
+    const isHttps = target.protocol === "https:";
+    const port = Number(target.port) || (isHttps ? 443 : 80);
+    const proxyUrl = new URL(proxy);
+
+    /** @param {import("node:http").IncomingMessage} res */
+    const onResponse = (res) => {
+      const code = res.statusCode ?? 0;
+      if (code >= 300 && code < 400 && res.headers.location) {
+        res.resume();
+        downloadViaProxy(
+          new URL(res.headers.location, url).href,
+          destPath,
+          proxy,
+          redirects - 1,
+        ).then(resolve, reject);
+        return;
+      }
+      if (code >= 400) {
+        res.resume();
+        reject(new Error(`HTTP ${code} ${res.statusMessage} (${url})`));
+        return;
+      }
+      const ws = createWriteStream(destPath, { mode: 0o755 });
+      res.pipe(ws);
+      ws.on("finish", () => ws.close(() => resolve()));
+      ws.on("error", reject);
+      res.on("error", reject);
+    };
+
+    const proxyAuth =
+      proxyUrl.username || proxyUrl.password
+        ? `Basic ${Buffer.from(
+            `${decodeURIComponent(proxyUrl.username)}:${decodeURIComponent(proxyUrl.password)}`,
+          ).toString("base64")}`
+        : undefined;
+
+    if (isHttps) {
+      const connectReq = httpRequest({
+        host: proxyUrl.hostname,
+        port: Number(proxyUrl.port) || 80,
+        method: "CONNECT",
+        path: `${target.hostname}:${port}`,
+        headers: proxyAuth ? { "proxy-authorization": proxyAuth } : undefined,
+      });
+      connectReq.once("connect", (_res, socket) => {
+        const req = httpsRequest(
+          {
+            hostname: target.hostname,
+            port,
+            path: target.pathname + target.search,
+            createConnection: () => socket,
+            agent: false,
+          },
+          onResponse,
+        );
+        req.once("error", reject);
+        req.end();
+      });
+      connectReq.once("error", reject);
+      connectReq.end();
+    } else {
+      const req = httpRequest(
+        {
+          host: proxyUrl.hostname,
+          port: Number(proxyUrl.port) || 80,
+          path: url,
+          headers: {
+            host: target.host,
+            ...(proxyAuth ? { "proxy-authorization": proxyAuth } : undefined),
+          },
+        },
+        onResponse,
+      );
+      req.once("error", reject);
+      req.end();
+    }
+  });
+}
+
 if (process.env["SWIFTX_SKIP_DOWNLOAD"] === "1") {
   log("SWIFTX_SKIP_DOWNLOAD=1, skipping binary download");
   process.exit(0);
@@ -128,14 +257,20 @@ mkdirSync(buildDir, { recursive: true });
 const tmpPath = `${binaryPath}.download`;
 
 try {
-  const res = await fetch(url, { redirect: "follow" });
-  if (!res.ok || !res.body) {
-    fail(`download failed: HTTP ${res.status} ${res.statusText} (${url})`);
+  const proxy = resolveProxy(url);
+  if (proxy) {
+    log(`using proxy: ${proxy}`);
+    await downloadViaProxy(url, tmpPath, proxy);
+  } else {
+    const res = await fetch(url, { redirect: "follow" });
+    if (!res.ok || !res.body) {
+      fail(`download failed: HTTP ${res.status} ${res.statusText} (${url})`);
+    }
+    await pipeline(
+      Readable.fromWeb(res.body),
+      createWriteStream(tmpPath, { mode: 0o755 }),
+    );
   }
-  await pipeline(
-    Readable.fromWeb(res.body),
-    createWriteStream(tmpPath, { mode: 0o755 }),
-  );
   renameSync(tmpPath, binaryPath);
   chmodSync(binaryPath, 0o755);
 } catch (err) {

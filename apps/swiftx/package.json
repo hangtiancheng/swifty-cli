@@ -1,6 +1,6 @@
 {
   "name": "@swifty.js/swiftx",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "description": "Swiftx — Native CLI coding agent",
   "keywords": [
     "ai",
@@ -42,14 +42,21 @@
     "build": "node build.js",
     "check": "tsc",
     "postinstall": "node install.mjs",
-    "prepublishOnly": "pnpm check && pnpm build"
+    "prepublishOnly": "pnpm check && pnpm build",
+    "format": "prettier -w ./ --experimental-cli"
   },
   "devDependencies": {
-    "@types/node": "24.13.3",
+    "@types/node": "^24.13.3",
+    "prettier": "^3.9.6",
     "typescript": "^5.9.3"
   },
   "engines": {
     "node": ">=20"
   },
-  "packageManager": "pnpm@10.33.1"
+  "packageManager": "pnpm@10.33.1",
+  "overrides": {
+    "pnpm": {
+      "@types/node": "^24.13.3"
+    }
+  }
 }
