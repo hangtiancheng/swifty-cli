@@ -19,21 +19,21 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-# larky.sh — Bootstrap installer for larky CLI via npm global install.
+# swifty.sh — Bootstrap installer for swifty CLI via npm global install.
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/hangtiancheng/swifty-cli/main/larky.sh | bash
-#   curl -fsSL https://raw.githubusercontent.com/hangtiancheng/swifty-cli/main/larky.sh | bash -s -- --alpha
+#   curl -fsSL https://raw.githubusercontent.com/hangtiancheng/swifty-cli/main/swifty.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/hangtiancheng/swifty-cli/main/swifty.sh | bash -s -- --alpha
 #
-# Installs @swifty.js/larky globally via npm. npm's `bin` field automatically
-# creates the `larky` command on PATH. Requires Node.js >= 20.
+# Installs @swifty.js/swifty globally via npm. npm's `bin` field automatically
+# creates the `swifty` command on PATH. Requires Node.js >= 20.
 #
 # Supports: --uninstall, --version vX.Y.Z, --alpha, --beta, --rc, --canary, --nightly, --tag=NAME
 
 set -euo pipefail
 
 # ── Config ─────────────────────────────────────────────────────────────
-PACKAGE="@swifty.js/larky"
+PACKAGE="@swifty.js/swifty"
 NODE_MAJOR_MIN=20
 
 # ── Helpers ────────────────────────────────────────────────────────────
@@ -59,10 +59,10 @@ for arg in "$@"; do
 	--tag=*) TAG="${arg#--tag=}" ;;
 	--help | -h)
 		cat <<EOF
-Usage: larky.sh [OPTIONS]
+Usage: swifty.sh [OPTIONS]
 
-  (default)    Install the latest stable larky from npm
-  --uninstall  Uninstall larky
+  (default)    Install the latest stable swifty from npm
+  --uninstall  Uninstall swifty
   --version=   Install a specific version (e.g. --version=0.1.0)
   --alpha      Install from the 'alpha' dist-tag
   --beta       Install from the 'beta' dist-tag
@@ -92,12 +92,12 @@ done
 if [ "$ACTION" = "uninstall" ]; then
 	info "Uninstalling $PACKAGE..."
 	npm uninstall -g "$PACKAGE"
-	ok "larky uninstalled"
+	ok "swifty uninstalled"
 	exit 0
 fi
 
 # ── Write default config (skip if it already exists) ─────────────────
-CONFIG_DIR="$HOME/.larky"
+CONFIG_DIR="$HOME/.swifty"
 CONFIG_FILE="$CONFIG_DIR/config.yaml"
 if [ -f "$CONFIG_FILE" ]; then
 	info "Config already exists at $CONFIG_FILE."
@@ -124,22 +124,16 @@ else
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-# Larky project-level configuration (.larky/config.yaml)
+# Swifty project-level configuration (.swifty/config.yaml)
 #
 # Load order (later layers override earlier ones, see src/config/config.ts loadConfig):
-#   ~/.larky/config.yml -> ~/.larky/config.yaml -> ./.larky/config.yml -> ./.larky/config.yaml
-#   -> ./.larky/config.local.yml -> ./.larky/config.local.yaml
+#   ~/.swifty/config.yml -> ~/.swifty/config.yaml -> ./.swifty/config.yml -> ./.swifty/config.yaml
+#   -> ./.swifty/config.local.yml -> ./.swifty/config.local.yaml
 # Merge semantics: `providers` replaced wholesale when the override layer is non-empty;
 # `permission_mode` overridden; `mcp_servers` merged by name; `hooks` appended;
 # `sandbox` shallow-merged; `enable_coordinator_mode` sticky once true.
 #
 # Schema source: src/config/config.ts (AppConfigSchema)
-
-# core — daemon listen address
-core:
-  host: 127.0.0.1 # optional, string, default: "127.0.0.1"
-  port: 5520 # optional, integer, default: 5520
-  trace: true # optional, boolean, default: true — enable daemon trace recording
 
 # permission_mode — optional, string, default: "default"
 # One of: "default" | "acceptEdits" | "plan" | "bypassPermissions"
@@ -159,7 +153,7 @@ providers:
     context_window:
       1000000 # optional, number, default: built-in lookup by model name
       #   (claude -> 200000, gpt-4.1/1m -> 1000000, else 128000)
-    max_output_tokens: 128000 # optional, number, default: 8192 (64000 when thinking: true)
+    # max_output_tokens: 64000               # optional, number, default: 8192 (64000 when thinking: true)
 
   - name: openai-compat
     protocol: openai-compat
@@ -168,7 +162,7 @@ providers:
     api_key: "<your-api-key>"
     thinking: true
     context_window: 1000000
-    max_output_tokens: 128000
+    # max_output_tokens: 64000
 
 # mcp_servers — optional, array, default: [] (no servers).
 # Each server needs either `command` (stdio transport) or `url` (http/sse transport).
@@ -193,7 +187,7 @@ hooks: []
   #   condition: 'tool == "EditFile"'        # optional, string — expression filtering when the hook fires
   #   action:                                # REQUIRED, object
   #     type: command                        # REQUIRED, enum: command | prompt | http | agent
-  #     command: npx eslint --fix "$LARKY_FILE_PATH"  # required for type "command" (also accepted by "agent")
+  #     command: npx eslint --fix "$SWIFTY_FILE_PATH"  # required for type "command" (also accepted by "agent")
   #     # prompt: "..."                      # required for type "prompt" and "agent"
   #     # url: https://example.com/webhook   # required for type "http"
   #     # method: POST                       # optional, string — HTTP method for type "http"
@@ -250,14 +244,14 @@ npm install -g "$PKG_VERSION" --registry=https://registry.npmjs.org/
 # ── Verify ────────────────────────────────────────────────────────────
 # npm global bin should be on PATH. If not, print the prefix/bin hint.
 NPM_BIN="$(npm config get prefix 2>/dev/null)/bin"
-if command -v larky >/dev/null 2>&1; then
-	ok "larky installed successfully"
-	LARKY_VERSION="$(npm ls -g "$PACKAGE" --depth=0 2>/dev/null | grep -o "$PACKAGE@[^ ]*" | head -n1 || true)"
-	[ -n "$LARKY_VERSION" ] && info "Installed: $LARKY_VERSION"
+if command -v swifty >/dev/null 2>&1; then
+	ok "Swifty installed successfully"
+	SWIFTY_VERSION="$(npm ls -g "$PACKAGE" --depth=0 2>/dev/null | grep -o "$PACKAGE@[^ ]*" | head -n1 || true)"
+	[ -n "$SWIFTY_VERSION" ] && info "Installed: $SWIFTY_VERSION"
 else
-	warn "Installation completed but 'larky' is not on your PATH."
+	warn "Installation completed but 'swifty' is not on your PATH."
 	warn "Add npm's global bin to your shell profile (~/.bashrc / ~/.zshrc):"
 	warn "  export PATH=\"$NPM_BIN:\$PATH\""
 fi
 
-ok 'Download Claude Code VSCode plugin and enjoy larky!!!'
+ok 'Download Claude Code VSCode plugin and enjoy swifty!!!'

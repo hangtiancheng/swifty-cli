@@ -573,7 +573,7 @@ export async function createRemoteAgent(
     },
   );
   // Wire the team manager into AgentTool so the team_name teammate path takes effect (teammates receive shared team task-board tools)
-  agentTool.forkDisabled = forkDisabled;
+  agentTool.forkDisabled = forkDisabled ?? false;
   agentTool.setTeamManager(teamManager, teamRunAgentFactory);
   registry.register(agentTool);
 

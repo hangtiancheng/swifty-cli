@@ -9,13 +9,11 @@
     "git:push": "pnpm git:commit && git push origin main",
     "git:push:n": "pnpm git:commit:n && git push origin main",
     "format:sh": "shfmt -w ./install.sh ./larky.sh ./swiftx.sh",
-    "format": "concurrently \"pnpm format:swifty\" \"pnpm format:larky\" \"pnpm format:swiftx\"",
+    "format": "concurrently \"pnpm format:swifty\" \"pnpm format:swiftx\"",
     "format:swifty": "pnpm --filter @swifty.js/swifty format",
-    "format:larky": "pnpm --filter @swifty.js/larky format",
     "format:swiftx": "pnpm --filter @swifty.js/swiftx format",
-    "build": "concurrently \"pnpm build:swifty\" \"pnpm build:larky\" \"pnpm build:swiftx\"",
+    "build": "concurrently \"pnpm build:swifty\" \"pnpm build:swiftx\"",
     "build:swifty": "pnpm --filter @swifty.js/swifty build",
-    "build:larky": "pnpm --filter @swifty.js/larky build",
     "build:swiftx": "pnpm --filter @swifty.js/swiftx build",
     "build:addon": "pnpm --filter @swifty.js/glob-addon build",
     "build:wasm": "pnpm --filter @swifty.js/glob-wasm asbuild:release",
@@ -32,9 +30,6 @@
   "lint-staged": {
     "apps/swifty/**/*.{json,jsonc,js,cjs,mjs,jsx,ts,cts,mts,tsx,html,vue,css,scss,md,mdx}": [
       "pnpm --filter @swifty.js/swifty format"
-    ],
-    "apps/larky/**/*.{json,jsonc,js,cjs,mjs,jsx,ts,cts,mts,tsx,html,vue,css,scss,md,mdx}": [
-      "pnpm --filter @swifty.js/larky format"
     ]
   },
   "author": "https://github.com/hangtiancheng",

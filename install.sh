@@ -19,21 +19,21 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-# install.sh — Bootstrap installer for swifty CLI via npm global install.
+# install.sh — Bootstrap installer for swifty and swiftx CLI via npm global install.
 #
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/hangtiancheng/swifty-cli/main/install.sh | bash
 #   curl -fsSL https://raw.githubusercontent.com/hangtiancheng/swifty-cli/main/install.sh | bash -s -- --alpha
 #
-# Installs @swifty.js/swifty globally via npm. npm's `bin` field automatically
-# creates the `swifty` command on PATH. Requires Node.js >= 20.
+# Installs @swifty.js/larky globally via npm. npm's `bin` field automatically
+# creates the `swifty` and `swiftx` commands on PATH. Requires Node.js >= 20.
 #
 # Supports: --uninstall, --version vX.Y.Z, --alpha, --beta, --rc, --canary, --nightly, --tag=NAME
 
 set -euo pipefail
 
 # ── Config ─────────────────────────────────────────────────────────────
-PACKAGE="@swifty.js/swifty"
+PACKAGE="@swifty.js/larky"
 NODE_MAJOR_MIN=20
 
 # ── Helpers ────────────────────────────────────────────────────────────
@@ -61,8 +61,8 @@ for arg in "$@"; do
 		cat <<EOF
 Usage: install.sh [OPTIONS]
 
-  (default)    Install the latest stable swifty from npm
-  --uninstall  Uninstall swifty
+  (default)    Install the latest stable larky from npm
+  --uninstall  Uninstall larky
   --version=   Install a specific version (e.g. --version=0.1.0)
   --alpha      Install from the 'alpha' dist-tag
   --beta       Install from the 'beta' dist-tag
@@ -92,18 +92,18 @@ done
 if [ "$ACTION" = "uninstall" ]; then
 	info "Uninstalling $PACKAGE..."
 	npm uninstall -g "$PACKAGE"
-	ok "swifty uninstalled"
+	ok "larky uninstalled"
 	exit 0
 fi
 
-# ── Write default config (skip if it already exists) ─────────────────
-CONFIG_DIR="$HOME/.swifty"
-CONFIG_FILE="$CONFIG_DIR/config.yaml"
-if [ -f "$CONFIG_FILE" ]; then
-	info "Config already exists at $CONFIG_FILE."
+# ── Write default configs (skip if already exist) ────────────────────
+SWIFTY_CONFIG_DIR="$HOME/.swifty"
+SWIFTY_CONFIG_FILE="$SWIFTY_CONFIG_DIR/config.yaml"
+if [ -f "$SWIFTY_CONFIG_FILE" ]; then
+	info "Config already exists at $SWIFTY_CONFIG_FILE."
 else
-	mkdir -p "$CONFIG_DIR"
-	cat >"$CONFIG_FILE" <<'EOF'
+	mkdir -p "$SWIFTY_CONFIG_DIR"
+	cat >"$SWIFTY_CONFIG_FILE" <<'EOF'
 # Copyright (c) 2026 hangtiancheng
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -206,7 +206,119 @@ hooks: []
 # enable_coordinator_mode — optional, boolean, default: false — enable multi-agent coordinator mode.
 # enable_coordinator_mode: false
 EOF
-	ok "Wrote default config to $CONFIG_FILE"
+	ok "Wrote default config to $SWIFTY_CONFIG_FILE"
+fi
+
+SWIFTX_CONFIG_DIR="$HOME/.swiftx"
+SWIFTX_CONFIG_FILE="$SWIFTX_CONFIG_DIR/config.yaml"
+if [ -f "$SWIFTX_CONFIG_FILE" ]; then
+	info "Config already exists at $SWIFTX_CONFIG_FILE."
+else
+	mkdir -p "$SWIFTX_CONFIG_DIR"
+	cat >"$SWIFTX_CONFIG_FILE" <<'EOF'
+# Copyright (c) 2026 hangtiancheng
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in
+# all copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+
+# Swiftx project-level configuration (.swiftx/config.yaml)
+#
+# Load order (later layers override earlier ones, see src/config/config.ts loadConfig):
+#   ~/.swiftx/config.yml -> ~/.swiftx/config.yaml -> ./.swiftx/config.yml -> ./.swiftx/config.yaml
+#   -> ./.swiftx/config.local.yml -> ./.swiftx/config.local.yaml
+# Merge semantics: `providers` replaced wholesale when the override layer is non-empty;
+# `permission_mode` overridden; `mcp_servers` merged by name; `hooks` appended;
+# `sandbox` shallow-merged; `enable_coordinator_mode` sticky once true.
+#
+# Schema source: src/config/config.ts (AppConfigSchema)
+
+# permission_mode — optional, string, default: "default"
+# One of: "default" | "acceptEdits" | "plan" | "bypassPermissions"
+permission_mode: bypassPermissions
+
+# providers — REQUIRED: at least one provider must be configured (after merging all layers).
+providers:
+  - name: anthropic # REQUIRED, string — unique provider name
+    protocol: anthropic # REQUIRED, enum: "anthropic" | "openai" | "openai-compat"
+    base_url: https://api.deepseek.com/anthropic # REQUIRED, string — API endpoint
+    model: "deepseek-v4-flash" # REQUIRED, string — model identifier
+    api_key:
+      "<your-api-key>" # optional, string, default: falls back to env var
+      #   (ANTHROPIC_API_KEY for protocol "anthropic",
+      #    OPENAI_API_KEY for "openai"/"openai-compat")
+    thinking: true # optional, boolean, default: false — enable extended thinking
+    context_window:
+      1000000 # optional, number, default: built-in lookup by model name
+      #   (claude -> 200000, gpt-4.1/1m -> 1000000, else 128000)
+    # max_output_tokens: 64000               # optional, number, default: 8192 (64000 when thinking: true)
+
+  - name: openai-compat
+    protocol: openai-compat
+    base_url: https://api.deepseek.com
+    model: "deepseek-v4-flash"
+    api_key: "<your-api-key>"
+    thinking: true
+    context_window: 1000000
+    # max_output_tokens: 64000
+
+# mcp_servers — optional, array, default: [] (no servers).
+# Each server needs either `command` (stdio transport) or `url` (http/sse transport).
+mcp_servers: []
+  # - name: filesystem                       # REQUIRED, string — unique server name
+  #   command: npx                           # optional, string — executable; presence selects stdio transport
+  #   args: ["-y", "@modelcontextprotocol/server-filesystem", "."]  # optional, string array, default: []
+  #   env: { API_KEY: "your-api-key" }       # optional, map<string, string>, default: {} — extra env vars
+  #
+  # - name: remote-server
+  #   url: https://example.com/mcp           # optional, string — presence selects http/sse transport
+  #   transport: sse                         # optional, string — "sse" for SSE; any other value/omitted
+  #                                          #   uses streamable HTTP (only relevant with `url`)
+  #   headers: { Authorization: "Bearer x" } # optional, map<string, string>, default: {} — HTTP headers
+
+# hooks — optional, array, default: []. Appended across config layers (never replaced).
+hooks: []
+  # - id: lint-on-edit                       # optional, string — hook identifier
+  #   event: post_tool_use                   # REQUIRED, enum: session_start | session_end | turn_start |
+  #                                          #   turn_end | pre_send | post_receive | pre_tool_use |
+  #                                          #   post_tool_use | shutdown
+  #   condition: 'tool == "EditFile"'        # optional, string — expression filtering when the hook fires
+  #   action:                                # REQUIRED, object
+  #     type: command                        # REQUIRED, enum: command | prompt | http | agent
+  #     command: npx eslint --fix "$SWIFTX_FILE_PATH"  # required for type "command" (also accepted by "agent")
+  #     # prompt: "..."                      # required for type "prompt" and "agent"
+  #     # url: https://example.com/webhook   # required for type "http"
+  #     # method: POST                       # optional, string — HTTP method for type "http"
+  #   reject: false                          # optional, boolean, default: false — block the tool call
+  #                                          #   (only effective on pre_tool_use)
+  #   once: false                            # optional, boolean, default: false — fire at most once per session
+  #   async: false                           # optional, boolean, default: false — run without awaiting result
+  #   on_error: ignore                       # optional, string, default: "ignore" — error handling policy
+
+# sandbox — optional, object, default: sandbox disabled.
+# sandbox:
+#   enabled: false                           # optional, boolean, default: false — wrap Bash commands in a sandbox
+#   auto_allow: false                        # optional, boolean, default: false — auto-approve sandboxed commands
+#   network_enabled: true                    # optional, boolean, default: true — allow network inside the sandbox
+
+# enable_coordinator_mode — optional, boolean, default: false — enable multi-agent coordinator mode.
+# enable_coordinator_mode: false
+EOF
+	ok "Wrote default config to $SWIFTX_CONFIG_FILE"
 fi
 
 # ── Check Node.js ─────────────────────────────────────────────────────
@@ -244,14 +356,14 @@ npm install -g "$PKG_VERSION" --registry=https://registry.npmjs.org/
 # ── Verify ────────────────────────────────────────────────────────────
 # npm global bin should be on PATH. If not, print the prefix/bin hint.
 NPM_BIN="$(npm config get prefix 2>/dev/null)/bin"
-if command -v swifty >/dev/null 2>&1; then
-	ok "Swifty installed successfully"
-	SWIFTY_VERSION="$(npm ls -g "$PACKAGE" --depth=0 2>/dev/null | grep -o "$PACKAGE@[^ ]*" | head -n1 || true)"
-	[ -n "$SWIFTY_VERSION" ] && info "Installed: $SWIFTY_VERSION"
+if command -v swifty >/dev/null 2>&1 && command -v swiftx >/dev/null 2>&1; then
+	ok "larky installed successfully (swifty + swiftx)"
+	LARKY_VERSION="$(npm ls -g "$PACKAGE" --depth=0 2>/dev/null | grep -o "$PACKAGE@[^ ]*" | head -n1 || true)"
+	[ -n "$LARKY_VERSION" ] && info "Installed: $LARKY_VERSION"
 else
-	warn "Installation completed but 'swifty' is not on your PATH."
+	warn "Installation completed but 'swifty'/'swiftx' is not on your PATH."
 	warn "Add npm's global bin to your shell profile (~/.bashrc / ~/.zshrc):"
 	warn "  export PATH=\"$NPM_BIN:\$PATH\""
 fi
 
-ok 'Download Claude Code VSCode plugin and enjoy swifty!!!'
+ok 'Download Claude Code VSCode plugin and enjoy swifty and swiftx!!!'
