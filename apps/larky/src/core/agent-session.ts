@@ -105,8 +105,8 @@ import { WriteFileTool } from "../tools/write-file.js";
 import { expandAtRefsWithImages } from "../tui/at-expand.js";
 import { asErrorString } from "../utils/index.js";
 
-import type { WirePlanChoice } from "./bus/commands.js";
-import type { Event } from "./bus/events.js";
+import type { WirePlanChoice } from "./commands.js";
+import type { Event } from "./schema.js";
 
 const log = createChildLogger({ module: "agent-session" });
 

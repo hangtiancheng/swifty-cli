@@ -26,7 +26,7 @@ import path from "node:path";
 
 import { describe, expect, test } from "vitest";
 
-import { TraceWriter } from "../src/core/trace/writer.js";
+import { TraceWriter } from "../src/core/trace-writer.js";
 
 describe("TraceWriter", () => {
   // Feature: Verify TraceWriter writes trace records to file

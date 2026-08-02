@@ -27,8 +27,8 @@ import { createInterface } from "node:readline";
 
 import { z } from "zod";
 
-import type { JsonRpcRequest } from "../bus/envelope.js";
-import { isRecord } from "../bus/envelope.js";
+import type { JsonRpcRequest } from "./envelope.js";
+import { isRecord } from "./envelope.js";
 
 export type EventHandler = (event: Record<string, unknown>) => Promise<void>;
 

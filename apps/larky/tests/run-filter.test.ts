@@ -23,7 +23,7 @@
 /** P0-5 regression tests: stale-run event filtering on the TUI client. */
 import { describe, it, expect } from "vitest";
 
-import type { Event } from "../src/core/bus/events.js";
+import type { Event } from "../src/core/schema.js";
 import { advanceReplayCursor, isStaleRunEvent } from "../src/tui/run-filter.js";
 
 const TS = "2026-07-26T00:00:00.000Z";

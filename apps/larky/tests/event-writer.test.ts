@@ -26,8 +26,8 @@ import path from "node:path";
 
 import { describe, expect, test } from "vitest";
 
-import { EventBus } from "../src/core/events/bus.js";
-import { EventWriter } from "../src/core/events/writer.js";
+import { EventBus } from "../src/core/bus.js";
+import { EventWriter } from "../src/core/events.js";
 
 describe("EventWriter", () => {
   // Feature: Verify EventWriter writes events to JSONL file

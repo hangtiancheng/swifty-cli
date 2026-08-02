@@ -26,10 +26,11 @@ import type net from "node:net";
 
 import picomatch from "picomatch";
 
-import { logger } from "../../logger/index.js";
-import type { Event } from "../bus/events.js";
-import { makePushTrace } from "../trace/record.js";
-import type { TraceWriter } from "../trace/writer.js";
+import { logger } from "../logger/index.js";
+
+import type { Event } from "./schema.js";
+import { makePushTrace } from "./trace-record.js";
+import type { TraceWriter } from "./trace-writer.js";
 
 interface Subscription {
   subId: string;

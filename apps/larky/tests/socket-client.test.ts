@@ -24,8 +24,8 @@ import net from "node:net";
 
 import { describe, expect, test } from "vitest";
 
-import { SocketClient } from "../src/core/transport/socket-client.js";
-import { SocketServer } from "../src/core/transport/socket-server.js";
+import { SocketClient } from "../src/core/socket-client.js";
+import { SocketServer } from "../src/core/socket-server.js";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -97,9 +97,7 @@ describe("SocketClient", () => {
   test("receives events", async () => {
     const port = await getFreePort();
     const server = new SocketServer("127.0.0.1", port);
-    const broadcaster = new (
-      await import("../src/core/transport/ipc-broadcaster.js")
-    ).IpcEventBroadcaster();
+    const broadcaster = new (await import("../src/core/ipc-broadcaster.js")).IpcEventBroadcaster();
     await server.start();
 
     const client = new SocketClient("127.0.0.1", port);
@@ -112,7 +110,7 @@ describe("SocketClient", () => {
     });
 
     // Subscribe to all events
-    const writer = (await import("../src/core/transport/socket-server.js")).getConnectionWriter;
+    const writer = (await import("../src/core/socket-server.js")).getConnectionWriter;
 
     server.register("event.subscribe", async () => {
       const socket = writer();

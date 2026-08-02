@@ -30,8 +30,8 @@ import { randomUUID } from "node:crypto";
 import type { Decision } from "../permissions/checker.js";
 import type { Question } from "../tools/ask-user.js";
 
-import type { WirePlanChoice } from "./bus/commands.js";
-import type { Event } from "./bus/events.js";
+import type { WirePlanChoice } from "./commands.js";
+import type { Event } from "./schema.js";
 
 /** The slice of AgentSession the hub needs (structural, test-friendly). */
 export interface InteractionSessionRef {

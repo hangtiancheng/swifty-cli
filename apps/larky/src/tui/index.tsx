@@ -29,7 +29,7 @@ import { useState } from "react";
 
 import { loadConfig, type ProviderConfig } from "../config/config.js";
 import { getConfig } from "../core/config.js";
-import { SocketClient } from "../core/transport/socket-client.js";
+import { SocketClient } from "../core/socket-client.js";
 import { initLogger } from "../logger/index.js";
 import { newSessionId } from "../session/session.js";
 

@@ -36,10 +36,10 @@ import {
   METHOD_NOT_FOUND,
   PARSE_ERROR,
   makeError,
-} from "../bus/envelope.js";
-import type { JsonRpcSuccess } from "../bus/envelope.js";
-import { makeCommandTrace, makeErrorTrace, makeResponseTrace } from "../trace/record.js";
-import type { TraceWriter } from "../trace/writer.js";
+} from "./envelope.js";
+import type { JsonRpcSuccess } from "./envelope.js";
+import { makeCommandTrace, makeErrorTrace, makeResponseTrace } from "./trace-record.js";
+import type { TraceWriter } from "./trace-writer.js";
 
 export type CommandHandler = (params: Record<string, unknown>) => Promise<unknown>;
 

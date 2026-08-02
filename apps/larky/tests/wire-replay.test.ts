@@ -31,7 +31,7 @@ import path from "node:path";
 import { describe, expect, test } from "vitest";
 
 import { snapshotReplayLinesFromFile, handleEventSubscribe } from "../src/core/app.js";
-import { IpcEventBroadcaster } from "../src/core/transport/ipc-broadcaster.js";
+import { IpcEventBroadcaster } from "../src/core/ipc-broadcaster.js";
 
 // Create mock socket for testing — uses real Socket instance for type safety
 function makeMockSocket(writes: string[]): net.Socket {

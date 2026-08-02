@@ -69,9 +69,9 @@ import {
   RewindListResultSchema,
   RewindApplyCommandSchema,
   RewindApplyResultSchema,
-} from "../src/core/bus/commands.js";
-import { EventPushEnvelopeSchema } from "../src/core/bus/envelope.js";
-import { EventSchema } from "../src/core/bus/events.js";
+} from "../src/core/commands.js";
+import { EventPushEnvelopeSchema } from "../src/core/envelope.js";
+import { EventSchema } from "../src/core/schema.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const OUTPUT_PATH = path.join(__dirname, "..", "PROTOCOL.md");

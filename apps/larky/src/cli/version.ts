@@ -20,30 +20,9 @@
  * SOFTWARE.
  */
 
-// bus module unified exports
-export {
-  JsonRpcRequestSchema,
-  JsonRpcSuccessSchema,
-  JsonRpcErrorSchema,
-  JsonRpcErrorObjectSchema,
-  EventPushEnvelopeSchema,
-  HandlerError,
-  makeError,
-  isRecord,
-  PARSE_ERROR,
-  INVALID_REQUEST,
-  METHOD_NOT_FOUND,
-  INVALID_PARAMS,
-  INTERNAL_ERROR,
-} from "./envelope.js";
+// CLI version command: print package version
+import { version } from "../version.js";
 
-export type {
-  JsonRpcRequest,
-  JsonRpcSuccess,
-  JsonRpcError,
-  JsonRpcErrorObject,
-  EventPushEnvelope,
-} from "./envelope.js";
-
-export * from "./commands.js";
-export * from "./events.js";
+export function cmdVersion(): void {
+  console.log(`larky ${version}`);
+}

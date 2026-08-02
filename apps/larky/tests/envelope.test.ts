@@ -30,7 +30,7 @@ import {
   JsonRpcSuccessSchema,
   PARSE_ERROR,
   makeError,
-} from "../src/core/bus/envelope.js";
+} from "../src/core/envelope.js";
 
 describe("JsonRpcRequest", () => {
   test("roundtrip preserves all fields", () => {

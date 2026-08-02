@@ -48,6 +48,7 @@ import * as sessionMod from "../session/session.js";
 import { version } from "../version.js";
 
 import { AgentSession } from "./agent-session.js";
+import { EventBus } from "./bus.js";
 import {
   PingCommandSchema,
   CoreStatusCommandSchema,
@@ -67,16 +68,15 @@ import {
   CommandListCommandSchema,
   RewindListCommandSchema,
   RewindApplyCommandSchema,
-} from "./bus/commands.js";
-import { HandlerError, isRecord } from "./bus/envelope.js";
-import type { Event } from "./bus/events.js";
-import { getConfig, newTraceId, getTraceFilePath } from "./config.js";
-import { EventBus } from "./events/bus.js";
+} from "./commands.js";
+import { getConfig, getTraceFilePath, newTraceId } from "./config.js";
+import { HandlerError, isRecord } from "./envelope.js";
 import { InteractionHub } from "./interaction-hub.js";
-import { makeEventTrace } from "./trace/record.js";
-import { TraceWriter } from "./trace/writer.js";
-import { IpcEventBroadcaster } from "./transport/ipc-broadcaster.js";
-import { SocketServer, getConnectionWriter } from "./transport/socket-server.js";
+import { IpcEventBroadcaster } from "./ipc-broadcaster.js";
+import type { Event } from "./schema.js";
+import { SocketServer, getConnectionWriter } from "./socket-server.js";
+import { makeEventTrace } from "./trace-record.js";
+import { TraceWriter } from "./trace-writer.js";
 
 const SESSION_NOT_FOUND = -32010;
 const SESSION_BUSY = -32012;

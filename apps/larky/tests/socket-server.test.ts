@@ -27,9 +27,9 @@ import net from "node:net";
 import { afterEach, describe, expect, test } from "vitest";
 import { z } from "zod";
 
-import { isRecord } from "../src/core/bus/envelope.js";
-import { IpcEventBroadcaster } from "../src/core/transport/ipc-broadcaster.js";
-import { SocketServer, getConnectionWriter } from "../src/core/transport/socket-server.js";
+import { isRecord } from "../src/core/envelope.js";
+import { IpcEventBroadcaster } from "../src/core/ipc-broadcaster.js";
+import { SocketServer, getConnectionWriter } from "../src/core/socket-server.js";
 
 // Get a random available port
 function freePort(): Promise<number> {

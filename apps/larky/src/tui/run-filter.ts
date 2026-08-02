@@ -20,7 +20,7 @@
  * SOFTWARE.
  */
 
-import type { Event } from "../core/bus/events.js";
+import type { Event } from "../core/schema.js";
 
 /**
  * Steering multiplexes two runs' events over one session stream: the old

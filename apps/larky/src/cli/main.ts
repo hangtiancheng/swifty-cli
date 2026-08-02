@@ -31,8 +31,8 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 
 import { forkEnabled, loadConfig } from "../config/config.js";
-import { cmdPing } from "../core/commands/ping.js";
 import { getConfig } from "../core/config.js";
+import { cmdPing } from "../core/ping.js";
 import { initLogger, closeLogger, logger } from "../logger/index.js";
 import { parsePrintFlags, runPrintMode } from "../print-mode.js";
 import { newSessionId } from "../session/session.js";
@@ -45,9 +45,9 @@ import {
   cmdCoreStatus,
   ensureDaemonRunning,
   stopDaemonOnExit,
-} from "./commands/core.js";
-import { cmdTrace } from "./commands/trace.js";
-import { cmdVersion } from "./commands/version.js";
+} from "./core.js";
+import { cmdTrace } from "./trace.js";
+import { cmdVersion } from "./version.js";
 
 const VALID_TRACE_LAYERS = ["ipc", "event", "llm"];
 

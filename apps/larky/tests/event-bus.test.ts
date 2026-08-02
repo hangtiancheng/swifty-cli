@@ -24,8 +24,8 @@
 // Design: Cover single subscriber, multiple subscribers, ordering guarantees, empty bus scenarios
 import { describe, expect, test } from "vitest";
 
-import type { Event } from "../src/core/bus/events.js";
-import { EventBus } from "../src/core/events/bus.js";
+import { EventBus } from "../src/core/bus.js";
+import type { Event } from "../src/core/schema.js";
 
 // Create fake event for testing
 function makeFakeEvent(): Event {

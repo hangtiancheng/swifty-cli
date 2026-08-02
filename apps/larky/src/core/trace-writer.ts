@@ -20,55 +20,47 @@
  * SOFTWARE.
  */
 
-// EventWriter: Serialize events to JSONL and append to file
+// TraceWriter: synchronous appendFileSync for reliability and simplicity.
+// Trace records are small (~200 bytes) and writes are sub-millisecond, so the
+// blocking I/O cost is negligible. A true async queue would add complexity
+// (drain lifecycle, unhandled rejection handling) without meaningful benefit.
 import { mkdirSync, appendFileSync } from "node:fs";
 import path from "node:path";
 
-import type { Event } from "../bus/events.js";
+import type { TraceRecord } from "./trace-record.js";
 
-import type { EventBus } from "./bus.js";
-
-export class EventWriter {
+export class TraceWriter {
   private _path: string;
-  private _opened = false;
+  private _stopped = false;
 
+  // Initialize TraceWriter; target file path is not created until start()
   constructor(filePath: string) {
     this._path = filePath;
   }
 
-  // Open event file (create directory)
-  open(): void {
+  // Create directory and mark as started
+  start(): void {
     mkdirSync(path.dirname(this._path), { recursive: true });
-    this._opened = true;
+    this._stopped = false;
   }
 
-  // Close event file
-  close(): void {
-    this._opened = false;
+  // Stop accepting new records. Writes are synchronous (appendFileSync in
+  // emit()), so there is no pending queue to flush — stop() only sets the
+  // stopped flag. The async signature is kept for call-site compatibility.
+  async stop(): Promise<void> {
+    this._stopped = true;
+    return Promise.resolve();
   }
 
-  // Support Symbol.asyncDispose (TypeScript 5.2+ using syntax)
-  [Symbol.asyncDispose](): void {
-    this.close();
-  }
-
-  // Serialize event as JSON line and append to file; silently skip on write failure
-  handle(event: Event): void {
-    if (!this._opened) {
+  // Synchronously write a single trace record to file
+  emit(record: TraceRecord): void {
+    if (this._stopped) {
       return;
     }
     try {
-      appendFileSync(this._path, JSON.stringify(event) + "\n", "utf-8");
-    } catch (err) {
-      console.error(`EventWriter: failed to write event: ${String(err)}`);
+      appendFileSync(this._path, JSON.stringify(record) + "\n", "utf-8");
+    } catch {
+      // Silently skip on write failure, do not block main flow
     }
-  }
-
-  // Register handle as a bus subscriber
-  subscribe(bus: EventBus): void {
-    bus.subscribe((event) => {
-      this.handle(event);
-      return Promise.resolve();
-    });
   }
 }

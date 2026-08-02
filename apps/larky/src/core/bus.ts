@@ -20,7 +20,7 @@
  * SOFTWARE.
  */
 
-import type { Event } from "../bus/events.js";
+import type { Event } from "./schema.js";
 
 export type EventHandler = (event: Event) => Promise<void>;
 

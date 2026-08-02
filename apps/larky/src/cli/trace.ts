@@ -26,7 +26,7 @@ import readline from "node:readline";
 
 import { z } from "zod";
 
-import { findLatestTraceFile } from "../../core/config.js";
+import { findLatestTraceFile } from "../core/config.js";
 
 const COLORS: Record<string, string> = {
   "CLIENT→CORE": "\x1b[36m", // cyan

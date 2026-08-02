@@ -26,9 +26,11 @@ import { performance } from "node:perf_hooks";
 
 import { safeParseAsync } from "zod";
 
-import { version } from "../../version.js";
-import { JsonRpcErrorObjectSchema, PongResultSchema } from "../bus/index.js";
-import type { LarkyConfig } from "../config.js";
+import { version } from "../version.js";
+
+import { PongResultSchema } from "./commands.js";
+import type { LarkyConfig } from "./config.js";
+import { JsonRpcErrorObjectSchema } from "./envelope.js";
 
 export interface PingOutcome {
   ok: boolean;

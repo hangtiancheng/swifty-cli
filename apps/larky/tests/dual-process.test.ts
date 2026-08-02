@@ -32,7 +32,7 @@ import path from "node:path";
 
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 
-import { SocketClient } from "../src/core/transport/socket-client.js";
+import { SocketClient } from "../src/core/socket-client.js";
 
 const HOST = "127.0.0.1";
 
