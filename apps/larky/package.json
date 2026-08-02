@@ -9,15 +9,15 @@
     "larky",
     "larky.js"
   ],
-  "homepage": "https://github.com/hangtiancheng/larky-cli",
+  "homepage": "https://github.com/hangtiancheng/swifty-cli",
   "bugs": {
-    "url": "https://github.com/hangtiancheng/larky-cli/issues"
+    "url": "https://github.com/hangtiancheng/swifty-cli/issues"
   },
   "license": "MIT",
   "author": "https://github.com/hangtiancheng",
   "repository": {
     "type": "git",
-    "url": "https://github.com/hangtiancheng/larky-cli.git",
+    "url": "https://github.com/hangtiancheng/swifty-cli.git",
     "directory": "apps/larky"
   },
   "bin": {

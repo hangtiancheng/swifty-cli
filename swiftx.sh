@@ -146,7 +146,7 @@ providers:
     base_url: https://api.deepseek.com/anthropic # REQUIRED, string — API endpoint
     model: "deepseek-v4-flash" # REQUIRED, string — model identifier
     api_key:
-      "sk-" # optional, string, default: falls back to env var
+      "<your-api-key>" # optional, string, default: falls back to env var
       #   (ANTHROPIC_API_KEY for protocol "anthropic",
       #    OPENAI_API_KEY for "openai"/"openai-compat")
     thinking: true # optional, boolean, default: false — enable extended thinking
@@ -159,7 +159,7 @@ providers:
     protocol: openai-compat
     base_url: https://api.deepseek.com
     model: "deepseek-v4-flash"
-    api_key: "sk-"
+    api_key: "<your-api-key>"
     thinking: true
     context_window: 1000000
     # max_output_tokens: 64000
