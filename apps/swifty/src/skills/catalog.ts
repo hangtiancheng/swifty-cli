@@ -69,11 +69,9 @@ export class SkillCatalog {
     // Tier 2: User-global ~/.swifty/skills/
     // Tier 3: Project-level $workDir/.swifty/skills/ (highest priority)
     const dirs = [
-      join(homedir(), ".trae", "skills"),
       join(homedir(), ".claude", "skills"),
       join(homedir(), ".github", "skills"),
       join(homedir(), ".swifty", "skills"),
-      join(workDir, ".trae", "skills"),
       join(workDir, ".claude", "skills"),
       join(workDir, ".github", "skills"),
       join(workDir, ".swifty", "skills"),

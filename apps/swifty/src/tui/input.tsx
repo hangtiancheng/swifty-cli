@@ -29,7 +29,7 @@ import { useState, useMemo, useRef, useEffect } from "react";
 
 import { createChildLogger } from "../logger/index.js";
 
-import { BORDER_COLORS, COLORS, ICONS } from "./styles.js";
+import { BORDER_COLORS, COLORS, ICONS, THEME } from "./styles.js";
 
 import type { Command } from "@/commands/commands.js";
 import type { CommandUsageTracker } from "@/commands/usage-tracker.js";
@@ -37,6 +37,9 @@ import type { PermissionMode } from "@/permissions/checker.js";
 import { SKIP_DIRS } from "@/tools/types.js";
 
 const log = createChildLogger({ module: "tui" });
+
+// Suffix appended to skill-backed command descriptions (see wireSkillsToRegistry).
+const SKILL_TAG = "[skill]";
 
 function scanWorkdirFiles(root: string, max = 2000): string[] {
   const out: string[] = [];
@@ -122,6 +125,11 @@ export function InputBox(props: InputBoxProps) {
   const [cursorLine, setCursorLine] = useState(0);
   const [cursorCol, setCursorCol] = useState(0);
   const [historyIndex, setHistoryIndex] = useState(-1);
+  // Stashes the in-progress input when the user first arrows up into history,
+  // so arrowing back down past the newest entry restores it instead of clearing.
+  const historyDraftRef = useRef<{ lines: string[]; cursorLine: number; cursorCol: number } | null>(
+    null,
+  );
   const [dropdownIndex, setDropdownIndex] = useState(0);
   const [dropdownDismissed, setDropdownDismissed] = useState(false);
 
@@ -379,6 +387,7 @@ export function InputBox(props: InputBoxProps) {
         setCursorLine(0);
         setCursorCol(0);
         setHistoryIndex(-1);
+        historyDraftRef.current = null;
         setDropdownIndex(0);
         setDropdownDismissed(false);
       }
@@ -480,6 +489,9 @@ export function InputBox(props: InputBoxProps) {
         return;
       }
       if (!isMultiline && history.length > 0) {
+        if (historyIndex === -1) {
+          historyDraftRef.current = { lines: [...lines], cursorLine, cursorCol };
+        }
         const nextIdx = historyIndex < history.length - 1 ? historyIndex + 1 : historyIndex;
         setHistoryIndex(nextIdx);
         const entry = history[history.length - 1 - nextIdx] ?? "";
@@ -518,9 +530,17 @@ export function InputBox(props: InputBoxProps) {
           setCursorCol(entryLines[0].length);
         } else if (historyIndex === 0) {
           setHistoryIndex(-1);
-          setLines([""]);
-          setCursorLine(0);
-          setCursorCol(0);
+          const draft = historyDraftRef.current;
+          historyDraftRef.current = null;
+          if (draft) {
+            setLines(draft.lines);
+            setCursorLine(draft.cursorLine);
+            setCursorCol(draft.cursorCol);
+          } else {
+            setLines([""]);
+            setCursorLine(0);
+            setCursorCol(0);
+          }
         }
       }
       return;
@@ -608,10 +628,29 @@ export function InputBox(props: InputBoxProps) {
           {recentCount > 0 && <Text dimColor>{"RECENTLY USED"}</Text>}
           {filteredCmds.slice(0, 8).map((cmd, i) => {
             const selected = i === dropdownIndex;
+            const color = selected ? THEME.primary : undefined;
+            const desc = cmd.description.replace(/\s+/g, " ").trim();
+            const isSkill = desc.endsWith(SKILL_TAG);
+            const body = isSkill ? desc.slice(0, -SKILL_TAG.length).trimEnd() : desc;
             return (
-              <Text key={cmd.name} color={selected ? "#b4befe" : undefined} dimColor={!selected}>
-                /{cmd.name} {cmd.description}
-              </Text>
+              <Box key={cmd.name}>
+                <Box flexShrink={0}>
+                  <Text color={color} dimColor={!selected}>
+                    /{cmd.name}{" "}
+                  </Text>
+                </Box>
+                <Text wrap="truncate-end" color={color} dimColor={!selected}>
+                  {body}
+                </Text>
+                {isSkill && (
+                  <Box flexShrink={0}>
+                    <Text color={color} dimColor={!selected}>
+                      {" "}
+                      {SKILL_TAG}
+                    </Text>
+                  </Box>
+                )}
+              </Box>
             );
           })}
         </Box>
@@ -622,7 +661,7 @@ export function InputBox(props: InputBoxProps) {
           {filteredFiles.map((file, i) => (
             <Text
               key={file}
-              color={i === dropdownIndex ? "#b4befe" : undefined}
+              color={i === dropdownIndex ? THEME.primary : undefined}
               dimColor={i !== dropdownIndex}
             >
               {ICONS.arrow} @{file}

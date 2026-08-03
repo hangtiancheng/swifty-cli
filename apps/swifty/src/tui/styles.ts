@@ -22,8 +22,17 @@
 
 import chalk from "chalk";
 
+// React-blue theme palette. Plain hex strings so they work both for
+// chalk.hex() and Ink `color`/`borderColor` props.
+export const THEME = {
+  /** React logo blue — main accent. */
+  primary: "#61dafb",
+  /** react.dev deep blue — secondary accent. */
+  accent: "#149eca",
+} as const;
+
 export const COLORS = {
-  primary: chalk.hex("#42b883"),
+  primary: chalk.hex(THEME.primary),
   white: chalk.bold.white,
   dim: chalk.dim,
   black: chalk.black,
@@ -31,10 +40,10 @@ export const COLORS = {
   warning: chalk.yellow,
   error: chalk.bold.red,
   muted: chalk.gray,
-  thinking: chalk.hex("#42b883ee"),
+  thinking: chalk.hex(THEME.accent),
   tool: chalk.cyan,
   user: chalk.bold.blue,
-  assistant: chalk.bold.hex("#42b883"),
+  assistant: chalk.bold.hex(THEME.primary),
 } as const;
 
 export const ICONS = {
@@ -47,17 +56,16 @@ export const ICONS = {
   dot: "·",
 } as const;
 
-export const CMD_COLORS = {
+export const CMD_ICONS = {
   local: "⚙",
   local_ui: "⚙",
   skill_fork: "★",
   prompt: "◇",
 } as const;
 
-// TODO: Migrate to green theme color.
 export const BORDER_COLORS = {
   idle: "gray",
-  focused: "#a78bfa",
-  agent: "#a855f6",
+  focused: THEME.primary,
+  agent: THEME.accent,
   error: "red",
 } as const;
