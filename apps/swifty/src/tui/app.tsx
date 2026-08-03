@@ -1467,19 +1467,35 @@ export function App({
             streamThrottleRef.current = null;
           }
           setStreamingText("");
+          // Preserve the assistant text streamed during this turn: it was only
+          // visible in the dynamic area and would otherwise be lost when the
+          // next tool batch repaints it.
+          const turnText = fullText;
           fullText = "";
+          streamingTextRef.current = "";
           setActiveTools([]);
-          // Replace individual thinking + tool_use/tool_result messages from
-          // this turn with a single collapsed turn_summary message.
-          const hasTurnContent = turnThinkingText || turnToolCalls.length > 0;
-          if (hasTurnContent) {
-            const summary: ChatMessage = {
+          // Commit this turn to the transcript in chronological order:
+          // thinking → streamed assistant text → tool calls.
+          const commits: ChatMessage[] = [];
+          if (turnThinkingText || turnThinkingDuration >= 1) {
+            commits.push({
               role: "turn_summary",
               content: turnThinkingText,
               thinkingDuration: turnThinkingDuration > 0 ? turnThinkingDuration : undefined,
-              toolSummary: turnToolCalls.length > 0 ? turnToolCalls : undefined,
-            };
-            setMessages((prev) => [...prev, summary]);
+            });
+          }
+          if (turnText) {
+            commits.push({ role: "assistant", content: turnText });
+          }
+          if (turnToolCalls.length > 0) {
+            commits.push({
+              role: "turn_summary",
+              content: "",
+              toolSummary: turnToolCalls,
+            });
+          }
+          if (commits.length > 0) {
+            setMessages((prev) => [...prev, ...commits]);
           }
           resetTurnAccumulators();
           break;
@@ -1496,6 +1512,7 @@ export function App({
             // Assistant messages are persisted by the agent main loop as they
             // enter the conversation history (tool blocks included), so we don't duplicate that here
           }
+          streamingTextRef.current = "";
           setActiveTools([]);
           resetTurnAccumulators();
           if (permModeRef.current === "plan") {

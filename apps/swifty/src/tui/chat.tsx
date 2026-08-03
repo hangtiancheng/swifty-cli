@@ -274,26 +274,37 @@ interface TurnSummaryBlockProps {
   expanded: boolean;
 }
 
+function clampOutput(text: string): string {
+  return text.length > 200 ? text.slice(0, 200) + `\n…${String(text.length - 200)} chars` : text;
+}
+
 function TurnSummaryBlock(props: TurnSummaryBlockProps) {
   const { message, expanded } = props;
-  const { /* content: thinkingText, */ thinkingDuration, toolSummary = [] } = message;
-  if (!thinkingDuration && toolSummary.length === 0) {
+  const { content: thinkingText, thinkingDuration, toolSummary = [] } = message;
+  if (!thinkingText && !thinkingDuration && toolSummary.length === 0) {
     return null;
   }
-  // Expand the details of every tool call by default, rather than showing only a one-line statistical summary
   return (
     <Box flexDirection="column" marginBottom={0}>
-      {thinkingDuration !== undefined && thinkingDuration >= 1 && (
+      {(thinkingText !== "" || (thinkingDuration !== undefined && thinkingDuration >= 1)) && (
         <Text dimColor>
-          {COLORS.thinking(`${ICONS.thinking} `)}Thought for {Math.round(thinkingDuration)}s
+          {COLORS.thinking(`${ICONS.thinking} `)}Thought for{" "}
+          {Math.max(1, Math.round(thinkingDuration ?? 0))}s
         </Text>
+      )}
+      {thinkingText !== "" && (
+        <Box paddingLeft={2}>
+          <Text dimColor italic>
+            {expanded ? thinkingText.trimEnd() : clampOutput(thinkingText)}
+          </Text>
+        </Box>
       )}
       {toolSummary.map((t, i) => {
         const icon = t.isError ? COLORS.error(ICONS.error) : COLORS.success(ICONS.success);
-        const timeStr = t.elapsed !== undefined ? ` (${t.elapsed.toFixed(1)}s)` : "";
+        const timeStr = ` (${t.elapsed.toFixed(1)}s)`;
 
         const isDiff = isDiffTool(t.toolName);
-        const showOutput = isDiff || expanded;
+        const output = t.output ? (expanded ? t.output.trimEnd() : clampOutput(t.output)) : "";
         return (
           <Box key={i} flexDirection="column" marginBottom={0}>
             <Text>
@@ -301,15 +312,9 @@ function TurnSummaryBlock(props: TurnSummaryBlockProps) {
               {t.argsSummary ? <Text dimColor> {t.argsSummary}</Text> : null}
               <Text dimColor>{timeStr}</Text>
             </Text>
-            {showOutput && t.output ? (
+            {output ? (
               <Box paddingLeft={4}>
-                {isDiff ? (
-                  <DiffLines text={t.output} />
-                ) : (
-                  <Text dimColor>
-                    {t.output.length > 500 ? t.output.slice(0, 500) + "..." : t.output}
-                  </Text>
-                )}
+                {isDiff ? <DiffLines text={output} /> : <Text dimColor>{output}</Text>}
               </Box>
             ) : null}
           </Box>
