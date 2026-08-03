@@ -91,22 +91,6 @@ interface ChatViewProps {
 // eslint-disable-next-line no-control-regex
 const ANSI_RE = /\x1b\[[0-9;]*[a-zA-Z]|\x1b\].*?(?:\x07|\x1b\\)/g;
 
-/**
- * Calculates the number of physical lines (considering terminal width wrapping) to prevent
- * dynamic areas from exceeding the height and triggering Ink's clearTerminal.
- * ANSI escape sequences in logical lines do not occupy width; visible characters exceeding
- * the terminal width automatically wrap.
- */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-function countPhysicalLines(lines: string[], cols: number): number {
-  let total = 0;
-  for (const line of lines) {
-    const visible = line.replace(ANSI_RE, "").length;
-    total += Math.max(1, Math.ceil(visible / cols));
-  }
-  return total;
-}
-
 function StreamingText({ text }: { text: string }) {
   const stableRef = useRef({ text: "", rendered: "" });
   const { stdout } = useStdout();
@@ -197,78 +181,6 @@ export function CommittedMessage(props: CommitMessageProps) {
   );
 }
 
-/**
- * Build a compact human-readable summary line for a turn, e.g.:
- *   "Thought for 4s, read 2 files, ran 1 command"
- */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-function buildTurnSummaryText(
-  thinkingDuration: number | undefined,
-  tools: ToolSummaryItem[],
-): string {
-  const parts: string[] = [];
-
-  if (thinkingDuration !== undefined && thinkingDuration >= 1) {
-    parts.push(`Thought for ${String(Math.round(thinkingDuration))}s`);
-  }
-
-  if (tools.length > 0) {
-    type Key = "read" | "wrote" | "edited" | "ran" | "globbed" | "searched" | "used";
-    type Count = Record<Key, number>;
-    type Label = Record<keyof Count, (n: number) => string>;
-
-    // Categorize tools by type for a natural summary.
-    const counts: Count = {
-      read: 0,
-      wrote: 0,
-      edited: 0,
-      ran: 0,
-      globbed: 0,
-      searched: 0,
-      used: 0,
-    };
-
-    for (const t of tools) {
-      const name = t.toolName;
-      if (name === "ReadFile") {
-        counts.read = counts.read + 1;
-      } else if (name === "WriteFile") {
-        counts.wrote = counts.wrote + 1;
-      } else if (name === "EditFile") {
-        counts.edited = counts.edited + 1;
-      } else if (name === "Bash") {
-        counts.ran = counts.ran + 1;
-      } else if (name === "Glob") {
-        counts.globbed = counts.globbed + 1;
-      } else if (name === "Grep") {
-        counts.searched = counts.searched + 1;
-      } else {
-        counts.used = counts.used + 1;
-      }
-    }
-
-    const labels: Label = {
-      read: (n) => `read ${String(n)} file${n > 1 ? "s" : ""}`,
-      wrote: (n) => `wrote ${String(n)} file${n > 1 ? "s" : ""}`,
-      edited: (n) => `edited ${String(n)} file${n > 1 ? "s" : ""}`,
-      ran: (n) => `ran ${String(n)} command${n > 1 ? "s" : ""}`,
-      globbed: (n) => `globbed ${String(n)} pattern${n > 1 ? "s" : ""}`,
-      searched: (n) => `searched ${String(n)} pattern${n > 1 ? "s" : ""}`,
-      used: (n) => `used ${String(n)} tool${n > 1 ? "s" : ""}`,
-    } as const;
-
-    for (const [key, count] of Object.entries<number>(counts)) {
-      // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
-      parts.push(labels[key as Key](count));
-    }
-  }
-
-  if (parts.length === 0) {
-    return "";
-  }
-  return parts.join(", ");
-}
-
 interface TurnSummaryBlockProps {
   message: ChatMessage;
   expanded: boolean;
@@ -301,7 +213,8 @@ function TurnSummaryBlock(props: TurnSummaryBlockProps) {
       )}
       {toolSummary.map((t, i) => {
         const icon = t.isError ? COLORS.error(ICONS.error) : COLORS.success(ICONS.success);
-        const timeStr = ` (${t.elapsed.toFixed(1)}s)`;
+        // Summaries rebuilt from a resumed session carry no timing (elapsed 0) — omit the suffix.
+        const timeStr = t.elapsed > 0 ? ` (${t.elapsed.toFixed(1)}s)` : "";
 
         const isDiff = isDiffTool(t.toolName);
         const output = t.output ? (expanded ? t.output.trimEnd() : clampOutput(t.output)) : "";
@@ -352,7 +265,15 @@ function MessageBlock(props: MessageBlockProps) {
       );
     }
 
-    // Maybe dead code
+    // DEAD CODE (kept intentionally, do not extend): no producer constructs
+    // ChatMessage with role "thinking". app.tsx accumulates thinking_text
+    // events into per-turn buffers and commits them as a single
+    // role:"turn_summary" message on turn_complete (see app.tsx
+    // "thinking_complete": "Don't add a separate thinking message").
+    // Rendering now happens in TurnSummaryBlock above. If a standalone
+    // thinking message is ever reintroduced, prefer reusing TurnSummaryBlock
+    // instead of reviving this branch (its 200-char clamp already diverges
+    // from clampOutput()).
     case "thinking": {
       return (
         <Box marginBottom={0}>
@@ -364,7 +285,11 @@ function MessageBlock(props: MessageBlockProps) {
       );
     }
 
-    // Maybe dead code
+    // DEAD CODE (kept intentionally, do not extend): no producer constructs
+    // ChatMessage with role "tool_use". While a tool runs, app.tsx shows it in
+    // the dynamic area via setActiveTools → <ToolDisplay/> (not in the
+    // transcript); once the turn completes the call is folded into a
+    // role:"turn_summary" message rendered by TurnSummaryBlock.
     case "tool_use": {
       return (
         <Box marginBottom={0}>
@@ -376,7 +301,13 @@ function MessageBlock(props: MessageBlockProps) {
       );
     }
 
-    // Maybe dead code
+    // DEAD CODE (kept intentionally, do not extend): no producer constructs
+    // ChatMessage with role "tool_result". app.tsx accumulates each
+    // tool_result event into turnToolCalls (ToolSummaryItem[]) and commits one
+    // role:"turn_summary" message per turn; TurnSummaryBlock renders the
+    // icon/args/output lines. Note this branch's 500-char "(ctrl+o to expand)"
+    // truncation has already diverged from TurnSummaryBlock's 200-char
+    // clampOutput() — another reason not to revive it as-is.
     case "tool_result": {
       const icon = message.isError ? COLORS.error(ICONS.error) : COLORS.success(ICONS.success);
       const timeStr = message.elapsed !== undefined ? ` (${message.elapsed.toFixed(1)}s)` : "";

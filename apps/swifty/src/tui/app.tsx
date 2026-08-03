@@ -932,13 +932,51 @@ export function App({
           sessionIdRef.current = arg;
           // Reload the task list for the resumed session.
           taskListRef.current.useStore(new TaskStore(workDir, arg));
-          const resumedMessages: ChatMessage[] = [
-            ...restored.map((m) => ({ ...m, content: contentToText(m.content) })),
-            {
-              role: "system",
-              content: `⟲ Resumed session ${arg} (${String(restored.length)} messages).`,
-            },
-          ];
+          // Re-key file history to the resumed session. The previous instance's
+          // snapshots store messageIndex values against the OLD conversation;
+          // /rewind after a resume would truncate the rebuilt history at a
+          // bogus point (possibly mid tool-chain).
+          fileHistoryRef.current = new FileHistory(workDir, arg);
+          // Rebuild the visible transcript. Tool chains are persisted as
+          // assistant records with tool_uses and user records that carry only
+          // tool_results (empty text). Mapping those verbatim used to emit
+          // empty role:"user" messages, each rendering as a bare "❯" prompt
+          // mark. Fold them into turn_summary messages instead, mirroring how
+          // live turns are committed, and skip anything with no visible text.
+          const pendingUses = new Map<string, { toolName: string; argsSummary: string }>();
+          const resumedMessages: ChatMessage[] = [];
+          for (const m of restored) {
+            for (const tu of m.toolUses ?? []) {
+              pendingUses.set(tu.toolUseId, {
+                toolName: tu.toolName,
+                argsSummary: formatToolArgs(tu.arguments ?? {}),
+              });
+            }
+            if (m.toolResults?.length) {
+              const toolSummary: ToolSummaryItem[] = m.toolResults.map((tr) => {
+                const use = pendingUses.get(tr.toolUseId);
+                pendingUses.delete(tr.toolUseId);
+                return {
+                  toolName: use?.toolName ?? "tool",
+                  argsSummary: use?.argsSummary ?? "",
+                  output: contentToText(tr.content),
+                  isError: tr.isError ?? false,
+                  // No timing data in the session log; 0 hides the suffix.
+                  elapsed: 0,
+                };
+              });
+              resumedMessages.push({ role: "turn_summary", content: "", toolSummary });
+              continue;
+            }
+            const text = contentToText(m.content);
+            if (text.trim()) {
+              resumedMessages.push({ role: m.role, content: text });
+            }
+          }
+          resumedMessages.push({
+            role: "system",
+            content: `⟲ Resumed session ${arg} (${String(restored.length)} messages).`,
+          });
           setMessages(resumedMessages);
           break;
         }
