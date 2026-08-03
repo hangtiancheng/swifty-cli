@@ -55,7 +55,9 @@ describe("mcpContentToToolOutput", () => {
   });
 
   it("omits the text block when the content is image-only", async () => {
-    const out = await mcpContentToToolOutput([{ type: "image", data: DATA, mimeType: "image/png" }]);
+    const out = await mcpContentToToolOutput([
+      { type: "image", data: DATA, mimeType: "image/png" },
+    ]);
     if (typeof out === "string") {
       throw new Error("expected content blocks");
     }

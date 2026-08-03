@@ -23,7 +23,7 @@
 import { describe, it, expect } from "vitest";
 
 import { ConversationManager } from "../src/conversation/conversation.js";
-import { buildAnthropicMessages } from "../src/llm/anthropic.js";
+import { buildAnthropicMessages, markLastUserTailForCache } from "../src/llm/anthropic.js";
 import { buildOpenAIInput } from "../src/llm/openai.js";
 
 import { asRecord, strArg } from "@/utils/index.js";
@@ -174,6 +174,76 @@ describe("ConversationManager", () => {
       expect(strArg(asRecord(content[0]), "type")).toBe("text");
       expect(strArg(asRecord(content[1]), "type")).toBe("text");
       expect(strArg(asRecord(content[2]), "type")).toBe("image");
+    });
+
+    it("still merges a following text-only user after an image-carrying user", () => {
+      const mgr = new ConversationManager();
+      mgr.addUserMessage([
+        { type: "text", text: "with image" },
+        { type: "image", source: { type: "base64", media_type: "image/png", data: "QUJD" } },
+      ]);
+      mgr.addUserMessage("follow-up");
+      const result = buildAnthropicMessages(mgr.getMessages());
+      expect(result).toHaveLength(1);
+      const content = result[0].content;
+      expect(Array.isArray(content) ? content.map((b) => asRecord(b).type) : []).toEqual([
+        "text",
+        "image",
+        "text",
+      ]);
+    });
+
+    it("embeds tool_result image blocks as a content block array", () => {
+      const mgr = new ConversationManager();
+      mgr.addToolResultMessage(
+        "tu-1",
+        [
+          { type: "text", text: "[image: shot.png]" },
+          { type: "image", source: { type: "base64", media_type: "image/png", data: "QUJD" } },
+        ],
+        false,
+      );
+      const result = buildAnthropicMessages(mgr.getMessages());
+      const block = asRecord(result[0].content[0]);
+      expect(strArg(block, "type")).toBe("tool_result");
+      const inner = block.content;
+      expect(Array.isArray(inner) ? inner.map((b) => asRecord(b).type) : []).toEqual([
+        "text",
+        "image",
+      ]);
+    });
+
+    it("marks the last non-image block for caching, not the trailing image", () => {
+      const mgr = new ConversationManager();
+      mgr.addUserMessage([
+        { type: "text", text: "prompt" },
+        { type: "image", source: { type: "base64", media_type: "image/png", data: "QUJD" } },
+      ]);
+      const messages = buildAnthropicMessages(mgr.getMessages());
+      markLastUserTailForCache(messages);
+      const content = messages[0].content;
+      if (typeof content === "string") {
+        throw new Error("expected blocks");
+      }
+      expect(asRecord(content[0]).cache_control).toEqual({ type: "ephemeral" });
+      expect(asRecord(content[1]).cache_control).toBeUndefined();
+    });
+
+    it("falls back to the trailing image when every block is an image", () => {
+      const messages: Parameters<typeof markLastUserTailForCache>[0] = [
+        {
+          role: "user",
+          content: [
+            { type: "image", source: { type: "base64", media_type: "image/png", data: "QUJD" } },
+          ],
+        },
+      ];
+      markLastUserTailForCache(messages);
+      const content = messages[0].content;
+      if (typeof content === "string") {
+        throw new Error("expected blocks");
+      }
+      expect(asRecord(content[0]).cache_control).toEqual({ type: "ephemeral" });
     });
   });
 

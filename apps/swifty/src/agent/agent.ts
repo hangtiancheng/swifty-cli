@@ -786,10 +786,13 @@ export class Agent {
       ...(last.toolUses?.length ? { tool_uses: toolUsesToRecords(last.toolUses) } : {}),
       ...(last.toolResults?.length
         ? {
-            tool_results: toolResultsToRecords({
-              workDir: this.workDir,
-              sessionId: this.sessionId,
-            } /** ctx */, last.toolResults),
+            tool_results: toolResultsToRecords(
+              {
+                workDir: this.workDir,
+                sessionId: this.sessionId,
+              } /** ctx */,
+              last.toolResults,
+            ),
           }
         : {}),
     });

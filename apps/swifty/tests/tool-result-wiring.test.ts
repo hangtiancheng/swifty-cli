@@ -267,9 +267,7 @@ describe("image tool result wiring", () => {
     // The tool_result event carries the structured blocks (union output).
     const resultEvent = events.find((e) => e.type === "tool_result");
     expect(resultEvent?.type).toBe("tool_result");
-    expect(Array.isArray(resultEvent?.type === "tool_result" ? resultEvent.output : "")).toBe(
-      true,
-    );
+    expect(Array.isArray(resultEvent?.type === "tool_result" ? resultEvent.output : "")).toBe(true);
 
     // History holds the blocks, not flattened text.
     const tr = toolResultsMsg(conv)?.toolResults?.[0];

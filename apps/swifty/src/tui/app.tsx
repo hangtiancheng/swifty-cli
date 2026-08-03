@@ -834,6 +834,7 @@ export function App({
               registryRef.current.listTools().map((t) => t.name),
               // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
               registryRef.current.getAllSchemas() as ToolSchema[],
+              sessionMod.getSessionFilePath(workDir, sessionIdRef.current),
             )
               .then((result) => {
                 // Persist the boundary so the compacted state survives /resume.
