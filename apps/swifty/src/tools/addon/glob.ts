@@ -71,7 +71,7 @@ export class GlobTool implements Tool {
     };
   }
 
-   execute(ctx: ToolContext, args: Record<string, unknown>): Promise<ToolResult> {
+  execute(ctx: ToolContext, args: Record<string, unknown>): Promise<ToolResult> {
     const pattern = strArg(args, "pattern");
     if (!pattern) {
       return Promise.resolve({
