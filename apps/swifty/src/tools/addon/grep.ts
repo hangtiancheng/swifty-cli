@@ -22,7 +22,7 @@
 
 import type { Stats } from "node:fs";
 import { readdir, readFile, stat } from "node:fs/promises";
-import { join, relative } from "node:path";
+import { join, relative, resolve, sep } from "node:path";
 
 import { Glob } from "@swifty.js/glob-addon";
 
@@ -67,7 +67,7 @@ export class GrepTool implements Tool {
         },
         include: {
           type: "string" as const,
-          description: "File pattern filter (e.g., '*.ts')",
+          description: "File pattern filter (e.g., '*.ts', 'src/**/*.js')",
         },
       },
       required: ["pattern"],
@@ -89,12 +89,12 @@ export class GrepTool implements Tool {
       };
     }
 
-    const searchPath = strArg(args, "path", ctx.workDir);
+    const searchPath = resolve(ctx.workDir, strArg(args, "path", ctx.workDir));
     const include = strArg(args, "include");
 
     let regex: RegExp;
     try {
-      regex = new RegExp(pattern);
+      regex = new RegExp(pattern, "i");
     } catch (err) {
       log.error({ err }, "tool operation failed");
       return {
@@ -104,6 +104,17 @@ export class GrepTool implements Tool {
     }
 
     const includeGlob = include ? new Glob(include) : null;
+    // Patterns with "/" match the workDir-relative path (gitignore/ripgrep
+    // semantics, same form as printed results); bare patterns match the
+    // basename so "*.ts" filters at any depth.
+    const includeHasSlash = include.includes("/");
+    const matchesInclude = (fullPath: string, name: string): boolean => {
+      if (!includeGlob) {
+        return true;
+      }
+      const target = includeHasSlash ? relative(ctx.workDir, fullPath).split(sep).join("/") : name;
+      return includeGlob.match(target);
+    };
     const results: string[] = [];
 
     const walk = async (dir: string): Promise<void> => {
@@ -138,7 +149,7 @@ export class GrepTool implements Tool {
         if (fileStat.isDirectory()) {
           await walk(fullPath);
         } else if (fileStat.isFile()) {
-          if (includeGlob && !includeGlob.match(entry)) {
+          if (!matchesInclude(fullPath, entry)) {
             continue;
           }
           await searchFile(fullPath);

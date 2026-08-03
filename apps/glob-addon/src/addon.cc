@@ -28,12 +28,33 @@
 namespace fs = std::filesystem;
 
 // ---------------------------------------------------------------------------
-// Glob matching (supports *, **, ?, literal characters)
+// Glob matching, aligned with Bun.Glob semantics:
+// *, **, ?, [abc] / [a-z] / [!abc], {a,b} alternates (nestable),
+// \ escapes, and leading ! whole-pattern negation.
 // ---------------------------------------------------------------------------
+
+// Find the '}' matching the '{' at openIdx (nesting-aware, honors \ escapes).
+// Returns std::string::npos when unterminated.
+static size_t findBraceClose(const std::string &pattern, size_t openIdx) {
+  int depth = 0;
+  for (size_t i = openIdx; i < pattern.size(); ++i) {
+    char c = pattern[i];
+    if (c == '\\') {
+      ++i;
+    } else if (c == '{') {
+      ++depth;
+    } else if (c == '}') {
+      --depth;
+      if (depth == 0)
+        return i;
+    }
+  }
+  return std::string::npos;
+}
 
 static bool matchFrom(const std::string &pattern, size_t pi,
                       const std::string &text, size_t ti) {
-  while (pi < pattern.size() && ti < text.size()) {
+  while (pi < pattern.size()) {
     char pc = pattern[pi];
 
     if (pc == '*' && pi + 1 < pattern.size() && pattern[pi + 1] == '*') {
@@ -66,8 +87,9 @@ static bool matchFrom(const std::string &pattern, size_t pi,
         }
       }
       return false;
+    }
 
-    } else if (pc == '*') {
+    if (pc == '*') {
       // * single star: match any chars except '/'
       size_t restPi = pi + 1;
       for (size_t i = ti; i <= text.size(); ++i) {
@@ -77,30 +99,123 @@ static bool matchFrom(const std::string &pattern, size_t pi,
           break;
       }
       return false;
-
-    } else if (pc == '?') {
-      if (text[ti] == '/')
-        return false;
-      ++pi;
-      ++ti;
-
-    } else {
-      if (pc != text[ti])
-        return false;
-      ++pi;
-      ++ti;
     }
+
+    if (pc == '{') {
+      size_t close = findBraceClose(pattern, pi);
+      if (close != std::string::npos) {
+        // {a,b} alternates: try each alternative followed by the rest
+        const std::string rest = pattern.substr(close + 1);
+        size_t altStart = pi + 1;
+        int depth = 0;
+        for (size_t i = pi + 1; i <= close; ++i) {
+          char c = pattern[i];
+          if (c == '\\') {
+            ++i;
+          } else if (c == '{') {
+            ++depth;
+          } else if (c == '}' && depth > 0) {
+            --depth;
+          } else if ((c == ',' && depth == 0) || i == close) {
+            std::string candidate =
+                pattern.substr(altStart, i - altStart) + rest;
+            if (matchFrom(candidate, 0, text, ti))
+              return true;
+            altStart = i + 1;
+          }
+        }
+        return false;
+      }
+      // unterminated '{' is a literal
+      if (ti >= text.size() || text[ti] != '{')
+        return false;
+      ++pi;
+      ++ti;
+      continue;
+    }
+
+    if (pc == '[') {
+      size_t j = pi + 1;
+      bool negatedClass = false;
+      if (j < pattern.size() && (pattern[j] == '!' || pattern[j] == '^')) {
+        negatedClass = true;
+        ++j;
+      }
+      size_t close = std::string::npos;
+      size_t k = j;
+      if (k < pattern.size() && pattern[k] == ']') {
+        ++k; // ']' right after '[' (or negation) is a literal member
+      }
+      for (; k < pattern.size(); ++k) {
+        if (pattern[k] == ']') {
+          close = k;
+          break;
+        }
+      }
+      if (close == std::string::npos) {
+        // unterminated '[' is a literal
+        if (ti >= text.size() || text[ti] != '[')
+          return false;
+        ++pi;
+        ++ti;
+        continue;
+      }
+      if (ti >= text.size() || text[ti] == '/')
+        return false;
+      char c = text[ti];
+      bool matched = false;
+      for (size_t m = j; m < close;) {
+        if (m + 2 < close && pattern[m + 1] == '-') {
+          if (pattern[m] <= c && c <= pattern[m + 2])
+            matched = true;
+          m += 3;
+        } else {
+          if (pattern[m] == c)
+            matched = true;
+          ++m;
+        }
+      }
+      if (matched == negatedClass)
+        return false;
+      pi = close + 1;
+      ++ti;
+      continue;
+    }
+
+    if (pc == '\\' && pi + 1 < pattern.size()) {
+      if (ti >= text.size() || pattern[pi + 1] != text[ti])
+        return false;
+      pi += 2;
+      ++ti;
+      continue;
+    }
+
+    if (pc == '?') {
+      if (ti >= text.size() || text[ti] == '/')
+        return false;
+      ++pi;
+      ++ti;
+      continue;
+    }
+
+    if (ti >= text.size() || pc != text[ti])
+      return false;
+    ++pi;
+    ++ti;
   }
 
-  // consume trailing wildcards
-  while (pi < pattern.size() && pattern[pi] == '*')
-    ++pi;
-
-  return pi == pattern.size() && ti == text.size();
+  return ti == text.size();
 }
 
 static bool globMatchImpl(const std::string &pattern, const std::string &text) {
-  return matchFrom(pattern, 0, text, 0);
+  size_t start = 0;
+  bool negated = false;
+  while (start < pattern.size() && pattern[start] == '!') {
+    negated = !negated;
+    ++start;
+  }
+  bool matched = matchFrom(pattern, start, text, 0);
+  return negated ? !matched : matched;
 }
 
 // ---------------------------------------------------------------------------
@@ -146,7 +261,7 @@ static void scanDir(const fs::path &dir, const fs::path &rootDir,
         continue;
 
       std::string relativePath =
-          fs::relative(entry.path(), rootDir, ec).string();
+          fs::relative(entry.path(), rootDir, ec).generic_string();
 
       const std::string &matchTarget = hasSlash ? relativePath : name;
 

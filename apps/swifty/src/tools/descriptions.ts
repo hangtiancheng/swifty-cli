@@ -83,24 +83,25 @@ Usage Notes
 `;
 
 export const GLOB_DESCRIPTION = `
-File files matching a glob pattern, returning relative paths sorted alphabetically.
+Find files matching a glob pattern, returning relative paths sorted by modification time (newest first).
 
 Usage Notes
 
-- Supports patterns like "**/*.ts", "**/*.go".
+- Supports patterns like "**/*.ts", "src/js/*.js", "*.{ts,tsx}".
 - Search from "." or a specific path, never from "/".
 - Automatically skips .git, node_modules, __pycache__, and similar directories.
 - Use this instead of find or ls command via Bash.
 `;
 
 export const GREP_DESCRIPTION = `
-Search file content using a regex pattern, returning file:line:content matches.
+Search file content using a regex pattern (case-insensitive), returning file:line:content matches.
 
 Usage Notes
 
 - Supports full regex syntax (e.g., "log.*Error", "func\\s+\\w+").
-- Filter files with the include parameter (e.g., "*.ts", "*.go").
-- Search from ". or a specific path, never from "/".
+- Filter files with the include parameter (e.g., "*.ts", "*.{ts,tsx}", "src/**/*.js").
+- Include patterns containing "/" match the path relative to the working directory; bare patterns like "*.ts" match file names at any depth.
+- Search from "." or a specific path, never from "/".
 - Automatically skips .git, node_modules, __pycache__, and similar directories.
 - Use this instead of grep or rg commands via Bash.
 `;

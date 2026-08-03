@@ -21,7 +21,7 @@
  */
 
 import { statSync } from "fs";
-import { join } from "path";
+import { join, resolve } from "path";
 
 import { Glob } from "@swifty.js/glob-addon";
 
@@ -80,7 +80,7 @@ export class GlobTool implements Tool {
       });
     }
 
-    const basePath = strArg(args, "path", ctx.workDir);
+    const basePath = resolve(ctx.workDir, strArg(args, "path", ctx.workDir));
     try {
       const g = new Glob(pattern);
       const matches = g.scan({
