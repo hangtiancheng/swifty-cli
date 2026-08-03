@@ -352,6 +352,7 @@ function MessageBlock(props: MessageBlockProps) {
       );
     }
 
+    // Maybe dead code
     case "thinking": {
       return (
         <Box marginBottom={0}>
@@ -363,6 +364,7 @@ function MessageBlock(props: MessageBlockProps) {
       );
     }
 
+    // Maybe dead code
     case "tool_use": {
       return (
         <Box marginBottom={0}>
@@ -373,6 +375,8 @@ function MessageBlock(props: MessageBlockProps) {
         </Box>
       );
     }
+
+    // Maybe dead code
     case "tool_result": {
       const icon = message.isError ? COLORS.error(ICONS.error) : COLORS.success(ICONS.success);
       const timeStr = message.elapsed !== undefined ? ` (${message.elapsed.toFixed(1)}s)` : "";
