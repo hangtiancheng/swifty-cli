@@ -21,7 +21,13 @@
  */
 
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, it } from "node:test";
@@ -52,6 +58,20 @@ describe("Glob.match", () => {
     assert.equal(new Glob("**/*.js").match("src/js/a.js"), true);
     assert.equal(new Glob("src/**").match("src/a/b.c"), true);
     assert.equal(new Glob("src/**/lc*.js").match("src/js/lc/lc2632.js"), true);
+    // ** matches zero segments in the middle
+    assert.equal(new Glob("a/**/b").match("a/b"), true);
+    assert.equal(new Glob("a/**/b").match("a/x/y/b"), true);
+    // trailing /** also matches the bare prefix (zero segments)
+    assert.equal(new Glob("src/**").match("src"), true);
+    assert.equal(new Glob("src/**").match("srcx"), false);
+  });
+
+  it("treats ** that is not a full segment as a single *", () => {
+    assert.equal(new Glob("a**b").match("axb"), true);
+    assert.equal(new Glob("a**b").match("ab"), true);
+    assert.equal(new Glob("a**b").match("a/b"), false);
+    assert.equal(new Glob("a/***/b").match("a/x/b"), true);
+    assert.equal(new Glob("a/***/b").match("a/x/y/b"), false);
   });
 
   it("matches ? as a single non-separator character", () => {
@@ -68,12 +88,24 @@ describe("Glob.match", () => {
     assert.equal(new Glob("{src,test}/**/*.ts").match("lib/x/y.ts"), false);
   });
 
-  it("matches nested and empty brace alternates", () => {
+  it("matches nested, empty and single-alternative braces", () => {
     assert.equal(new Glob("a.{t{s,sx},js}").match("a.tsx"), true);
     assert.equal(new Glob("a.{t{s,sx},js}").match("a.js"), true);
     assert.equal(new Glob("a{,b}").match("a"), true);
     assert.equal(new Glob("a{,b}").match("ab"), true);
     assert.equal(new Glob("a{,b}").match("ac"), false);
+    assert.equal(new Glob("a.{ts}").match("a.ts"), true);
+  });
+
+  it("matches alternates containing slashes", () => {
+    assert.equal(new Glob("{src/js,lib}/*.js").match("src/js/a.js"), true);
+    assert.equal(new Glob("{src/js,lib}/*.js").match("lib/a.js"), true);
+    assert.equal(new Glob("{src/js,lib}/*.js").match("src/a.js"), false);
+  });
+
+  it("throws when brace expansion is too large", () => {
+    const bomb = "{a,b}".repeat(20); // 2^20 alternatives
+    assert.throws(() => new Glob(bomb).match("a"), RangeError);
   });
 
   it("matches character classes with ranges and negation", () => {
@@ -86,6 +118,18 @@ describe("Glob.match", () => {
     assert.equal(new Glob("[^a]x").match("bx"), true);
     // class never matches a separator
     assert.equal(new Glob("a[/]b").match("a/b"), false);
+    // '-' at the edge is a literal member, not a range
+    assert.equal(new Glob("[a-]x").match("-x"), true);
+    assert.equal(new Glob("[a-]x").match("ax"), true);
+    assert.equal(new Glob("[a-]x").match("bx"), false);
+  });
+
+  it("supports backslash escapes inside character classes", () => {
+    assert.equal(new Glob("[\\]]x").match("]x"), true);
+    assert.equal(new Glob("[\\]]x").match("ax"), false);
+    // escaped '-' is a literal member, not a range
+    assert.equal(new Glob("[a\\-c]x").match("-x"), true);
+    assert.equal(new Glob("[a\\-c]x").match("bx"), false);
   });
 
   it("treats ] right after [ as a literal member", () => {
@@ -109,6 +153,22 @@ describe("Glob.match", () => {
     assert.equal(new Glob("!*.js").match("a.md"), true);
     assert.equal(new Glob("!*.js").match("a.js"), false);
     assert.equal(new Glob("!!*.js").match("a.js"), true);
+  });
+
+  it("matches non-ASCII file names", () => {
+    assert.equal(new Glob("*.js").match("\u4e2d\u6587.js"), true);
+    assert.equal(
+      new Glob("src/**/*.md").match("src/\u6587\u6863/\u8bf4\u660e.md"),
+      true,
+    );
+  });
+
+  it("rejects pathological star backtracking quickly", () => {
+    const started = Date.now();
+    const matched = new Glob("*a*a*a*a*a*a*a*a*a*b").match("a".repeat(60));
+    const elapsed = Date.now() - started;
+    assert.equal(matched, false);
+    assert.ok(elapsed < 1000, `pathological match took ${elapsed}ms`);
   });
 });
 
@@ -159,6 +219,19 @@ describe("Glob.scan", () => {
     ]);
   });
 
+  it("still descends into directories named by other brace alternatives", () => {
+    const matches = new Glob("{src,other}/js/*.js").scan({ cwd: root });
+    assert.deepEqual(matches.sort(), ["src/js/curry.js", "src/js/promise.js"]);
+  });
+
+  it("supports negated patterns", () => {
+    const matches = new Glob("!*.{js,ts}").scan({
+      cwd: root,
+      exclude: ["node_modules"],
+    });
+    assert.deepEqual(matches.sort(), ["b.md"]);
+  });
+
   it("skips dotfiles unless dot is set", () => {
     const withoutDot = new Glob("*.js").scan({
       cwd: root,
@@ -192,5 +265,72 @@ describe("Glob.scan", () => {
   it("caps results at maxResults", () => {
     const matches = new Glob("**/*").scan({ cwd: root, maxResults: 2 });
     assert.equal(matches.length, 2);
+  });
+
+  it("rejects a negative maxResults", () => {
+    assert.throws(
+      () => new Glob("*.js").scan({ cwd: root, maxResults: -1 }),
+      TypeError,
+    );
+  });
+
+  it("throws for a missing or non-directory cwd", () => {
+    assert.throws(
+      () => new Glob("*.js").scan({ cwd: join(root, "does-not-exist") }),
+      /ENOENT/,
+    );
+    assert.throws(
+      () => new Glob("*.js").scan({ cwd: join(root, "a.js") }),
+      /ENOTDIR/,
+    );
+  });
+
+  it("finds files with non-ASCII names", () => {
+    const dir = mkdtempSync(join(tmpdir(), "glob-addon-unicode-"));
+    try {
+      mkdirSync(join(dir, "\u76ee\u5f55"));
+      writeFileSync(join(dir, "\u76ee\u5f55", "\u4e2d\u6587.js"), "\n");
+      const matches = new Glob("**/*.js").scan({ cwd: dir });
+      assert.deepEqual(matches, ["\u76ee\u5f55/\u4e2d\u6587.js"]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("survives symlink cycles and does not follow symlinked directories", () => {
+    const dir = mkdtempSync(join(tmpdir(), "glob-addon-symlink-"));
+    try {
+      mkdirSync(join(dir, "real"));
+      writeFileSync(join(dir, "real", "f.js"), "\n");
+      symlinkSync(dir, join(dir, "real", "loop")); // cycle back to the root
+      symlinkSync(join(dir, "missing"), join(dir, "broken")); // dangling
+
+      const matches = new Glob("**/*.js").scan({ cwd: dir });
+      assert.deepEqual(matches, ["real/f.js"]);
+      assert.equal(
+        matches.some((m) => m.includes("loop/")),
+        false,
+      );
+
+      // the symlink itself is reported as a plain file entry
+      const links = new Glob("**/loop").scan({ cwd: dir });
+      assert.deepEqual(links, ["real/loop"]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("prunes unrelated directory branches without losing matches", () => {
+    const dir = mkdtempSync(join(tmpdir(), "glob-addon-prune-"));
+    try {
+      mkdirSync(join(dir, "src", "a", "b"), { recursive: true });
+      mkdirSync(join(dir, "vendor", "deep", "deeper"), { recursive: true });
+      writeFileSync(join(dir, "src", "a", "b", "hit.ts"), "\n");
+      writeFileSync(join(dir, "vendor", "deep", "deeper", "miss.ts"), "\n");
+      const matches = new Glob("src/**/*.ts").scan({ cwd: dir });
+      assert.deepEqual(matches, ["src/a/b/hit.ts"]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

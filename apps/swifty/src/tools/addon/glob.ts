@@ -81,23 +81,13 @@ export class GlobTool implements Tool {
     }
 
     const basePath = resolve(ctx.workDir, strArg(args, "path", ctx.workDir));
+    const maxResults = 1000;
     try {
       const g = new Glob(pattern);
       const matches = g.scan({
         cwd: basePath,
         exclude: [...SKIP_DIRS],
-        maxResults: 1000,
-      });
-
-      matches.sort((a, b) => {
-        try {
-          const ma = statSync(join(basePath, a)).mtimeMs;
-          const mb = statSync(join(basePath, b)).mtimeMs;
-          return mb - ma;
-        } catch (err) {
-          log.error({ err }, "tool operation failed");
-          return a.localeCompare(b);
-        }
+        maxResults,
       });
 
       if (matches.length === 0) {
@@ -107,8 +97,25 @@ export class GlobTool implements Tool {
         });
       }
 
+      const mtimes = new Map<string, number>();
+      for (const match of matches) {
+        let mtime = 0;
+        try {
+          mtime = statSync(join(basePath, match)).mtimeMs;
+        } catch (err) {
+          log.debug({ err, match }, "stat failed while sorting glob results");
+        }
+        mtimes.set(match, mtime);
+      }
+      matches.sort((a, b) => (mtimes.get(b) ?? 0) - (mtimes.get(a) ?? 0) || a.localeCompare(b));
+
+      let output = matches.join("\n");
+      if (matches.length >= maxResults) {
+        output += `\n(Results limited to ${maxResults} files. Use a more specific pattern.)`;
+      }
+
       return Promise.resolve({
-        output: matches.join("\n"),
+        output,
         isError: false,
       });
     } catch (err) {

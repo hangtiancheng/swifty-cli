@@ -5,5 +5,14 @@
     "*.vue": "vue",
     "*.gyp": "json"
   },
-  "cmake.ignoreCMakeListsMissing": true
+  "cmake.ignoreCMakeListsMissing": true,
+  "cSpell.words": [
+    "DNAPI",
+    "gypfile",
+    "hangtiancheng",
+    "minimatch",
+    "stdc",
+    "STDCPPFS",
+    "swifty"
+  ]
 }

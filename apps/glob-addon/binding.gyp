@@ -19,6 +19,17 @@
               "CLANG_CXX_LANGUAGE_STANDARD": "c++17"
             }
           }
+        ],
+        [
+          "OS=='win'",
+          {
+            "msvs_settings": {
+              "VCCLCompilerTool": {
+                "ExceptionHandling": 1,
+                "AdditionalOptions": ["/std:c++17", "/utf-8"]
+              }
+            }
+          }
         ]
       ]
     }

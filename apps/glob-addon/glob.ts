@@ -72,6 +72,23 @@ export interface GlobOptions {
   dot?: boolean;
 }
 
+/**
+ * Glob matcher backed by the native addon.
+ *
+ * Pattern syntax: `*` (within a segment), `**` (zero or more whole segments;
+ * a `**` that is not a complete segment, e.g. `a**b`, behaves like `*`),
+ * `?`, `[a-z]` / `[!a-z]` classes with `\` escapes, `{a,b}` alternates
+ * (nestable, expansion capped), `\` escapes, and leading `!` negation.
+ *
+ * `scan()` notes:
+ * - A pattern without `/` is matched against basenames at every depth
+ *   (so `*.js` finds matches recursively); patterns with `/` match the
+ *   `/`-separated path relative to `cwd`.
+ * - Symlinks are never followed: they are reported as plain files and
+ *   symlinked directories are not descended into (cycle-safe).
+ * - Throws if `cwd` does not exist or is not a directory, and if brace
+ *   expansion exceeds the safety cap.
+ */
 export class Glob {
   readonly pattern: string;
   readonly dot: boolean;
@@ -90,7 +107,7 @@ export class Glob {
       this.pattern,
       options?.cwd ?? null,
       options?.exclude ?? null,
-      options?.dot ?? this.dot ?? null,
+      options?.dot ?? this.dot,
       options?.maxResults ?? null,
     );
   }
