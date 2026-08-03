@@ -102,7 +102,7 @@ export class ReadFileTool implements Tool {
     }
 
     if (isImagePath(filePath)) {
-      return this.readImage(filePath);
+      return this.readImage(ctx, filePath, stat.mtimeMs);
     }
 
     const offset = intArg(args, "offset", 0);
@@ -131,9 +131,20 @@ export class ReadFileTool implements Tool {
     }
   }
 
-  private async readImage(filePath: string): Promise<ToolResult> {
+  private async readImage(
+    ctx: ToolContext,
+    filePath: string,
+    mtimeMs: number,
+  ): Promise<ToolResult> {
     try {
       const attachment = await loadImageAttachment(filePath);
+      ctx.fileStateCache?.record(filePath, mtimeMs);
+      // A leading text block anchors the image to its file for the model and
+      // gives text-only consumers (TUI summary, transcripts) a useful label.
+      const labelBlock: Record<string, unknown> = {
+        type: "text",
+        text: `[image: ${basename(filePath)} · ${attachment.mediaType} · ${formatSize(attachment.byteLength)}]`,
+      };
       const imageBlock: Record<string, unknown> = {
         type: "image",
         source: {
@@ -142,7 +153,7 @@ export class ReadFileTool implements Tool {
           data: attachment.data,
         },
       };
-      return { output: [imageBlock], isError: false };
+      return { output: [labelBlock, imageBlock], isError: false };
     } catch (err) {
       log.error({ err }, "image read failed");
       return {
@@ -151,4 +162,14 @@ export class ReadFileTool implements Tool {
       };
     }
   }
+}
+
+function formatSize(bytes: number): string {
+  if (bytes >= 1024 * 1024) {
+    return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
+  }
+  if (bytes >= 1024) {
+    return `${String(Math.round(bytes / 1024))}KB`;
+  }
+  return `${String(bytes)}B`;
 }

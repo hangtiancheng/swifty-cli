@@ -39,7 +39,9 @@ export interface ThinkingBlock {
 
 export interface Message {
   role: "user" | "assistant" | "system";
-  content: string;
+  /** Plain text, or content blocks (text/image) for user messages carrying
+   * attachments. Assistant/system content is always plain text in practice. */
+  content: string | Record<string, unknown>[];
   thinkingBlocks?: ThinkingBlock[] | undefined;
   toolUses?: ToolUseBlock[] | undefined;
   toolResults?: ToolResultBlock[] | undefined;
@@ -51,7 +53,7 @@ export class ConversationManager {
   private baselineTokens = 0;
   private _anchorCount = 0;
 
-  addUserMessage(content: string): void {
+  addUserMessage(content: string | Record<string, unknown>[]): void {
     this.history.push({
       role: "user",
       content,

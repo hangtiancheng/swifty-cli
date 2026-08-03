@@ -100,7 +100,7 @@ import type { ToolSchema } from "../tools/types.js";
 import { WriteFileTool } from "../tools/write-file.js";
 
 import { BUILTIN_AGENTS } from "@/subagent/definition.js";
-import { strArg } from "@/utils/index.js";
+import { contentToText, strArg } from "@/utils/index.js";
 
 const log = createChildLogger({ module: "remote" });
 
@@ -312,7 +312,7 @@ class AgentHandleImpl implements RemoteAgentHandle {
           const summary = conv
             .getMessages()
             .slice(-40)
-            .map((m) => `[${m.role}]: ${m.content}`)
+            .map((m) => `[${m.role}]: ${contentToText(m.content)}`)
             .filter((s) => s.length > 12)
             .join("\n");
           new MemoryExtractor(this.client, this.workDir).extract(summary).catch(() => {
@@ -444,7 +444,7 @@ export async function createRemoteAgent(
       const msgs = conv?.getMessages() ?? [];
       return msgs
         .slice(-count)
-        .map((m) => `${m.role}: ${m.content}`)
+        .map((m) => `${m.role}: ${contentToText(m.content)}`)
         .join("\n");
     },
     runSubagent: async (prompt: string) => {
@@ -1019,7 +1019,7 @@ export class RemoteServer {
           data: {
             toolId: ev.toolId,
             toolName: ev.toolName,
-            output: ev.output,
+            output: contentToText(ev.output),
             isError: ev.isError,
             elapsed: ev.elapsed,
           },
@@ -1476,7 +1476,7 @@ export class RemoteServer {
       // Tool blocks must be restored as well, otherwise the replayed history will have a broken call chain
       if (msg.toolUses?.length) {
         handle.conv.addAssistantMessageWithTools(
-          msg.content,
+          contentToText(msg.content),
           msg.toolUses.map((tu) => ({ ...tu, arguments: tu.arguments ?? {} })),
         );
       } else if (msg.toolResults?.length) {
@@ -1490,18 +1490,19 @@ export class RemoteServer {
       } else if (msg.role === "user") {
         handle.conv.addUserMessage(msg.content);
       } else {
-        handle.conv.addAssistantMessage(msg.content);
+        handle.conv.addAssistantMessage(contentToText(msg.content));
       }
       // Messages carrying only tool results have no text content; skip pushing them to the frontend
       if (!msg.content) {
         continue;
       }
+      const displayContent = contentToText(msg.content);
       if (msg.role === "user") {
-        this.broadcast({ type: "replay_user", data: { content: msg.content } });
+        this.broadcast({ type: "replay_user", data: { content: displayContent } });
       } else {
         this.broadcast({
           type: "replay_assistant",
-          data: { content: msg.content },
+          data: { content: displayContent },
         });
       }
     }

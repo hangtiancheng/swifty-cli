@@ -32,6 +32,7 @@ import type { StreamEvent, UsageInfo } from "../src/llm/events.js";
 import { PermissionChecker } from "../src/permissions/checker.js";
 import { ToolRegistry } from "../src/tools/registry.js";
 import type { Tool } from "../src/tools/types.js";
+import { contentToText } from "../src/utils/index.js";
 
 const USAGE: UsageInfo = {
   inputTokens: 1,
@@ -214,6 +215,8 @@ describe("Agent loop", () => {
       hookEngine,
     });
 
-    expect(conversation.getMessages().some((m) => m.content.includes("REMINDER_NOTE"))).toBe(true);
+    expect(
+      conversation.getMessages().some((m) => contentToText(m.content).includes("REMINDER_NOTE")),
+    ).toBe(true);
   });
 });

@@ -269,10 +269,12 @@ export class MemoryExtractor {
   }
 
   /** Extract file paths from WriteFile/EditFile tool calls in conversation messages */
-  private extractWrittenPaths(messages: { role: string; content: string }[]): string[] {
+  private extractWrittenPaths(
+    messages: { role: string; content: string | Record<string, unknown>[] }[],
+  ): string[] {
     const paths: string[] = [];
     for (const msg of messages) {
-      if (msg.role !== "assistant") {
+      if (msg.role !== "assistant" || typeof msg.content !== "string") {
         continue;
       }
       // Match the file_path argument in tool_use blocks

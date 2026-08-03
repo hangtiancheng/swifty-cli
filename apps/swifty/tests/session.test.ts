@@ -20,7 +20,7 @@
  * SOFTWARE.
  */
 
-import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -35,6 +35,7 @@ import {
   rebuildFromSession,
   COMPACT_BOUNDARY,
 } from "../src/session/session.js";
+import { asString, contentToText } from "../src/utils/index.js";
 
 const t0 = Math.floor(Date.now() / 1000);
 const t1 = t0 + 1;
@@ -81,6 +82,39 @@ describe("session save/load round-trip", () => {
 
     const loaded = loadSession(workDir, id);
     expect(loaded.map((m) => m.content)).toEqual(["ok", "good"]);
+  });
+
+  it("round-trips a user message with image blocks via image_ref records", () => {
+    const workDir = mkdtempSync(join(tmpdir(), "swifty-sess-"));
+    const id = newSessionId();
+    const data = Buffer.from("user-attached-image").toString("base64");
+
+    saveMessage(workDir, id, {
+      role: "user",
+      content: [
+        { type: "text", text: "look at @shot.png" },
+        { type: "image", source: { type: "base64", media_type: "image/png", data } },
+      ],
+      timestamp: t0,
+    });
+
+    // The JSONL stores a ref, never the base64 payload.
+    const raw = readFileSync(join(workDir, ".swifty", "sessions", `${id}.jsonl`), "utf-8");
+    expect(raw).toContain("image_ref");
+    expect(raw).not.toContain(data);
+
+    // Resume restores the inline image block byte-identically.
+    const restored = rebuildFromSession(loadSession(workDir, id));
+    expect(restored).toHaveLength(1);
+    const content = restored[0].content;
+    if (typeof content === "string") {
+      throw new Error("expected content blocks");
+    }
+    expect(content[0]).toEqual({ type: "text", text: "look at @shot.png" });
+    expect(content[1]).toEqual({
+      type: "image",
+      source: { type: "base64", media_type: "image/png", data },
+    });
   });
 
   it("labels a session by its first user message", () => {
@@ -150,7 +184,7 @@ describe("rebuildFromSession (compacted-state resume)", () => {
 
     const saved = loadSession(workDir, id);
     const rebuilt = rebuildFromSession(saved);
-    const joined = rebuilt.map((m) => `${m.role}:${m.content}`).join("\n");
+    const joined = rebuilt.map((m) => `${m.role}:${contentToText(m.content)}`).join("\n");
 
     // Summary is present with Chinese framing, replayed as a synthetic user message.
     expect(rebuilt[0].role).toBe("user");
@@ -200,7 +234,7 @@ describe("rebuildFromSession (compacted-state resume)", () => {
     });
 
     const rebuilt = rebuildFromSession(loadSession(workDir, id));
-    const joined = rebuilt.map((m) => `${m.role}:${m.content}`).join("\n");
+    const joined = rebuilt.map((m) => `${m.role}:${contentToText(m.content)}`).join("\n");
 
     expect(joined).toContain("SECOND-SUMMARY");
     expect(joined).toContain("SECOND-KEEP recent");
@@ -238,7 +272,7 @@ describe("rebuildFromSession (compacted-state resume)", () => {
     const saved = loadSession(workDir, id);
     expect(saved).toHaveLength(1);
     expect(saved[0].type).toBe(COMPACT_BOUNDARY);
-    expect(JSON.parse(saved[0].content ?? "{}")).toEqual({
+    expect(JSON.parse(asString(saved[0].content) || "{}")).toEqual({
       summary: "s",
       keep: [],
     });

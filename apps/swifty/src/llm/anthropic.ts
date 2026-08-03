@@ -36,7 +36,14 @@ import {
 import type { ConversationManager, Message } from "../conversation/conversation.js";
 import { ensureToolPairing } from "../conversation/pairing.js";
 import { createChildLogger } from "../logger/index.js";
-import { asErrorString, asRecord, asString, DANGEROUSLY_JSON, isRecord } from "../utils/index.js";
+import {
+  asErrorString,
+  asRecord,
+  asString,
+  contentToText,
+  DANGEROUSLY_JSON,
+  isRecord,
+} from "../utils/index.js";
 
 import type { LLMClient } from "./client.js";
 import {
@@ -128,6 +135,16 @@ function supportsAdaptiveThinking(): boolean {
   return true;
 }
 
+// User message content → Anthropic blocks. String content becomes a single
+// text block; block arrays (text/image) already use the provider shape.
+function userBlocksFor(content: Message["content"]): Anthropic.ContentBlockParam[] {
+  if (typeof content === "string") {
+    return [{ type: "text", text: content }];
+  }
+  // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+  return content as unknown as Anthropic.ContentBlockParam[];
+}
+
 export function buildAnthropicMessages(messages: Message[]): Anthropic.MessageParam[] {
   const result: Anthropic.MessageParam[] = [];
 
@@ -144,12 +161,14 @@ export function buildAnthropicMessages(messages: Message[]): Anthropic.MessagePa
         }
       } // end if (m.thinkingBlocks)
 
-      if (m.content) {
+      // Assistant content is model-produced text; flatten defensively.
+      const assistantText = typeof m.content === "string" ? m.content : contentToText(m.content);
+      if (assistantText) {
         blocks.push({
           type: "text",
-          text: m.content,
+          text: assistantText,
         });
-      } // end if (m.content)
+      }
 
       if (m.toolUses) {
         for (const tu of m.toolUses) {
@@ -195,7 +214,7 @@ export function buildAnthropicMessages(messages: Message[]): Anthropic.MessagePa
       if (result.length === 0) {
         result.push({
           role: "user",
-          content: [{ type: "text", text: m.content }],
+          content: userBlocksFor(m.content),
         });
         continue;
       }
@@ -209,7 +228,7 @@ export function buildAnthropicMessages(messages: Message[]): Anthropic.MessagePa
           (Array.isArray(content) &&
             content.length > 0 &&
             // content[0].type !== "tool_result"
-            content[0].type === "text")) //  || content[0].type === "image"
+            (content[0].type === "text" || content[0].type === "image")))
       ) {
         canMerge = true;
       }
@@ -228,14 +247,11 @@ export function buildAnthropicMessages(messages: Message[]): Anthropic.MessagePa
                 ]
               : [];
         }
-        content.push({
-          type: "text",
-          text: m.content,
-        });
+        content.push(...userBlocksFor(m.content));
       } else {
         result.push({
           role: "user",
-          content: [{ type: "text", text: m.content }],
+          content: userBlocksFor(m.content),
         });
       }
     }
@@ -547,7 +563,13 @@ export function markLastUserTailForCache(messages: Anthropic.Messages.MessagePar
     }
     // Prefer the last non-image block: some gateways reject cache_control on
     // image blocks. Fall back to the true tail if everything is an image.
-    const last: Anthropic.Messages.ContentBlockParam = content[content.length - 1];
+    let last: Anthropic.Messages.ContentBlockParam = content[content.length - 1];
+    for (let j = content.length - 1; j >= 0; j--) {
+      if (content[j].type !== "image") {
+        last = content[j];
+        break;
+      }
+    }
 
     // Sets the property of target, equivalent to target[propertyKey] = value when receiver === target.
     Reflect.set(last, "cache_control", {

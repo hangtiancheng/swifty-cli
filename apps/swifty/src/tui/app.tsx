@@ -107,7 +107,7 @@ import { WriteFileTool } from "../tools/write-file.js";
 import { connectToIde, type IdeConnection } from "../vscode/ide-client.js";
 
 import { AskUserDialog } from "./ask-user-dialog.js";
-import { expandAtRefs } from "./at-expand.js";
+import { expandAtRefsWithImages } from "./at-expand.js";
 import { ChatView, CommittedMessage, type ChatMessage, type ToolSummaryItem } from "./chat.js";
 import { InputBox } from "./input.js";
 import { PermissionDialog, type PermissionAction } from "./permission-dialog.js";
@@ -124,7 +124,7 @@ import { randomCompletionVerb } from "./verbs.js";
 import { version } from "./version.js";
 
 import type { ToolSchema } from "@/tools/types.js";
-import { asErrorString, asRecord, strArg } from "@/utils/index.js";
+import { asErrorString, asRecord, contentToText, strArg } from "@/utils/index.js";
 
 type AppState = "providerSelect" | "chat";
 
@@ -907,7 +907,7 @@ export function App({
             // history is missing its call chain and the model can't see what was done before
             if (m.toolUses?.length) {
               conv.addAssistantMessageWithTools(
-                m.content,
+                contentToText(m.content),
                 m.toolUses.map((tu) => ({
                   ...tu,
                   arguments: tu.arguments ?? {},
@@ -924,7 +924,7 @@ export function App({
             } else if (m.role === "user") {
               conv.addUserMessage(m.content);
             } else {
-              conv.addAssistantMessage(m.content);
+              conv.addAssistantMessage(contentToText(m.content));
             }
           }
           convRef.current = conv;
@@ -932,7 +932,7 @@ export function App({
           // Reload the task list for the resumed session.
           taskListRef.current.useStore(new TaskStore(workDir, arg));
           const resumedMessages: ChatMessage[] = [
-            ...restored,
+            ...restored.map((m) => ({ ...m, content: contentToText(m.content) })),
             {
               role: "system",
               content: `⟲ Resumed session ${arg} (${String(restored.length)} messages).`,
@@ -1158,7 +1158,7 @@ export function App({
           const msgs = convRef.current.getMessages();
           return msgs
             .slice(-count)
-            .map((m) => `[${m.role}] ${m.content}`)
+            .map((m) => `[${m.role}] ${contentToText(m.content)}`)
             .join("\n");
         },
       };
@@ -1229,10 +1229,12 @@ export function App({
       memManagerRef.current && clientRef.current
         ? memManagerRef.current
             .findRelevantMemories(
-              convRef.current
-                .getMessages()
-                .filter((m) => m.role === "user")
-                .pop()?.content ?? "",
+              contentToText(
+                convRef.current
+                  .getMessages()
+                  .filter((m) => m.role === "user")
+                  .pop()?.content ?? "",
+              ),
               clientRef.current,
             )
             .then((memories) => {
@@ -1300,7 +1302,7 @@ export function App({
         const summary = conv
           .getMessages()
           .slice(-40)
-          .map((m) => `[${m.role}]: ${m.content}`)
+          .map((m) => `[${m.role}]: ${contentToText(m.content)}`)
           .filter((s) => s.length > 12)
           .join("\n");
         // Lazy-init the Memory Extractor (one per session, reused across turns)
@@ -1408,13 +1410,14 @@ export function App({
         case "tool_result": {
           // Look up the argsSummary we saved during tool_use.
           const argsSummary = pendingToolArgs.get(`${event.toolName}:${event.toolId}`) ?? "";
+          const outputText = contentToText(event.output);
           // Update active tools spinner.
           setActiveTools((prev) =>
             prev.map((t) =>
               t.toolName === event.toolName && t.loading
                 ? {
                     ...t,
-                    output: event.output,
+                    output: outputText,
                     isError: event.isError,
                     elapsed: event.elapsed,
                     loading: false,
@@ -1426,7 +1429,7 @@ export function App({
           turnToolCalls.push({
             toolName: event.toolName,
             argsSummary,
-            output: event.output,
+            output: outputText,
             isError: event.isError,
             elapsed: event.elapsed,
           });
@@ -1656,14 +1659,19 @@ export function App({
     }
 
     setMessages((prev) => [...prev, { role: "user", content: text }]);
-    // Inline any @file references for the model; the UI/session keep the
-    // original text the user typed.
-    convRef.current.addUserMessage(expandAtRefs(text, workDir));
+    // Inline any @file references for the model; @image references become
+    // inline image content blocks. The UI keeps the original text the user typed.
+    const expanded = await expandAtRefsWithImages(text, workDir);
+    convRef.current.addUserMessage(expanded);
 
-    // Save to session
+    // Save to session: the original typed text, plus any attached image
+    // blocks (saveMessage swaps them for image_ref records on disk).
     sessionMod.saveMessage(workDir, sessionIdRef.current, {
       role: "user",
-      content: text,
+      content:
+        typeof expanded === "string"
+          ? text
+          : [{ type: "text", text }, ...expanded.filter((b) => b.type === "image")],
       timestamp: Math.floor(Date.now() / 1000),
     });
 

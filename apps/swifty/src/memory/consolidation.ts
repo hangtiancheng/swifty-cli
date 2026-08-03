@@ -339,11 +339,13 @@ function buildConsolidationPrompt(
 
 // --- Helpers ---
 
-function extractWrittenPaths(messages: { role: string; content: string }[]): string[] {
+function extractWrittenPaths(
+  messages: { role: string; content: string | Record<string, unknown>[] }[],
+): string[] {
   const paths: string[] = [];
   const seen = new Set<string>();
   for (const msg of messages) {
-    if (msg.role !== "assistant") {
+    if (msg.role !== "assistant" || typeof msg.content !== "string") {
       continue;
     }
     const matches = msg.content.matchAll(/"file_path"\s*:\s*"([^"]+)"/g);

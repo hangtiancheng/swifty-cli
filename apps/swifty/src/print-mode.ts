@@ -45,6 +45,7 @@ import { ToolRegistry } from "./tools/registry.js";
 import { SyntheticOutputTool } from "./tools/synthetic-output.js";
 import { ToolSearchTool } from "./tools/tool-search.js";
 import { WriteFileTool } from "./tools/write-file.js";
+import { contentToText } from "./utils/index.js";
 
 /** Supported output formats for -p (print) mode. */
 type OutputFormat = "text" | "stream-json";
@@ -276,7 +277,7 @@ function emitStreamJson(event: AgentEvent): void {
         JSON.stringify({
           type: "tool_result",
           tool_name: event.toolName,
-          output: event.output,
+          output: contentToText(event.output),
           is_error: event.isError,
           elapsed: event.elapsed,
         }),

@@ -157,6 +157,24 @@ describe("ConversationManager", () => {
       expect(strArg(asRecord(content[0]), "signature")).toBe("sig-1");
       expect(strArg(asRecord(content[content.length - 1]), "type")).toBe("tool_use");
     });
+
+    it("passes user image content blocks through and merges them into a previous user turn", () => {
+      const mgr = new ConversationManager();
+      mgr.addUserMessage("first");
+      mgr.addUserMessage([
+        { type: "text", text: "look at this" },
+        { type: "image", source: { type: "base64", media_type: "image/png", data: "QUJD" } },
+      ]);
+      const result = buildAnthropicMessages(mgr.getMessages());
+      // Consecutive user turns merge into one entry with text + image blocks.
+      expect(result).toHaveLength(1);
+      expect(result[0].role).toBe("user");
+      const content = result[0].content;
+      expect(content).toHaveLength(3);
+      expect(strArg(asRecord(content[0]), "type")).toBe("text");
+      expect(strArg(asRecord(content[1]), "type")).toBe("text");
+      expect(strArg(asRecord(content[2]), "type")).toBe("image");
+    });
   });
 
   describe("buildOpenAIInput", () => {

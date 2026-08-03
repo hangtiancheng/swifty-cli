@@ -742,7 +742,7 @@ export class Agent {
       type: "tool_result",
       toolName: r.toolName,
       toolId: r.toolId,
-      output: contentToText(r.result.output),
+      output: r.result.output,
       isError: r.result.isError,
       elapsed: r.elapsed,
     });
@@ -786,7 +786,10 @@ export class Agent {
       ...(last.toolUses?.length ? { tool_uses: toolUsesToRecords(last.toolUses) } : {}),
       ...(last.toolResults?.length
         ? {
-            tool_results: toolResultsToRecords(last.toolResults),
+            tool_results: toolResultsToRecords({
+              workDir: this.workDir,
+              sessionId: this.sessionId,
+            } /** ctx */, last.toolResults),
           }
         : {}),
     });

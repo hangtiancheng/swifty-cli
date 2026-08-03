@@ -431,7 +431,7 @@ ${prompt}`;
       };
     }
     for (const msg of this.conversation.getMessages()) {
-      if (msg.content.includes(FORK_BOILERPLATE_TAG)) {
+      if (typeof msg.content === "string" && msg.content.includes(FORK_BOILERPLATE_TAG)) {
         return {
           output:
             "Error: cannot fork from a forked agent. Use subagent_type to spawn a definition-based agent instead.",

@@ -62,7 +62,7 @@ export type TranscriptEntry = z.infer<typeof TranscriptEntrySchema>;
 function serializeConversation(conversation: ConversationManager): TranscriptEntry[] {
   const entries: TranscriptEntry[] = [];
   for (const msg of conversation.getMessages()) {
-    const entry: TranscriptEntry = { role: msg.role, content: msg.content };
+    const entry: TranscriptEntry = { role: msg.role, content: contentToText(msg.content) };
     if (msg.toolUses && msg.toolUses.length > 0) {
       entry.tool_uses = msg.toolUses.map((tu) => ({
         tool_use_id: tu.toolUseId,

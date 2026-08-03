@@ -31,11 +31,13 @@ import {
   unlinkSync,
   rmSync,
 } from "node:fs";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 
 import z, { parse, safeParse } from "zod";
 
+import { imageBlocksToRefBlocks, refBlocksToImageBlocks } from "../images/store.js";
 import { createChildLogger } from "../logger/index.js";
+import { contentToText } from "../utils/index.js";
 
 // Persistent session lines. Ordinary messages have an empty `type`, while compaction boundary records
 // have the type COMPACT_BOUNDARY. Their `content` is the JSON-serialized CompactBoundaryPayload
@@ -62,10 +64,14 @@ const ToolUseRecordSchema = z.object({
 });
 export type ToolUseRecord = z.infer<typeof ToolUseRecordSchema>;
 
+/** Message/tool-result content on disk: plain text, or content blocks where
+ *  inline images have been swapped for image_ref blocks. */
+const ContentSchema = z.union([z.string(), z.array(z.record(z.string(), z.unknown()))]);
+
 /** Persisted form of a tool result, paired with a ToolUseRecord via tool_use_id. */
 const ToolResultRecordSchema = z.object({
   tool_use_id: z.string(),
-  content: z.union([z.string(), z.array(z.record(z.string(), z.unknown()))]),
+  content: ContentSchema,
   is_error: z.boolean().optional(),
 });
 
@@ -73,7 +79,7 @@ export type ToolResultRecord = z.infer<typeof ToolResultRecordSchema>;
 
 const SessionMessageSchema = z.object({
   role: z.string(),
-  content: z.string().default(""),
+  content: ContentSchema.default(""),
   timestamp: z.number(),
   type: z.string().optional(),
   tool_uses: z.array(ToolUseRecordSchema).optional(),
@@ -86,7 +92,7 @@ export type SessionMessage = z.infer<typeof SessionMessageSchema>;
 // so that the tool call chain remains intact when the session is restored after compaction.
 const KeptMessageSchema = z.object({
   role: z.string(),
-  content: z.string(),
+  content: ContentSchema,
   tool_uses: z.array(ToolUseRecordSchema).optional(),
   tool_results: z.array(ToolResultRecordSchema).optional(),
 });
@@ -109,6 +115,7 @@ export function toolUsesToRecords(
 }
 
 export function toolResultsToRecords(
+  ctx?: { workDir: string; sessionId: string },
   toolResults?: {
     toolUseId: string;
     content: string | Record<string, unknown>[];
@@ -117,9 +124,31 @@ export function toolResultsToRecords(
 ): ToolResultRecord[] {
   return (toolResults ?? []).map((tr) => ({
     tool_use_id: tr.toolUseId,
-    content: tr.content,
+    content: persistableContent(tr.content, ctx),
     ...(tr.isError ? { is_error: true } : {}),
   }));
+}
+
+// Inline image blocks are persisted as image_ref blocks (binaries under
+// sessions/<id>/images/) so the base64 payload never lands in the JSONL.
+// Without a ctx the image degrades to a text note instead — mirroring how the
+// pre-refactor pipeline dropped images it could not store.
+export function persistableContent(
+  content: string | Record<string, unknown>[],
+  // A required parameter cannot follow an optional parameter
+  ctx?: { workDir: string; sessionId: string },
+): string | Record<string, unknown>[] {
+  if (typeof content === "string") {
+    return content;
+  }
+  if (ctx) {
+    return imageBlocksToRefBlocks(ctx.workDir, ctx.sessionId, content);
+  }
+  return content.map((block) =>
+    block.type === "image"
+      ? { type: "text", text: "[note: image omitted (no session storage available)]" }
+      : block,
+  );
 }
 
 const CompactBoundaryPayloadSchema = z.object({
@@ -148,6 +177,23 @@ export function getSessionFilePath(workDir: string, sessionId: string): string {
   return join(sessionsDir(workDir), sessionId + ".jsonl");
 }
 
+// Inverse of getSessionFilePath. Returns null when the path doesn't match the
+// <workDir>/.swifty/sessions/<id>.jsonl layout.
+export function sessionCtxFromFilePath(
+  filePath: string,
+): { workDir: string; sessionId: string } | null {
+  const base = basename(filePath);
+  if (!base.endsWith(".jsonl")) {
+    return null;
+  }
+  const dir = dirname(filePath);
+  const parent = dirname(dir);
+  if (basename(dir) !== "sessions" || basename(parent) !== ".swifty") {
+    return null;
+  }
+  return { workDir: dirname(parent), sessionId: base.slice(0, -".jsonl".length) };
+}
+
 export function newSessionId(): string {
   const ts = Date.now().toString(36);
   const rand = randomBytes(4).toString("hex");
@@ -158,7 +204,9 @@ export function saveMessage(workDir: string, sessionId: string, msg: SessionMess
   const dir = sessionsDir(workDir);
   mkdirSync(dir, { recursive: true });
   const filePath = join(dir, `${sessionId}.jsonl`);
-  const line = JSON.stringify(msg) + "\n";
+  // Inline image blocks (if any) are swapped for refs before hitting the JSONL.
+  const persisted = { ...msg, content: persistableContent(msg.content, { workDir, sessionId }) };
+  const line = JSON.stringify(persisted) + "\n";
   writeFileSync(filePath, line, { flag: /* append */ "a", encoding: "utf-8" });
 }
 
@@ -220,7 +268,7 @@ export function loadSession(workDir: string, sessionId: string): SessionMessage[
 // records map 1:1. This is the compacted-state reconstruction.
 export interface RestoredMessage {
   role: "user" | "assistant";
-  content: string;
+  content: string | Record<string, unknown>[];
   // In-memory form uses camelCase, consistent with the conversation layer; converted from snake_case disk records
   toolUses?: {
     toolUseId: string;
@@ -232,6 +280,12 @@ export interface RestoredMessage {
     content: string | Record<string, unknown>[];
     isError?: boolean;
   }[];
+}
+
+function restoreContent(
+  content: string | Record<string, unknown>[],
+): string | Record<string, unknown>[] {
+  return typeof content === "string" ? content : refBlocksToImageBlocks(content);
 }
 
 /** Persisted records (snake_case) → in-memory tool blocks (camelCase), used to restore the call chain on session resume. */
@@ -246,7 +300,7 @@ function recordsToCamelUses(recs?: ToolUseRecord[]) {
 function recordsToCamelResults(recs?: ToolResultRecord[]) {
   return recs?.map((tr) => ({
     toolUseId: tr.tool_use_id,
-    content: tr.content,
+    content: restoreContent(tr.content),
     isError: tr.is_error,
   }));
 }
@@ -276,7 +330,9 @@ export function rebuildFromSession(saved: SessionMessage[]): RestoredMessage[] {
     // Compacted state: summary + inlined keep, then post-boundary appends.
     let payload: CompactBoundaryPayload | null = null;
     try {
-      const payload_: unknown = JSON.parse(saved[lastBoundary].content);
+      // Boundary records always carry their payload as a JSON string.
+      const raw = saved[lastBoundary].content;
+      const payload_: unknown = typeof raw === "string" ? JSON.parse(raw) : null;
       payload = parse(CompactBoundaryPayloadSchema, payload_);
     } catch {
       payload = null;
@@ -303,7 +359,7 @@ export function rebuildFromSession(saved: SessionMessage[]): RestoredMessage[] {
 
         out.push({
           role: k.role,
-          content: k.content,
+          content: restoreContent(k.content),
           toolUses: recordsToCamelUses(k.tool_uses),
           toolResults: recordsToCamelResults(k.tool_results),
         });
@@ -348,7 +404,7 @@ function toRestored(m: SessionMessage): RestoredMessage | null {
   }
   return {
     role: m.role,
-    content: m.content,
+    content: restoreContent(m.content),
     toolUses: recordsToCamelUses(m.tool_uses),
     toolResults: recordsToCamelResults(m.tool_results),
   };
@@ -386,7 +442,7 @@ export function listSessions(workDir: string): SessionInfo[] {
         messageCount++;
         // Label the session by its first user message (untruncated role match).
         if (!firstMessage && m.role === "user" && m.content) {
-          firstMessage = m.content.slice(0, 100);
+          firstMessage = contentToText(m.content).slice(0, 100);
         }
       }
     } catch (err2) {
@@ -436,11 +492,17 @@ export function cleanExpiredSessions(workDir: string): number {
       const stat = statSync(filePath);
       if (now - stat.mtimeMs > expiryMs) {
         unlinkSync(filePath);
-        // Clean up the corresponding tool_results directory
+        // Clean up the corresponding tool_results and images directories
         const id = file.replace(".jsonl", "");
         const toolResultsDir = join(workDir, ".swifty", "sessions", id, "tool_results");
         try {
           rmSync(toolResultsDir, { recursive: true, force: true });
+        } catch {
+          /** noop */
+        }
+        const imagesDir = join(workDir, ".swifty", "sessions", id, "images");
+        try {
+          rmSync(imagesDir, { recursive: true, force: true });
         } catch {
           /** noop */
         }

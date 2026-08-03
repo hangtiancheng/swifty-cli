@@ -21,10 +21,10 @@
  */
 
 import { describe, it, expect } from "vitest";
-import z, { safeParse } from "zod";
+import z, { parse, safeParse } from "zod";
 
 import type { Message } from "../src/conversation/conversation.js";
-import { buildChatCompletionMessages } from "../src/llm/openai.js";
+import { buildChatCompletionMessages, buildOpenAIInput } from "../src/llm/openai.js";
 
 describe("openai-compat chat message building", () => {
   it("preserves assistant tool_calls and tool-result turns", () => {
@@ -86,5 +86,117 @@ describe("openai-compat chat message building", () => {
     // The plain user + final assistant turns survive too.
     expect(msgs.some((m) => m.role === "user" && m.content === "list files")).toBe(true);
     expect(msgs.some((m) => m.role === "assistant" && m.content === "Found a.txt")).toBe(true);
+  });
+});
+
+describe("image tool results over OpenAI endpoints", () => {
+  const DATA = Buffer.from("img-bytes").toString("base64");
+  const history: Message[] = [
+    {
+      role: "assistant",
+      content: "",
+      toolUses: [{ toolUseId: "c1", toolName: "ReadFile", arguments: { file_path: "a.png" } }],
+    },
+    {
+      role: "user",
+      content: "",
+      toolResults: [
+        {
+          toolUseId: "c1",
+          content: [
+            { type: "text", text: "[image: a.png]" },
+            { type: "image", source: { type: "base64", media_type: "image/png", data: DATA } },
+          ],
+          isError: false,
+        },
+      ],
+    },
+  ];
+
+  it("chat completions: flattens role:tool text and appends a synthetic user message with the image", () => {
+    const msgs = buildChatCompletionMessages(history);
+    const toolMsg = msgs.find((m) => m.role === "tool");
+    expect(toolMsg?.content).toContain("[image: a.png]");
+    expect(JSON.stringify(toolMsg)).not.toContain(DATA);
+
+    const synthetic = msgs.find((m) => m.role === "user" && Array.isArray(m.content));
+    expect(synthetic).toBeDefined();
+    const PartsSchema = z.array(
+      z.looseObject({
+        type: z.string(),
+        text: z.string().optional(),
+        image_url: z.looseObject({ url: z.string() }).optional(),
+      }),
+    );
+    const parts = parse(PartsSchema, synthetic?.content);
+    expect(parts[0].type).toBe("text");
+    expect(parts[0].text).toBe("[Image(s) returned by tool call c1]");
+    expect(parts[1].type).toBe("image_url");
+    expect(parts[1].image_url?.url).toBe(`data:image/png;base64,${DATA}`);
+  });
+
+  it("responses API: emits function_call_output text plus a synthetic user message with input_image", () => {
+    const items = buildOpenAIInput(history);
+    const fco = items.find((i) => "type" in i && i.type === "function_call_output");
+    expect(fco && "output" in fco ? fco.output : "").toContain("[image: a.png]");
+
+    const synthetic = items.find(
+      (i) => "role" in i && i.role === "user" && Array.isArray(i.content),
+    );
+    expect(synthetic).toBeDefined();
+    const PartsSchema = z.array(
+      z.looseObject({
+        type: z.string(),
+        text: z.string().optional(),
+        image_url: z.string().optional(),
+      }),
+    );
+    const parts = parse(PartsSchema, synthetic && "content" in synthetic ? synthetic.content : []);
+    expect(parts[0].type).toBe("input_text");
+    expect(parts[0].text).toBe("[Image(s) returned by tool call c1]");
+    expect(parts[1].type).toBe("input_image");
+    expect(parts[1].image_url).toBe(`data:image/png;base64,${DATA}`);
+  });
+
+  it("does not emit a dangling image header for text-only block arrays", () => {
+    const textOnly: Message[] = [
+      {
+        role: "user",
+        content: "",
+        toolResults: [
+          { toolUseId: "c2", content: [{ type: "text", text: "plain" }], isError: false },
+        ],
+      },
+    ];
+    const chat = buildChatCompletionMessages(textOnly);
+    expect(chat.some((m) => m.role === "user" && Array.isArray(m.content))).toBe(false);
+    const responses = buildOpenAIInput(textOnly);
+    expect(
+      responses.some((i) => "role" in i && i.role === "user" && Array.isArray(i.content)),
+    ).toBe(false);
+  });
+
+  it("converts user messages with image blocks into multimodal parts", () => {
+    const userWithImage: Message[] = [
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "what is this?" },
+          { type: "image", source: { type: "base64", media_type: "image/png", data: DATA } },
+        ],
+      },
+    ];
+
+    const chat = buildChatCompletionMessages(userWithImage);
+    expect(chat).toHaveLength(1);
+    const chatParts = chat[0].content;
+    expect(Array.isArray(chatParts)).toBe(true);
+    expect(JSON.stringify(chatParts)).toContain(`data:image/png;base64,${DATA}`);
+
+    const responses = buildOpenAIInput(userWithImage);
+    expect(responses).toHaveLength(1);
+    const respParts = "content" in responses[0] ? responses[0].content : null;
+    expect(Array.isArray(respParts)).toBe(true);
+    expect(JSON.stringify(respParts)).toContain("input_image");
   });
 });

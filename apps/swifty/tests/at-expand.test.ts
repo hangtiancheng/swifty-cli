@@ -20,13 +20,17 @@
  * SOFTWARE.
  */
 
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { describe, it, expect } from "vitest";
 
-import { expandAtRefs } from "@/tui/at-expand.js";
+import { expandAtRefs, expandAtRefsWithImages } from "@/tui/at-expand.js";
+import { isRecord, strArg } from "@/utils/index.js";
+
+const TEST_PNG_PATH = join(dirname(fileURLToPath(import.meta.url)), "test.png");
 
 describe("@file mention expansion", () => {
   it("inline a referenced file's contents", () => {
@@ -55,5 +59,41 @@ describe("@file mention expansion", () => {
     writeFileSync(join(workDir, "a.txt"), "AAA");
     const out = expandAtRefs("@a.txt and again @a.txt", workDir);
     expect(out.match(/<file path="a.txt">/g)?.length).toBe(1);
+  });
+});
+
+describe("@image mention expansion (expandAtRefsWithImages)", () => {
+  it("returns a plain string when no image is referenced", async () => {
+    const workDir = mkdtempSync(join(tmpdir(), "swifty-at-img-"));
+    writeFileSync(join(workDir, "a.txt"), "AAA");
+    const out = await expandAtRefsWithImages("read @a.txt", workDir);
+    expect(typeof out).toBe("string");
+    expect(out).toContain("AAA");
+  });
+
+  it("loads @image refs as inline image blocks with a placeholder appendix", async () => {
+    const workDir = mkdtempSync(join(tmpdir(), "swifty-at-img-"));
+    copyFileSync(TEST_PNG_PATH, join(workDir, "shot.png"));
+    writeFileSync(join(workDir, "notes.md"), "context");
+
+    const out = await expandAtRefsWithImages("see @shot.png and @notes.md", workDir);
+    if (typeof out === "string") {
+      throw new Error("expected content blocks");
+    }
+    // Leading text block keeps the typed text, the placeholder, and the
+    // inlined text file.
+    expect(out[0].type).toBe("text");
+    const text = strArg(out[0], "text");
+    expect(text).toContain("see @shot.png and @notes.md");
+    expect(text).toContain('<attached-image path="shot.png"/>');
+    expect(text).toContain('<file path="notes.md">');
+    // Followed by the image block.
+    const image = out.find((b) => b.type === "image");
+    expect(image).toBeDefined();
+    const source = image?.source;
+    expect(isRecord(source) ? source.type : null).toBe("base64");
+    expect(isRecord(source) && typeof source.data === "string" && source.data.length > 0).toBe(
+      true,
+    );
   });
 });

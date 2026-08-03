@@ -291,50 +291,99 @@ function imageDataUrl(block: Record<string, unknown>): string | null {
 }
 
 function collectImageContents(tr: ToolResultBlock): OpenAI.Responses.ResponseInputContent[] {
-  const { toolUseId, content /** , isError */ } = tr;
-  if (typeof content === "string" || content.length === 0) {
+  const { toolUseId, content } = tr;
+  if (typeof content === "string") {
     return [];
   }
-  const contents: OpenAI.Responses.ResponseInputContent[] = [
-    {
-      type: "input_text",
-      text: `[Image(s) returned by tool call ${toolUseId}`,
-    },
-  ];
+  const images: OpenAI.Responses.ResponseInputContent[] = [];
   for (const block of content) {
     const url = imageDataUrl(block);
     if (url) {
-      contents.push({
+      images.push({
         type: "input_image",
-        image_url: imageDataUrl(block),
+        image_url: url,
         detail: "auto",
       });
     }
   }
-  return contents;
+  if (images.length === 0) {
+    return [];
+  }
+  return [
+    {
+      type: "input_text",
+      text: `[Image(s) returned by tool call ${toolUseId}]`,
+    },
+    ...images,
+  ];
 }
 
 function collectImageParts(tr: ToolResultBlock): OpenAI.ChatCompletionContentPart[] {
-  const { toolUseId, content /** , isError */ } = tr;
-  if (typeof content === "string" || content.length === 0) {
+  const { toolUseId, content } = tr;
+  if (typeof content === "string") {
     return [];
   }
-  const contents: OpenAI.ChatCompletionContentPart[] = [
-    {
-      type: "text",
-      text: `[Image(s) returned by tool call ${toolUseId}`,
-    },
-  ];
+  const images: OpenAI.ChatCompletionContentPart[] = [];
   for (const block of content) {
     const url = imageDataUrl(block);
     if (url) {
-      contents.push({
+      images.push({
         type: "image_url",
         image_url: { url },
       });
     }
   }
-  return contents;
+  if (images.length === 0) {
+    return [];
+  }
+  return [
+    {
+      type: "text",
+      text: `[Image(s) returned by tool call ${toolUseId}]`,
+    },
+    ...images,
+  ];
+}
+
+// User message content → Responses API parts. Text blocks become input_text,
+// image blocks become input_image data URLs; other block types are dropped.
+function userContentsFor(
+  content: Message["content"],
+): string | OpenAI.Responses.ResponseInputContent[] {
+  if (typeof content === "string") {
+    return content;
+  }
+  const parts: OpenAI.Responses.ResponseInputContent[] = [];
+  for (const block of content) {
+    if (block.type === "text") {
+      parts.push({ type: "input_text", text: strArg(block, "text") });
+    } else {
+      const url = imageDataUrl(block);
+      if (url) {
+        parts.push({ type: "input_image", image_url: url, detail: "auto" });
+      }
+    }
+  }
+  return parts;
+}
+
+// User message content → Chat Completions parts (text / image_url).
+function userPartsFor(content: Message["content"]): string | OpenAI.ChatCompletionContentPart[] {
+  if (typeof content === "string") {
+    return content;
+  }
+  const parts: OpenAI.ChatCompletionContentPart[] = [];
+  for (const block of content) {
+    if (block.type === "text") {
+      parts.push({ type: "text", text: strArg(block, "text") });
+    } else {
+      const url = imageDataUrl(block);
+      if (url) {
+        parts.push({ type: "image_url", image_url: { url } });
+      }
+    }
+  }
+  return parts;
 }
 
 // Convert Swifty's conversation into Responses API input items:
@@ -355,12 +404,13 @@ export function buildOpenAIInput(messages: Message[]): OpenAIMessageParam[] {
     }
 
     if (m.toolUses && m.toolUses.length > 0) {
-      if (m.content) {
+      const assistantText = typeof m.content === "string" ? m.content : contentToText(m.content);
+      if (assistantText) {
         result.push({
           role: "assistant",
-          content: m.content,
+          content: assistantText,
         });
-      } // end if (m.content)
+      }
 
       for (const tu of m.toolUses) {
         result.push({
@@ -388,10 +438,15 @@ export function buildOpenAIInput(messages: Message[]): OpenAIMessageParam[] {
         });
       }
     } // end if (m.toolResults && m.toolResults.length > 0)
-    else {
+    else if (m.role === "assistant") {
+      result.push({
+        role: "assistant",
+        content: typeof m.content === "string" ? m.content : contentToText(m.content),
+      });
+    } else {
       result.push({
         role: m.role,
-        content: m.content,
+        content: userContentsFor(m.content),
       });
     }
   }
@@ -409,54 +464,6 @@ function containsContextLengthError(msg: string): boolean {
 
 // Convert Swifty's conversation into Chat Completions messages,
 // preserving assistant tool_calls and tool-result (role: "tool") turns so multi-turn tool use works over the openai-compat (Chat Completions) endpoint.
-export function buildChatCompletionMessage(
-  messages: Message[],
-): OpenAI.ChatCompletionMessageParam[] {
-  const params: OpenAI.ChatCompletionMessageParam[] = [];
-  for (const m of messages) {
-    if (m.toolUses && m.toolUses.length > 0) {
-      params.push({
-        role: "assistant",
-        content: m.content || null,
-        tool_calls: m.toolUses.map((tu) => ({
-          id: tu.toolUseId,
-          type: "function" as const,
-          function: {
-            name: tu.toolName,
-            arguments: JSON.stringify(tu.arguments),
-          },
-        })),
-      });
-    } // if (m.toolUses && m.toolUses.length > 0)
-    else if (m.toolResults && m.toolResults.length > 0) {
-      const pendingImageContents: OpenAI.Responses.ResponseInputContent[] = [];
-      for (const tr of m.toolResults) {
-        params.push({
-          role: "tool",
-          tool_call_id: tr.toolUseId,
-          content: contentToText(tr.content),
-        });
-        pendingImageContents.push(...collectImageContents(tr));
-      }
-    } // end if (m.toolResults && m.toolResults.length > 0)
-    else if (m.role === "assistant") {
-      params.push({
-        role: "assistant",
-        content: m.content,
-      });
-    } // if (m.role === "assistant")
-    else {
-      // user (includes system-reminder turns) and any stray system messages
-
-      params.push({
-        role: m.role === "system" ? "system" : "user",
-        content: m.content,
-      });
-    }
-  }
-  return params;
-}
-
 export class OpenAICompatClient implements LLMClient {
   private client: OpenAI;
   private model: string;
@@ -701,11 +708,12 @@ export function buildChatCompletionMessages(
   const params: OpenAI.ChatCompletionMessageParam[] = [];
   for (const m of messages) {
     const reasoning = m.thinkingBlocks?.map((tb) => tb.thinking).join("") ?? "";
+    const assistantText = typeof m.content === "string" ? m.content : contentToText(m.content);
 
     if (m.toolUses && m.toolUses.length > 0) {
       params.push({
         role: "assistant",
-        content: m.content || null,
+        content: assistantText || null,
         tool_calls: m.toolUses.map((tu) => ({
           id: tu.toolUseId,
           type: "function" as const,
@@ -741,7 +749,7 @@ export function buildChatCompletionMessages(
     else if (m.role === "assistant") {
       params.push({
         role: "assistant",
-        content: m.content,
+        content: assistantText,
         ...(reasoning
           ? {
               reasoning_content: reasoning,
@@ -749,10 +757,15 @@ export function buildChatCompletionMessages(
           : {}),
       });
     } // end if (m.role === "assistant")
-    else {
+    else if (m.role === "system") {
       params.push({
-        role: m.role === "system" ? "system" : "user",
-        content: m.content,
+        role: "system",
+        content: typeof m.content === "string" ? m.content : contentToText(m.content),
+      });
+    } else {
+      params.push({
+        role: "user",
+        content: userPartsFor(m.content),
       });
     }
   }

@@ -25,6 +25,8 @@ import type { Message } from "../conversation/conversation.js";
 import type { LLMClient } from "../llm/client.js";
 import {
   type CompactBoundaryPayload,
+  persistableContent,
+  sessionCtxFromFilePath,
   toolUsesToRecords,
   toolResultsToRecords,
 } from "../session/session.js";
@@ -32,7 +34,7 @@ import {
 import type { RecoveryState } from "./recovery.js";
 
 import type { ToolSchema } from "@/tools/types.js";
-import { asErrorString, strArg } from "@/utils/index.js";
+import { asErrorString, contentToText, strArg } from "@/utils/index.js";
 
 // Structured outcome of a compaction. When `compacted` is true, `boundary`
 // carries the summary plus the verbatim kept tail (inlined as role+text) so the
@@ -106,26 +108,38 @@ export interface UsageAnchor {
   anchorCount: number;
 }
 
+// Each image block counts as a fixed char-equivalent (~1750 tokens, the order
+// of magnitude of Anthropic's per-image token cost). Without this, image-heavy
+// conversations systematically under-estimate and compaction fires too late.
+const IMAGE_CHAR_EQUIV = 7000;
+
+function contentChars(content: string | Record<string, unknown>[]): number {
+  if (typeof content === "string") {
+    return content.length;
+  }
+  let chars = 0;
+  for (const block of content) {
+    if (block.type === "text") {
+      chars += strArg(block, "text").length;
+    } else if (block.type === "image") {
+      chars += IMAGE_CHAR_EQUIV;
+    }
+  }
+  return chars;
+}
+
 // Rough character-based token estimate over an explicit message slice. Used both
 // for the cold-start whole-transcript fallback and the post-anchor increment.
 export function estimateMessages(messages: Message[]): number {
   let totalChars = 0;
   for (const msg of messages) {
-    totalChars += msg.content.length;
+    totalChars += contentChars(msg.content);
     if (msg.toolUses) {
       totalChars += JSON.stringify(msg.toolUses).length;
     }
     if (msg.toolResults) {
       for (const tr of msg.toolResults) {
-        if (typeof tr.content === "string") {
-          totalChars += tr.content.length;
-        } else {
-          for (const block of tr.content) {
-            if (block.type === "text") {
-              totalChars += strArg(block, "text").length;
-            }
-          }
-        }
+        totalChars += contentChars(tr.content);
       }
     }
     if (msg.thinkingBlocks) {
@@ -441,7 +455,9 @@ function truncateHeadForPTL(prefix: Message[], tokenGap: number): Message[] | nu
 function serializePrefixText(messages: Message[]): string {
   return messages
     .map((m) => {
-      let text = `[${m.role}]: ${m.content}`;
+      // The summarizer (possibly a text-only model) never sees base64 —
+      // image blocks flatten to short placeholders.
+      let text = `[${m.role}]: ${contentToText(m.content)}`;
       if (m.toolUses) {
         text += `\n[tools: ${m.toolUses.map((t) => t.toolName).join(", ")}]`;
       }
@@ -555,7 +571,11 @@ async function doCompact(
   // (no recovery attachment): recovery context is rebuilt fresh per process, so
   // baking it into the persisted boundary would be stale on the next resume.
   // The kept tail must be persisted together with its tool blocks so that the
-  // full call chain is available when the session is restored.
+  // full call chain is available when the session is restored. Image blocks in
+  // the kept tail are persisted as refs when the session layout can be derived
+  // from sessionFilePath; content-addressed storage makes this idempotent with
+  // the refs already written by persistLastMessage.
+  const ctx = sessionFilePath ? (sessionCtxFromFilePath(sessionFilePath) ?? undefined) : undefined;
   const keep = toKeep
     .filter(
       (m) =>
@@ -564,11 +584,11 @@ async function doCompact(
     )
     .map((m) => ({
       role: m.role,
-      content: m.content,
+      content: persistableContent(m.content, ctx),
       ...(m.toolUses?.length ? { tool_uses: toolUsesToRecords(m.toolUses) } : {}),
       ...(m.toolResults?.length
         ? {
-            tool_results: toolResultsToRecords(m.toolResults),
+            tool_results: toolResultsToRecords(ctx, m.toolResults),
           }
         : {}),
     }));

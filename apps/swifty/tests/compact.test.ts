@@ -34,6 +34,7 @@ import {
 import { ConversationManager, type Message } from "../src/conversation/conversation.js";
 import type { LLMClient } from "../src/llm/client.js";
 import type { StreamEvent } from "../src/llm/events.js";
+import { contentToText } from "../src/utils/index.js";
 
 // A stub LLM that emits a fixed summary and records the text it was asked to
 // summarize, so tests can assert what the summary covered.
@@ -47,7 +48,7 @@ function stubClient(summaryBody: string): {
       /** noop */
     },
     async *stream(conversation): AsyncGenerator<StreamEvent> {
-      lastPrompt = conversation.getMessages()[0]?.content ?? "";
+      lastPrompt = contentToText(conversation.getMessages()[0]?.content ?? "");
       yield { type: "text_delta", text: `<summary>${summaryBody}</summary>` };
     },
   };
@@ -117,6 +118,28 @@ describe("currentContextTokens (real-usage anchoring)", () => {
   it("estimateMessages matches the documented chars/3.5 rounding", () => {
     expect(estimateMessages([])).toBe(0);
     expect(estimateMessages([{ role: "user", content: "x".repeat(7) }])).toBe(estChars(7));
+  });
+
+  it("estimateMessages counts image blocks at the fixed char equivalent", () => {
+    const result = (content: Message["toolResults"]) => [
+      { role: "user" as const, content: "", toolResults: content },
+    ];
+    const textOnly = result([
+      { toolUseId: "t1", content: [{ type: "text", text: "x".repeat(7) }], isError: false },
+    ]);
+    const withImage = result([
+      {
+        toolUseId: "t1",
+        content: [
+          { type: "text", text: "x".repeat(7) },
+          { type: "image", source: { type: "base64", media_type: "image/png", data: "AA" } },
+        ],
+        isError: false,
+      },
+    ]);
+    expect(estimateMessages(textOnly)).toBe(estChars(7));
+    // IMAGE_CHAR_EQUIV = 7000 chars → estimated at chars/3.5, not zero.
+    expect(estimateMessages(withImage)).toBe(estChars(7 + 7000));
   });
 });
 
@@ -203,7 +226,7 @@ describe("doCompact via forceCompact (keep recent verbatim)", () => {
     // the bare summary plus the verbatim kept tail inlined as role+text.
     expect(boundary).toBeDefined();
     expect(boundary?.summary).toBe("THE SUMMARY BODY");
-    const keepJoined = boundary?.keep.map((k) => k.content).join("\n");
+    const keepJoined = boundary?.keep.map((k) => contentToText(k.content)).join("\n");
     expect(keepJoined).toContain("marker-recent-q");
     expect(keepJoined).toContain("marker-recent-f");
     // The boundary summary is bare (no recovery attachment / no Chinese framing
@@ -211,7 +234,7 @@ describe("doCompact via forceCompact (keep recent verbatim)", () => {
     expect(boundary?.summary).not.toContain("This session continues from a previous conversation");
 
     const after = conversation.getMessages();
-    const joined = after.map((m) => m.content).join("\n");
+    const joined = after.map((m) => contentToText(m.content)).join("\n");
 
     // Recent original messages are still present verbatim (not just a summary).
     expect(joined).toContain("marker-recent-q");
@@ -271,7 +294,7 @@ describe("doCompact via forceCompact (keep recent verbatim)", () => {
     expect(after).toEqual(before);
     expect(msg.toLowerCase()).toContain("skip");
     // The verbatim originals are untouched (no summary injected).
-    const joined = after.map((m) => m.content).join("\n");
+    const joined = after.map((m) => contentToText(m.content)).join("\n");
     expect(joined).toContain("only-q marker");
     expect(joined).not.toContain("This session continues from a previous conversation");
   });

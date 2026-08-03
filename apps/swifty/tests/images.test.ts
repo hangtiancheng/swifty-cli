@@ -40,7 +40,12 @@ import {
 } from "@/images/limits.js";
 import { loadImageAttachment } from "@/images/load.js";
 import { maybeResizeAndDownsampleImage } from "@/images/resize.js";
-import { saveSessionImages, loadImageRef } from "@/images/store";
+import {
+  saveSessionImages,
+  loadImageRef,
+  imageBlocksToRefBlocks,
+  refBlocksToImageBlocks,
+} from "@/images/store";
 import type { ImageAttachment } from "@/images/types";
 
 const TEST_PNG_PATH = join(dirname(fileURLToPath(import.meta.url)), "test.png");
@@ -251,5 +256,48 @@ describe("loadImageRef", () => {
       media_type: "image/png",
     });
     expect(restored).toBeNull();
+  });
+});
+
+describe("image block ↔ ref block round trip", () => {
+  const DATA = Buffer.concat([PNG_MAGIC, Buffer.from("block-payload")]).toString("base64");
+  const imageBlock = {
+    type: "image",
+    source: { type: "base64", media_type: "image/png", data: DATA },
+  };
+  const textBlock = { type: "text", text: "label" };
+
+  it("persists image blocks as image_ref and passes other blocks through", () => {
+    const out = imageBlocksToRefBlocks(workDir, "sess1", [textBlock, imageBlock]);
+    expect(out[0]).toEqual(textBlock);
+    expect(out[1].type).toBe("image_ref");
+    expect(out[1].media_type).toBe("image/png");
+    const path = out[1].path;
+    if (typeof path !== "string") {
+      throw new Error("expected ref path to be a string");
+    }
+    expect(readFileSync(path).toString("base64")).toBe(DATA);
+  });
+
+  it("deduplicates identical images (content-addressed)", () => {
+    const out = imageBlocksToRefBlocks(workDir, "sess1", [imageBlock, { ...imageBlock }]);
+    expect(out[0].path).toBe(out[1].path);
+    const files = readdirSync(join(workDir, ".swifty", "sessions", "sess1", "images"));
+    expect(files).toHaveLength(1);
+  });
+
+  it("restores refs to inline image blocks byte-identically", () => {
+    const refs = imageBlocksToRefBlocks(workDir, "sess1", [textBlock, imageBlock]);
+    const restored = refBlocksToImageBlocks(refs);
+    expect(restored[0]).toEqual(textBlock);
+    expect(restored[1]).toEqual(imageBlock);
+  });
+
+  it("degrades a missing binary to a text note", () => {
+    const restored = refBlocksToImageBlocks([
+      { type: "image_ref", path: join(workDir, "gone.png"), media_type: "image/png" },
+    ]);
+    expect(restored[0].type).toBe("text");
+    expect(restored[0].text).toContain("could not be restored");
   });
 });

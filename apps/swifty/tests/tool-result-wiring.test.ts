@@ -27,14 +27,16 @@ import { join } from "node:path";
 import { describe, it, expect } from "vitest";
 
 import { Agent } from "../src/agent/agent.js";
+import type { AgentEvent } from "../src/agent/events.js";
 import { ConversationManager } from "../src/conversation/conversation.js";
 import type { LLMClient } from "../src/llm/client.js";
 import type { StreamEvent, UsageInfo } from "../src/llm/events.js";
 import { PermissionChecker } from "../src/permissions/checker.js";
+import { loadSession, rebuildFromSession } from "../src/session/session.js";
 import { ToolRegistry } from "../src/tools/registry.js";
 import type { Tool } from "../src/tools/types.js";
 
-import { asString } from "@/utils/index.js";
+import { asString, isRecord } from "@/utils/index.js";
 
 // Wiring test for the tool-result budget in the Agent main loop: drives the
 // full main loop and verifies single-result spill, aggregate spill, readback
@@ -197,5 +199,97 @@ describe("tool result budget wiring", () => {
     expect(previews?.length).toBe(1);
     const t3 = msg?.toolResults?.find((r) => r.toolUseId === "t3");
     expect(t3?.content).toContain("<persisted-output>");
+  });
+});
+
+// End-to-end wiring for image tool results: the structured blocks must reach
+// the conversation intact (the event output is flattened only at display
+// sites), while the session JSONL stores an image_ref (never base64) and
+// resume restores the inline image block.
+describe("image tool result wiring", () => {
+  const PNG_DATA = Buffer.from("not-a-real-png-but-that-is-fine").toString("base64");
+  const imageBlocks: Record<string, unknown>[] = [
+    { type: "text", text: "[image: shot.png · image/png · 31B]" },
+    {
+      type: "image",
+      source: { type: "base64", media_type: "image/png", data: PNG_DATA },
+    },
+  ];
+
+  function imageTool(name: string): Tool {
+    return {
+      name,
+      description: "returns image blocks",
+      category: "read",
+      schema: () => ({
+        name,
+        description: "img",
+        input_schema: { type: "object", properties: {} },
+      }),
+      execute: () => Promise.resolve({ output: imageBlocks, isError: false }),
+    };
+  }
+
+  function blocksOf(content: string | Record<string, unknown>[] | undefined) {
+    if (!Array.isArray(content)) {
+      throw new Error("expected tool result content to be a block array");
+    }
+    return content;
+  }
+
+  it("keeps image blocks intact through history, persists refs, and restores on resume", async () => {
+    const workDir = mkdtempSync(join(tmpdir(), "swifty-wire-img-"));
+    const client = new MockClient([
+      [
+        { type: "tool_call_complete", toolId: "img1", toolName: "Screenshot", arguments: {} },
+        end("tool_use"),
+      ],
+      [{ type: "text_delta", text: "done" }, end()],
+    ]);
+
+    const conv = new ConversationManager();
+    conv.addUserMessage("go");
+    const registry = new ToolRegistry();
+    registry.register(imageTool("Screenshot"));
+    const agent = new Agent({
+      client,
+      registry,
+      checker: new PermissionChecker(workDir, "bypassPermissions"),
+      conversation: conv,
+      workDir,
+      sessionId: "wiring",
+    });
+    const events: AgentEvent[] = [];
+    for await (const ev of agent.run()) {
+      events.push(ev);
+    }
+
+    // The tool_result event carries the structured blocks (union output).
+    const resultEvent = events.find((e) => e.type === "tool_result");
+    expect(resultEvent?.type).toBe("tool_result");
+    expect(Array.isArray(resultEvent?.type === "tool_result" ? resultEvent.output : "")).toBe(
+      true,
+    );
+
+    // History holds the blocks, not flattened text.
+    const tr = toolResultsMsg(conv)?.toolResults?.[0];
+    const historyImage = blocksOf(tr?.content).find((b) => b.type === "image");
+    expect(historyImage).toBeDefined();
+    const historySource = historyImage?.source;
+    expect(isRecord(historySource) ? historySource.data : null).toBe(PNG_DATA);
+
+    // The JSONL stores an image_ref and never the base64 payload.
+    const jsonl = readFileSync(join(workDir, ".swifty", "sessions", "wiring.jsonl"), "utf-8");
+    expect(jsonl).not.toContain(PNG_DATA);
+    expect(jsonl).toContain("image_ref");
+
+    // The binary landed under the session images dir.
+    const saved = loadSession(workDir, "wiring");
+    const restored = rebuildFromSession(saved);
+    const restoredTr = restored.find((m) => m.toolResults?.length)?.toolResults?.[0];
+    const restoredImage = blocksOf(restoredTr?.content).find((b) => b.type === "image");
+    expect(restoredImage).toBeDefined();
+    const restoredSource = restoredImage?.source;
+    expect(isRecord(restoredSource) ? restoredSource.data : null).toBe(PNG_DATA);
   });
 });

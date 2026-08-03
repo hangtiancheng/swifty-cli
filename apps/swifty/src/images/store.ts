@@ -27,6 +27,7 @@ import { join } from "node:path";
 import { asImageMediaType, type ImageAttachment } from "./types.js";
 
 import { createChildLogger } from "@/logger/index.js";
+import { isRecord } from "@/utils/index.js";
 
 const log = createChildLogger({ module: "images" });
 
@@ -50,6 +51,26 @@ function imagesDir(workDir: string, sessionId: string): string {
   return join(workDir, ".swifty", "sessions", id, "images");
 }
 
+// Content-addressed write shared by attachment- and block-level persistence.
+// Throws on I/O failure; callers decide how to degrade.
+function persistImageBinary(
+  workDir: string,
+  sessionId: string,
+  base64: string,
+  mediaType: string,
+): string {
+  const buf = Buffer.from(base64, "base64");
+  const hash = createHash("sha256").update(buf).digest("hex").slice(0, 16);
+  const ext = extNoDotByMediaType[mediaType] ?? "png";
+  const dir = imagesDir(workDir, sessionId);
+  const path = join(dir, `${hash}.${ext}`);
+  if (!existsSync(path)) {
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(path, buf);
+  }
+  return path;
+}
+
 // Write image binaries to the session images dir, content-addressed by
 // sha256 so re-attaching the same image is idempotent and deduplicated.
 // A failed write skips that image (it stays in memory for this run) rather
@@ -59,18 +80,10 @@ export function saveSessionImages(
   sessionId: string,
   images: ImageAttachment[],
 ): ImageRef[] {
-  const dir = imagesDir(workDir, sessionId);
   const refs: ImageRef[] = [];
   for (const img of images) {
     try {
-      const buf = Buffer.from(img.data, "base64");
-      const hash = createHash("sha256").update(buf).digest("hex").slice(0, 16);
-      const ext = extNoDotByMediaType[img.mediaType] ?? "png";
-      const path = join(dir, `${hash}.${ext}`);
-      if (!existsSync(path)) {
-        mkdirSync(dir, { recursive: true });
-        writeFileSync(path, buf);
-      }
+      const path = persistImageBinary(workDir, sessionId, img.data, img.mediaType);
       refs.push({
         path,
         media_type: img.mediaType,
@@ -81,6 +94,65 @@ export function saveSessionImages(
     }
   }
   return refs;
+}
+
+/** Persisted stand-in for an inline image block inside tool-result content. */
+export const IMAGE_REF_TYPE = "image_ref";
+
+// Provider-style image blocks ({type:"image", source:{type:"base64", ...}}) →
+// persisted ref blocks ({type:"image_ref", path, media_type}); the binary
+// lands under sessions/<id>/images/ so base64 never bloats the JSONL.
+// Non-image blocks pass through untouched. On write failure the inline block
+// is kept as-is (the line stays large but no data is lost).
+export function imageBlocksToRefBlocks(
+  workDir: string,
+  sessionId: string,
+  blocks: Record<string, unknown>[],
+): Record<string, unknown>[] {
+  return blocks.map((block) => {
+    if (block.type !== "image" || !isRecord(block.source) || block.source.type !== "base64") {
+      return block;
+    }
+    const data = block.source.data;
+    const mediaType = block.source.media_type;
+    if (typeof data !== "string" || typeof mediaType !== "string") {
+      return block;
+    }
+    try {
+      const path = persistImageBinary(workDir, sessionId, data, mediaType);
+      return { type: IMAGE_REF_TYPE, path, media_type: mediaType };
+    } catch (err) {
+      log.error({ err }, "failed to persist session image");
+      return block;
+    }
+  });
+}
+
+// Inverse of imageBlocksToRefBlocks, applied on session restore. A missing or
+// unreadable binary degrades to a text note so the model isn't silently
+// confused by a dangling tool result.
+export function refBlocksToImageBlocks(
+  blocks: Record<string, unknown>[],
+): Record<string, unknown>[] {
+  return blocks.map((block) => {
+    if (block.type !== IMAGE_REF_TYPE || typeof block.path !== "string") {
+      return block;
+    }
+    try {
+      const buf = readFileSync(block.path);
+      return {
+        type: "image",
+        source: {
+          type: "base64",
+          media_type: typeof block.media_type === "string" ? block.media_type : "image/png",
+          data: buf.toString("base64"),
+        },
+      };
+    } catch (err) {
+      log.warn({ err, path: block.path }, "failed to restore session image");
+      return { type: "text", text: "[note: an image from this tool result could not be restored]" };
+    }
+  });
 }
 
 // Restore an image from its session ref. Returns null when the file is

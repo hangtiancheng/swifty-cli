@@ -37,7 +37,9 @@ export type AgentEvent =
       type: "tool_result";
       toolName: string;
       toolId: string;
-      output: string;
+      /** Tool output: plain text, or structured content blocks (e.g. images).
+       * Display-only consumers flatten arrays via contentToText. */
+      output: string | Record<string, unknown>[];
       isError: boolean;
       elapsed: number;
     }

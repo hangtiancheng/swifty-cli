@@ -23,6 +23,9 @@
 import { readFileSync, statSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 
+import { isImagePath } from "@/images/detect.js";
+import { MAX_IMAGES_PER_MESSAGE } from "@/images/limits.js";
+import { loadImageAttachment } from "@/images/load.js";
 import { createChildLogger } from "@/logger/index.js";
 
 const log = createChildLogger({ module: "tui" });
@@ -94,4 +97,76 @@ export function expandAtRefs(text: string, workDir: string): string {
     }
   }
   return appendix ? text + appendix : text;
+}
+
+// Like expandAtRefs, but @references to image files (png/jpg/gif/webp) are
+// loaded as inline image content blocks instead of being inlined as (garbled)
+// utf-8 text. The appendix gets an <attached-image> placeholder so the model
+// can pair each block with its @token. Image load failures degrade to an
+// inline error note; non-image refs behave exactly like expandAtRefs.
+// Returns a plain string when no image is referenced.
+export async function expandAtRefsWithImages(
+  text: string,
+  workDir: string,
+): Promise<string | Record<string, unknown>[]> {
+  const refs = [...text.matchAll(/(?:^|\s)@([^\s]+)/g)].map((m) => m[1]);
+  if (refs.length === 0) {
+    return text;
+  }
+
+  let appendix = "";
+  const imageBlocks: Record<string, unknown>[] = [];
+  const seen = new Set<string>();
+  for (const ref of refs) {
+    if (seen.has(ref)) {
+      continue;
+    }
+    seen.add(ref);
+    const { path: refPath, lineStart, lineEnd } = parseRef(ref);
+    const p = isAbsolute(refPath) ? refPath : join(workDir, refPath);
+    try {
+      const st = statSync(p);
+      if (!st.isFile()) {
+        continue;
+      }
+      if (isImagePath(p)) {
+        if (imageBlocks.length >= MAX_IMAGES_PER_MESSAGE) {
+          appendix += `\n\n<file path="${refPath}">Error: too many images attached (limit ${String(MAX_IMAGES_PER_MESSAGE)} per message)</file>`;
+          continue;
+        }
+        try {
+          const attachment = await loadImageAttachment(p);
+          imageBlocks.push({
+            type: "image",
+            source: {
+              type: "base64",
+              media_type: attachment.mediaType,
+              data: attachment.data,
+            },
+          });
+          appendix += `\n\n<attached-image path="${refPath}"/>`;
+        } catch (imgErr) {
+          log.error({ err: imgErr }, "TUI operation failed");
+          appendix += `\n\n<file path="${refPath}">Error: ${imgErr instanceof Error ? imgErr.message : String(imgErr)}</file>`;
+        }
+      } else if (lineStart !== undefined && lineEnd !== undefined) {
+        if (st.size <= MAX_RANGE_FILE_BYTES) {
+          const snippet = sliceLines(readFileSync(p, "utf-8"), lineStart, lineEnd);
+          if (snippet.length <= MAX_INLINE_BYTES) {
+            appendix += `\n\n<file path="${refPath}" lines="${String(lineStart)}-${String(lineEnd)}">\n${snippet}\n</file>`;
+          }
+        }
+      } else if (st.size <= MAX_INLINE_BYTES) {
+        appendix += `\n\n<file path="${ref}">\n${readFileSync(p, "utf-8")}\n</file>`;
+      }
+    } catch (err) {
+      log.error({ err }, "TUI operation failed");
+      // not a readable file → leave the @token as literal text
+    }
+  }
+  const expanded = appendix ? text + appendix : text;
+  if (imageBlocks.length === 0) {
+    return expanded;
+  }
+  return [{ type: "text", text: expanded }, ...imageBlocks];
 }
