@@ -33,7 +33,7 @@
     "access": "public"
   },
   "scripts": {
-    "add:user": "npm adduser --registry=https://registry.npmjs.org/",
+    "add:user": "pnpm adduser --registry=https://registry.npmjs.org/",
     "publish:latest": "pnpm publish --access public --no-git-checks --registry=https://registry.npmjs.org/",
     "publish:alpha": "pnpm publish --access public --no-git-checks --registry=https://registry.npmjs.org/ --tag alpha",
     "publish:beta": "pnpm publish --access public --no-git-checks --registry=https://registry.npmjs.org/ --tag beta",
