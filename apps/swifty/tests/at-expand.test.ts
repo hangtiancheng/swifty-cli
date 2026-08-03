@@ -85,7 +85,7 @@ describe("@image mention expansion (expandAtRefsWithImages)", () => {
     expect(out[0].type).toBe("text");
     const text = strArg(out[0], "text");
     expect(text).toContain("see @shot.png and @notes.md");
-    expect(text).toContain('<attached-image path="shot.png"/>');
+    expect(text).toContain('<image type="base64" media_type="image/jpeg" path="shot.png" />');
     expect(text).toContain('<file path="notes.md">');
     // Followed by the image block.
     const image = out.find((b) => b.type === "image");

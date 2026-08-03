@@ -101,7 +101,7 @@ export function expandAtRefs(text: string, workDir: string): string {
 
 // Like expandAtRefs, but @references to image files (png/jpg/gif/webp) are
 // loaded as inline image content blocks instead of being inlined as (garbled)
-// utf-8 text. The appendix gets an <attached-image> placeholder so the model
+// utf-8 text. The appendix gets an <image> placeholder so the model
 // can pair each block with its @token. Image load failures degrade to an
 // inline error note; non-image refs behave exactly like expandAtRefs.
 // Returns a plain string when no image is referenced.
@@ -115,8 +115,8 @@ export async function expandAtRefsWithImages(
   }
 
   let appendix = "";
-  const imageBlocks: Record<string, unknown>[] = [];
   const seen = new Set<string>();
+  const imageBlocks: Record<string, unknown>[] = [];
   for (const ref of refs) {
     if (seen.has(ref)) {
       continue;
@@ -131,7 +131,7 @@ export async function expandAtRefsWithImages(
       }
       if (isImagePath(p)) {
         if (imageBlocks.length >= MAX_IMAGES_PER_MESSAGE) {
-          appendix += `\n\n<file path="${refPath}">Error: too many images attached (limit ${String(MAX_IMAGES_PER_MESSAGE)} per message)</file>`;
+          appendix += `\n\nError: too many images attached (limit ${String(MAX_IMAGES_PER_MESSAGE)} per message)`;
           continue;
         }
         try {
@@ -144,10 +144,9 @@ export async function expandAtRefsWithImages(
               data: attachment.data,
             },
           });
-          appendix += `\n\n<attached-image path="${refPath}"/>`;
-        } catch (imgErr) {
-          log.error({ err: imgErr }, "TUI operation failed");
-          appendix += `\n\n<file path="${refPath}">Error: ${imgErr instanceof Error ? imgErr.message : String(imgErr)}</file>`;
+          appendix += `\n\n<image type="base64" media_type="${attachment.mediaType}" path="${refPath}" />`;
+        } catch (err) {
+          log.error({ err: err }, "TUI operation failed");
         }
       } else if (lineStart !== undefined && lineEnd !== undefined) {
         if (st.size <= MAX_RANGE_FILE_BYTES) {

@@ -510,7 +510,8 @@ export class OpenAICompatClient implements LLMClient {
       function: {
         name: ts.name,
         description: ts.description,
-        arguments: ts.input_schema,
+        parameters: ts.input_schema,
+        strict: false,
       },
     }));
 
