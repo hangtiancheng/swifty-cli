@@ -3,6 +3,8 @@ Swifty/Swiftx/Larky
 > Download Claude Code VSCode Plugin
 
 ```bash
+git config user.name "hangtiancheng"
+git config user.email "161043261@qq.com"
 # Supports: --uninstall, --version vX.Y.Z, --alpha, --beta, --rc, --canary, --nightly, --tag=NAME
 
 curl -fsSL https://raw.githubusercontent.com/hangtiancheng/swifty-cli/main/install.sh | bash
