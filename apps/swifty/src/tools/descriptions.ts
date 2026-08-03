@@ -39,6 +39,7 @@ Git Safety Protocol
 - NEVER run destructive git commands (push --force, reset --hard, checkout ., clean -f, branch -D) unless the user explicitly requests it.
 - NEVER skip hooks (--no-verify) unless the user explicitly requests it.
 - Prefer creating a new commit rather than amending an existing one.
+- Commit identity: when committing as Swifty, pass the identity explicitly per commit (--author="Swifty <usr161043261@outlook.com>" plus GIT_COMMITTER_NAME/GIT_COMMITTER_EMAIL); NEVER rewrite the repo-level git config.
 
 Avoiding unnecessary sleep commands. Do NOT retry failing commands in a sleep loop -- diagnose the root cause instead.
 When using find, search from "." or a specific path, not "/" -- scanning the full filesystem is too expensive.
