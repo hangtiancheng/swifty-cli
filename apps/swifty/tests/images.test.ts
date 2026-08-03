@@ -24,13 +24,12 @@
 // with sharp itself and tests/test.png is a real screenshot (JPEG bytes behind
 // a .png extension, which doubles as a magic-bytes-vs-extension fixture).
 
-import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import sharp, { type Sharp } from "sharp";
-import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 
 import { isImagePath, getMediaType, sniffMediaType } from "@/images/detect.js";
 import {
@@ -40,13 +39,6 @@ import {
 } from "@/images/limits.js";
 import { loadImageAttachment } from "@/images/load.js";
 import { maybeResizeAndDownsampleImage } from "@/images/resize.js";
-import {
-  saveSessionImages,
-  loadImageRef,
-  imageBlocksToRefBlocks,
-  refBlocksToImageBlocks,
-} from "@/images/store";
-import type { ImageAttachment } from "@/images/types";
 
 const TEST_PNG_PATH = join(dirname(fileURLToPath(import.meta.url)), "test.png");
 
@@ -58,27 +50,6 @@ const WEBP_MAGIC = Buffer.concat([
   Buffer.alloc(4),
   Buffer.from("WEBP", "ascii"),
 ]);
-
-function createImageAttachment(overrides: Partial<ImageAttachment> = {}): ImageAttachment {
-  const buf = Buffer.concat([PNG_MAGIC, Buffer.from("payload")]);
-  return {
-    mediaType: "image/png",
-    data: buf.toString("base64"),
-    sourcePath: "/tmp/original.png",
-    byteLength: buf.length,
-    ...overrides,
-  };
-}
-
-let workDir: string;
-
-beforeEach(() => {
-  workDir = mkdtempSync(join(tmpdir(), "swifty-image-store-"));
-});
-
-afterEach(() => {
-  rmSync(workDir, { recursive: true, force: true });
-});
 
 // Gaussian noise is nearly incompressible, which is the cheapest way to make
 // real oversized fixtures. Generated once and shared across tests.
@@ -214,90 +185,5 @@ describe("maybeResizeAndDownsampleImage (real sharp)", () => {
     const corrupt = Buffer.concat([PNG_MAGIC, Buffer.alloc(1024, 0xab)]);
     const result = await maybeResizeAndDownsampleImage(corrupt, "image/png");
     expect(result.data).toBe(corrupt.toString("base64"));
-  });
-});
-
-describe("saveSessionImages", () => {
-  it("writes binaries and returns refs", () => {
-    const refs = saveSessionImages(workDir, "sess1", [createImageAttachment()]);
-    expect(refs).toHaveLength(1);
-    expect(refs[0]?.path).toContain(join(".swifty", "sessions", "sess1", "images"));
-    expect(refs[0]?.media_type).toBe("image/png");
-    expect(refs[0]?.source_path).toBe("/tmp/original.png");
-  });
-
-  it("deduplicates identical content (content-addressed)", () => {
-    const refs = saveSessionImages(workDir, "sess1", [
-      createImageAttachment(),
-      createImageAttachment(),
-    ]);
-    expect(refs).toHaveLength(2);
-    expect(refs[0]?.path).toBe(refs[1]?.path);
-    const files = readdirSync(join(workDir, ".swifty", "sessions", "sess1", "images"));
-    expect(files).toHaveLength(1);
-  });
-});
-
-describe("loadImageRef", () => {
-  it("round-trips base64 exactly", () => {
-    const original = createImageAttachment();
-    const [ref] = saveSessionImages(workDir, "sess1", [original]);
-    const restored = loadImageRef(ref);
-    expect(restored).not.toBeNull();
-    expect(restored?.data).toBe(original.data);
-    expect(restored?.mediaType).toBe("image/png");
-    expect(restored?.sourcePath).toBe("/tmp/original.png");
-    expect(restored?.byteLength).toBe(original.byteLength);
-  });
-
-  it("returns null for a missing file", () => {
-    const restored = loadImageRef({
-      path: join(workDir, "nope.png"),
-      media_type: "image/png",
-    });
-    expect(restored).toBeNull();
-  });
-});
-
-describe("image block ↔ ref block round trip", () => {
-  const DATA = Buffer.concat([PNG_MAGIC, Buffer.from("block-payload")]).toString("base64");
-  const imageBlock = {
-    type: "image",
-    source: { type: "base64", media_type: "image/png", data: DATA },
-  };
-  const textBlock = { type: "text", text: "label" };
-
-  it("persists image blocks as image_ref and passes other blocks through", () => {
-    const out = imageBlocksToRefBlocks(workDir, "sess1", [textBlock, imageBlock]);
-    expect(out[0]).toEqual(textBlock);
-    expect(out[1].type).toBe("image_ref");
-    expect(out[1].media_type).toBe("image/png");
-    const path = out[1].path;
-    if (typeof path !== "string") {
-      throw new Error("expected ref path to be a string");
-    }
-    expect(readFileSync(path).toString("base64")).toBe(DATA);
-  });
-
-  it("deduplicates identical images (content-addressed)", () => {
-    const out = imageBlocksToRefBlocks(workDir, "sess1", [imageBlock, { ...imageBlock }]);
-    expect(out[0].path).toBe(out[1].path);
-    const files = readdirSync(join(workDir, ".swifty", "sessions", "sess1", "images"));
-    expect(files).toHaveLength(1);
-  });
-
-  it("restores refs to inline image blocks byte-identically", () => {
-    const refs = imageBlocksToRefBlocks(workDir, "sess1", [textBlock, imageBlock]);
-    const restored = refBlocksToImageBlocks(refs);
-    expect(restored[0]).toEqual(textBlock);
-    expect(restored[1]).toEqual(imageBlock);
-  });
-
-  it("degrades a missing binary to a text note", () => {
-    const restored = refBlocksToImageBlocks([
-      { type: "image_ref", path: join(workDir, "gone.png"), media_type: "image/png" },
-    ]);
-    expect(restored[0].type).toBe("text");
-    expect(restored[0].text).toContain("could not be restored");
   });
 });

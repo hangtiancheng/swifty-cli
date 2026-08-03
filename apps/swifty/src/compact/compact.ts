@@ -25,8 +25,6 @@ import type { Message } from "../conversation/conversation.js";
 import type { LLMClient } from "../llm/client.js";
 import {
   type CompactBoundaryPayload,
-  persistableContent,
-  sessionCtxFromFilePath,
   toolUsesToRecords,
   toolResultsToRecords,
 } from "../session/session.js";
@@ -571,11 +569,7 @@ async function doCompact(
   // (no recovery attachment): recovery context is rebuilt fresh per process, so
   // baking it into the persisted boundary would be stale on the next resume.
   // The kept tail must be persisted together with its tool blocks so that the
-  // full call chain is available when the session is restored. Image blocks in
-  // the kept tail are persisted as refs when the session layout can be derived
-  // from sessionFilePath; content-addressed storage makes this idempotent with
-  // the refs already written by persistLastMessage.
-  const ctx = sessionFilePath ? (sessionCtxFromFilePath(sessionFilePath) ?? undefined) : undefined;
+  // full call chain is available when the session is restored.
   const keep = toKeep
     .filter(
       (m) =>
@@ -584,11 +578,11 @@ async function doCompact(
     )
     .map((m) => ({
       role: m.role,
-      content: persistableContent(m.content, ctx),
+      content: m.content,
       ...(m.toolUses?.length ? { tool_uses: toolUsesToRecords(m.toolUses) } : {}),
       ...(m.toolResults?.length
         ? {
-            tool_results: toolResultsToRecords(ctx, m.toolResults),
+            tool_results: toolResultsToRecords(m.toolResults),
           }
         : {}),
     }));

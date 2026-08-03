@@ -46,6 +46,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **apps/swifty**: Removed the content-addressed session image store (`src/images/store.ts`, `.swifty/sessions/<id>/images/`). Image blocks are now persisted inline as base64 in the session JSONL (matching how tool results already flow to providers), and resume reads them straight back — no `image_ref` indirection. `saveMessage`, `toolResultsToRecords`, and compaction boundary writes persist content verbatim; `persistableContent`, `sessionCtxFromFilePath`, and the expired-session `images/` cleanup were deleted along with the store. Old sessions containing `image_ref` records are no longer recognized (no backward compatibility).
+
 - **apps/larky**: Aligned with the latest `apps/swifty` changes via `apps/swifty-to-larky.mjs` plus a manual rework of the dual-process-specific `src/core/agent-session.ts`:
   - The skill listing is no longer embedded in the system prompt. It is now project-scoped and injected into the conversation through the first `system-reminder` message (`conversation.injectLongTermMemory`), keeping the system prompt project-agnostic and preserving the cross-project prompt-cache prefix.
   - Added incremental skill announcements (`skillDelta`): skills discovered mid-session (install, `/skills reload`, catalog hot-reload) are delivered as delta `system-reminder` messages instead of rewriting the system prompt.

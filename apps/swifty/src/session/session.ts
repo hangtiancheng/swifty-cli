@@ -31,11 +31,10 @@ import {
   unlinkSync,
   rmSync,
 } from "node:fs";
-import { basename, dirname, join } from "node:path";
+import { join } from "node:path";
 
 import z, { parse, safeParse } from "zod";
 
-import { imageBlocksToRefBlocks, refBlocksToImageBlocks } from "../images/store.js";
 import { createChildLogger } from "../logger/index.js";
 import { contentToText } from "../utils/index.js";
 
@@ -64,8 +63,8 @@ const ToolUseRecordSchema = z.object({
 });
 export type ToolUseRecord = z.infer<typeof ToolUseRecordSchema>;
 
-/** Message/tool-result content on disk: plain text, or content blocks where
- *  inline images have been swapped for image_ref blocks. */
+/** Message/tool-result content on disk: plain text, or content blocks persisted
+ *  verbatim (inline base64 image blocks included). */
 const ContentSchema = z.union([z.string(), z.array(z.record(z.string(), z.unknown()))]);
 
 /** Persisted form of a tool result, paired with a ToolUseRecord via tool_use_id. */
@@ -115,7 +114,6 @@ export function toolUsesToRecords(
 }
 
 export function toolResultsToRecords(
-  ctx?: { workDir: string; sessionId: string },
   toolResults?: {
     toolUseId: string;
     content: string | Record<string, unknown>[];
@@ -124,31 +122,9 @@ export function toolResultsToRecords(
 ): ToolResultRecord[] {
   return (toolResults ?? []).map((tr) => ({
     tool_use_id: tr.toolUseId,
-    content: persistableContent(tr.content, ctx),
+    content: tr.content,
     ...(tr.isError ? { is_error: true } : {}),
   }));
-}
-
-// Inline image blocks are persisted as image_ref blocks (binaries under
-// sessions/<id>/images/) so the base64 payload never lands in the JSONL.
-// Without a ctx the image degrades to a text note instead — mirroring how the
-// pre-refactor pipeline dropped images it could not store.
-export function persistableContent(
-  content: string | Record<string, unknown>[],
-  // A required parameter cannot follow an optional parameter
-  ctx?: { workDir: string; sessionId: string },
-): string | Record<string, unknown>[] {
-  if (typeof content === "string") {
-    return content;
-  }
-  if (ctx) {
-    return imageBlocksToRefBlocks(ctx.workDir, ctx.sessionId, content);
-  }
-  return content.map((block) =>
-    block.type === "image"
-      ? { type: "text", text: "[note: image omitted (no session storage available)]" }
-      : block,
-  );
 }
 
 const CompactBoundaryPayloadSchema = z.object({
@@ -177,23 +153,6 @@ export function getSessionFilePath(workDir: string, sessionId: string): string {
   return join(sessionsDir(workDir), sessionId + ".jsonl");
 }
 
-// Inverse of getSessionFilePath. Returns null when the path doesn't match the
-// <workDir>/.swifty/sessions/<id>.jsonl layout.
-export function sessionCtxFromFilePath(
-  filePath: string,
-): { workDir: string; sessionId: string } | null {
-  const base = basename(filePath);
-  if (!base.endsWith(".jsonl")) {
-    return null;
-  }
-  const dir = dirname(filePath);
-  const parent = dirname(dir);
-  if (basename(dir) !== "sessions" || basename(parent) !== ".swifty") {
-    return null;
-  }
-  return { workDir: dirname(parent), sessionId: base.slice(0, -".jsonl".length) };
-}
-
 export function newSessionId(): string {
   const ts = Date.now().toString(36);
   const rand = randomBytes(4).toString("hex");
@@ -204,9 +163,7 @@ export function saveMessage(workDir: string, sessionId: string, msg: SessionMess
   const dir = sessionsDir(workDir);
   mkdirSync(dir, { recursive: true });
   const filePath = join(dir, `${sessionId}.jsonl`);
-  // Inline image blocks (if any) are swapped for refs before hitting the JSONL.
-  const persisted = { ...msg, content: persistableContent(msg.content, { workDir, sessionId }) };
-  const line = JSON.stringify(persisted) + "\n";
+  const line = JSON.stringify(msg) + "\n";
   writeFileSync(filePath, line, { flag: /* append */ "a", encoding: "utf-8" });
 }
 
@@ -282,12 +239,6 @@ export interface RestoredMessage {
   }[];
 }
 
-function restoreContent(
-  content: string | Record<string, unknown>[],
-): string | Record<string, unknown>[] {
-  return typeof content === "string" ? content : refBlocksToImageBlocks(content);
-}
-
 /** Persisted records (snake_case) → in-memory tool blocks (camelCase), used to restore the call chain on session resume. */
 function recordsToCamelUses(recs?: ToolUseRecord[]) {
   return recs?.map((tu) => ({
@@ -300,7 +251,7 @@ function recordsToCamelUses(recs?: ToolUseRecord[]) {
 function recordsToCamelResults(recs?: ToolResultRecord[]) {
   return recs?.map((tr) => ({
     toolUseId: tr.tool_use_id,
-    content: restoreContent(tr.content),
+    content: tr.content,
     isError: tr.is_error,
   }));
 }
@@ -359,7 +310,7 @@ export function rebuildFromSession(saved: SessionMessage[]): RestoredMessage[] {
 
         out.push({
           role: k.role,
-          content: restoreContent(k.content),
+          content: k.content,
           toolUses: recordsToCamelUses(k.tool_uses),
           toolResults: recordsToCamelResults(k.tool_results),
         });
@@ -404,7 +355,7 @@ function toRestored(m: SessionMessage): RestoredMessage | null {
   }
   return {
     role: m.role,
-    content: restoreContent(m.content),
+    content: m.content,
     toolUses: recordsToCamelUses(m.tool_uses),
     toolResults: recordsToCamelResults(m.tool_results),
   };
@@ -492,17 +443,11 @@ export function cleanExpiredSessions(workDir: string): number {
       const stat = statSync(filePath);
       if (now - stat.mtimeMs > expiryMs) {
         unlinkSync(filePath);
-        // Clean up the corresponding tool_results and images directories
+        // Clean up the corresponding tool_results directory
         const id = file.replace(".jsonl", "");
         const toolResultsDir = join(workDir, ".swifty", "sessions", id, "tool_results");
         try {
           rmSync(toolResultsDir, { recursive: true, force: true });
-        } catch {
-          /** noop */
-        }
-        const imagesDir = join(workDir, ".swifty", "sessions", id, "images");
-        try {
-          rmSync(imagesDir, { recursive: true, force: true });
         } catch {
           /** noop */
         }

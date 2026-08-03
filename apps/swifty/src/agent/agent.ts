@@ -784,17 +784,7 @@ export class Agent {
       content: last.content,
       timestamp: Math.floor(Date.now() / 1000),
       ...(last.toolUses?.length ? { tool_uses: toolUsesToRecords(last.toolUses) } : {}),
-      ...(last.toolResults?.length
-        ? {
-            tool_results: toolResultsToRecords(
-              {
-                workDir: this.workDir,
-                sessionId: this.sessionId,
-              } /** ctx */,
-              last.toolResults,
-            ),
-          }
-        : {}),
+      ...(last.toolResults?.length ? { tool_results: toolResultsToRecords(last.toolResults) } : {}),
     });
   }
 }

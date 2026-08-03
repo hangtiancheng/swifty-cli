@@ -84,7 +84,7 @@ describe("session save/load round-trip", () => {
     expect(loaded.map((m) => m.content)).toEqual(["ok", "good"]);
   });
 
-  it("round-trips a user message with image blocks via image_ref records", () => {
+  it("round-trips a user message with inline image blocks", () => {
     const workDir = mkdtempSync(join(tmpdir(), "swifty-sess-"));
     const id = newSessionId();
     const data = Buffer.from("user-attached-image").toString("base64");
@@ -98,10 +98,9 @@ describe("session save/load round-trip", () => {
       timestamp: t0,
     });
 
-    // The JSONL stores a ref, never the base64 payload.
+    // The JSONL stores the base64 payload inline.
     const raw = readFileSync(join(workDir, ".swifty", "sessions", `${id}.jsonl`), "utf-8");
-    expect(raw).toContain("image_ref");
-    expect(raw).not.toContain(data);
+    expect(raw).toContain(data);
 
     // Resume restores the inline image block byte-identically.
     const restored = rebuildFromSession(loadSession(workDir, id));

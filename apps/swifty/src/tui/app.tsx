@@ -1769,7 +1769,7 @@ export function App({
     convRef.current.addUserMessage(expanded);
 
     // Save to session: the original typed text, plus any attached image
-    // blocks (saveMessage swaps them for image_ref records on disk).
+    // blocks (persisted inline as base64 in the JSONL).
     sessionMod.saveMessage(workDir, sessionIdRef.current, {
       role: "user",
       content:

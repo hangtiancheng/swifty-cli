@@ -204,7 +204,7 @@ describe("tool result budget wiring", () => {
 
 // End-to-end wiring for image tool results: the structured blocks must reach
 // the conversation intact (the event output is flattened only at display
-// sites), while the session JSONL stores an image_ref (never base64) and
+// sites), while the session JSONL stores the base64 payload inline and
 // resume restores the inline image block.
 describe("image tool result wiring", () => {
   const PNG_DATA = Buffer.from("not-a-real-png-but-that-is-fine").toString("base64");
@@ -237,7 +237,7 @@ describe("image tool result wiring", () => {
     return content;
   }
 
-  it("keeps image blocks intact through history, persists refs, and restores on resume", async () => {
+  it("keeps image blocks intact through history, persists them inline, and restores on resume", async () => {
     const workDir = mkdtempSync(join(tmpdir(), "swifty-wire-img-"));
     const client = new MockClient([
       [
@@ -276,12 +276,11 @@ describe("image tool result wiring", () => {
     const historySource = historyImage?.source;
     expect(isRecord(historySource) ? historySource.data : null).toBe(PNG_DATA);
 
-    // The JSONL stores an image_ref and never the base64 payload.
+    // The JSONL stores the base64 payload inline.
     const jsonl = readFileSync(join(workDir, ".swifty", "sessions", "wiring.jsonl"), "utf-8");
-    expect(jsonl).not.toContain(PNG_DATA);
-    expect(jsonl).toContain("image_ref");
+    expect(jsonl).toContain(PNG_DATA);
 
-    // The binary landed under the session images dir.
+    // Resume restores the inline image block byte-identically.
     const saved = loadSession(workDir, "wiring");
     const restored = rebuildFromSession(saved);
     const restoredTr = restored.find((m) => m.toolResults?.length)?.toolResults?.[0];
