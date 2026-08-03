@@ -26,6 +26,29 @@ const log = createChildLogger({ module: "utils" });
 
 export const DANGEROUSLY_JSON = "dangerouslyJson";
 
+/**
+ * Convert a ToolResultBlock content value (string or ContentBlockParam[]) to a
+ * plain text string. Used by consumers that cannot handle structured blocks
+ * (session persistence, TUI display, OpenAI Responses API, etc.).
+ */
+export function contentToText(content: string | Record<string, unknown>[]): string {
+  if (typeof content === "string") {
+    return content;
+  }
+  const parts: string[] = [];
+  for (const block of content) {
+    if (block.type === "text") {
+      parts.push(strArg(block, "text"));
+    } else if (block.type === "image" && typeof block.source === "object") {
+      const source = asRecord(block.source);
+      const mediaType =
+        strArg(source, "type") === "base64" ? strArg(source, "media_type") : "image";
+      parts.push(`[image: ${mediaType}]`);
+    }
+  }
+  return parts.join("\n");
+}
+
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }

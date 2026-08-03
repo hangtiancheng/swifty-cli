@@ -32,7 +32,7 @@ import {
 import type { RecoveryState } from "./recovery.js";
 
 import type { ToolSchema } from "@/tools/types.js";
-import { asErrorString } from "@/utils/index.js";
+import { asErrorString, strArg } from "@/utils/index.js";
 
 // Structured outcome of a compaction. When `compacted` is true, `boundary`
 // carries the summary plus the verbatim kept tail (inlined as role+text) so the
@@ -117,7 +117,15 @@ export function estimateMessages(messages: Message[]): number {
     }
     if (msg.toolResults) {
       for (const tr of msg.toolResults) {
-        totalChars += tr.content.length;
+        if (typeof tr.content === "string") {
+          totalChars += tr.content.length;
+        } else {
+          for (const block of tr.content) {
+            if (block.type === "text") {
+              totalChars += strArg(block, "text").length;
+            }
+          }
+        }
       }
     }
     if (msg.thinkingBlocks) {

@@ -65,7 +65,7 @@ export type ToolUseRecord = z.infer<typeof ToolUseRecordSchema>;
 /** Persisted form of a tool result, paired with a ToolUseRecord via tool_use_id. */
 const ToolResultRecordSchema = z.object({
   tool_use_id: z.string(),
-  content: z.string(),
+  content: z.union([z.string(), z.array(z.record(z.string(), z.unknown()))]),
   is_error: z.boolean().optional(),
 });
 
@@ -111,7 +111,7 @@ export function toolUsesToRecords(
 export function toolResultsToRecords(
   toolResults?: {
     toolUseId: string;
-    content: string;
+    content: string | Record<string, unknown>[];
     isError?: boolean;
   }[],
 ): ToolResultRecord[] {
@@ -229,7 +229,7 @@ export interface RestoredMessage {
   }[];
   toolResults?: {
     toolUseId: string;
-    content: string;
+    content: string | Record<string, unknown>[];
     isError?: boolean;
   }[];
 }

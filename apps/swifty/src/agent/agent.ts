@@ -41,13 +41,13 @@ import { getSessionFilePath } from "../session/session.js";
 import { applyBudget, isSpillReadback, persistLargeResult } from "../tool-result/budget.js";
 import type { FileStateCache } from "../tools/file-state-cache.js";
 import type { ToolRegistry } from "../tools/registry.js";
+import type { ToolSchema } from "../tools/types.js";
+import { asRecord, contentToText, strArg } from "../utils/index.js";
 
 import type { AgentEvent } from "./events.js";
 import { StreamingExecutor } from "./streaming-executor.js";
 
 import type { UsageInfo } from "@/llm/events.js";
-import type { ToolSchema } from "@/tools/types.js";
-import { asRecord, strArg } from "@/utils/index.js";
 
 // When the model stops on max_tokens, escalate its output ceiling once to this
 // value, then attempt a bounded number of multi-turn recoveries. Mirrors Go.
@@ -472,13 +472,18 @@ export class Agent {
           const toolResults: ToolResultBlock[] = [];
           for (const r of results) {
             if (r.type === "tool_result") {
-              let content = r.output;
-              if (content.length > MAX_OUTPUT_CHARS && !exemptIds.has(r.toolId)) {
+              let content: ToolResultBlock["content"] = r.output;
+              // Image content blocks are never spilled — they must be sent as-is to the API.
+              if (
+                typeof content === "string" &&
+                content.length > MAX_OUTPUT_CHARS &&
+                !exemptIds.has(r.toolId)
+              ) {
                 // Single result exceeds the limit: write to disk and replace with
                 // a preview. If the write fails the content is kept as-is; either
                 // way the aggregate budget need not retry, so both outcomes are
                 // marked exempt.
-                content = persistLargeResult(this.workDir, this.sessionId, r.toolId, r.output);
+                content = persistLargeResult(this.workDir, this.sessionId, r.toolId, content);
                 exemptIds.add(r.toolId);
               }
               toolResults.push({
@@ -710,7 +715,7 @@ export class Agent {
       toolId: string;
       toolName: string;
       result: {
-        output: string;
+        output: string | Record<string, unknown>[];
         isError: boolean;
       };
       elapsed: number;
@@ -719,9 +724,9 @@ export class Agent {
     events: AgentEvent[],
   ): Promise<void> {
     // Snapshot ReadFile content into recovery state so a later auto-compact
-    // can replay it after the transcript collapses into a summary. Mirrors
-    // Go agent.go executeSingleTool's RecordFileRead.
-    if (!r.result.isError && r.toolName === "ReadFile") {
+    // can replay it after the transcript collapses into a summary.
+    // Image results (array output) are skipped: reading a binary as utf-8 would poison the snapshot.
+    if (!r.result.isError && r.toolName === "ReadFile" && typeof r.result.output === "string") {
       const tu = toolUses.find((t) => t.toolUseId === r.toolId);
       const p = strArg(tu?.arguments ?? {}, "file_path");
       if (p) {
@@ -737,7 +742,7 @@ export class Agent {
       type: "tool_result",
       toolName: r.toolName,
       toolId: r.toolId,
-      output: r.result.output,
+      output: contentToText(r.result.output),
       isError: r.result.isError,
       elapsed: r.elapsed,
     });
@@ -747,7 +752,7 @@ export class Agent {
       const hookResults = await this.hookEngine.fire("post_tool_use", {
         event: "post_tool_use",
         toolName: r.toolName,
-        message: r.result.output,
+        message: contentToText(r.result.output),
       });
       for (const hr of hookResults) {
         if (hr.output) {

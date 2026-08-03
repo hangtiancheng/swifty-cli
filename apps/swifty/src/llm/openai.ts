@@ -23,10 +23,21 @@
 import OpenAI from "openai";
 
 import { getMaxOutputTokens, type ProviderConfig, resolveAPIKey } from "../config/config.js";
-import type { ConversationManager, Message } from "../conversation/conversation.js";
+import type {
+  ConversationManager,
+  Message,
+  ToolResultBlock,
+} from "../conversation/conversation.js";
 import { ensureToolPairing } from "../conversation/pairing.js";
 import { createChildLogger } from "../logger/index.js";
-import { asRecord, asString, DANGEROUSLY_JSON, isRecord, strArg } from "../utils/index.js";
+import {
+  asRecord,
+  asString,
+  contentToText,
+  DANGEROUSLY_JSON,
+  isRecord,
+  strArg,
+} from "../utils/index.js";
 
 import type { LLMClient } from "./client.js";
 import {
@@ -261,6 +272,71 @@ export type OpenAIMessageParam =
   | OpenAI.Responses.ResponseInputItem.FunctionCallOutput
   | OpenAI.Responses.ResponseReasoningItem;
 
+// Extract a data URL from an image content block (Record form). Returns null
+// for non-image blocks or malformed sources.
+function imageDataUrl(block: Record<string, unknown>): string | null {
+  if (block.type !== "image") {
+    return null;
+  }
+  const source = block.source;
+  if (!isRecord(source) || source.type !== "base64") {
+    return null;
+  }
+  const mediaType = strArg(source, "media_type");
+  const data = strArg(source, "data");
+  if (!mediaType || !data) {
+    return null;
+  }
+  return `data:${mediaType};base64,${data}`;
+}
+
+function collectImageContents(tr: ToolResultBlock): OpenAI.Responses.ResponseInputContent[] {
+  const { toolUseId, content /** , isError */ } = tr;
+  if (typeof content === "string" || content.length === 0) {
+    return [];
+  }
+  const contents: OpenAI.Responses.ResponseInputContent[] = [
+    {
+      type: "input_text",
+      text: `[Image(s) returned by tool call ${toolUseId}`,
+    },
+  ];
+  for (const block of content) {
+    const url = imageDataUrl(block);
+    if (url) {
+      contents.push({
+        type: "input_image",
+        image_url: imageDataUrl(block),
+        detail: "auto",
+      });
+    }
+  }
+  return contents;
+}
+
+function collectImageParts(tr: ToolResultBlock): OpenAI.ChatCompletionContentPart[] {
+  const { toolUseId, content /** , isError */ } = tr;
+  if (typeof content === "string" || content.length === 0) {
+    return [];
+  }
+  const contents: OpenAI.ChatCompletionContentPart[] = [
+    {
+      type: "text",
+      text: `[Image(s) returned by tool call ${toolUseId}`,
+    },
+  ];
+  for (const block of content) {
+    const url = imageDataUrl(block);
+    if (url) {
+      contents.push({
+        type: "image_url",
+        image_url: { url },
+      });
+    }
+  }
+  return contents;
+}
+
 // Convert Swifty's conversation into Responses API input items:
 // assistant tool calls become function_call items and
 // tool results become function_call_output items,
@@ -296,11 +372,19 @@ export function buildOpenAIInput(messages: Message[]): OpenAIMessageParam[] {
       }
     } // end if (m.toolUses && m.toolUses.length > 0)
     else if (m.toolResults && m.toolResults.length > 0) {
+      const pendingImageContents: OpenAI.Responses.ResponseInputContent[] = [];
       for (const tr of m.toolResults) {
         result.push({
           type: "function_call_output",
           call_id: tr.toolUseId,
-          output: tr.content,
+          output: contentToText(tr.content),
+        });
+        pendingImageContents.push(...collectImageContents(tr));
+      }
+      if (pendingImageContents.length > 0) {
+        result.push({
+          role: "user",
+          content: pendingImageContents,
         });
       }
     } // end if (m.toolResults && m.toolResults.length > 0)
@@ -345,12 +429,14 @@ export function buildChatCompletionMessage(
       });
     } // if (m.toolUses && m.toolUses.length > 0)
     else if (m.toolResults && m.toolResults.length > 0) {
+      const pendingImageContents: OpenAI.Responses.ResponseInputContent[] = [];
       for (const tr of m.toolResults) {
         params.push({
           role: "tool",
           tool_call_id: tr.toolUseId,
-          content: tr.content,
+          content: contentToText(tr.content),
         });
+        pendingImageContents.push(...collectImageContents(tr));
       }
     } // end if (m.toolResults && m.toolResults.length > 0)
     else if (m.role === "assistant") {
@@ -549,24 +635,7 @@ export class OpenAICompatClient implements LLMClient {
               };
             }
           }
-        } // end if (chunk.choices[0].finish_reason)
-
-        // if (chunk.usage) {
-        //   outputTokens = chunk.usage.completion_tokens;
-
-        //   // Responses API exposes the cached prefix via
-        //   // input_tokens_details.cached_tokens, absent -> 0.
-        //   // There is no cache_creation concept here, so it stays 0.
-        //   cacheReadInputTokens =
-        //     chunk.usage.prompt_tokens_details?.cached_tokens ?? 0;
-
-        //   // input_tokens already includes the cached prefix;
-        //   // subtract so the usage anchor (input + cache_read) doesn't double-count it.
-        //   inputTokens = Math.max(
-        //     0,
-        //     chunk.usage.prompt_tokens - cacheReadInputTokens,
-        //   );
-        // }
+        }
       }
 
       // Map Chat Completions finish_reason to Swifty's internal stop reason.
@@ -653,11 +722,19 @@ export function buildChatCompletionMessages(
       });
     } // end if (m.toolUses && m.toolUses.length > 0)
     else if (m.toolResults && m.toolResults.length > 0) {
+      const pendingImageParts: OpenAI.ChatCompletionContentPart[] = [];
       for (const tr of m.toolResults) {
         params.push({
           role: "tool",
           tool_call_id: tr.toolUseId,
-          content: tr.content,
+          content: contentToText(tr.content),
+        });
+        pendingImageParts.push(...collectImageParts(tr));
+      }
+      if (pendingImageParts.length > 0) {
+        params.push({
+          role: "user",
+          content: pendingImageParts,
         });
       }
     } // end if (m.toolResults && m.toolResults.length > 0)

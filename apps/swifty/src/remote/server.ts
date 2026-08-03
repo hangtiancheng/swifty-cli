@@ -1482,7 +1482,8 @@ export class RemoteServer {
       } else if (msg.toolResults?.length) {
         handle.conv.addToolResultsMessage(
           msg.toolResults.map((tr) => ({
-            ...tr,
+            toolUseId: tr.toolUseId,
+            content: tr.content,
             isError: tr.isError ?? false,
           })),
         );

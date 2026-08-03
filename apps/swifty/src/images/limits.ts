@@ -26,7 +26,7 @@ export const MAX_IMAGE_BYTES_PASSTHROUGH = (MAX_IMAGE_BYTES * 3) / 4;
 
 export const MAX_DIMENSION_PX = 2000;
 
-export const JPEG_QUALITY_LADDER = [80, 60, 40, 20] as const;
+export const JPEG_QUALITY = [80, 60, 40, 20] as const;
 
 // Cap images per user message to stay well under provider block limits.
 export const MAX_IMAGES_PER_MESSAGE = 10;

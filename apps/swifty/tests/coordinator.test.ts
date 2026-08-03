@@ -36,6 +36,8 @@ import { TaskStopTool } from "../src/teams/task-stop.js";
 import { TeamManager } from "../src/teams/team.js";
 import { SyntheticOutputTool } from "../src/tools/synthetic-output.js";
 
+import { asString } from "@/utils/index.js";
+
 // The teams directory lives at <home>/.swifty/teams, so the tests redirect the
 // entire home directory to a temp dir to avoid leaving residue in the real
 // ~/.swifty/teams. os.homedir() reads USERPROFILE on Windows and HOME on other
@@ -173,7 +175,7 @@ describe("SyntheticOutput", () => {
     const res = await new SyntheticOutputTool().execute(ctx, {
       output: { status: "ok", count: 2 },
     });
-    expect(JSON.parse(res.output)).toEqual({ status: "ok", count: 2 });
+    expect(JSON.parse(asString(res.output))).toEqual({ status: "ok", count: 2 });
   });
 
   it("rejects output whose shape does not match the schema", async () => {

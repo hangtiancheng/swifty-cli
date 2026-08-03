@@ -28,7 +28,7 @@ export interface ToolUseBlock {
 
 export interface ToolResultBlock {
   toolUseId: string;
-  content: string;
+  content: string | Record<string, unknown>[];
   isError: boolean;
 }
 
@@ -88,7 +88,11 @@ export class ConversationManager {
     });
   }
 
-  addToolResultMessage(toolUseId: string, content: string, isError: boolean): void {
+  addToolResultMessage(
+    toolUseId: string,
+    content: string | Record<string, unknown>[],
+    isError: boolean,
+  ): void {
     this.history.push({
       role: "user",
       content: "",

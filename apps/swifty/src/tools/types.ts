@@ -27,7 +27,7 @@ import type { FileHistory } from "@/file-history/file-history.js";
 export type ToolCategory = "read" | "write" | "command";
 
 export interface ToolResult {
-  output: string;
+  output: string | Record<string, unknown>[];
   isError: boolean;
 }
 

@@ -55,9 +55,8 @@ Usage Notes
 - Results are returned with line numbers (1-based) for easy reference.
 - This tool can only read files, not directories. Use glob to list directory contents.
 - Do NOT re-read a file you just edited to verify -- EditFile would have errored if the change failed.
+- This tool can read image files (png, jpg, jpeg, gif, webp). Image contents are returned as visual content for multimodal analysis. Line numbers and offset/limit parameters do NOT apply to image files.
 `;
-
-// - This tool can read image files, supported types: image/png, image/jpeg, image/gif, and image/webp. The image contents are returned visually, so line numbers do NOT apply.
 
 export const EDIT_FILE_DESCRIPTION = `
 Replace an extract string in a file, The old_string MUST appear exactly once in the file.

@@ -28,6 +28,8 @@ import { describe, it, expect } from "vitest";
 
 import type { ToolResultBlock } from "../src/conversation/conversation.js";
 import { applyBudget, isSpillReadback, persistLargeResult } from "../src/tool-result/budget.js";
+
+import { asString } from "@/utils/index.js";
 function batch(...sizes: number[]): ToolResultBlock[] {
   return sizes.map((n, i) => ({
     toolUseId: `t${String(i + 1)}`,
@@ -59,7 +61,7 @@ describe("tool result budget", () => {
     applyBudget(rs, workDir, "s");
 
     expect(totalLen(rs)).toBeLessThanOrEqual(200000);
-    const replaced = rs.filter((r) => r.content.includes("<persisted-output>"));
+    const replaced = rs.filter((r) => asString(r.content).includes("<persisted-output>"));
     expect(replaced.length).toBe(1);
     expect(rs[2].content).toContain("<persisted-output>");
     // The spill file stores the complete content

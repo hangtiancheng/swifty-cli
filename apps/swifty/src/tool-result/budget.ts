@@ -25,7 +25,7 @@ import { join, resolve } from "node:path";
 
 import type { ToolResultBlock } from "../conversation/conversation.js";
 import { createChildLogger } from "../logger/index.js";
-import { isObject } from "../utils/index.js";
+import { asString, isObject } from "../utils/index.js";
 
 // Aggregate cap across all tool results within a single message. The size of
 // an individual result is gated by MAX_OUTPUT_CHARS in the agent; what we
@@ -124,14 +124,21 @@ export function applyBudget(
   sessionId: string,
   exemptIds?: Set<string>,
 ): void {
-  let total = toolResults.reduce((sum, r) => sum + r.content.length, 0);
+  // Image content blocks are never spilled — they must be sent as-is to the API.
+  const spillable = toolResults.filter((r) => typeof r.content === "string");
+  let total = spillable.reduce(
+    (sum, r) => sum + (typeof r.content === "string" ? r.content.length : 0),
+    0,
+  );
   if (total <= MESSAGE_AGGREGATE_LIMIT) {
     return;
   }
 
   // Select in descending order of content length: spilling the largest first
   // minimizes the number of entries we need to touch to get back under the limit.
-  const sorted = [...toolResults].sort((a, b) => b.content.length - a.content.length);
+  const sorted = [...spillable].sort(
+    (a, b) => asString(b.content).length - asString(a.content).length,
+  );
   for (const r of sorted) {
     if (total <= MESSAGE_AGGREGATE_LIMIT) {
       break;
@@ -139,20 +146,21 @@ export function applyBudget(
     if (exemptIds?.has(r.toolUseId)) {
       continue;
     }
-    if (r.content.length <= PREVIEW_CHARS) {
+    const content = asString(r.content);
+    if (content.length <= PREVIEW_CHARS) {
       // A result shorter than the preview gains no space from spilling
       continue;
     }
     let spillPath: string;
     try {
-      spillPath = writeSpill(workDir, sessionId, r.toolUseId, r.content);
+      spillPath = writeSpill(workDir, sessionId, r.toolUseId, content);
     } catch {
       // On write failure, keep the original text. The message is finalized
       // into history right after, so there will be no retry
       continue;
     }
-    const replacement = buildSpillPreview(r.content, spillPath);
-    total -= r.content.length - replacement.length;
+    const replacement = buildSpillPreview(content, spillPath);
+    total -= content.length - replacement.length;
     r.content = replacement;
   }
 }

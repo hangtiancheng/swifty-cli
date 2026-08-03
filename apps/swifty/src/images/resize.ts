@@ -24,7 +24,7 @@ import sharp from "sharp";
 
 import {
   ImageTooLargeError,
-  JPEG_QUALITY_LADDER,
+  JPEG_QUALITY,
   MAX_IMAGE_BYTES,
   MAX_DIMENSION_PX,
   MAX_IMAGE_BYTES_PASSTHROUGH,
@@ -110,7 +110,7 @@ async function compressWithSharp(buf: Buffer, mediaType: ImageMediaType): Promis
         return toResult(png, "image/png");
       }
     }
-    for (const quality of JPEG_QUALITY_LADDER) {
+    for (const quality of JPEG_QUALITY) {
       const jpeg = await sharp(buf)
         .resize(width, height, { fit: "inside", withoutEnlargement: true })
         .jpeg({ quality })

@@ -34,6 +34,8 @@ import { PermissionChecker } from "../src/permissions/checker.js";
 import { ToolRegistry } from "../src/tools/registry.js";
 import type { Tool } from "../src/tools/types.js";
 
+import { asString } from "@/utils/index.js";
+
 // Wiring test for the tool-result budget in the Agent main loop: drives the
 // full main loop and verifies single-result spill, aggregate spill, readback
 // exemption, and that what enters the conversation history is the final form.
@@ -189,7 +191,9 @@ describe("tool result budget wiring", () => {
     const msg = toolResultsMsg(conv);
     const total = msg?.toolResults?.reduce((sum, r) => sum + r.content.length, 0);
     expect(total).toBeLessThanOrEqual(200000);
-    const previews = msg?.toolResults?.filter((r) => r.content.includes("<persisted-output>"));
+    const previews = msg?.toolResults?.filter((r) =>
+      asString(r.content).includes("<persisted-output>"),
+    );
     expect(previews?.length).toBe(1);
     const t3 = msg?.toolResults?.find((r) => r.toolUseId === "t3");
     expect(t3?.content).toContain("<persisted-output>");

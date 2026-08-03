@@ -21,7 +21,10 @@
  */
 
 import { existsSync, readFileSync, statSync } from "fs";
+import { basename } from "path";
 
+import { isImagePath } from "../images/detect.js";
+import { loadImageAttachment } from "../images/load.js";
 import { createChildLogger } from "../logger/index.js";
 import { asErrorString } from "../utils/index.js";
 import { intArg, strArg } from "../utils/index.js";
@@ -98,6 +101,10 @@ export class ReadFileTool implements Tool {
       });
     }
 
+    if (isImagePath(filePath)) {
+      return this.readImage(filePath);
+    }
+
     const offset = intArg(args, "offset", 0);
     const limit = intArg(args, "limit", 2000);
 
@@ -121,6 +128,27 @@ export class ReadFileTool implements Tool {
         output: `Error reading file: ${asErrorString(err)}`,
         isError: true,
       });
+    }
+  }
+
+  private async readImage(filePath: string): Promise<ToolResult> {
+    try {
+      const attachment = await loadImageAttachment(filePath);
+      const imageBlock: Record<string, unknown> = {
+        type: "image",
+        source: {
+          type: "base64",
+          media_type: attachment.mediaType,
+          data: attachment.data,
+        },
+      };
+      return { output: [imageBlock], isError: false };
+    } catch (err) {
+      log.error({ err }, "image read failed");
+      return {
+        output: `Error reading image ${basename(filePath)}: ${asErrorString(err)}`,
+        isError: true,
+      };
     }
   }
 }

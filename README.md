@@ -1,4 +1,4 @@
-Swifty/Larky/Swiftx
+Swifty/Swiftx/Larky
 
 > Download Claude Code VSCode Plugin
 

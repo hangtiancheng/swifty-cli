@@ -916,7 +916,8 @@ export function App({
             } else if (m.toolResults?.length) {
               conv.addToolResultsMessage(
                 m.toolResults.map((tr) => ({
-                  ...tr,
+                  toolUseId: tr.toolUseId,
+                  content: tr.content,
                   isError: tr.isError ?? false,
                 })),
               );

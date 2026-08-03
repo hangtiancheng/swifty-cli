@@ -27,6 +27,7 @@ import z, { parse } from "zod";
 
 import type { ConversationManager } from "../conversation/conversation.js";
 import { createChildLogger } from "../logger/index.js";
+import { contentToText } from "../utils/index.js";
 
 const log = createChildLogger({ module: "teams" });
 
@@ -72,7 +73,7 @@ function serializeConversation(conversation: ConversationManager): TranscriptEnt
     if (msg.toolResults && msg.toolResults.length > 0) {
       entry.tool_results = msg.toolResults.map((tr) => ({
         tool_use_id: tr.toolUseId,
-        content: tr.content,
+        content: contentToText(tr.content),
         is_error: tr.isError || undefined,
       }));
     }
