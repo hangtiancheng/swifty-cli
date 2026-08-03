@@ -20,7 +20,7 @@
  * SOFTWARE.
  */
 
-import { spawnSync } from "node:child_process";
+import { execFile } from "node:child_process";
 
 import { intArg, strArg } from "../utils/index.js";
 
@@ -149,46 +149,68 @@ export class BashTool implements Tool {
       actualCommand = this.sandbox.wrap(command, this.sandboxConfig);
     }
 
-    // stdout and stderr captured separately, merged into unified output later
-    const result = spawnSync("bash", ["-c", actualCommand], {
-      cwd: ctx.workDir,
-      timeout: timeout * 1000,
-      encoding: "utf-8",
-      stdio: ["pipe", "pipe", "pipe"],
-      maxBuffer: 10 * 1024 * 1024,
+    // Async execution keeps the Node event loop free: with spawnSync the TUI
+    // froze (spinner animation, elapsed timers, keyboard input) for the whole
+    // command duration. Semantics preserved: SIGTERM on timeout, 10MB
+    // maxBuffer (child killed, truncated output still returned), merged
+    // stdout+stderr. ctx.abortSignal additionally lets Esc kill the child.
+    return new Promise<ToolResult>((resolve) => {
+      execFile(
+        "bash",
+        ["-c", actualCommand],
+        {
+          cwd: ctx.workDir,
+          timeout: timeout * 1000,
+          killSignal: "SIGTERM",
+          encoding: "utf-8",
+          maxBuffer: 10 * 1024 * 1024,
+          ...(ctx.abortSignal ? { signal: ctx.abortSignal } : {}),
+        },
+        (error, stdout, stderr) => {
+          if (error?.name === "AbortError") {
+            resolve({ output: "Error: command interrupted", isError: true });
+            return;
+          }
+
+          // Node kills the child with killSignal when the timeout elapses.
+          if (error && error.killed && error.signal === "SIGTERM") {
+            resolve({
+              output: `Error: command timed out after ${String(timeout)}s`,
+              isError: true,
+            });
+            return;
+          }
+
+          // Spawn-level failure (e.g. ENOENT): string code, no output produced.
+          if (error && typeof error.code !== "number" && !stdout && !stderr) {
+            resolve({
+              output: `Error executing command: ${error.message}`,
+              isError: true,
+            });
+            return;
+          }
+
+          // Non-zero exits surface as an error whose numeric code is the exit code.
+          const exitCode = error && typeof error.code === "number" ? error.code : 0;
+          let output = `$ ${command}\n`;
+          // Merge stdout and stderr, no prefix added
+          if (stdout) {
+            output += stdout;
+          }
+          if (stderr) {
+            output += stderr;
+          }
+
+          if (exitCode !== 0) {
+            const hint = exitCodeHint(command, exitCode);
+            output += hint
+              ? `\nExit code ${String(exitCode)} (${hint})`
+              : `\nExit code ${String(exitCode)}`;
+          }
+
+          resolve({ output, isError: false });
+        },
+      );
     });
-
-    if (result.error && result.signal === "SIGTERM") {
-      return Promise.resolve({
-        output: `Error: command timed out after ${String(timeout)}s`,
-        isError: true,
-      });
-    }
-
-    if (result.error && !result.stdout && !result.stderr) {
-      return Promise.resolve({
-        output: `Error executing command: ${result.error.message}`,
-        isError: true,
-      });
-    }
-
-    const exitCode = result.status ?? 0;
-    let output = `$ ${command}\n`;
-    // Merge stdout and stderr, no prefix added
-    if (result.stdout) {
-      output += result.stdout;
-    }
-    if (result.stderr) {
-      output += result.stderr;
-    }
-
-    if (exitCode !== 0) {
-      const hint = exitCodeHint(command, exitCode);
-      output += hint
-        ? `\nExit code ${String(exitCode)} (${hint})`
-        : `\nExit code ${String(exitCode)}`;
-    }
-
-    return Promise.resolve({ output, isError: false });
   }
 }

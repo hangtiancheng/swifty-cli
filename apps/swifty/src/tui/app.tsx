@@ -23,7 +23,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 
-import { Box, Static, Text, useApp, useInput } from "ink";
+import { Box, Static, Text, useApp, useInput, useStdout } from "ink";
 import { useState, useEffect, useRef, useCallback } from "react";
 
 import { Agent } from "../agent/agent.js";
@@ -648,6 +648,46 @@ export function App({
     },
     [workDir, mcpServers],
   );
+
+  // Terminal width used to re-key the <Static> transcript. Ink erases the
+  // previous dynamic frame by its logical line count; after a width change the
+  // already-printed rows re-wrap (full-width rows like the input-box borders
+  // double), so that erase under-counts and stale spinner/input rows leak into
+  // scrollback on every subsequent repaint. On a (debounced) width change we
+  // erase the visible viewport ourselves (\x1b[2J\x1b[H — scrollback is kept,
+  // unlike /clear's \x1b[3J) and remount <Static> via the key so the whole
+  // transcript reprints cleanly at the new width.
+  const { stdout } = useStdout();
+  const termWidthRef = useRef(stdout.columns || 80);
+  const [termWidth, setTermWidth] = useState(termWidthRef.current);
+
+  useEffect(() => {
+    let timer: NodeJS.Timeout | null = null;
+    const onResize = () => {
+      if (timer) {
+        clearTimeout(timer);
+      }
+      // Debounce: a drag-resize fires dozens of events; repaint once at the end.
+      timer = setTimeout(() => {
+        timer = null;
+        const width = stdout.columns || 80;
+        // Height-only changes don't re-wrap rows; nothing leaks, skip.
+        if (width === termWidthRef.current) {
+          return;
+        }
+        termWidthRef.current = width;
+        stdout.write("\x1b[2J\x1b[H");
+        setTermWidth(width);
+      }, 150);
+    };
+    stdout.on("resize", onResize);
+    return () => {
+      if (timer) {
+        clearTimeout(timer);
+      }
+      stdout.off("resize", onResize);
+    };
+  }, [stdout]);
 
   useEffect(() => {
     if (appState === "chat" && !clientRef.current) {
@@ -1795,7 +1835,7 @@ export function App({
             scrollback. This keeps the complete transcript selectable and
             copyable while only the active turn is re-rendered by Ink. */}
         <Static
-          key={`transcript-${sessionIdRef.current}`}
+          key={`transcript-${sessionIdRef.current}-${String(termWidth)}`}
           items={[
             {
               type: "brand" as const,
