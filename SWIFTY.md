@@ -1,1 +1,2 @@
-- Your (Swifty's) email: usr161043261@outlook.com, use the email when `git commit`
+- User identity (for the user's own manual commits): name `tianchenghang`, email `161043261@qq.com`. The repo-level git config (`user.name` / `user.email`) must keep this identity.
+- Swifty identity (only when Swifty commits): name `Swifty`, email `usr161043261@outlook.com`. Swifty must pass this identity explicitly per commit (e.g. `--author="Swifty <usr161043261@outlook.com>"` plus `GIT_COMMITTER_NAME`/`GIT_COMMITTER_EMAIL`), and must never rewrite the repo config to Swifty's identity.
