@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect x="16" y="16" width="480" height="480" fill="#42B883" fill-opacity="0.5" />
+  <text x="256" y="295" text-anchor="middle"
+    font-family="'Geist Mono', 'Maple Mono', Menlo, 'Cascadia Code', monospace"
+    font-size="112" font-weight="600" letter-spacing="2" fill="#149ECA">Swifty</text>
+</svg>

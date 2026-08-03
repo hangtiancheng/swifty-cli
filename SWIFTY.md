@@ -1,1 +1,1 @@
-- Your (Swifty's) email: swifty@swifty.dev, use the email when `git commit`
+- Your (Swifty's) email: usr161043261@outlook.com, use the email when `git commit`
