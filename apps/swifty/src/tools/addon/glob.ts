@@ -26,8 +26,7 @@ import { join } from "path";
 import { Glob } from "@swifty.js/glob-addon";
 
 import { createChildLogger } from "../../logger/index.js";
-import { asErrorString } from "../../utils/index.js";
-import { strArg } from "../../utils/index.js";
+import { asErrorString, strArg } from "../../utils/index.js";
 import { GLOB_DESCRIPTION } from "../descriptions.js";
 import {
   SKIP_DIRS,
@@ -72,7 +71,7 @@ export class GlobTool implements Tool {
     };
   }
 
-  execute(ctx: ToolContext, args: Record<string, unknown>): Promise<ToolResult> {
+   execute(ctx: ToolContext, args: Record<string, unknown>): Promise<ToolResult> {
     const pattern = strArg(args, "pattern");
     if (!pattern) {
       return Promise.resolve({

@@ -27,8 +27,7 @@ import { join, relative } from "node:path";
 import { Glob } from "@swifty.js/glob-addon";
 
 import { createChildLogger } from "../../logger/index.js";
-import { asErrorString } from "../../utils/index.js";
-import { strArg } from "../../utils/index.js";
+import { asErrorString, strArg } from "../../utils/index.js";
 import { GREP_DESCRIPTION } from "../descriptions.js";
 import {
   SKIP_DIRS,
@@ -95,7 +94,7 @@ export class GrepTool implements Tool {
 
     let regex: RegExp;
     try {
-      regex = new RegExp(pattern, "i");
+      regex = new RegExp(pattern);
     } catch (err) {
       log.error({ err }, "tool operation failed");
       return {

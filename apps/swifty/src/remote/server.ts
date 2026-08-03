@@ -83,6 +83,8 @@ import { TeamCreateTool, SendMessageTool, TeamDeleteTool } from "../teams/tools.
 import { TaskStore } from "../todo/store.js";
 import { TaskList } from "../todo/todo.js";
 import { TaskCreateTool, TaskGetTool, TaskListTool, TaskUpdateTool } from "../todo/tools.js";
+import { GlobTool } from "../tools/addon/glob.js";
+import { GrepTool } from "../tools/addon/grep.js";
 import { AskUserQuestionTool, type Question, type Asker } from "../tools/ask-user.js";
 import { BashTool } from "../tools/bash.js";
 import { EditFileTool } from "../tools/edit-file.js";
@@ -90,8 +92,6 @@ import { EnterWorktreeTool } from "../tools/enter-worktree.js";
 import { ExitPlanModeTool } from "../tools/exit-plan-mode.js";
 import { ExitWorktreeTool } from "../tools/exit-worktree.js";
 import { FileStateCache } from "../tools/file-state-cache.js";
-import { GlobTool } from "../tools/glob.js";
-import { GrepTool } from "../tools/grep.js";
 import { ReadFileTool } from "../tools/read-file.js";
 import { ToolRegistry } from "../tools/registry.js";
 import { SyntheticOutputTool } from "../tools/synthetic-output.js";

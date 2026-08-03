@@ -225,9 +225,6 @@ importers:
       '@swifty.js/glob-addon':
         specifier: workspace:*
         version: link:../glob-addon
-      '@swifty.js/glob-wasm':
-        specifier: workspace:*
-        version: link:../glob-wasm
       '@swifty.js/marked-terminal':
         specifier: workspace:^
         version: link:../marked-terminal

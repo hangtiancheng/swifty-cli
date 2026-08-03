@@ -136,7 +136,7 @@ export function applyBudget(
 
   // Select in descending order of content length: spilling the largest first
   // minimizes the number of entries we need to touch to get back under the limit.
-  const sorted = [...spillable].sort(
+  const sorted = spillable.toSorted(
     (a, b) => asString(b.content).length - asString(a.content).length,
   );
   for (const r of sorted) {

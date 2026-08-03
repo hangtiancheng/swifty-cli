@@ -35,11 +35,11 @@ import { coordinatorToolFilter, coordinatorActive } from "./teams/coordinator.js
 import { TaskStopTool } from "./teams/task-stop.js";
 import { TeamManager } from "./teams/team.js";
 import { TeamCreateTool, SendMessageTool, TeamDeleteTool } from "./teams/tools.js";
+import { GlobTool } from "./tools/addon/glob.js";
+import { GrepTool } from "./tools/addon/grep.js";
 import { BashTool } from "./tools/bash.js";
 import { EditFileTool } from "./tools/edit-file.js";
 import { FileStateCache } from "./tools/file-state-cache.js";
-import { GlobTool } from "./tools/glob.js";
-import { GrepTool } from "./tools/grep.js";
 import { ReadFileTool } from "./tools/read-file.js";
 import { ToolRegistry } from "./tools/registry.js";
 import { SyntheticOutputTool } from "./tools/synthetic-output.js";

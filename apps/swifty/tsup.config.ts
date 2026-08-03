@@ -74,14 +74,9 @@ export default defineConfig({
           path: "sharp",
           external: true,
         }));
-        // @swifty.js/glob-addon is a C++ N-API addon (.node binary). esbuild
-        // cannot bundle binaries — externalize it so build never breaks.
-        // Currently addon/*.ts is dead code (tree-shaken), but this guard
-        // prevents a build crash if someone imports it in the future.
-        build.onResolve({ filter: /@swifty\.js\/glob-addon/ }, (args) => ({
-          path: args.path,
-          external: true,
-        }));
+        // @swifty.js/glob-addon's JS wrapper is bundled; the C++ N-API binary
+        // (glob_addon.node) cannot be bundled and is loaded at runtime from
+        // next to the bundle entry (copied into dist/ in onSuccess below).
       },
     },
   ],
@@ -91,23 +86,20 @@ export default defineConfig({
     // is missing, copyFileSync throws ENOENT — run `pnpm build` (which
     // triggers prebuild) instead of calling `tsup` directly.
 
-    // 1. release.wasm — loaded by glob-wasm via new URL("release.wasm", import.meta.url)
-    const wasmSrc = join(__dirname, "../glob-wasm/build/release.wasm");
-    copyFileSync(wasmSrc, join(__dirname, "dist/release.wasm"));
-
-    // 2. builtin skills — SKILL.md + references, read by loadBuiltinFile()
+    // 1. builtin skills — SKILL.md + references, read by loadBuiltinFile()
     cpSync(join(__dirname, "src/skills/builtin"), join(__dirname, "dist/builtin"), {
       recursive: true,
     });
 
-    // 3. glob_addon.node — native addon (platform-specific). Currently dead
-    //    code but copied for future use. Cross-platform npm distribution
-    //    would need per-platform prebuilt packages instead.
+    // 2. glob_addon.node — native addon backing the Glob/Grep tools; the
+    //    bundled wrapper loads it from next to the bundle entry at runtime.
+    //    Platform-specific: cross-platform npm distribution would need
+    //    per-platform prebuilt packages instead.
     copyFileSync(
       join(__dirname, "../glob-addon/build/Release/glob_addon.node"),
       join(__dirname, "dist/glob_addon.node"),
     );
 
-    console.log("copied release.wasm, builtin/, glob_addon.node -> dist/");
+    console.log("copied builtin/, glob_addon.node -> dist/");
   },
 });

@@ -20,10 +20,13 @@
  * SOFTWARE.
  */
 
+import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
+import { fileURLToPath } from "node:url";
 
 const require = createRequire(import.meta.url);
-const binding = require("../build/Release/glob_addon.node") as {
+
+interface Binding {
 	globMatch: (pattern: string, text: string) => boolean;
 	globScan: (
 		pattern: string,
@@ -32,7 +35,31 @@ const binding = require("../build/Release/glob_addon.node") as {
 		dot: boolean | null,
 		maxResults: number | null,
 	) => string[];
-};
+}
+
+function loadBinding(): Binding {
+	// Candidate locations for the native binary:
+	// 1. package layout — dist/glob.js next to build/Release/glob_addon.node
+	// 2. bundled layout — consumers (e.g. swifty's tsup build) inline this
+	//    wrapper and copy glob_addon.node next to their bundle entry.
+	const candidates = [
+		new URL("../build/Release/glob_addon.node", import.meta.url),
+		new URL("./glob_addon.node", import.meta.url),
+	];
+	for (const url of candidates) {
+		const path = fileURLToPath(url);
+		if (existsSync(path)) {
+			return require(path) as Binding;
+		}
+	}
+	throw new Error(
+		`@swifty.js/glob-addon: glob_addon.node not found (searched: ${candidates
+			.map((u) => fileURLToPath(u))
+			.join(", ")})`,
+	);
+}
+
+const binding = loadBinding();
 
 export interface GlobScanOptions {
 	cwd?: string;
