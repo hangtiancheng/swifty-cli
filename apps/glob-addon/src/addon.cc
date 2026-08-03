@@ -54,8 +54,10 @@ namespace fs = std::filesystem;
 
 namespace {
 
+constexpr size_t kMaxPatternLength = 64 * 1024;
 constexpr size_t kMaxBraceExpansions = 10000;
-constexpr int kMaxBraceDepth = 64;
+// Counts sequential groups as well as nesting; bounds expandBraces recursion.
+constexpr int kMaxBraceDepth = 1000;
 
 // ---------------------------------------------------------------------------
 // UTF-8 <-> fs::path helpers (portable across the C++17/C++20 char8_t split)
@@ -166,6 +168,8 @@ struct PatternSegment {
 
 struct CompiledPattern {
   std::vector<PatternSegment> segs;
+  size_t minSegments = 0; // non-globstar segment count (each consumes one)
+  bool hasGlobstar = false;
 };
 
 struct CompiledGlob {
@@ -174,20 +178,33 @@ struct CompiledGlob {
   std::vector<CompiledPattern> alts;
 };
 
-void splitPatternSegments(const std::string &p,
-                          std::vector<PatternSegment> &out) {
+void splitPatternSegments(const std::string &p, CompiledPattern &out) {
   size_t start = 0;
   for (size_t i = 0; i <= p.size(); ++i) {
     if (i == p.size() || p[i] == '/') {
       std::string seg = p.substr(start, i - start);
-      bool isGlobstar = (seg == "**");
-      out.push_back({std::move(seg), isGlobstar});
       start = i + 1;
+      bool isGlobstar = (seg == "**");
+      if (isGlobstar) {
+        out.hasGlobstar = true;
+        // adjacent ** segments are equivalent to one
+        if (!out.segs.empty() && out.segs.back().isGlobstar)
+          continue;
+      } else {
+        ++out.minSegments;
+      }
+      out.segs.push_back({std::move(seg), isGlobstar});
     }
   }
 }
 
 bool compileGlob(const std::string &raw, CompiledGlob &out, std::string &err) {
+  if (raw.size() > kMaxPatternLength) {
+    err = "glob pattern is too long (limit: " +
+          std::to_string(kMaxPatternLength) + " bytes)";
+    return false;
+  }
+
   size_t start = 0;
   while (start < raw.size() && raw[start] == '!') {
     out.negated = !out.negated;
@@ -207,7 +224,7 @@ bool compileGlob(const std::string &raw, CompiledGlob &out, std::string &err) {
   out.alts.reserve(expanded.size());
   for (const std::string &p : expanded) {
     CompiledPattern cp;
-    splitPatternSegments(p, cp.segs);
+    splitPatternSegments(p, cp);
     out.alts.push_back(std::move(cp));
   }
   return true;
@@ -359,31 +376,40 @@ void splitTextSegments(const std::string &t, std::vector<std::string> &out) {
   }
 }
 
-// dp[i][j] == pattern segments i.. match text segments j.. exactly.
+// Rolling two-row DP over rows i = P..0 where row(i)[j] means: pattern
+// segments i.. match text segments j.. exactly. O(T) memory.
 bool matchPattern(const CompiledPattern &cp,
                   const std::vector<std::string> &tsegs,
                   std::vector<uint8_t> &dp) {
   const size_t P = cp.segs.size();
   const size_t T = tsegs.size();
-  dp.assign((P + 1) * (T + 1), 0);
-  auto at = [&](size_t i, size_t j) -> uint8_t & {
-    return dp[i * (T + 1) + j];
-  };
 
-  at(P, T) = 1;
+  // Each non-globstar segment consumes exactly one text segment;
+  // globstars consume zero or more.
+  if (cp.minSegments > T)
+    return false;
+  if (!cp.hasGlobstar && P != T)
+    return false;
+
+  dp.assign(2 * (T + 1), 0);
+  uint8_t *next = dp.data();          // row i+1
+  uint8_t *cur = dp.data() + (T + 1); // row i being computed
+  next[T] = 1;                        // row P: only the empty suffix matches
+
   for (size_t ii = P; ii-- > 0;) {
     const PatternSegment &ps = cp.segs[ii];
     for (size_t jj = T + 1; jj-- > 0;) {
       if (ps.isGlobstar) {
-        at(ii, jj) = at(ii + 1, jj) || (jj < T && at(ii, jj + 1));
+        cur[jj] = next[jj] || (jj < T && cur[jj + 1]);
       } else if (jj < T) {
-        at(ii, jj) = at(ii + 1, jj + 1) && segMatch(ps.text, tsegs[jj]);
+        cur[jj] = next[jj + 1] && segMatch(ps.text, tsegs[jj]);
       } else {
-        at(ii, jj) = 0;
+        cur[jj] = 0;
       }
     }
+    std::swap(cur, next);
   }
-  return at(0, 0) != 0;
+  return next[0] != 0; // after the last swap, `next` holds row 0
 }
 
 bool matchCompiled(const CompiledGlob &g, const std::string &text,
@@ -403,33 +429,38 @@ bool matchCompiled(const CompiledGlob &g, const std::string &text,
 // Can any file strictly below a directory (relative segments dirSegs) still
 // match pattern cp? Over-approximates: unknown future segments are assumed
 // satisfiable, so `true` means "must descend", `false` means "safe to prune".
+// Rolling two-row DP; row(i)[j] means: pattern i.. can match dirSegs j..
+// followed by at least one future (unknown) segment.
 bool canDescendPattern(const CompiledPattern &cp,
                        const std::vector<std::string> &dirSegs,
                        std::vector<uint8_t> &dp) {
   const size_t P = cp.segs.size();
   const size_t T = dirSegs.size();
-  dp.assign((P + 1) * (T + 1), 0);
-  auto at = [&](size_t i, size_t j) -> uint8_t & {
-    return dp[i * (T + 1) + j];
-  };
 
-  // j == T: the directory path is fully consumed; a deeper file adds at
-  // least one more segment, so any remaining pattern (i < P) may still match.
-  for (size_t ii = 0; ii < P; ++ii)
-    at(ii, T) = 1;
-  at(P, T) = 0;
+  // Without a globstar the pattern must be strictly longer than the
+  // directory path to cover the extra segments of a deeper file.
+  if (!cp.hasGlobstar && P <= T)
+    return false;
+
+  dp.assign(2 * (T + 1), 0);
+  uint8_t *next = dp.data();          // row i+1; row P is all-false
+  uint8_t *cur = dp.data() + (T + 1); // row i being computed
 
   for (size_t ii = P; ii-- > 0;) {
     const PatternSegment &ps = cp.segs[ii];
+    // j == T: the directory path is fully consumed; a deeper file adds at
+    // least one more segment, so any remaining pattern (i < P) may match.
+    cur[T] = 1;
     for (size_t jj = T; jj-- > 0;) {
       if (ps.isGlobstar) {
-        at(ii, jj) = at(ii + 1, jj) || at(ii, jj + 1);
+        cur[jj] = next[jj] || cur[jj + 1];
       } else {
-        at(ii, jj) = at(ii + 1, jj + 1) && segMatch(ps.text, dirSegs[jj]);
+        cur[jj] = next[jj + 1] && segMatch(ps.text, dirSegs[jj]);
       }
     }
+    std::swap(cur, next);
   }
-  return at(0, 0) != 0;
+  return next[0] != 0; // after the last swap, `next` holds row 0
 }
 
 // ---------------------------------------------------------------------------

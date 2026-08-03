@@ -86,8 +86,8 @@ export interface GlobOptions {
  *   `/`-separated path relative to `cwd`.
  * - Symlinks are never followed: they are reported as plain files and
  *   symlinked directories are not descended into (cycle-safe).
- * - Throws if `cwd` does not exist or is not a directory, and if brace
- *   expansion exceeds the safety cap.
+ * - Throws if `cwd` does not exist or is not a directory, if brace
+ *   expansion exceeds the safety cap, or if the pattern exceeds 64 KiB.
  */
 export class Glob {
   readonly pattern: string;

@@ -108,6 +108,22 @@ describe("Glob.match", () => {
     assert.throws(() => new Glob(bomb).match("a"), RangeError);
   });
 
+  it("allows many sequential single-alternative brace groups", () => {
+    const pattern = "{a}".repeat(100);
+    assert.equal(new Glob(pattern).match("a".repeat(100)), true);
+    assert.equal(new Glob(pattern).match("a".repeat(99)), false);
+  });
+
+  it("throws for patterns above the length cap", () => {
+    assert.throws(() => new Glob("a".repeat(64 * 1024 + 1)).match("a"), RangeError);
+  });
+
+  it("coalesces adjacent ** segments", () => {
+    assert.equal(new Glob("a/**/**/b").match("a/b"), true);
+    assert.equal(new Glob("a/**/**/b").match("a/x/y/b"), true);
+    assert.equal(new Glob("**/**").match("x"), true);
+  });
+
   it("matches character classes with ranges and negation", () => {
     assert.equal(new Glob("lc[0-9]*.js").match("lc2632.js"), true);
     assert.equal(new Glob("lc[0-9]*.js").match("lcx.js"), false);
