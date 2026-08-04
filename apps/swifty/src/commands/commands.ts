@@ -134,11 +134,17 @@ export function parse(input: string): Parsed | null {
   }
   const trimmed = input.slice(1).trim();
   const spaceIdx = trimmed.indexOf(" ");
+  const name = spaceIdx === -1 ? trimmed : trimmed.slice(0, spaceIdx);
+  // Command names never contain "/"; a slash means the input is a filesystem
+  // path (e.g. /path/to/somewhere), which should be a plain user message.
+  if (name.includes("/")) {
+    return null;
+  }
   if (spaceIdx === -1) {
-    return { name: trimmed, args: "" };
+    return { name, args: "" };
   }
   return {
-    name: trimmed.slice(0, spaceIdx),
+    name,
     args: trimmed.slice(spaceIdx + 1).trim(),
   };
 }

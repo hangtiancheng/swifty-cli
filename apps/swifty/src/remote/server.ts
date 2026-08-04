@@ -918,8 +918,9 @@ export class RemoteServer {
       }
     }
 
-    // Slash command handling
-    if (text.startsWith("/")) {
+    // Slash command handling. Path-like inputs (e.g. /path/to/somewhere) are
+    // not commands and fall through as normal user messages.
+    if (text.startsWith("/") && parseCommand(text) !== null) {
       await this.handleSlashCommand(text);
       return;
     }
