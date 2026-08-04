@@ -21,7 +21,7 @@
  */
 
 import type { Stats } from "node:fs";
-import { readdir, readFile, stat } from "node:fs/promises";
+import { lstat, readdir, readFile, stat } from "node:fs/promises";
 import { join, relative, resolve, sep } from "node:path";
 
 import { Glob } from "@swifty.js/glob-addon";
@@ -41,6 +41,47 @@ import {
 const log = createChildLogger({ module: "tools" });
 
 const MAX_RESULTS = 500;
+
+// JS regexes keep \w/\b/\d ASCII-only even in u-mode, unlike ripgrep whose
+// defaults are Unicode-aware. Rewrite them to property-escape equivalents
+// before compiling so "\w+" matches 中文 and "\b" works next to CJK.
+const WORD = "\\p{L}\\p{M}\\p{N}_";
+const TOP_LEVEL = new Map<string, string>([
+  ["w", `[${WORD}]`],
+  ["W", `[^${WORD}]`],
+  ["d", "\\p{Nd}"],
+  ["D", "\\P{Nd}"],
+  ["b", `(?:(?<![${WORD}])(?=[${WORD}])|(?<=[${WORD}])(?![${WORD}]))`],
+  ["B", `(?:(?<=[${WORD}])(?=[${WORD}])|(?<![${WORD}])(?![${WORD}]))`],
+]);
+// Inside a character class \b means backspace and complements (\W/\D) can't
+// be inlined without v-flag set operations, so only \w/\d are expanded.
+const IN_CLASS = new Map<string, string>([
+  ["w", WORD],
+  ["d", "\\p{Nd}"],
+]);
+
+function toUnicodePattern(pattern: string): string {
+  let out = "";
+  let inClass = false;
+  for (let i = 0; i < pattern.length; i++) {
+    const ch = pattern.charAt(i);
+    if (ch === "\\" && i + 1 < pattern.length) {
+      const next = pattern.charAt(i + 1);
+      const rep = inClass ? IN_CLASS.get(next) : TOP_LEVEL.get(next);
+      out += rep ?? ch + next;
+      i++;
+      continue;
+    }
+    if (ch === "[" && !inClass) {
+      inClass = true;
+    } else if (ch === "]" && inClass) {
+      inClass = false;
+    }
+    out += ch;
+  }
+  return out;
+}
 
 export class GrepTool implements Tool {
   // Use a hardcoded string instead of GrepTool.name.replace("Tool", "")
@@ -94,13 +135,20 @@ export class GrepTool implements Tool {
 
     let regex: RegExp;
     try {
-      regex = new RegExp(pattern, "i");
-    } catch (err) {
-      log.error({ err }, "tool operation failed");
-      return {
-        output: `Error: invalid regex pattern: ${pattern}`,
-        isError: true,
-      };
+      regex = new RegExp(toUnicodePattern(pattern), "iu");
+    } catch {
+      // Legacy fallback keeps every pattern the old Bun implementation
+      // accepted compiling (e.g. "interface{" — invalid in u-mode), with the
+      // old ASCII \w/\b/\d semantics.
+      try {
+        regex = new RegExp(pattern, "i");
+      } catch (err) {
+        log.error({ err }, "tool operation failed");
+        return {
+          output: `Error: invalid regex pattern: ${pattern}`,
+          isError: true,
+        };
+      }
     }
 
     const includeGlob = include ? new Glob(include) : null;
@@ -140,7 +188,15 @@ export class GrepTool implements Tool {
         const fullPath = join(dir, entry);
         let fileStat: Stats;
         try {
-          fileStat = await stat(fullPath);
+          fileStat = await lstat(fullPath);
+          if (fileStat.isSymbolicLink()) {
+            // Follow file symlinks (old behavior), but never descend into
+            // symlinked directories — that is what makes cycles harmless.
+            fileStat = await stat(fullPath);
+            if (!fileStat.isFile()) {
+              continue;
+            }
+          }
         } catch (err) {
           log.error({ err }, "tool operation failed");
           continue;
@@ -159,8 +215,13 @@ export class GrepTool implements Tool {
 
     const searchFile = async (filePath: string): Promise<void> => {
       try {
-        const content = await readFile(filePath, "utf-8");
-        const lines = content.split("\n");
+        const buf = await readFile(filePath);
+        // NUL byte in the first 8KB → binary (ripgrep's heuristic); scanning
+        // it as UTF-8 would only produce replacement-char garbage matches.
+        if (buf.subarray(0, 8192).includes(0)) {
+          return;
+        }
+        const lines = buf.toString("utf-8").split("\n");
         const rel = relative(ctx.workDir, filePath);
 
         for (let i = 0; i < lines.length && results.length < MAX_RESULTS; i++) {
@@ -170,7 +231,7 @@ export class GrepTool implements Tool {
         }
       } catch (err) {
         log.error({ err }, "tool operation failed");
-        // skip binary or unreadable files
+        // skip unreadable files
       }
     };
 

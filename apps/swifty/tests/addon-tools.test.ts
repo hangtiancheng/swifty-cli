@@ -20,7 +20,7 @@
  * SOFTWARE.
  */
 
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -42,6 +42,17 @@ writeFileSync(
 writeFileSync(join(workDir, "src", "js", "curry.js"), "function curry(fn) {}\n");
 writeFileSync(join(workDir, "src", "md", "notes.md"), "function notes() {}\n");
 writeFileSync(join(workDir, "node_modules", "pkg", "index.js"), "function hidden() {}\n");
+writeFileSync(
+  join(workDir, "unicode.txt"),
+  "这是一行中文注释\nemoji 😄 line\n全角数字１２３\nmixed 变量名abc end\nplain ascii only\n",
+);
+writeFileSync(join(workDir, "legacy.txt"), "match foo{ here\n");
+writeFileSync(join(workDir, "bin.dat"), Buffer.from("BINARY_NEEDLE\0\x01\x02binary junk"));
+mkdirSync(join(workDir, "links"));
+writeFileSync(join(workDir, "links", "target.txt"), "NEEDLE_LINK in real file\n");
+symlinkSync(join(workDir, "links", "target.txt"), join(workDir, "links", "alias.txt"));
+// Directory symlink cycle back to the root: the walk must not descend it.
+symlinkSync(workDir, join(workDir, "links", "loop"));
 
 const ctx: ToolContext = { workDir };
 
@@ -100,6 +111,63 @@ describe("GrepTool include filter", () => {
   it("resolves relative path args against workDir", async () => {
     const res = await grep.execute(ctx, { pattern: "curry", path: "src/js" });
     expect(res.output).toContain("src/js/curry.js:1:function curry(fn) {}");
+  });
+});
+
+describe("GrepTool unicode", () => {
+  const grep = new GrepTool();
+
+  it("matches literal CJK text", async () => {
+    const res = await grep.execute(ctx, { pattern: "中文注释", include: "*.txt" });
+    expect(res.output).toContain("unicode.txt:1:这是一行中文注释");
+  });
+
+  it("supports unicode property escapes", async () => {
+    const res = await grep.execute(ctx, { pattern: "^\\p{Script=Han}+$", include: "*.txt" });
+    expect(res.output).toContain("unicode.txt:1:这是一行中文注释");
+    expect(res.output).not.toContain("plain ascii only");
+  });
+
+  it("supports astral character class ranges", async () => {
+    const res = await grep.execute(ctx, { pattern: "[😀-😜]", include: "*.txt" });
+    expect(res.output).toContain("unicode.txt:2:emoji 😄 line");
+  });
+
+  it("treats \\w and \\b as unicode-aware like ripgrep", async () => {
+    const word = await grep.execute(ctx, { pattern: "^mixed \\w+ end$", include: "*.txt" });
+    expect(word.output).toContain("unicode.txt:4:mixed 变量名abc end");
+
+    const boundary = await grep.execute(ctx, { pattern: "\\b变量名", include: "*.txt" });
+    expect(boundary.output).toContain("unicode.txt:4:mixed 变量名abc end");
+  });
+
+  it("matches full-width digits with \\d", async () => {
+    const res = await grep.execute(ctx, { pattern: "数字\\d{3}", include: "*.txt" });
+    expect(res.output).toContain("unicode.txt:3:全角数字１２３");
+  });
+
+  it("falls back to legacy mode for patterns invalid in unicode mode", async () => {
+    const res = await grep.execute(ctx, { pattern: "foo{", include: "*.txt" });
+    expect(res.isError).toBe(false);
+    expect(res.output).toContain("legacy.txt:1:match foo{ here");
+  });
+
+  it("rejects patterns invalid in both modes", async () => {
+    const res = await grep.execute(ctx, { pattern: "(unclosed", include: "*.txt" });
+    expect(res.isError).toBe(true);
+    expect(res.output).toContain("invalid regex pattern");
+  });
+
+  it("skips binary files containing NUL bytes", async () => {
+    const res = await grep.execute(ctx, { pattern: "BINARY_NEEDLE" });
+    expect(res.output).toBe("No matches found.");
+  });
+
+  it("greps symlinked files but never descends symlinked directories", async () => {
+    const res = await grep.execute(ctx, { pattern: "NEEDLE_LINK" });
+    expect(res.output).toContain("links/target.txt:1:NEEDLE_LINK in real file");
+    expect(res.output).toContain("links/alias.txt:1:NEEDLE_LINK in real file");
+    expect(res.output).not.toContain("loop/");
   });
 });
 
