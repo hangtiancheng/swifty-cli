@@ -146,13 +146,10 @@ providers:
     protocol: anthropic # REQUIRED, enum: "anthropic" | "openai" | "openai-compat"
     base_url: https://api.deepseek.com/anthropic # REQUIRED, string — API endpoint
     model: "deepseek-v4-flash" # REQUIRED, string — model identifier
-    api_key:
-      <your-api-key> # optional, string, default: falls back to env var
-      #   (ANTHROPIC_API_KEY for protocol "anthropic",
-      #    OPENAI_API_KEY for "openai"/"openai-compat")
+    api_key: "<your-api-key>" # optional, string, default: falls back to env var
+      #   (ANTHROPIC_API_KEY for protocol "anthropic", OPENAI_API_KEY for "openai"/"openai-compat")
     thinking: true # optional, boolean, default: false — enable extended thinking
-    context_window:
-      1000000 # optional, number, default: built-in lookup by model name
+    context_window: 1000000 # optional, number, default: built-in lookup by model name
       #   (claude -> 200000, gpt-4.1/1m -> 1000000, else 128000)
     # max_output_tokens: 64000               # optional, number, default: 8192 (64000 when thinking: true)
 
@@ -258,13 +255,10 @@ providers:
     protocol: anthropic # REQUIRED, enum: "anthropic" | "openai" | "openai-compat"
     base_url: https://api.deepseek.com/anthropic # REQUIRED, string — API endpoint
     model: "deepseek-v4-flash" # REQUIRED, string — model identifier
-    api_key:
-      "<your-api-key>" # optional, string, default: falls back to env var
-      #   (ANTHROPIC_API_KEY for protocol "anthropic",
-      #    OPENAI_API_KEY for "openai"/"openai-compat")
+    api_key: "<your-api-key>" # optional, string, default: falls back to env var
+      #   (ANTHROPIC_API_KEY for protocol "anthropic", OPENAI_API_KEY for "openai"/"openai-compat")
     thinking: true # optional, boolean, default: false — enable extended thinking
-    context_window:
-      1000000 # optional, number, default: built-in lookup by model name
+    context_window: 1000000 # optional, number, default: built-in lookup by model name
       #   (claude -> 200000, gpt-4.1/1m -> 1000000, else 128000)
     # max_output_tokens: 64000               # optional, number, default: 8192 (64000 when thinking: true)
 
