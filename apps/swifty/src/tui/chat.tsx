@@ -65,12 +65,8 @@ export interface ToolSummaryItem {
 }
 
 export interface ChatMessage {
-  role: "user" | "assistant" | "system" | "thinking" | "tool_use" | "tool_result" | "turn_summary";
+  role: "user" | "assistant" | "system" | "turn_summary";
   content: string;
-  toolName?: string;
-  argsSummary?: string;
-  isError?: boolean;
-  elapsed?: number;
   // turn_summary fields
   thinkingDuration?: number;
   toolSummary?: ToolSummaryItem[];
@@ -150,11 +146,6 @@ export const ChatView = React.memo(function (props: ChatViewProps) {
       ))}
       {streamingText !== undefined && streamingText !== "" && (
         <Box>
-          {/* <Text>
-            {COLORS.assistant(`${ICONS.dot} `)}
-            {renderMarkdown(streamingText)}
-          </Text> */}
-
           <StreamingText text={streamingText} />
         </Box>
       )}
@@ -187,7 +178,9 @@ interface TurnSummaryBlockProps {
 }
 
 function clampOutput(text: string): string {
-  return text.length > 200 ? text.slice(0, 200) + `\n…${String(text.length - 200)} chars` : text;
+  return text.length > 200
+    ? text.slice(0, 200) + `\n…${String(text.length - 200)} chars (ctrl+o to expand)`
+    : text;
 }
 
 function TurnSummaryBlock(props: TurnSummaryBlockProps) {
@@ -261,79 +254,6 @@ function MessageBlock(props: MessageBlockProps) {
       return (
         <Box marginBottom={0}>
           <Text>{renderMarkdown(message.content)}</Text>
-        </Box>
-      );
-    }
-
-    // DEAD CODE (kept intentionally, do not extend): no producer constructs
-    // ChatMessage with role "thinking". app.tsx accumulates thinking_text
-    // events into per-turn buffers and commits them as a single
-    // role:"turn_summary" message on turn_complete (see app.tsx
-    // "thinking_complete": "Don't add a separate thinking message").
-    // Rendering now happens in TurnSummaryBlock above. If a standalone
-    // thinking message is ever reintroduced, prefer reusing TurnSummaryBlock
-    // instead of reviving this branch (its 200-char clamp already diverges
-    // from clampOutput()).
-    case "thinking": {
-      return (
-        <Box marginBottom={0}>
-          <Text dimColor>
-            {COLORS.thinking(`${ICONS.thinking} `)}
-            {message.content.length > 200 ? message.content.slice(0, 200) + "..." : message.content}
-          </Text>
-        </Box>
-      );
-    }
-
-    // DEAD CODE (kept intentionally, do not extend): no producer constructs
-    // ChatMessage with role "tool_use". While a tool runs, app.tsx shows it in
-    // the dynamic area via setActiveTools → <ToolDisplay/> (not in the
-    // transcript); once the turn completes the call is folded into a
-    // role:"turn_summary" message rendered by TurnSummaryBlock.
-    case "tool_use": {
-      return (
-        <Box marginBottom={0}>
-          <Text>
-            <Text color="magenta">●</Text> {COLORS.tool(message.toolName ?? "tool")}
-            {message.argsSummary ? <Text dimColor> {message.argsSummary}</Text> : null}
-          </Text>
-        </Box>
-      );
-    }
-
-    // DEAD CODE (kept intentionally, do not extend): no producer constructs
-    // ChatMessage with role "tool_result". app.tsx accumulates each
-    // tool_result event into turnToolCalls (ToolSummaryItem[]) and commits one
-    // role:"turn_summary" message per turn; TurnSummaryBlock renders the
-    // icon/args/output lines. Note this branch's 500-char "(ctrl+o to expand)"
-    // truncation has already diverged from TurnSummaryBlock's 200-char
-    // clampOutput() — another reason not to revive it as-is.
-    case "tool_result": {
-      const icon = message.isError ? COLORS.error(ICONS.error) : COLORS.success(ICONS.success);
-      const timeStr = message.elapsed !== undefined ? ` (${message.elapsed.toFixed(1)}s)` : "";
-
-      const isDiff = isDiffTool(message.toolName ?? "");
-
-      return (
-        <Box flexDirection="column" marginBottom={0}>
-          <Text>
-            {icon} {COLORS.tool(message.toolName ?? "tool")}
-            {message.argsSummary ? <Text dimColor> {message.argsSummary}</Text> : null}
-            <Text dimColor>{timeStr}</Text>
-          </Text>
-          {message.content && (
-            <Box paddingLeft={2}>
-              {isDiff ? (
-                <DiffLines text={message.content} />
-              ) : (
-                <Text dimColor>
-                  {!expanded && message.content.length > 500
-                    ? message.content.slice(0, 500) + "…  (ctrl+o to expand)"
-                    : message.content}
-                </Text>
-              )}
-            </Box>
-          )}
         </Box>
       );
     }

@@ -93,6 +93,9 @@ const MODEL_CYCLE: PermissionMode[] = ["default", "acceptEdits", "plan", "bypass
 interface InputBoxProps {
   onSubmit: (text: string) => void;
   disabled?: boolean;
+  /** Blocks Enter-to-send while still allowing typing/editing (e.g. while
+   *  the agent is streaming or the conversation is being compacted). */
+  submitDisabled?: boolean;
   history?: string[];
   commands?: Command[];
   onEscape?: () => void;
@@ -110,6 +113,7 @@ export function InputBox(props: InputBoxProps) {
   const {
     onSubmit,
     disabled,
+    submitDisabled,
     history = [],
     commands = [],
     onEscape,
@@ -384,6 +388,11 @@ export function InputBox(props: InputBoxProps) {
       updated[cursorLine] = finalLine;
       const finalValue = updated.join("\n").trim();
       if (finalValue) {
+        // Sending is locked (agent streaming / compacting): keep the draft
+        // instead of submitting, so nothing is silently dropped.
+        if (submitDisabled) {
+          return;
+        }
         onSubmit(finalValue);
         setLines([""]);
         setCursorLine(0);

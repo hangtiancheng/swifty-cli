@@ -218,6 +218,7 @@ export function App({
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [streamingText, setStreamingText] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
+  const [isCompacting, setIsCompacting] = useState(false);
   const [completionMark, setCompletionMark] = useState<string | null>(null);
   const streamStartRef = useRef(0);
   const streamingTextRef = useRef("");
@@ -429,8 +430,13 @@ export function App({
   });
 
   // ctrl+o toggles full vs. truncated tool output in the transcript.
+  // <Static> never repaints items it has already printed, so toggling the
+  // flag alone would only affect future commits: erase the visible viewport
+  // (scrollback kept, same trick as the width-change handler) and remount
+  // <Static> via its key so the whole transcript reprints in the new state.
   useInput((input, key) => {
     if (key.ctrl && input === "o") {
+      process.stdout.write("\x1b[2J\x1b[H");
       setToolsExpanded((e) => !e);
     }
   });
@@ -859,7 +865,17 @@ export function App({
               ...prev,
               { role: "system", content: "✓ Plan approved — executing." },
             ]);
-            void runAgentLoop("default");
+            setIsStreaming(true);
+            setStreamingText("");
+            runAgentLoop("default")
+              .then(() => {
+                setIsStreaming(false);
+                setActiveTools([]);
+              })
+              .catch((err: unknown) => {
+                setError(asErrorString(err));
+                setIsStreaming(false);
+              });
           } else {
             setMessages((prev) => [...prev, { role: "system", content: "Exited plan mode." }]);
           }
@@ -867,10 +883,7 @@ export function App({
         }
         case "compact":
           if (clientRef.current) {
-            setMessages((prev) => [
-              ...prev,
-              { role: "system", content: "Compacting conversation..." },
-            ]);
+            setIsCompacting(true);
             forceCompact(
               convRef.current,
               clientRef.current,
@@ -898,6 +911,9 @@ export function App({
                     content: `Compact failed: ${asErrorString(err)}`,
                   },
                 ]);
+              })
+              .finally(() => {
+                setIsCompacting(false);
               });
           }
           break;
@@ -1779,19 +1795,6 @@ export function App({
       timestamp: Math.floor(Date.now() / 1000),
     });
 
-    // If currently streaming, interrupt first
-    if (isStreaming && abortControllerRef.current) {
-      const partialText = streamingTextRef.current ?? "";
-      abortControllerRef.current.abort();
-      if (partialText) {
-        setMessages((prev) => [
-          ...prev,
-          { role: "assistant", content: partialText + "\n\n*[cancelled]*" },
-        ]);
-      }
-      setMessages((prev) => [...prev, { role: "system", content: "(response interrupted)" }]);
-    }
-
     streamStartRef.current = Date.now();
     setCompletionMark(null);
     setIsStreaming(true);
@@ -1843,7 +1846,7 @@ export function App({
             scrollback. This keeps the complete transcript selectable and
             copyable while only the active turn is re-rendered by Ink. */}
         <Static
-          key={`transcript-${sessionIdRef.current}-${String(termWidth)}`}
+          key={`transcript-${sessionIdRef.current}-${String(termWidth)}-${String(toolsExpanded)}`}
           items={[
             {
               type: "brand" as const,
@@ -1914,6 +1917,12 @@ export function App({
         {!isStreaming && teammateStates.some((t) => t.status === "running") && (
           <Box paddingLeft={1}>
             <TeammateSpinnerTree teammates={teammateStates} />
+          </Box>
+        )}
+
+        {isCompacting && !isStreaming && !askRequest && (
+          <Box paddingLeft={1}>
+            <Spinner label="Compacting conversation" />
           </Box>
         )}
 
@@ -2002,13 +2011,14 @@ export function App({
           void handleSubmit(text);
         }}
         disabled={rewindDialogActive || permissionRequest !== null || askRequest !== null}
+        submitDisabled={isStreaming || isCompacting}
         history={promptHistory}
         commands={cmdRegistryRef.current.listCommands()}
         usageTracker={usageTrackerRef.current}
         inputState={
           error
             ? "error"
-            : isStreaming || rewindDialogActive || permissionRequest
+            : isStreaming || isCompacting || rewindDialogActive || permissionRequest
               ? "idle"
               : "focused"
         }
