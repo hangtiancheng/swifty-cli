@@ -159,12 +159,12 @@ function createToolRegistry(workDir: string, taskList: TaskList): ToolRegistry {
 
 /**
  * wireSkillsToRegistry registers every loaded skill as a slash command in the
- * CommandRegistry, mirroring Go's wireSkillsToAgent. Inline skills become
+ * CommandRegistry. Inline skills become
  * "prompt" commands whose handler renders the skill body; fork-mode skills
  * become "skill_fork" commands (dispatched separately in executeCommand).
  *
  * Idempotent: silently skips a name that's already taken (e.g. a built-in or
- * user command registered earlier), matching Go's precedence rules.
+ * user command registered earlier).
  */
 function wireSkillsToRegistry(
   catalog: SkillCatalog,
@@ -646,7 +646,7 @@ export function App({
               });
             }
             // Inject each server's instructions into the conversation so the
-            // model knows how to use that server's tools. Mirrors Go.
+            // model knows how to use that server's tools.
             for (const { serverName, text } of result.instructions) {
               convRef.current.addSystemReminder(`# MCP Server: ${serverName}\n${text}`);
             }

@@ -209,8 +209,8 @@ export function createDefaultCodeReviewTeam(): CodeReviewTeam {
     name: "default-review",
     members: [
       {
-        name: "swifty.go",
-        email: "swifty.go@company.com",
+        name: "backend",
+        email: "backend@company.com",
         role: "lead",
         expertise: ["architecture", "security", "performance"],
         active: true,
@@ -223,8 +223,8 @@ export function createDefaultCodeReviewTeam(): CodeReviewTeam {
         active: true,
       },
       {
-        name: "swifty.js",
-        email: "swifty.js@company.com",
+        name: "frontend",
+        email: "frontend@company.com",
         role: "reviewer",
         expertise: ["typescript", "frontend", "ux"],
         active: true,

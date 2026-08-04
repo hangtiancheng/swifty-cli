@@ -206,7 +206,7 @@ export class MCPClient {
   }
 
   /** Calls a tool and returns { output, isError }. isError mirrors the MCP
-   *  protocol's isError flag so the model knows when a tool failed. Mirrors Go's CallTool.
+   *  protocol's isError flag so the model knows when a tool failed.
    *  Image content blocks pass through as provider-style blocks instead of
    *  being flattened to JSON text. */
   async callTool(

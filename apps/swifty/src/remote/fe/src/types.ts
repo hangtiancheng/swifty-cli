@@ -23,9 +23,8 @@
 /**
  * Strict type definitions for the Swifty Remote web client.
  *
- * These mirror the WebSocket message shapes emitted by the Go server in
- * `swifty_cli/internal/remote/server.go`. Field names are kept in lowerCamelCase
- * to match the JSON tags produced by Go's `map[string]any` serialization.
+ * These mirror the WebSocket message shapes emitted by the remote server.
+ * Field names are kept in lowerCamelCase to match the server's JSON output.
  */
 
 /* ───────────────────────── Server → Client messages ───────────────────────── */

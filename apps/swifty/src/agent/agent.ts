@@ -49,7 +49,7 @@ import { StreamingExecutor } from "./streaming-executor.js";
 import type { UsageInfo } from "@/llm/events.js";
 
 // When the model stops on max_tokens, escalate its output ceiling once to this
-// value, then attempt a bounded number of multi-turn recoveries. Mirrors Go.
+// value, then attempt a bounded number of multi-turn recoveries.
 const MAX_TOKENS_CEILING = 64000;
 const MAX_OUTPUT_TOKENS_RECOVERIES = 3;
 // Tool output exceeding this threshold is spilled to disk rather than truncated

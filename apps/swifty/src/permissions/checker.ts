@@ -185,7 +185,7 @@ export class PathSandbox {
   }
 }
 
-// Glob match mirroring Go filepath.Match: `*` matches a run of non-separator
+// Glob match following filepath.Match semantics: `*` matches a run of non-separator
 // characters, `?` matches a single non-separator character.
 function globMatch(pattern: string, content: string): boolean {
   const re =
@@ -206,7 +206,7 @@ function globMatch(pattern: string, content: string): boolean {
 
 const RULE_RE = /^(\w+)\((.+)\)$/;
 
-// Loads a rules file in Go's format: a top-level YAML list of
+// Loads a rules file: a top-level YAML list of
 // `{ rule: "Tool(pattern)", effect: "allow"|"deny" }`.
 function loadRulesFile(path: string): Rule[] {
   let data: string;
@@ -331,7 +331,7 @@ export class RuleEngine {
     return evaluateRules(this.snapshot(), toolName, content);
   }
 
-  // Persists a rule to the project-local YAML file in Go's `Tool(pattern)`
+  // Persists a rule to the project-local YAML file in the `Tool(pattern)`
   // format so "allow always" survives a restart.
   appendLocalRule(rule: Rule): void {
     mkdirSync(dirname(this.localPath), { recursive: true });

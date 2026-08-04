@@ -37,11 +37,11 @@ const PING_INTERVAL_MS = 10_000;
 const RECONNECT_DELAY_MS = 3_000;
 
 /**
- * Manage a single WebSocket connection to the Go backend with automatic
+ * Manage a single WebSocket connection to the remote backend with automatic
  * reconnection and an application-layer ping keepalive.
  *
  * The connection URL is derived from the current location so the same build
- * works in dev (rsbuild proxy) and when served inline by the Go server.
+ * works in dev (rsbuild proxy) and when served inline by the remote server.
  */
 export function useWebSocket(opts: UseWebSocketOptions): UseWebSocketResult {
   const { onMessage, onOpen, onClose } = opts;

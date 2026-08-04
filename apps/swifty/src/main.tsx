@@ -45,7 +45,7 @@ async function main() {
     return;
   }
 
-  // Parse --remote mode flags — mirrors Go's main.go --remote handling.
+  // Parse --remote mode flags.
   let remoteAddr = "";
   for (let i = 0; i < args.length; i++) {
     if (args[i] === "--remote") {

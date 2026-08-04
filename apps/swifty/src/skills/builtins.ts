@@ -22,7 +22,7 @@
 
 // Builtin skills — loaded from on-disk files under src/skills/builtin/.
 
-// TS equivalent of Go's //go:embed builtins/*. Each skill is a subdirectory
+// Builtin skill files embedded at build time. Each skill is a subdirectory
 // with a SKILL.md (required) and optional tool.json / references/.
 //
 // At build time, tsup's onSuccess hook copies the builtin/ directory to
@@ -86,7 +86,6 @@ const BUILTINS: BuiltinDef[] = [
  * YAML frontmatter and body from the markdown content. Reference files
  * are appended to the body with separators so the agent sees them when
  * the skill is activated.
- * Mirrors Go's LoadBuiltins().
  */
 export function loadBuiltinSkills(): Skill[] {
   const skills: Skill[] = [];
