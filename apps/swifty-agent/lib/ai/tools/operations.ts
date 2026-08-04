@@ -20,14 +20,14 @@
  * SOFTWARE.
  */
 
-// Pure function implementations for tools, aligned with the source project internal/ai/tools/*
+// Pure function implementations for tools:
 // get_current_time / query_prometheus_alerts / query_internal_docs / mysql_crud
 import knex from "knex";
 import { retrieve } from "@/lib/redis/retriever";
 import { config } from "@/lib/config";
 import { z } from "zod/v4";
 
-// ============ get_current_time (corresponds to get_current_time.go) ============
+// ============ get_current_time ============
 export function getCurrentTime() {
   const now = new Date();
   const s = now.getTime() / 1000;
@@ -66,7 +66,7 @@ const prometheusResponseSchema = z.looseObject({
     .optional(),
 });
 
-// ============ query_prometheus_alerts (corresponds to query_metrics_alerts.go) ============
+// ============ query_prometheus_alerts ============
 export interface SimplifiedAlert {
   alert_name: string;
   description: string;
@@ -94,7 +94,7 @@ export async function queryPrometheusAlerts(): Promise<{
     }
     const result = prometheusResponseSchema.parse(await resp.json());
     const all = result.data?.alerts ?? [];
-    // Keep only the first occurrence for the same alertname (aligned with the source project)
+    // Keep only the first occurrence for the same alertname.
     const seen = new Set<string>();
     const alerts: SimplifiedAlert[] = [];
     for (const a of all) {
@@ -115,8 +115,7 @@ export async function queryPrometheusAlerts(): Promise<{
       message: `Successfully retrieved ${alerts.length} active alerts`,
     };
   } catch (e) {
-    // The source project returns empty results when the default switch is off.
-    // Here, we preserve the same behavior: return an error message when Prometheus is unavailable.
+    // Return an error message when Prometheus is unavailable.
     return {
       success: false,
       alerts: [],
@@ -138,16 +137,15 @@ function calculateDuration(activeAt: string): string {
   return `${s}s`;
 }
 
-// ============ query_internal_docs (corresponds to query_internal_docs.go) ============
+// ============ query_internal_docs ============
 export async function retrieveDocs(query: string) {
   const docs = await retrieve(query);
   return docs;
 }
 
-// ============ mysql_crud (corresponds to mysql_crud.go) ============
-// The source project uses GORM with stdin y/n confirmation.
-// The web version removes the interactive prompt and executes directly.
-// DSN is compatible with both Go format (user:pass@tcp(host:port)/db) and MySQL URL format.
+// ============ mysql_crud ============
+// Executes directly without an interactive confirmation prompt.
+// DSN is compatible with both the Go format (user:pass@tcp(host:port)/db) and MySQL URL format.
 function normalizeDsn(dsn: string): string {
   if (dsn.startsWith("mysql://")) return dsn;
   // user:pass@tcp(host:port)/db → mysql://user:pass@host:port/db

@@ -20,7 +20,6 @@
  * SOFTWARE.
  */
 
-// Corresponds to the source project's internal/ai/embedder/embedder.go
 // Embedding via @ai-sdk/openai-compatible; provider selected by EMBEDDING_PROVIDER:
 //   "dashscope" (default, text-embedding-v4) | "ollama" (local, nomic-embed-text)
 import { embed, embedMany, type EmbeddingModel } from "ai";

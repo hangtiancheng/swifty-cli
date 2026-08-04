@@ -20,8 +20,8 @@
  * SOFTWARE.
  */
 
-// MCP log tools via SSE (corresponds to internal/ai/tools/query_log.go).
-// Connects to the MCP server, lists tools, and wraps each as an AI SDK tool.
+// MCP log tools via SSE —
+// connects to the MCP server, lists tools, and wraps each as an AI SDK tool.
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { tool, jsonSchema, type Tool } from "ai";
@@ -67,7 +67,7 @@ export async function getLogMcpTools(): Promise<Record<string, Tool>> {
     cachedTools = result;
     return result;
   } catch (e) {
-    // MCP server unavailable — degrade gracefully (mirrors Go: mcpTools, _ := GetLogMcpTool).
+    // MCP server unavailable — degrade gracefully.
     console.warn(
       "[mcp] failed to connect, skipping log tools:",
       e instanceof Error ? e.message : e,

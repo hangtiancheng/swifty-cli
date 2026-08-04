@@ -20,8 +20,8 @@
  * SOFTWARE.
  */
 
-// Corresponds to /api/ai_ops (chat_v1_ai_ops.go).
-// Runs the plan-execute-replan pipeline and returns { result, detail }.
+// POST /api/ai_ops —
+// runs the plan-execute-replan pipeline and returns { result, detail }.
 import { runPlanExecuteReplan } from "@/lib/ai/pipelines/plan-execute-replan";
 
 const CORS_HEADERS = {

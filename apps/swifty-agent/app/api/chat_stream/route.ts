@@ -20,9 +20,8 @@
  * SOFTWARE.
  */
 
-// Corresponds to /api/chat_stream (chat_v1_chat_stream.go). SSE stream.
-// Mirrors the source project's SSE framing: id / event / data, with events
-// connected, message, done, error.
+// POST /api/chat_stream — SSE stream with framing id / event / data and
+// events connected, message, done, error.
 import { z } from "zod/v4";
 import { chatStream } from "@/lib/ai/pipelines/chat";
 
@@ -56,7 +55,7 @@ export async function POST(request: Request) {
       const send = (event: string, data: string) => {
         controller.enqueue(encoder.encode(`id: ${Date.now()}\nevent: ${event}\ndata: ${data}\n\n`));
       };
-      // Send a connected event first (mirrors the source SSE).
+      // Send a connected event first.
       send("connected", JSON.stringify({ status: "connected", client_id: id }));
       try {
         for await (const chunk of chatStream(id, question)) {

@@ -20,7 +20,7 @@
  * SOFTWARE.
  */
 
-// Centralize environment variable reading, replacing the source project's GoFrame g.Cfg().
+// Centralize environment variable reading.
 // Next.js automatically loads .env / .env.local; importing dotenv/config here serves as a safeguard (for script scenarios).
 import "dotenv/config";
 
@@ -99,5 +99,5 @@ export const EMBEDDING_DIM =
     ? envEmbeddingDim
     : EMBEDDING_DIM_MAP[config.embeddingProvider];
 
-// Conversation memory window size (aligned with source project utility/mem MaxWindowSize)
+// Conversation memory window size.
 export const MEMORY_WINDOW_SIZE = 6;

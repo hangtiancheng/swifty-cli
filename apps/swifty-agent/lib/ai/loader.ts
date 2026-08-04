@@ -20,7 +20,6 @@
  * SOFTWARE.
  */
 
-// Corresponds to internal/ai/loader/loader.go and knowledge_index_pipeline/loader.go.
 // Reads a txt/md file and returns its content plus the source filename.
 import { readFile } from "node:fs/promises";
 import path from "node:path";

@@ -20,8 +20,7 @@
  * SOFTWARE.
  */
 
-// Corresponds to chat_pipeline (orchestration.go, prompt.go, flow.go).
-// RAG retrieval + system prompt + ReAct agent (streamText/generateText with tools + maxSteps).
+// Chat pipeline: RAG retrieval + system prompt + ReAct agent (streamText/generateText with tools + maxSteps).
 import { streamText, generateText, type Tool, type ModelMessage, isStepCount } from "ai";
 import { quickModel, providerOptions } from "../models";
 import { builtinTools } from "../tools";
@@ -38,7 +37,7 @@ const logTopicLine =
     ? `  • Log topic region: ${LOG_TOPIC_REGION}; log topic id: ${LOG_TOPIC_ID}`
     : "";
 
-// System prompt migrated from chat_pipeline/prompt.go.
+// System prompt for the conversational assistant.
 const SYSTEM_PROMPT = `# Role: Conversational Assistant
 ## Core capabilities
 - Context understanding and conversation
@@ -79,7 +78,7 @@ async function buildChatTools(): Promise<Record<string, Tool>> {
   return { ...mcpTools, ...builtinTools };
 }
 
-// Non-streaming chat (corresponds to the Chat controller).
+// Non-streaming chat.
 export async function chat(id: string, question: string): Promise<string> {
   const mem = getSimpleMemory(id);
   const history = mem.getMessages();
@@ -102,7 +101,7 @@ export async function chat(id: string, question: string): Promise<string> {
   return answer;
 }
 
-// Streaming chat (corresponds to the ChatStream controller). Yields text chunks.
+// Streaming chat. Yields text chunks.
 // Memory is persisted after the stream completes.
 export async function* chatStream(id: string, question: string): AsyncGenerator<string> {
   const mem = getSimpleMemory(id);

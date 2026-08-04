@@ -20,7 +20,7 @@
  * SOFTWARE.
  */
 
-// Tool input parameter schemas (Zod), aligned with the Input structs in source project internal/ai/tools/*
+// Tool input parameter schemas (Zod).
 import { z } from "zod/v4";
 
 // get_current_time: no input parameters

@@ -20,7 +20,6 @@
  * SOFTWARE.
  */
 
-// Corresponds to the source project's internal/ai/models/open_ai.go
 // Supports both OpenAI-compatible providers (OpenAI, etc.) and Anthropic.
 // Select provider via LLM_PROVIDER env var: "openai" (default) | "anthropic".
 // 'think' is used for planner/replanner, 'quick' is used for executor/chat.

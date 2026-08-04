@@ -20,8 +20,7 @@
  * SOFTWARE.
  */
 
-// Corresponds to the source project's utility/mem/mem.go.
-// In-memory conversation memory per session id, MaxWindowSize=6, drop in pairs.
+// In-memory conversation memory per session id, window size 6, drop in pairs.
 import { type ModelMessage } from "ai";
 import { MEMORY_WINDOW_SIZE } from "@/lib/config";
 
@@ -60,7 +59,7 @@ export class SimpleMemory {
   }
 
   // Append a message; when over the window, drop an even number from the front
-  // to keep user/assistant pairs aligned (mirrors the source project).
+  // to keep user/assistant pairs aligned.
   setMessages(msg: ModelMessage): void {
     this.messages.push(msg);
     if (this.messages.length > this.maxWindowSize) {

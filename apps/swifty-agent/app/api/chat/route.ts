@@ -20,8 +20,7 @@
  * SOFTWARE.
  */
 
-// Corresponds to /api/chat (chat_v1_chat.go).
-// Unified response shape { message, data } mirrors ResponseMiddleware.
+// POST /api/chat — unified response shape { message, data }.
 import { z } from "zod/v4";
 import { chat } from "@/lib/ai/pipelines/chat";
 

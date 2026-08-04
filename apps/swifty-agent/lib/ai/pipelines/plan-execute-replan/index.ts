@@ -20,8 +20,6 @@
  * SOFTWARE.
  */
 
-// Corresponds to plan_execute_replan (plan_execute_replan.go, planner.go,
-// executor.go, replan.go).
 // Planner (think) → Executor (quick + tools) → Replanner (think) loop,
 // MaxIterations=20.
 // event-stream pattern.
@@ -36,7 +34,7 @@ import { logStart, logEnd } from "@/lib/ai/callbacks";
 
 const MAX_ITERATIONS = 20;
 
-// AI Ops query migrated from chat_v1_ai_ops.go.
+// AI Ops alert-analysis query.
 const AI_OPS_QUERY = `1. You are an intelligent service alert analysis assistant. First, call the tool query_prometheus_alerts to retrieve all active alerts.
 2. For each alert, call the tool query_internal_docs by alert name to retrieve the corresponding handling procedure.
 3. Strictly follow the internal documentation for queries and analysis; do not use any information outside the documentation.

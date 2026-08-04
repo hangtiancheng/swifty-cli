@@ -20,8 +20,8 @@
  * SOFTWARE.
  */
 
-// Corresponds to /api/upload (chat_v1_file_upload.go).
-// Save the uploaded file, then build the knowledge index for it.
+// POST /api/upload —
+// save the uploaded file, then build the knowledge index for it.
 import { writeFile, mkdir } from "node:fs/promises";
 import path from "node:path";
 import { config } from "@/lib/config";
