@@ -20,7 +20,6 @@
  * SOFTWARE.
  */
 
-/* eslint-disable @typescript-eslint/require-await */
 import { describe, it, expect, beforeEach } from "vitest";
 
 import {
@@ -103,6 +102,7 @@ describe("config", () => {
 
     it("layer 1: config context_window wins over everything (no fetch)", async () => {
       let called = false;
+      // eslint-disable-next-line @typescript-eslint/require-await
       const fetcher = async () => {
         called = true;
         return 999_999;
@@ -125,12 +125,14 @@ describe("config", () => {
         protocol: "anthropic",
         model: "claude-sonnet-4-6",
       };
+      // eslint-disable-next-line @typescript-eslint/require-await
       const fetcher = async () => 500_000;
       expect(await getContextWindowAsync(p, fetcher)).toBe(500_000);
     });
 
     it("layer 2 result is memoized per provider (fetcher called once)", async () => {
       let calls = 0;
+      // eslint-disable-next-line @typescript-eslint/require-await
       const fetcher = async () => {
         calls++;
         return 400_000;
@@ -147,6 +149,7 @@ describe("config", () => {
     });
 
     it("degrades to the table when the fetcher throws (does not crash)", async () => {
+      // eslint-disable-next-line @typescript-eslint/require-await
       const fetcher = async () => {
         throw new Error("network down");
       };
@@ -161,6 +164,7 @@ describe("config", () => {
     });
 
     it("degrades to the table when the fetcher returns 0", async () => {
+      // eslint-disable-next-line @typescript-eslint/require-await
       const fetcher = async () => 0;
       const p: ProviderConfig = {
         name: "p",
@@ -173,6 +177,7 @@ describe("config", () => {
 
     it("skips the fetch entirely for non-anthropic protocols", async () => {
       let called = false;
+      // eslint-disable-next-line @typescript-eslint/require-await
       const fetcher = async () => {
         called = true;
         return 777_000;

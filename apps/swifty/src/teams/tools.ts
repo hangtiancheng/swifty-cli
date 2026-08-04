@@ -20,7 +20,7 @@
  * SOFTWARE.
  */
 
-import { createChildLogger } from "../logger/index.js";
+import { createChildLogger } from "../logger/logger.js";
 import type { Tool, ToolContext, ToolResult, ToolSchema } from "../tools/types.js";
 
 import {
@@ -51,7 +51,10 @@ export class TeamCreateTool implements Tool {
         type: "object",
         properties: {
           team_name: { type: "string", description: "Name for the team" },
-          description: { type: "string", description: "What this team will work on" },
+          description: {
+            type: "string",
+            description: "What this team will work on",
+          },
         },
         required: ["team_name"],
       },
@@ -61,7 +64,10 @@ export class TeamCreateTool implements Tool {
   async execute(ctx: ToolContext, args: Record<string, unknown>): Promise<ToolResult> {
     const requested = strArg(args, "team_name");
     if (!requested) {
-      return Promise.resolve({ output: "Error: team_name is required", isError: true });
+      return Promise.resolve({
+        output: "Error: team_name is required",
+        isError: true,
+      });
     }
 
     // Auto-append a numeric suffix on name collision. Making the Lead come up with a
@@ -73,7 +79,10 @@ export class TeamCreateTool implements Tool {
     }
 
     const description = strArg(args, "description");
-    const team = this.mgr.create(name, undefined, { leadAgentId: "lead", description });
+    const team = this.mgr.create(name, undefined, {
+      leadAgentId: "lead",
+      description,
+    });
     return {
       output:
         `Team '${team.name}' created (mode: ${team.mode}). ` +
@@ -228,7 +237,10 @@ export class SendMessageTool implements Tool {
           break;
         case MSG_SHUTDOWN_RESPONSE:
           if (approve === undefined) {
-            return { output: "shutdown_response requires 'approve'.", isError: true };
+            return {
+              output: "shutdown_response requires 'approve'.",
+              isError: true,
+            };
           }
           structured = shutdownResponse(this.senderName, requestId, approve, message);
           break;
@@ -242,7 +254,10 @@ export class SendMessageTool implements Tool {
           structured = planApprovalResponse(this.senderName, requestId, approve, message);
           break;
         default:
-          return { output: `Unsupported message type ${msgType}.`, isError: true };
+          return {
+            output: `Unsupported message type ${msgType}.`,
+            isError: true,
+          };
       }
       const target = to === "lead" ? t.leadMailbox : t.getMember(to)?.mailbox;
       if (!target) {

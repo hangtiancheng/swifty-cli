@@ -31,13 +31,12 @@
 //   log calls are safe no-ops (startup errors should use console.error).
 // - At serialize time, AsyncLocalStorage context (agentName, etc.) is merged.
 
+import { AsyncLocalStorage } from "node:async_hooks";
 import { openSync, closeSync, mkdirSync } from "node:fs";
+import { readdir, stat, unlink, access } from "node:fs/promises";
 import { join, dirname } from "node:path";
 
 import pino, { type Logger, type LoggerOptions } from "pino";
-
-import { getLogContext } from "./context.js";
-import { errSerializer } from "./serializers.js";
 
 /** Execution mode, written into the base field of every log entry. */
 export type LoggerMode = "tui" | "remote" | "teammate";
@@ -125,11 +124,9 @@ export function initLogger(opts: InitLoggerOptions): Logger {
   // Main-process startup: clean expired logs.
   if (!opts.skipCleanup) {
     const workDir = opts.workDir ?? process.cwd();
-    void import("./cleanup.js")
-      .then(({ cleanExpiredLogs }) => cleanExpiredLogs(workDir))
-      .catch(() => {
-        // Cleanup failure is non-fatal.
-      });
+    void cleanExpiredLogs(workDir).catch(() => {
+      // Cleanup failure is non-fatal.
+    });
   }
 
   return currentLogger;
@@ -185,7 +182,7 @@ const proxyTarget = pino({ level: "silent" });
 /**
  * Global logger export. Modules can import and use it at file top level:
  * ```ts
- * import { logger } from "../logger/index.js";
+ * import { logger } from "../logger/logger.js";
  * logger.info({ module: "app" }, "session started");
  * ```
  * Before initLogger(), calls fall back to the silent target (pre-init logs
@@ -204,3 +201,236 @@ export const logger: Logger = new Proxy(proxyTarget, {
     return value;
   },
 });
+
+// createChildLogger convenience factory.
+// Each module creates a child logger at file top, carrying static fields like
+// { module: "session" } plus AsyncLocalStorage context (agentName, etc.).
+
+// A real silent pino logger used as the Proxy target for pre-init children.
+const silentTarget = pino({ level: "silent" });
+
+/**
+ * Create a module-level child logger.
+ * bindings typically holds static fields like { module: "session" };
+ * AsyncLocalStorage context (agentName) is merged at access time.
+ *
+ * Returns a Proxy that forwards every access to the current root logger's
+ * child, so it stays valid across initLogger() calls.
+ *
+ * The child pino instance is cached per (rootLogger, context) pair and only
+ * rebuilt when either changes, avoiding redundant pino.child() allocations
+ * on every log call.
+ */
+export function createChildLogger(bindings: Record<string, unknown>): Logger {
+  let cachedChild: Logger | null = null;
+  let cachedLogger: Logger | null = null;
+  let cachedCtxKey = "";
+
+  return new Proxy(silentTarget, {
+    get(_target, prop, receiver) {
+      const current = getLogger();
+      if (current) {
+        const ctx = mergeContext(bindings);
+        const ctxKey = JSON.stringify(ctx);
+        if (cachedChild === null || cachedLogger !== current || cachedCtxKey !== ctxKey) {
+          cachedChild = current.child(ctx);
+          cachedLogger = current;
+          cachedCtxKey = ctxKey;
+        }
+        // Reflect.get returns `any`; annotate unknown so typeof narrows correctly.
+        const value: unknown = Reflect.get(cachedChild, prop, receiver);
+        if (typeof value === "function") {
+          // Function.bind returns `any` in lib.es5; the bound callable is
+          // type-safe by construction (pino method signatures are preserved).
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+          return value.bind(cachedChild);
+        }
+        return value;
+      }
+      // Pre-init: fall back to silent target.
+      const fallbackValue: unknown = Reflect.get(_target, prop, receiver);
+      if (typeof fallbackValue === "function") {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+        return fallbackValue.bind(_target);
+      }
+      return fallbackValue;
+    },
+  });
+}
+
+// Expired log cleanup. Mirrors session.ts cleanExpiredSessions:
+// same directory iteration, 30-day mtime check, silent unlink failure.
+// Scans .swifty/logs/ and .swifty/teams/<team>/logs/.
+// All fs operations are async to avoid blocking the event loop.
+
+/** Log retention days, matches SESSION_EXPIRY_DAYS. */
+const LOG_EXPIRY_DAYS = 30;
+const LOG_EXPIRY_MS = LOG_EXPIRY_DAYS * 24 * 60 * 60 * 1000;
+
+/** Check whether a path is accessible. Returns false on any error. */
+async function pathExists(p: string): Promise<boolean> {
+  try {
+    await access(p);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Clean expired log files in a single directory. Returns count removed. Failures are silent. */
+async function cleanDir(dir: string): Promise<number> {
+  if (!(await pathExists(dir))) {
+    return 0;
+  }
+
+  let files: string[];
+  try {
+    files = (await readdir(dir)).filter((f) => f.endsWith(".jsonl"));
+  } catch {
+    return 0;
+  }
+
+  const now = Date.now();
+  let removed = 0;
+  for (const file of files) {
+    const filePath = join(dir, file);
+    try {
+      const s = await stat(filePath);
+      if (now - s.mtimeMs > LOG_EXPIRY_MS) {
+        await unlink(filePath);
+        removed++;
+      }
+    } catch {
+      // Silently skip
+    }
+  }
+  return removed;
+}
+
+/**
+ * Clean expired logs. Scans the default .swifty/logs/ and all team-specific
+ * .swifty/teams/<team>/logs/ directories. Only called by the main process
+ * (teammate subprocesses skip via skipCleanup).
+ */
+export async function cleanExpiredLogs(workDir: string): Promise<number> {
+  let removed = 0;
+  removed += await cleanDir(join(workDir, ".swifty", "logs"));
+
+  const teamsDir = join(workDir, ".swifty", "teams");
+  if (!(await pathExists(teamsDir))) {
+    return removed;
+  }
+
+  let teams: string[];
+  try {
+    teams = await readdir(teamsDir);
+  } catch {
+    return removed;
+  }
+  for (const team of teams) {
+    removed += await cleanDir(join(teamsDir, team, "logs"));
+  }
+  return removed;
+}
+
+/** Log context fields, injected via withLogContext, auto-merged by the logger. */
+export interface LogContext {
+  /** Name of the current subagent / fork / teammate-in-process. */
+  agentName?: string;
+  /** Agent kind, distinguishes context source. */
+  agentKind?: "subagent" | "fork" | "teammate-in-process";
+  /** Current tool name (for dynamic child loggers). */
+  toolName?: string;
+}
+
+/** Global AsyncLocalStorage singleton. */
+export const logContext = new AsyncLocalStorage<LogContext>();
+
+/**
+ * Run a callback within a log context. The callback and all async operations
+ * it triggers can read ctx via logContext.getStore().
+ *
+ * @example
+ * ```ts
+ * withLogContext({ agentName: "researcher", agentKind: "subagent" }, () => {
+ *   return agent.run(); // tool logs inside automatically carry agentName
+ * });
+ * ```
+ */
+export function withLogContext<T>(ctx: LogContext, fn: () => T): T {
+  return logContext.run(ctx, fn);
+}
+
+/** Read the current async context's log bindings. Returns empty object if none. */
+export function getLogContext(): LogContext {
+  return logContext.getStore() ?? {};
+}
+
+// Custom error serializer for pino.
+// The default pino err serializer does not recurse into Error.cause chains
+// and does not handle non-Error values. This module fills those gaps:
+// recursive cause (max 5 levels), preserves extra fields, tolerates non-Error.
+
+/** Serialized error shape: always has type/message/stack, optional cause + extras. */
+export interface SerializedError {
+  type: string;
+  message: string;
+  stack?: string;
+  cause?: SerializedError | { message: string };
+  [key: string]: unknown;
+}
+
+const CAUSE_MAX_DEPTH = 5;
+const RESERVED_KEYS = new Set(["name", "message", "stack", "cause"]);
+
+/** Recursively serialize an Error instance (including its cause chain). */
+function serializeErrorInstance(err: Error, depth: number): SerializedError {
+  const out: SerializedError = {
+    type: err.name,
+    message: err.message,
+    stack: err.stack,
+  };
+
+  // Recursive cause chain, guard against circular references.
+  // Use getOwnPropertyDescriptor to read `cause` without type assertions
+  // (Error.cause is not present on older TS lib definitions).
+  const causeDescriptor = Object.getOwnPropertyDescriptor(err, "cause");
+  if (causeDescriptor && depth < CAUSE_MAX_DEPTH) {
+    const cause: unknown = causeDescriptor.value;
+    if (cause instanceof Error) {
+      out.cause = serializeErrorInstance(cause, depth + 1);
+    } else if (cause !== undefined) {
+      out.cause = {
+        message: typeof cause === "string" ? cause : JSON.stringify(cause),
+      };
+    }
+  }
+
+  // Preserve extra fields (code, errno, statusCode, path, etc.) that Error
+  // subclasses may attach. Read via getOwnPropertyDescriptor to avoid
+  // unsafe member access on the Error type.
+  for (const key of Object.keys(err)) {
+    if (RESERVED_KEYS.has(key)) {
+      continue;
+    }
+    const descriptor = Object.getOwnPropertyDescriptor(err, key);
+    if (descriptor) {
+      const fieldValue: unknown = descriptor.value;
+      out[key] = fieldValue;
+    }
+  }
+
+  return out;
+}
+
+/**
+ * pino err serializer: tolerates Error instances and non-Error values.
+ * - Error instance: recursive cause chain + preserved extra fields.
+ * - string/undefined/plain object: normalized to { message, value }.
+ */
+export function errSerializer(err: unknown): Record<string, unknown> {
+  if (err instanceof Error) {
+    return serializeErrorInstance(err, 0);
+  }
+  return { message: String(err), value: err };
+}

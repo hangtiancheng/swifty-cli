@@ -27,7 +27,12 @@ import { loadConfig } from "./config/config.js";
 import type { MCPServerConfig } from "./config/config.js";
 import { ConversationManager } from "./conversation/conversation.js";
 import { createClient } from "./llm/client.js";
-import { initLogger, closeLogger, createChildLogger, sanitizeNameSegment } from "./logger/index.js";
+import {
+  initLogger,
+  closeLogger,
+  createChildLogger,
+  sanitizeNameSegment,
+} from "./logger/logger.js";
 import { MCPManager } from "./mcp/manager.js";
 import { MCPToolWrapper } from "./mcp/tool-wrapper.js";
 import { PermissionChecker } from "./permissions/checker.js";
@@ -265,7 +270,11 @@ export async function runTeammate(args: TeammateArgs): Promise<void> {
           `[${event.toolName}] ${event.isError ? "ERROR" : "OK"} (${event.elapsed.toFixed(1)}s)`,
         );
         log.info(
-          { toolName: event.toolName, isError: event.isError, elapsed: event.elapsed },
+          {
+            toolName: event.toolName,
+            isError: event.isError,
+            elapsed: event.elapsed,
+          },
           "tool result",
         );
         log.debug({ output }, "tool output");

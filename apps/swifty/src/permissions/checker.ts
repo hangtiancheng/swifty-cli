@@ -27,7 +27,7 @@ import { join, resolve, dirname } from "node:path";
 import yaml from "js-yaml";
 import z, { parse } from "zod";
 
-import { createChildLogger } from "../logger/index.js";
+import { createChildLogger } from "../logger/logger.js";
 import { strArg } from "../utils/index.js";
 
 const log = createChildLogger({ module: "permissions" });
@@ -500,7 +500,10 @@ export class PermissionChecker {
         // sandbox ask; otherwise rules for outside paths could never apply.
         const ruleEffect = this.ruleEngine.evaluate(toolName, content);
         if (ruleEffect) {
-          return { effect: ruleEffect, reason: `Permission rule: ${ruleEffect}` };
+          return {
+            effect: ruleEffect,
+            reason: `Permission rule: ${ruleEffect}`,
+          };
         }
         return { effect: "ask", reason: sandboxDecision.reason };
       }

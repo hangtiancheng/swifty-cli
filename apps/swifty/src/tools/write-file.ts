@@ -23,7 +23,7 @@
 import { existsSync, mkdirSync, writeFileSync } from "fs";
 import { dirname } from "path";
 
-import { createChildLogger } from "../logger/index.js";
+import { createChildLogger } from "../logger/logger.js";
 import { asErrorString } from "../utils/index.js";
 import { strArg } from "../utils/index.js";
 

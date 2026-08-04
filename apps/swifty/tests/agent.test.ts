@@ -20,7 +20,6 @@
  * SOFTWARE.
  */
 
-/* eslint-disable @typescript-eslint/require-await */
 import { describe, it, expect } from "vitest";
 
 import { Agent } from "../src/agent/agent.js";
@@ -53,6 +52,7 @@ class MockClient implements LLMClient {
   setSystemPrompt(_prompt: string): void {
     /** noop */
   }
+  // eslint-disable-next-line @typescript-eslint/require-await
   async *stream(): AsyncGenerator<StreamEvent> {
     const script = this.scripts[this.calls++] ?? [end()];
     for (const ev of script) {
@@ -73,6 +73,7 @@ const echoTool: Tool = {
     description: "echo",
     input_schema: { type: "object", properties: {} },
   }),
+  // eslint-disable-next-line @typescript-eslint/require-await
   execute: async () => ({ output: "echoed", isError: false }),
 };
 

@@ -35,7 +35,7 @@ import { join } from "node:path";
 
 import z, { parse, safeParse } from "zod";
 
-import { createChildLogger } from "../logger/index.js";
+import { createChildLogger } from "../logger/logger.js";
 import { contentToText } from "../utils/index.js";
 
 // Persistent session lines. Ordinary messages have an empty `type`, while compaction boundary records

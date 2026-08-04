@@ -21,7 +21,7 @@
  */
 
 import type { MCPServerConfig } from "../config/config.js";
-import { createChildLogger } from "../logger/index.js";
+import { createChildLogger } from "../logger/logger.js";
 
 import { MCPClient } from "./client.js";
 import type { MCPTool } from "./client.js";

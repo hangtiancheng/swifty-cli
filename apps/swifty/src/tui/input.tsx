@@ -27,7 +27,7 @@ import Fuse from "fuse.js";
 import { Box, Text, useInput } from "ink";
 import { useState, useMemo, useRef, useEffect } from "react";
 
-import { createChildLogger } from "../logger/index.js";
+import { createChildLogger } from "../logger/logger.js";
 
 import { BORDER_COLORS, COLORS, ICONS, THEME } from "./styles.js";
 
@@ -127,9 +127,11 @@ export function InputBox(props: InputBoxProps) {
   const [historyIndex, setHistoryIndex] = useState(-1);
   // Stashes the in-progress input when the user first arrows up into history,
   // so arrowing back down past the newest entry restores it instead of clearing.
-  const historyDraftRef = useRef<{ lines: string[]; cursorLine: number; cursorCol: number } | null>(
-    null,
-  );
+  const historyDraftRef = useRef<{
+    lines: string[];
+    cursorLine: number;
+    cursorCol: number;
+  } | null>(null);
   const [dropdownIndex, setDropdownIndex] = useState(0);
   const [dropdownDismissed, setDropdownDismissed] = useState(false);
 
@@ -490,7 +492,11 @@ export function InputBox(props: InputBoxProps) {
       }
       if (!isMultiline && history.length > 0) {
         if (historyIndex === -1) {
-          historyDraftRef.current = { lines: [...lines], cursorLine, cursorCol };
+          historyDraftRef.current = {
+            lines: [...lines],
+            cursorLine,
+            cursorCol,
+          };
         }
         const nextIdx = historyIndex < history.length - 1 ? historyIndex + 1 : historyIndex;
         setHistoryIndex(nextIdx);

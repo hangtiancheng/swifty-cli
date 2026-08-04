@@ -20,7 +20,7 @@
  * SOFTWARE.
  */
 
-import { createChildLogger } from "../logger/index.js";
+import { createChildLogger } from "../logger/logger.js";
 import { asErrorString } from "../utils/index.js";
 import { strArg } from "../utils/index.js";
 import { hasWorktreeChanges, removeAgentWorktree } from "../worktree/worktree.js";

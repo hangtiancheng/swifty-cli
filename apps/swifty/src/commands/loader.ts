@@ -20,7 +20,7 @@
  * SOFTWARE.
  */
 
-// import { createChildLogger } from "../logger/index.js";
+// import { createChildLogger } from "../logger/logger.js";
 
 // const log = createChildLogger({ module: "commands" });
 

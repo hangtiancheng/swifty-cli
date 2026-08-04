@@ -23,7 +23,7 @@
 import { mkdirSync, writeFileSync, readFileSync, existsSync } from "node:fs";
 import { join, isAbsolute, basename } from "node:path";
 
-import { createChildLogger } from "../logger/index.js";
+import { createChildLogger } from "../logger/logger.js";
 import type { Tool, ToolContext, ToolResult, ToolSchema } from "../tools/types.js";
 
 import type { SkillCatalog } from "./catalog.js";

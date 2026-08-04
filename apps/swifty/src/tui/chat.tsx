@@ -26,7 +26,7 @@ import { Box, Text, useStdout } from "ink";
 import { marked } from "marked";
 import React, { useRef } from "react";
 
-import { createChildLogger } from "../logger/index.js";
+import { createChildLogger } from "../logger/logger.js";
 
 import { DiffLines } from "./diff-render.js";
 import { isDiffTool } from "./is-diff-tool.js";

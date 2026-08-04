@@ -27,7 +27,7 @@ import { join } from "node:path";
 import yaml from "js-yaml";
 import z, { parse } from "zod";
 
-import { createChildLogger } from "../logger/index.js";
+import { createChildLogger } from "../logger/logger.js";
 
 import { BUILTIN_AGENTS, type AgentDefinition } from "./definition.js";
 

@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/consistent-type-assertions */
 /**
  * Copyright (c) 2026 hangtiancheng
  *
@@ -252,6 +251,7 @@ export class Agent {
           this.compactTracking,
           this.recoveryState,
           toolSchemaNames,
+          // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
           toolSchemas as ToolSchema[],
           this.sessionFilePath,
         );
@@ -271,6 +271,7 @@ export class Agent {
           // Initiate API call directly with the conversation — no need to rebuild
           const stream = this.client.stream(
             this.conversation,
+            // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
             toolSchemas as ToolSchema[],
             this.abortSignal,
           );
@@ -340,6 +341,7 @@ export class Agent {
                 this.client,
                 this.recoveryState,
                 toolSchemaNames,
+                // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
                 toolSchemas as ToolSchema[],
                 this.sessionFilePath,
               );

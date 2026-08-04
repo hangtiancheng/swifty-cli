@@ -20,7 +20,6 @@
  * SOFTWARE.
  */
 
-/* eslint-disable @typescript-eslint/require-await */
 import { writeFileSync } from "fs";
 import { mkdtempSync, existsSync, readFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -41,6 +40,7 @@ class MockClient implements LLMClient {
   setMaxOutputTokens?(_maxTokens: number): void {
     /** noop */
   }
+  // eslint-disable-next-line @typescript-eslint/require-await
   async *stream(): AsyncGenerator<StreamEvent> {
     yield { type: "text_delta", text: this.text };
     yield {

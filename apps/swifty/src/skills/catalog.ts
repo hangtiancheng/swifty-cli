@@ -27,7 +27,7 @@ import { join } from "node:path";
 import yaml from "js-yaml";
 import { parse, z } from "zod";
 
-import { createChildLogger } from "../logger/index.js";
+import { createChildLogger } from "../logger/logger.js";
 
 import { loadBuiltins } from "./builtins.js";
 import type { Skill, SkillMeta } from "./skill.js";

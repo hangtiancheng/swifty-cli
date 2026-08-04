@@ -20,7 +20,6 @@
  * SOFTWARE.
  */
 
-/* eslint-disable @typescript-eslint/ban-ts-comment */
 import { describe, it, expect, afterEach } from "vitest";
 
 import type { ProviderConfig } from "../src/config/config.js";
@@ -44,6 +43,7 @@ afterEach(() => {
 describe("fetchModelContextWindow (layer 2 auto-fetch)", () => {
   it("returns max_input_tokens on a successful response", async () => {
     let calledUrl = "";
+    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
     // @ts-expect-error
     globalThis.fetch = (url: string) => {
       calledUrl = url;
@@ -68,6 +68,7 @@ describe("fetchModelContextWindow (layer 2 auto-fetch)", () => {
   });
 
   it("returns 0 on a non-OK HTTP status", async () => {
+    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
     // @ts-expect-error
     globalThis.fetch = () => ({
       ok: false,
@@ -79,6 +80,7 @@ describe("fetchModelContextWindow (layer 2 auto-fetch)", () => {
   });
 
   it("returns 0 when max_input_tokens is missing or null", async () => {
+    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
     // @ts-expect-error
     globalThis.fetch = () => ({
       ok: true,
@@ -90,6 +92,7 @@ describe("fetchModelContextWindow (layer 2 auto-fetch)", () => {
 
   it("returns 0 immediately for non-anthropic protocols without fetching", async () => {
     let called = false;
+    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
     // @ts-expect-error
     globalThis.fetch = () => {
       called = true;

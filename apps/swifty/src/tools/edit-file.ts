@@ -22,7 +22,7 @@
 
 import { readFile, writeFile } from "node:fs/promises";
 
-import { createChildLogger } from "../logger/index.js";
+import { createChildLogger } from "../logger/logger.js";
 import { asErrorString } from "../utils/index.js";
 import { boolArg, strArg } from "../utils/index.js";
 

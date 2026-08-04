@@ -20,7 +20,6 @@
  * SOFTWARE.
  */
 
-/* eslint-disable @typescript-eslint/require-await */
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -67,6 +66,7 @@ describe("teams orchestration", () => {
   it("spawnTeammate runs the task and posts its result to the lead mailbox", async () => {
     const mgr = new TeamManager(workDir());
     const team = mgr.create("squad");
+    // eslint-disable-next-line @typescript-eslint/require-await
     team.spawnTeammate("scout", "find X", async (task) => `did: ${task}`);
 
     await wait(200);
@@ -79,6 +79,7 @@ describe("teams orchestration", () => {
 
   it("a failing teammate reports the error to the lead", async () => {
     const mgr = new TeamManager(workDir());
+    // eslint-disable-next-line @typescript-eslint/require-await
     mgr.create("squad").spawnTeammate("flaky", "boom", async () => {
       throw new Error("kaboom");
     });
@@ -100,6 +101,7 @@ describe("teams orchestration", () => {
       ).output,
     ).toContain("created");
 
+    // eslint-disable-next-line @typescript-eslint/require-await
     const spawn = new SpawnTeammateTool(mgr, async (task) => `done:${task}`);
     const r = await spawn.execute(
       {
@@ -145,6 +147,7 @@ describe("teams orchestration", () => {
       ).isError,
     ).toBe(true);
     expect(
+      // eslint-disable-next-line @typescript-eslint/require-await
       (
         await new SpawnTeammateTool(mgr, async () => "x").execute(
           {

@@ -26,7 +26,7 @@ import { join, relative, resolve, sep } from "node:path";
 
 import { Glob } from "@swifty.js/glob-addon";
 
-import { createChildLogger } from "../../logger/index.js";
+import { createChildLogger } from "../../logger/logger.js";
 import { asErrorString, strArg } from "../../utils/index.js";
 import { GREP_DESCRIPTION } from "../descriptions.js";
 import {

@@ -25,7 +25,7 @@ import { join } from "node:path";
 
 import z from "zod";
 
-import { createChildLogger } from "../logger/index.js";
+import { createChildLogger } from "../logger/logger.js";
 import { detectBackend } from "../teams/backend.js";
 import type { TeamManager } from "../teams/team.js";
 

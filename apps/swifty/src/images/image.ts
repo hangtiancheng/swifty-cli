@@ -20,20 +20,127 @@
  * SOFTWARE.
  */
 
+import { readFileSync, statSync } from "node:fs";
+import { extname } from "node:path";
+
 import sharp from "sharp";
 
-import {
-  ImageTooLargeError,
-  JPEG_QUALITY,
-  MAX_IMAGE_BYTES,
-  MAX_DIMENSION_PX,
-  MAX_IMAGE_BYTES_PASSTHROUGH,
-} from "./limits.js";
-import type { ImageAttachment, ImageMediaType } from "./types.js";
-
-import { createChildLogger } from "@/logger/index.js";
+import { createChildLogger } from "@/logger/logger.js";
 
 const log = createChildLogger({ module: "images" });
+
+export type ImageMediaType = "image/png" | "image/jpeg" | "image/gif" | "image/webp";
+
+export function asImageMediaType(type: string): ImageMediaType {
+  if (
+    type === "image/png" ||
+    type === "image/jpeg" ||
+    type === "image/gif" ||
+    type === "image/webp"
+  ) {
+    return type;
+  }
+  throw new Error(`Unsupported image media type: "${type}"`);
+}
+
+export interface ImageAttachment {
+  mediaType: ImageMediaType;
+  /** Raw base64 payload without a data: URL prefix. */
+  data: string;
+  /** Original file path, used for UI labels and session provenance. */
+  sourcePath?: string | undefined;
+  /** Decoded byte length of `data`. */
+  byteLength: number;
+}
+
+// Hard limit is 5MB on the base64-encoded payload. base64 inflates by 4/3, so the raw-byte target that always fits is 5MB * 3/4 = 3.75MB.
+export const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+export const MAX_IMAGE_BYTES_PASSTHROUGH = (MAX_IMAGE_BYTES * 3) / 4;
+
+export const MAX_DIMENSION_PX = 2000;
+
+// Cap images per user message to stay well under provider block limits.
+export const MAX_IMAGES_PER_MESSAGE = 10;
+
+export class ImageTooLargeError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ImageTooLargeError";
+  }
+}
+
+const mediaType: Record<string, ImageMediaType> = {
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
+};
+
+export const imageExts: ReadonlySet<string> = new Set(Object.keys(mediaType));
+
+export function getMediaType(path: string): ImageMediaType | null {
+  return mediaType[extname(path).toLowerCase()] ?? null;
+}
+
+export function isImagePath(path: string): boolean {
+  return getMediaType(path) !== null;
+}
+
+// Detect the real format from magic bytes. Returns null when the buffer is
+// not a recognized image — callers should reject rather than trust the
+// file extension.
+export function sniffMediaType(buf: Buffer): ImageMediaType | null {
+  if (buf.length >= 8 && buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) {
+    return "image/png";
+  }
+  if (buf.length >= 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) {
+    return "image/jpeg";
+  }
+  if (buf.length >= 6 && buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46) {
+    return "image/gif";
+  }
+  if (
+    buf.length >= 12 &&
+    buf[0] === 0x52 &&
+    buf[1] === 0x49 &&
+    buf[2] === 0x46 &&
+    buf[3] === 0x46 &&
+    buf[8] === 0x57 &&
+    buf[9] === 0x45 &&
+    buf[10] === 0x42 &&
+    buf[11] === 0x50
+  ) {
+    return "image/webp";
+  }
+  return null;
+}
+
+// Read an image file, validate its real format via magic bytes, and compress
+// it to fit API limits. Throws with context on any failure (caller decides
+// how to degrade).
+export async function loadImageAttachment(absPath: string): Promise<ImageAttachment> {
+  const st = statSync(absPath);
+  if (!st.isFile()) {
+    throw new Error(`Not a file: ${absPath}`);
+  }
+  const buf = readFileSync(absPath);
+
+  const sniffed = sniffMediaType(buf);
+  if (!sniffed) {
+    throw new Error(
+      `File ${absPath} has an image extension but its contents are not a supported image format (png/jpeg/gif/webp)`,
+    );
+  }
+  // Magic bytes win over the extension when they disagree.
+  const resized = await maybeResizeAndDownsampleImage(buf, sniffed);
+  return {
+    mediaType: resized.mediaType,
+    data: resized.data,
+    sourcePath: absPath,
+    byteLength: resized.byteLength,
+  };
+}
 
 export type ResizedImage = Omit<ImageAttachment, "sourcePath">;
 
@@ -110,7 +217,7 @@ async function compressWithSharp(buf: Buffer, mediaType: ImageMediaType): Promis
         return toResult(png, "image/png");
       }
     }
-    for (const quality of JPEG_QUALITY) {
+    for (const quality of [80, 60, 40, 20] /** jpeg quality */) {
       const jpeg = await sharp(buf)
         .resize(width, height, { fit: "inside", withoutEnlargement: true })
         .jpeg({ quality })

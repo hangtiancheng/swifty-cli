@@ -25,7 +25,7 @@ import { join, resolve } from "path";
 
 import { Glob } from "@swifty.js/glob-addon";
 
-import { createChildLogger } from "../../logger/index.js";
+import { createChildLogger } from "../../logger/logger.js";
 import { asErrorString, strArg } from "../../utils/index.js";
 import { GLOB_DESCRIPTION } from "../descriptions.js";
 import {
@@ -111,7 +111,7 @@ export class GlobTool implements Tool {
 
       let output = matches.join("\n");
       if (matches.length >= maxResults) {
-        output += `\n(Results limited to ${maxResults} files. Use a more specific pattern.)`;
+        output += `\n(Results limited to ${String(maxResults)} files. Use a more specific pattern.)`;
       }
 
       return Promise.resolve({

@@ -28,7 +28,7 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { z } from "zod";
 
-import { createChildLogger } from "../logger/index.js";
+import { createChildLogger } from "../logger/logger.js";
 
 import { detectIde } from "./lockfile.js";
 import { WebSocketTransport } from "./ws-transport.js";
@@ -118,7 +118,10 @@ export async function connectToIde(opts: {
   });
 
   try {
-    await client.notification({ method: "ide_connected", params: { pid: process.pid } });
+    await client.notification({
+      method: "ide_connected",
+      params: { pid: process.pid },
+    });
   } catch (err) {
     log.error({ err }, "failed to send ide_connected notification");
   }

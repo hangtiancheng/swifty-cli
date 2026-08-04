@@ -23,7 +23,7 @@
 import { render } from "ink";
 
 import { forkEnabled, loadConfig } from "./config/config.js";
-import { initLogger, closeLogger, logger } from "./logger/index.js";
+import { initLogger, closeLogger, logger } from "./logger/logger.js";
 import { parsePrintFlags, runPrintMode } from "./print-mode.js";
 import { newSessionId } from "./session/session.js";
 import { parseTeammateFlags, runTeammate } from "./teammate.js";

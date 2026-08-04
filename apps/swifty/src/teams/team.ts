@@ -24,7 +24,7 @@ import { mkdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 
 import type { ConversationManager } from "../conversation/conversation.js";
-import { createChildLogger } from "../logger/index.js";
+import { createChildLogger } from "../logger/logger.js";
 import type { PermissionChecker } from "../permissions/checker.js";
 import { getOrCreatePlanPath } from "../plan-file/plan-file.js";
 import { randomVerb } from "../tui/verbs.js";
@@ -410,7 +410,10 @@ export class Team {
       const prompt = msgs.map((m) => `From ${m.from}: ${m.text}`).join("\n\n");
       return { prompt: `You have new messages from your team:\n\n${prompt}` };
     }
-    return { prompt: "", shutdown: shutdownRequest("lead", "member deactivated") };
+    return {
+      prompt: "",
+      shutdown: shutdownRequest("lead", "member deactivated"),
+    };
   }
 
   /**

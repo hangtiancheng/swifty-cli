@@ -23,7 +23,7 @@
 import { execSync } from "node:child_process";
 import { platform, arch } from "node:os";
 
-import { createChildLogger } from "../logger/index.js";
+import { createChildLogger } from "../logger/logger.js";
 
 import type { Section, EnvironmentContext } from "./sections.js";
 import {

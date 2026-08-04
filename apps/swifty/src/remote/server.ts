@@ -51,7 +51,7 @@ import { FileHistory } from "../file-history/file-history.js";
 import { HookEngine, validate as validateHooks } from "../hooks/hooks.js";
 import { createClient, type LLMClient } from "../llm/client.js";
 import { resolveModelId } from "../llm/model-resolver.js";
-import { createChildLogger } from "../logger/index.js";
+import { createChildLogger } from "../logger/logger.js";
 import { MCPManager } from "../mcp/manager.js";
 import { MCPToolWrapper } from "../mcp/tool-wrapper.js";
 import { MemoryConsolidator } from "../memory/consolidation.js";
@@ -1498,7 +1498,10 @@ export class RemoteServer {
       }
       const displayContent = contentToText(msg.content);
       if (msg.role === "user") {
-        this.broadcast({ type: "replay_user", data: { content: displayContent } });
+        this.broadcast({
+          type: "replay_user",
+          data: { content: displayContent },
+        });
       } else {
         this.broadcast({
           type: "replay_assistant",

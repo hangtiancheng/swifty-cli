@@ -34,9 +34,8 @@ import {
 } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 
 import type { MCPServerConfig } from "../config/config.js";
-import { maybeResizeAndDownsampleImage } from "../images/resize.js";
-import { asImageMediaType } from "../images/types.js";
-import { createChildLogger } from "../logger/index.js";
+import { asImageMediaType, maybeResizeAndDownsampleImage } from "../images/image.js";
+import { createChildLogger } from "../logger/logger.js";
 
 import type { ToolSchema } from "@/tools/types.js";
 import { version } from "@/tui/version.js";

@@ -29,7 +29,7 @@ import type {
   ToolResultBlock,
 } from "../conversation/conversation.js";
 import { ensureToolPairing } from "../conversation/pairing.js";
-import { createChildLogger } from "../logger/index.js";
+import { createChildLogger } from "../logger/logger.js";
 import {
   asRecord,
   asString,

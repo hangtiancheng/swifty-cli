@@ -23,7 +23,7 @@
 import { randomBytes } from "node:crypto";
 
 import type { ConversationManager } from "../conversation/conversation.js";
-import { createChildLogger } from "../logger/index.js";
+import { createChildLogger } from "../logger/logger.js";
 import { PermissionChecker } from "../permissions/checker.js";
 import { TaskCreateTool, TaskGetTool, TaskListTool, TaskUpdateTool } from "../teams/task-tools.js";
 import type { TeamManager, RunAgent } from "../teams/team.js";
@@ -293,7 +293,10 @@ When tasks are independent, launch multiple subagents in parallel by making mult
 
 ${prompt}`;
       } catch (e) {
-        return { output: `Error creating agent worktree: ${asErrorString(e)}`, isError: true };
+        return {
+          output: `Error creating agent worktree: ${asErrorString(e)}`,
+          isError: true,
+        };
       }
     }
 

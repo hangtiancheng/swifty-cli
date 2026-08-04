@@ -31,14 +31,16 @@ import { fileURLToPath } from "node:url";
 import sharp, { type Sharp } from "sharp";
 import { beforeAll, describe, expect, it } from "vitest";
 
-import { isImagePath, getMediaType, sniffMediaType } from "@/images/detect.js";
 import {
+  isImagePath,
+  getMediaType,
+  sniffMediaType,
   ImageTooLargeError,
   MAX_DIMENSION_PX,
   MAX_IMAGE_BYTES_PASSTHROUGH,
-} from "@/images/limits.js";
-import { loadImageAttachment } from "@/images/load.js";
-import { maybeResizeAndDownsampleImage } from "@/images/resize.js";
+  loadImageAttachment,
+  maybeResizeAndDownsampleImage,
+} from "@/images/image.js";
 
 const TEST_PNG_PATH = join(dirname(fileURLToPath(import.meta.url)), "test.png");
 

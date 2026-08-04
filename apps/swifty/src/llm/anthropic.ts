@@ -20,10 +20,6 @@
  * SOFTWARE.
  */
 
-/**
- * Status: Done
- */
-
 import Anthropic from "@anthropic-ai/sdk";
 import { safeParseAsync, z } from "zod";
 
@@ -35,7 +31,7 @@ import {
 } from "../config/config.js";
 import type { ConversationManager, Message } from "../conversation/conversation.js";
 import { ensureToolPairing } from "../conversation/pairing.js";
-import { createChildLogger } from "../logger/index.js";
+import { createChildLogger } from "../logger/logger.js";
 import {
   asErrorString,
   asRecord,

@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/consistent-type-assertions */
 /**
  * Copyright (c) 2026 hangtiancheng
  *
@@ -89,6 +88,7 @@ describe("MemoryConsolidator", () => {
   describe("Gate logic", () => {
     it("skips when memory dir does not exist", async () => {
       const dir = makeTempDir();
+      // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
       const consolidator = new MemoryConsolidator({} as LLMClient, dir);
       // Should not throw
       await consolidator.maybeRun();
@@ -108,6 +108,7 @@ describe("MemoryConsolidator", () => {
       createSessions(dir, 10);
 
       let triggered = false;
+      // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
       const consolidator = new MemoryConsolidator({} as LLMClient, dir, {
         appendSystem: () => {
           triggered = true;
@@ -128,6 +129,7 @@ describe("MemoryConsolidator", () => {
       // Only 2 sessions (need 5)
       createSessions(dir, 2);
 
+      // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
       const consolidator = new MemoryConsolidator({} as LLMClient, dir);
       // Should not throw even with null client (gates should block before LLM call)
       await consolidator.maybeRun();

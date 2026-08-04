@@ -30,6 +30,7 @@
  */
 import { execFileSync } from "node:child_process";
 import { appendFileSync, existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { type } from "node:os";
 import path from "node:path";
 
 /**
@@ -238,7 +239,7 @@ function checkAssertion(output, assertion) {
  * @param {string} content
  * @returns {string}
  */
-function extractPrompt(content) {
+function extractPrompt(/** @type {string} */ content) {
   const blocks = [...content.matchAll(/^```text\n([\s\S]*?)^```$/gm)];
   return blocks.map((m) => m[1].replace(/\n$/, "")).join("\n");
 }
@@ -248,7 +249,7 @@ function extractPrompt(content) {
  * @param {string} content
  * @returns {string[]}
  */
-function extractAssertions(content) {
+function extractAssertions(/** @type {string} */ content) {
   const blocks = [...content.matchAll(/^```assertions\n([\s\S]*?)^```$/gm)];
   return blocks.flatMap((m) => m[1].split("\n")).filter((l) => l.trim() !== "");
 }

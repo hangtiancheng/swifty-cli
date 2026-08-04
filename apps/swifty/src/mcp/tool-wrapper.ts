@@ -20,7 +20,7 @@
  * SOFTWARE.
  */
 
-import { createChildLogger } from "../logger/index.js";
+import { createChildLogger } from "../logger/logger.js";
 import type { Tool, ToolResult, ToolContext, ToolCategory, ToolSchema } from "../tools/types.js";
 
 import type { MCPClient, MCPTool } from "./client.js";

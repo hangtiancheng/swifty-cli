@@ -20,7 +20,6 @@
  * SOFTWARE.
  */
 
-/* eslint-disable @typescript-eslint/require-await */
 import { describe, it, expect } from "vitest";
 
 import {
@@ -47,6 +46,7 @@ function stubClient(summaryBody: string): {
     setSystemPrompt(_prompt: string) {
       /** noop */
     },
+    // eslint-disable-next-line @typescript-eslint/require-await
     async *stream(conversation): AsyncGenerator<StreamEvent> {
       lastPrompt = contentToText(conversation.getMessages()[0]?.content ?? "");
       yield { type: "text_delta", text: `<summary>${summaryBody}</summary>` };

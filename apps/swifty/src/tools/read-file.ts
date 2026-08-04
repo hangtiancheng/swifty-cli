@@ -23,9 +23,8 @@
 import { existsSync, readFileSync, statSync } from "fs";
 import { basename } from "path";
 
-import { isImagePath } from "../images/detect.js";
-import { loadImageAttachment } from "../images/load.js";
-import { createChildLogger } from "../logger/index.js";
+import { isImagePath, loadImageAttachment } from "../images/image.js";
+import { createChildLogger } from "../logger/logger.js";
 import { asErrorString } from "../utils/index.js";
 import { intArg, strArg } from "../utils/index.js";
 

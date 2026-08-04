@@ -20,10 +20,6 @@
  * SOFTWARE.
  */
 
-/**
- * Status: Done
- */
-
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -32,7 +28,7 @@ import { safeParse } from "@modelcontextprotocol/sdk/server/zod-compat.js";
 import yaml from "js-yaml";
 import { z } from "zod";
 
-import { createChildLogger } from "../logger/index.js";
+import { createChildLogger } from "../logger/logger.js";
 
 const log = createChildLogger({ module: "config" });
 
