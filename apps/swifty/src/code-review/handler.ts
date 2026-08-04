@@ -96,19 +96,19 @@ function handleCreate(manager: CodeReviewManager, params: string): string {
   const members = [
     {
       name: args[1] || "reviewer1",
-      email: `${args[1] || "reviewer1"}@company.com`,
+      email: `${args[1] || "reviewer1"}@swifty.dev`,
       role: "lead" as const,
       expertise: ["architecture", "security", "performance"],
     },
     {
       name: args[2] || "reviewer2",
-      email: `${args[2] || "reviewer2"}@company.com`,
+      email: `${args[2] || "reviewer2"}@swifty.dev`,
       role: "reviewer" as const,
       expertise: ["testing", "code-quality", "documentation"],
     },
     {
       name: args[3] || "reviewer3",
-      email: `${args[3] || "reviewer3"}@company.com`,
+      email: `${args[3] || "reviewer3"}@swifty.dev`,
       role: "reviewer" as const,
       expertise: ["typescript", "frontend", "ux"],
     },
@@ -133,7 +133,7 @@ function handleAddMember(manager: CodeReviewManager, params: string): string {
 
   const member = {
     name,
-    email: `${name}@company.com`,
+    email: `${name}@swifty.dev`,
     role: role === "lead" ? ("lead" as const) : ("reviewer" as const),
     expertise: ["general"],
   };
@@ -358,7 +358,7 @@ function handleAddCritic(manager: CodeReviewManager, params: string): string {
 
   const member = {
     name,
-    email: `${name}@company.com`,
+    email: `${name}@swifty.dev`,
     role: "critic" as const,
     expertise,
   };

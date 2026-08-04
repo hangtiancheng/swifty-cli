@@ -64,22 +64,22 @@ describe("CodeReviewManager", () => {
   test("should create a 3-person review team", () => {
     const team = manager.createTeam("frontend-team", [
       {
-        name: "swifty.go",
-        email: "swifty.go@company.com",
+        name: "backend",
+        email: "backend@swifty.dev",
         role: "lead",
-        expertise: ["architecture", "security"],
+        expertise: ["architecture", "performance", "security"],
       },
       {
-        name: "swifty.qa",
-        email: "swifty.qa@company.com",
+        name: "test",
+        email: "test@swifty.dev",
         role: "reviewer",
-        expertise: ["testing", "documentation"],
+        expertise: ["code-quality", "documentation", "testing"],
       },
       {
-        name: "swifty.js",
-        email: "swifty.js@company.com",
+        name: "frontend",
+        email: "frontend@swifty.dev",
         role: "reviewer",
-        expertise: ["typescript", "frontend"],
+        expertise: ["frontend", "design", "UI", "UX"],
       },
     ]);
 
@@ -93,20 +93,20 @@ describe("CodeReviewManager", () => {
   test("should get active reviewers", () => {
     /** const team = */ manager.createTeam("backend-team", [
       {
-        name: "swifty.go",
-        email: "swifty.go@company.com",
+        name: "backend",
+        email: "backend@swifty.dev",
         role: "lead",
         expertise: ["backend"],
       },
       {
-        name: "swifty.qa",
-        email: "swifty.qa@company.com",
+        name: "test",
+        email: "test@swifty.dev",
         role: "reviewer",
         expertise: ["api"],
       },
       {
-        name: "swifty.js",
-        email: "swifty.js@company.com",
+        name: "frontend",
+        email: "frontend@swifty.dev",
         role: "reviewer",
         expertise: ["database"],
       },
@@ -120,60 +120,60 @@ describe("CodeReviewManager", () => {
   test("should deactivate and activate members", () => {
     /** const team = */ manager.createTeam("mobile-team", [
       {
-        name: "swifty.js",
-        email: "swifty.js@company.com",
+        name: "frontend",
+        email: "frontend@swifty.dev",
         role: "lead",
         expertise: ["mobile"],
       },
       {
-        name: "swifty.swift",
-        email: "swifty.swift@company.com",
+        name: "ios",
+        email: "ios@swifty.dev",
         role: "reviewer",
         expertise: ["ios"],
       },
       {
-        name: "swifty.kt",
-        email: "swifty.kt@company.com",
+        name: "android",
+        email: "android@swifty.dev",
         role: "reviewer",
         expertise: ["android"],
       },
     ]);
 
-    manager.deactivateMember("mobile-team", "swifty.swift");
+    manager.deactivateMember("mobile-team", "ios");
     let reviewers = manager.getActiveReviewers("mobile-team");
-    expect(reviewers).toHaveLength(1); // Only swifty.kt is active now
+    expect(reviewers).toHaveLength(1); // Only android is active now
 
-    manager.activateMember("mobile-team", "swifty.swift");
+    manager.activateMember("mobile-team", "ios");
     reviewers = manager.getActiveReviewers("mobile-team");
-    expect(reviewers).toHaveLength(2); // Both swifty.swift and swifty.kt are active
+    expect(reviewers).toHaveLength(2); // Both ios and android are active
   });
 
   test("should create default review team", () => {
     const defaultTeam = createDefaultCodeReviewTeam();
     expect(defaultTeam.name).toBe("default-review");
     expect(defaultTeam.members).toHaveLength(3);
-    expect(defaultTeam.members[0].name).toBe("swifty.go");
-    expect(defaultTeam.members[1].name).toBe("swifty.qa");
-    expect(defaultTeam.members[2].name).toBe("swifty.js");
+    expect(defaultTeam.members[0].name).toBe("backend");
+    expect(defaultTeam.members[1].name).toBe("test");
+    expect(defaultTeam.members[2].name).toBe("frontend");
   });
 
   test("should provide team summary", () => {
     manager.createTeam("summary-team", [
       {
-        name: "swifty.go",
-        email: "swifty.go@company.com",
+        name: "backend",
+        email: "backend@swifty.dev",
         role: "lead",
         expertise: ["summary"],
       },
       {
-        name: "swifty.qa",
-        email: "swifty.qa@company.com",
+        name: "test",
+        email: "test@swifty.dev",
         role: "reviewer",
         expertise: ["testing"],
       },
       {
-        name: "swifty.js",
-        email: "swifty.js@company.com",
+        name: "frontend",
+        email: "frontend@swifty.dev",
         role: "reviewer",
         expertise: ["docs"],
       },
@@ -197,19 +197,19 @@ describe("ReviewSession", () => {
     manager.createTeam("test-team", [
       {
         name: "reviewer1",
-        email: "reviewer1@company.com",
+        email: "reviewer1@swifty.dev",
         role: "lead",
         expertise: ["testing"],
       },
       {
         name: "reviewer2",
-        email: "reviewer2@company.com",
+        email: "reviewer2@swifty.dev",
         role: "reviewer",
         expertise: ["docs"],
       },
       {
         name: "reviewer3",
-        email: "reviewer3@company.com",
+        email: "reviewer3@swifty.dev",
         role: "reviewer",
         expertise: ["code"],
       },
