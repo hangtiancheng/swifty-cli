@@ -87,9 +87,12 @@ providers:
 permission_mode: default
 
 mcp_servers:
-  - name: my-server
+  - name: database
     command: npx
-    args: ["-y", "my-mcp-server"]
+    args: ["-y", "@swifty-db/mcp@latest"]
+    env: # map<string, string>; ${VAR} / $VAR expands from the environment
+      API_BASE_URL: "https://swifty-db.dev"
+      API_KEY: "${DATABASE_API_KEY}"
 
 hooks:
   - event: pre_tool_use
