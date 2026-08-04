@@ -29,7 +29,7 @@ import { createChildLogger } from "@/logger/logger.js";
 
 const log = createChildLogger({ module: "images" });
 
-export type ImageMediaType = "image/png" | "image/jpeg" | "image/gif" | "image/webp";
+type ImageMediaType = "image/png" | "image/jpeg" | "image/gif" | "image/webp";
 
 export function asImageMediaType(type: string): ImageMediaType {
   if (
@@ -43,7 +43,7 @@ export function asImageMediaType(type: string): ImageMediaType {
   throw new Error(`Unsupported image media type: "${type}"`);
 }
 
-export interface ImageAttachment {
+interface ImageAttachment {
   mediaType: ImageMediaType;
   /** Raw base64 payload without a data: URL prefix. */
   data: string;
@@ -54,7 +54,7 @@ export interface ImageAttachment {
 }
 
 // Hard limit is 5MB on the base64-encoded payload. base64 inflates by 4/3, so the raw-byte target that always fits is 5MB * 3/4 = 3.75MB.
-export const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 export const MAX_IMAGE_BYTES_PASSTHROUGH = (MAX_IMAGE_BYTES * 3) / 4;
 
 export const MAX_DIMENSION_PX = 2000;
@@ -76,8 +76,6 @@ const mediaType: Record<string, ImageMediaType> = {
   ".gif": "image/gif",
   ".webp": "image/webp",
 };
-
-export const imageExts: ReadonlySet<string> = new Set(Object.keys(mediaType));
 
 export function getMediaType(path: string): ImageMediaType | null {
   return mediaType[extname(path).toLowerCase()] ?? null;
@@ -142,7 +140,7 @@ export async function loadImageAttachment(absPath: string): Promise<ImageAttachm
   };
 }
 
-export type ResizedImage = Omit<ImageAttachment, "sourcePath">;
+type ResizedImage = Omit<ImageAttachment, "sourcePath">;
 
 function toResult(buf: Buffer, mediaType: ImageMediaType): ResizedImage {
   return { data: buf.toString("base64"), mediaType, byteLength: buf.length };

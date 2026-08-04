@@ -39,10 +39,10 @@ import { join, dirname } from "node:path";
 import pino, { type Logger, type LoggerOptions } from "pino";
 
 /** Execution mode, written into the base field of every log entry. */
-export type LoggerMode = "tui" | "remote" | "teammate";
+type LoggerMode = "tui" | "remote" | "teammate";
 
 /** Options for initLogger. Named to avoid clashing with pino's LoggerOptions. */
-export interface InitLoggerOptions {
+interface InitLoggerOptions {
   /** Session ID, used as the log filename and a base field. */
   sessionId: string;
   /** Execution mode. */
@@ -133,7 +133,7 @@ export function initLogger(opts: InitLoggerOptions): Logger {
 }
 
 /** Return the current logger instance, or null if not initialized. */
-export function getLogger(): Logger | null {
+function getLogger(): Logger | null {
   return currentLogger;
 }
 
@@ -168,7 +168,7 @@ export function closeLogger(): void {
  * Merge AsyncLocalStorage context into bindings. Called by the logger when
  * writing, so in-process subagent tool logs automatically carry agentName.
  */
-export function mergeContext(bindings: Record<string, unknown>): Record<string, unknown> {
+function mergeContext(bindings: Record<string, unknown>): Record<string, unknown> {
   const ctx = getLogContext();
   return { ...ctx, ...bindings };
 }
@@ -312,7 +312,7 @@ async function cleanDir(dir: string): Promise<number> {
  * .swifty/teams/<team>/logs/ directories. Only called by the main process
  * (teammate subprocesses skip via skipCleanup).
  */
-export async function cleanExpiredLogs(workDir: string): Promise<number> {
+async function cleanExpiredLogs(workDir: string): Promise<number> {
   let removed = 0;
   removed += await cleanDir(join(workDir, ".swifty", "logs"));
 
@@ -334,7 +334,7 @@ export async function cleanExpiredLogs(workDir: string): Promise<number> {
 }
 
 /** Log context fields, injected via withLogContext, auto-merged by the logger. */
-export interface LogContext {
+interface LogContext {
   /** Name of the current subagent / fork / teammate-in-process. */
   agentName?: string;
   /** Agent kind, distinguishes context source. */
@@ -344,25 +344,10 @@ export interface LogContext {
 }
 
 /** Global AsyncLocalStorage singleton. */
-export const logContext = new AsyncLocalStorage<LogContext>();
-
-/**
- * Run a callback within a log context. The callback and all async operations
- * it triggers can read ctx via logContext.getStore().
- *
- * @example
- * ```ts
- * withLogContext({ agentName: "researcher", agentKind: "subagent" }, () => {
- *   return agent.run(); // tool logs inside automatically carry agentName
- * });
- * ```
- */
-export function withLogContext<T>(ctx: LogContext, fn: () => T): T {
-  return logContext.run(ctx, fn);
-}
+const logContext = new AsyncLocalStorage<LogContext>();
 
 /** Read the current async context's log bindings. Returns empty object if none. */
-export function getLogContext(): LogContext {
+function getLogContext(): LogContext {
   return logContext.getStore() ?? {};
 }
 
@@ -372,7 +357,7 @@ export function getLogContext(): LogContext {
 // recursive cause (max 5 levels), preserves extra fields, tolerates non-Error.
 
 /** Serialized error shape: always has type/message/stack, optional cause + extras. */
-export interface SerializedError {
+interface SerializedError {
   type: string;
   message: string;
   stack?: string;
@@ -428,7 +413,7 @@ function serializeErrorInstance(err: Error, depth: number): SerializedError {
  * - Error instance: recursive cause chain + preserved extra fields.
  * - string/undefined/plain object: normalized to { message, value }.
  */
-export function errSerializer(err: unknown): Record<string, unknown> {
+function errSerializer(err: unknown): Record<string, unknown> {
   if (err instanceof Error) {
     return serializeErrorInstance(err, 0);
   }
