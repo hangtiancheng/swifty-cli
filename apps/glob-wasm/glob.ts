@@ -161,8 +161,9 @@ export class Glob {
   private ensureCompiled(): WasmExports {
     if (this.id === 0) {
       const exports = loadWasm();
-      if (this.pattern.length > 64 * 1024) {
-        // Mirrors the addon: the cap is enforced at compile time.
+      // Mirrors the addon: the cap is enforced at compile time, in UTF-8
+      // bytes (multi-byte characters count accordingly).
+      if (Buffer.byteLength(this.pattern, "utf-8") > 64 * 1024) {
         throw new RangeError("glob pattern is too long (limit: 65536 bytes)");
       }
       this.id = withString(exports, this.pattern, (ptr) => exports.compile(ptr));
@@ -176,6 +177,8 @@ export class Glob {
   }
 
   scan(options?: GlobScanOptions): string[] {
+    // Compile first, like the addon: an invalid pattern (brace bomb, over
+    // the length cap) errors out before any cwd/maxResults validation.
     const exports = this.ensureCompiled();
 
     let maxResults = 1000;

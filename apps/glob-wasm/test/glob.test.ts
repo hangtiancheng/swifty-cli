@@ -118,6 +118,11 @@ describe("Glob.match", () => {
     assert.throws(() => new Glob("a".repeat(64 * 1024 + 1)).match("a"), RangeError);
   });
 
+  it("counts the length cap in UTF-8 bytes, not UTF-16 units", () => {
+    // 22000 CJK chars = 22000 UTF-16 units but 66000 UTF-8 bytes
+    assert.throws(() => new Glob("\u4e2d".repeat(22000)).match("a"), RangeError);
+  });
+
   it("coalesces adjacent ** segments", () => {
     assert.equal(new Glob("a/**/**/b").match("a/b"), true);
     assert.equal(new Glob("a/**/**/b").match("a/x/y/b"), true);
