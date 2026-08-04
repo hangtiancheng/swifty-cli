@@ -189,7 +189,7 @@ describe("Glob.match", () => {
 });
 
 describe("Glob.scan", () => {
-  const root = mkdtempSync(join(tmpdir(), "glob-addon-test-"));
+  const root = mkdtempSync(join(tmpdir(), "glob-wasm-test-"));
   mkdirSync(join(root, "src", "js"), { recursive: true });
   mkdirSync(join(root, "src", "ts"), { recursive: true });
   mkdirSync(join(root, "node_modules", "pkg"), { recursive: true });
@@ -302,7 +302,7 @@ describe("Glob.scan", () => {
   });
 
   it("finds files with non-ASCII names", () => {
-    const dir = mkdtempSync(join(tmpdir(), "glob-addon-unicode-"));
+    const dir = mkdtempSync(join(tmpdir(), "glob-wasm-unicode-"));
     try {
       mkdirSync(join(dir, "\u76ee\u5f55"));
       writeFileSync(join(dir, "\u76ee\u5f55", "\u4e2d\u6587.js"), "\n");
@@ -314,7 +314,7 @@ describe("Glob.scan", () => {
   });
 
   it("survives symlink cycles and does not follow symlinked directories", () => {
-    const dir = mkdtempSync(join(tmpdir(), "glob-addon-symlink-"));
+    const dir = mkdtempSync(join(tmpdir(), "glob-wasm-symlink-"));
     try {
       mkdirSync(join(dir, "real"));
       writeFileSync(join(dir, "real", "f.js"), "\n");
@@ -337,7 +337,7 @@ describe("Glob.scan", () => {
   });
 
   it("prunes unrelated directory branches without losing matches", () => {
-    const dir = mkdtempSync(join(tmpdir(), "glob-addon-prune-"));
+    const dir = mkdtempSync(join(tmpdir(), "glob-wasm-prune-"));
     try {
       mkdirSync(join(dir, "src", "a", "b"), { recursive: true });
       mkdirSync(join(dir, "vendor", "deep", "deeper"), { recursive: true });

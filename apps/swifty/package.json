@@ -78,7 +78,7 @@
   "devDependencies": {
     "@biomejs/biome": "2.4.15",
     "@eslint/js": "^9.39.5",
-    "@swifty.js/glob-addon": "workspace:*",
+    "@swifty.js/glob-wasm": "workspace:*",
     "@swifty.js/marked-terminal": "workspace:^",
     "@tailwindcss/postcss": "^4.3.3",
     "@types/js-yaml": "^4.0.9",

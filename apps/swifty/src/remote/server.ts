@@ -82,8 +82,8 @@ import { TeamCreateTool, SendMessageTool, TeamDeleteTool } from "../teams/tools.
 import { TaskStore } from "../todo/store.js";
 import { TaskList } from "../todo/todo.js";
 import { TaskCreateTool, TaskGetTool, TaskListTool, TaskUpdateTool } from "../todo/tools.js";
-import { GlobTool } from "../tools/addon/glob.js";
-import { GrepTool } from "../tools/addon/grep.js";
+import { GlobTool } from "../tools/wasm/glob.js";
+import { GrepTool } from "../tools/wasm/grep.js";
 import { AskUserQuestionTool, type Question, type Asker } from "../tools/ask-user.js";
 import { BashTool } from "../tools/bash.js";
 import { EditFileTool } from "../tools/edit-file.js";

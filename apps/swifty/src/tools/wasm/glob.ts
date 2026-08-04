@@ -23,7 +23,7 @@
 import { statSync } from "fs";
 import { join, resolve } from "path";
 
-import { Glob } from "@swifty.js/glob-addon";
+import { Glob } from "@swifty.js/glob-wasm";
 
 import { createChildLogger } from "../../logger/logger.js";
 import { asErrorString, strArg } from "../../utils/index.js";

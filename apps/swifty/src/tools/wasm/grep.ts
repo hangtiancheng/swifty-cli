@@ -24,7 +24,7 @@ import type { Stats } from "node:fs";
 import { lstat, readdir, readFile, stat } from "node:fs/promises";
 import { join, relative, resolve, sep } from "node:path";
 
-import { Glob } from "@swifty.js/glob-addon";
+import { Glob } from "@swifty.js/glob-wasm";
 
 import { createChildLogger } from "../../logger/logger.js";
 import { asErrorString, strArg } from "../../utils/index.js";

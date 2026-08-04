@@ -74,9 +74,10 @@ export default defineConfig({
           path: "sharp",
           external: true,
         }));
-        // @swifty.js/glob-addon's JS wrapper is bundled; the C++ N-API binary
-        // (glob_addon.node) cannot be bundled and is loaded at runtime from
-        // next to the bundle entry (copied into dist/ in onSuccess below).
+        // @swifty.js/glob-wasm's JS wrapper is bundled; the compiled wasm
+        // binary (glob.wasm) is loaded at runtime from next to the bundle
+        // entry (copied into dist/ in onSuccess below). The wrapper also
+        // carries a base64 embedding of the module as a fallback.
       },
     },
   ],
@@ -91,15 +92,16 @@ export default defineConfig({
       recursive: true,
     });
 
-    // 2. glob_addon.node — native addon backing the Glob/Grep tools; the
-    //    bundled wrapper loads it from next to the bundle entry at runtime.
-    //    Platform-specific: cross-platform npm distribution would need
-    //    per-platform prebuilt packages instead.
+    // 2. glob.wasm — WebAssembly module backing the Glob/Grep tools; the
+    //    bundled wrapper loads it from next to the bundle entry at runtime
+    //    (the wrapper also embeds the module as base64, but the file keeps
+    //    the bundle small and debuggable). Unlike the old native addon this
+    //    is fully cross-platform.
     copyFileSync(
-      join(__dirname, "../glob-addon/build/Release/glob_addon.node"),
-      join(__dirname, "dist/glob_addon.node"),
+      join(__dirname, "../glob-wasm/build/release.wasm"),
+      join(__dirname, "dist/glob.wasm"),
     );
 
-    console.log("copied builtin/, glob_addon.node -> dist/");
+    console.log("copied builtin/, glob.wasm -> dist/");
   },
 });

@@ -15,10 +15,9 @@
     "build": "concurrently \"pnpm build:swifty\" \"pnpm build:swiftx\"",
     "build:swifty": "pnpm --filter @swifty.js/swifty build",
     "build:swiftx": "pnpm --filter @swifty.js/swiftx build",
-    "build:addon": "pnpm --filter @swifty.js/glob-addon build",
-    "build:wasm": "pnpm --filter @swifty.js/glob-wasm asbuild:release",
+    "build:wasm": "pnpm --filter @swifty.js/glob-wasm build",
     "build:marked-terminal": "pnpm --filter @swifty.js/marked-terminal build",
-    "prebuild": "concurrently \"pnpm build:addon\" \"pnpm build:wasm\" \"pnpm build:marked-terminal\"",
+    "prebuild": "concurrently \"pnpm build:wasm\" \"pnpm build:marked-terminal\"",
     "prepare": "husky"
   },
   "keywords": [],
