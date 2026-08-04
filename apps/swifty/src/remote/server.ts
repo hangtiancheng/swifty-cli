@@ -22,7 +22,6 @@
 
 // Remote server: Koa.js HTTP + WebSocket bridge for browser-based access.
 // Serves the React frontend (fe/dist/) and bridges Agent events to WS.
-// Equivalent migration from server-old.ts with static-file Koa serving.
 
 import { readFileSync, existsSync, statSync } from "node:fs";
 import { createServer } from "node:http";

@@ -150,8 +150,7 @@ function formatMB(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
 }
 
-// Resize/compress an image buffer so its base64 encoding fits the API limit.
-// Mirrors claude-code's maybeResizeAndDownsampleImageBuffer strategy:
+// Resize/compress an image buffer so its base64 encoding fits the API limit:
 //   1. <=3.75MB raw passes through untouched (sharp never invoked).
 //   2. Otherwise: cap dimensions at 2000px, keep PNG when possible
 //      (compressionLevel 9), then walk the JPEG quality ladder 80/60/40/20,
