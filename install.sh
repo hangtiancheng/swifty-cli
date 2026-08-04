@@ -24,11 +24,12 @@
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/hangtiancheng/swifty-cli/main/install.sh | bash
 #   curl -fsSL https://raw.githubusercontent.com/hangtiancheng/swifty-cli/main/install.sh | bash -s -- --alpha
+#   curl -fsSL https://raw.githubusercontent.com/hangtiancheng/swifty-cli/main/install.sh | bash -s -- --version=0.0.15
 #
 # Installs @swifty.js/larky globally via npm. npm's `bin` field automatically
 # creates the `swifty` and `swiftx` commands on PATH. Requires Node.js >= 20.
 #
-# Supports: --uninstall, --version vX.Y.Z, --alpha, --beta, --rc, --canary, --nightly, --tag=NAME
+# Supports: --uninstall, --version=X.Y.Z, --alpha, --beta, --rc, --canary, --nightly, --tag=NAME
 
 set -euo pipefail
 
