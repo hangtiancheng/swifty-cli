@@ -147,9 +147,12 @@ describe("teams orchestration", () => {
       ).isError,
     ).toBe(true);
     expect(
-      // eslint-disable-next-line @typescript-eslint/require-await
       (
-        await new SpawnTeammateTool(mgr, async () => "x").execute(
+        await new SpawnTeammateTool(
+          mgr,
+          // eslint-disable-next-line @typescript-eslint/require-await
+          async () => "x",
+        ).execute(
           {
             workDir: workDir(),
           },
