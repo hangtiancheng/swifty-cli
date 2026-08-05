@@ -42,40 +42,42 @@ export function MessageList({ items, onRespondPermission, onAnswerAsk }: Message
   const { ref } = useAutoScroll<HTMLDivElement>(items);
 
   return (
-    <div ref={ref} className="flex-1 overflow-y-auto px-4 py-4 scroll-smooth">
-      {items.map((item) => {
-        switch (item.kind) {
-          case "user":
-            return <UserMessage key={item.id} content={item.content} />;
-          case "assistant":
-            return (
-              <AssistantMessage key={item.id} content={item.content} streaming={item.streaming} />
-            );
-          case "system":
-            return <SystemMessage key={item.id} content={item.content} />;
-          case "error":
-            return <ErrorMessage key={item.id} content={item.content} />;
-          case "thinking":
-            return (
-              <ThinkingBlock
-                key={item.id}
-                text={item.content}
-                label={item.done ? " Thought" : "✻ Thinking..."}
-                streaming={!item.done}
-              />
-            );
-          case "tool":
-            return <ToolBlock key={item.id} item={item} />;
-          case "permission":
-            return <PermissionDialog key={item.id} item={item} onRespond={onRespondPermission} />;
-          case "askUser":
-            return <AskUserDialog key={item.id} item={item} onAnswer={onAnswerAsk} />;
-          case "done":
-            return <DoneIndicator key={item.id} elapsed={item.elapsed} />;
-          default:
-            return null;
-        }
-      })}
+    <div ref={ref} role="log" aria-live="polite" className="flex-1 overflow-y-auto">
+      <div className="mx-auto w-full max-w-3xl px-5 py-6">
+        {items.map((item) => {
+          switch (item.kind) {
+            case "user":
+              return <UserMessage key={item.id} content={item.content} />;
+            case "assistant":
+              return (
+                <AssistantMessage key={item.id} content={item.content} streaming={item.streaming} />
+              );
+            case "system":
+              return <SystemMessage key={item.id} content={item.content} />;
+            case "error":
+              return <ErrorMessage key={item.id} content={item.content} />;
+            case "thinking":
+              return (
+                <ThinkingBlock
+                  key={item.id}
+                  text={item.content}
+                  label={item.done ? "💭 Thought" : "✻ Thinking..."}
+                  streaming={!item.done}
+                />
+              );
+            case "tool":
+              return <ToolBlock key={item.id} item={item} />;
+            case "permission":
+              return <PermissionDialog key={item.id} item={item} onRespond={onRespondPermission} />;
+            case "askUser":
+              return <AskUserDialog key={item.id} item={item} onAnswer={onAnswerAsk} />;
+            case "done":
+              return <DoneIndicator key={item.id} elapsed={item.elapsed} />;
+            default:
+              return null;
+          }
+        })}
+      </div>
     </div>
   );
 }

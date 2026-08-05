@@ -806,19 +806,30 @@ export class RemoteServer {
       this.clients.add(ws);
       log.info({ clients: this.clients.size }, "WebSocket client connected");
 
-      // Send initial connected message to the newly connected client only
-      this.send(ws, {
-        type: "connected",
-        data: { session: this.agentHandle?.sessionId ?? "", cwd: cwd() },
-      });
+      // Send initial connected message to the newly connected client only.
+      // Deferred until the agent exists so the session id is never empty;
+      // ensureAgent() broadcasts it once initialization completes.
+      if (this.agentHandle) {
+        this.send(ws, {
+          type: "connected",
+          data: { session: this.agentHandle.sessionId, cwd: cwd() },
+        });
+      }
 
       // Send available slash commands
       this.send(ws, { type: "commands", data: this.buildCommandList() });
 
       ws.on("message", (data: Buffer) => {
-        const parsed = WsInboundSchema.safeParse(JSON.parse(data.toString("utf-8")));
+        let raw: unknown;
+        try {
+          raw = JSON.parse(data.toString("utf-8"));
+        } catch {
+          log.warn("received non-JSON WebSocket message");
+          return;
+        }
+        const parsed = WsInboundSchema.safeParse(raw);
         if (!parsed.success) {
-          log.error("failed to parse WS message");
+          log.warn("received malformed WS message");
           return;
         }
         void this.handleWsMessage(parsed.data);
@@ -880,6 +891,41 @@ export class RemoteServer {
     }
   }
 
+  /**
+   * Returns the agent handle, initializing it on first use. On success the
+   * real session id is broadcast so clients can show the greeting line.
+   */
+  private async ensureAgent(): Promise<RemoteAgentHandle | null> {
+    if (this.agentHandle) {
+      return this.agentHandle;
+    }
+    try {
+      this.agentHandle = await createRemoteAgent({
+        provider: this.opts.providers[0],
+        workDir: cwd(),
+        hooks: this.opts.hookConfigs,
+        mcpServers: this.opts.mcpServers,
+        askUser: this.createAskUserCallback(),
+        enableCoordinatorMode: this.opts.enableCoordinatorMode,
+        forkDisabled: this.opts.forkDisabled,
+      });
+      this.broadcast({
+        type: "connected",
+        data: { session: this.agentHandle.sessionId, cwd: cwd() },
+      });
+      return this.agentHandle;
+    } catch (err) {
+      log.error({ err }, "failed to initialize agent");
+      this.broadcast({
+        type: "error",
+        data: {
+          message: `Failed to initialize agent: ${err instanceof Error ? err.message : String(err)}`,
+        },
+      });
+      return null;
+    }
+  }
+
   /** Handles a user message: creates agent (if needed) and streams events. */
   private async handleUserMessage(content: string): Promise<void> {
     const text = content.trim();
@@ -887,36 +933,12 @@ export class RemoteServer {
       return;
     }
 
-    this.broadcast({ type: "replay_user", data: { content: text } });
-
-    // Create agent eagerly on first message (if not yet initialized)
-    if (!this.agentHandle) {
-      try {
-        this.agentHandle = await createRemoteAgent({
-          provider: this.opts.providers[0],
-          workDir: cwd(),
-          hooks: this.opts.hookConfigs,
-          mcpServers: this.opts.mcpServers,
-          askUser: this.createAskUserCallback(),
-          enableCoordinatorMode: this.opts.enableCoordinatorMode,
-          forkDisabled: this.opts.forkDisabled,
-        });
-        // Broadcast connected with the real session ID
-        this.broadcast({
-          type: "connected",
-          data: { session: this.agentHandle.sessionId, cwd: cwd() },
-        });
-      } catch (err) {
-        log.error({ err }, "failed to initialize agent");
-        this.broadcast({
-          type: "error",
-          data: {
-            message: `Failed to initialize agent: ${err instanceof Error ? err.message : String(err)}`,
-          },
-        });
-        return;
-      }
+    const handle = await this.ensureAgent();
+    if (!handle) {
+      return;
     }
+
+    this.broadcast({ type: "replay_user", data: { content: text } });
 
     // Slash command handling. Path-like inputs (e.g. /path/to/somewhere) are
     // not commands and fall through as normal user messages.
@@ -927,8 +949,8 @@ export class RemoteServer {
 
     this.streaming = true;
     const startTime = Date.now();
-    const workDir = this.agentHandle.workDir;
-    const sessionId = this.agentHandle.sessionId;
+    const workDir = handle.workDir;
+    const sessionId = handle.sessionId;
 
     // Persist user message to session
     saveMessage(workDir, sessionId, {
@@ -957,7 +979,7 @@ export class RemoteServer {
       };
 
       let streamBuf = "";
-      for await (const ev of this.agentHandle.run(text, callbacks)) {
+      for await (const ev of handle.run(text, callbacks)) {
         // Flush accumulated stream text BEFORE tool_result/turn_complete/loop_complete
         if (
           ev.type === "tool_result" ||
@@ -1089,7 +1111,10 @@ export class RemoteServer {
 
   /** Handles slash command input: parse, dispatch to handler by type. */
   private async handleSlashCommand(input: string): Promise<void> {
-    if (!this.agentHandle) {
+    const handle = await this.ensureAgent();
+    if (!handle) {
+      // Init failed; reset the client-side streaming state so the UI is usable again.
+      this.broadcast({ type: "command_done", data: null });
       return;
     }
 
@@ -1099,7 +1124,7 @@ export class RemoteServer {
     }
 
     const { name, args } = parsed;
-    const cmd = this.agentHandle.cmdRegistry.find(name);
+    const cmd = handle.cmdRegistry.find(name);
 
     if (!cmd) {
       this.broadcast({
@@ -1131,8 +1156,8 @@ export class RemoteServer {
         const displayText = args ? `/${name} ${args}` : `/${name}`;
 
         this.streaming = true;
-        const workDir = this.agentHandle.workDir;
-        const sessionId = this.agentHandle.sessionId;
+        const workDir = handle.workDir;
+        const sessionId = handle.sessionId;
 
         // Persist the display text (not the handler output)
         saveMessage(workDir, sessionId, {
@@ -1149,7 +1174,7 @@ export class RemoteServer {
 
           let streamBuf = "";
           // handle.run() adds the prompt to conv and injects MCP instructions
-          for await (const ev of this.agentHandle.run(prompt, callbacks)) {
+          for await (const ev of handle.run(prompt, callbacks)) {
             if (
               ev.type === "tool_result" ||
               ev.type === "turn_complete" ||
@@ -1194,6 +1219,7 @@ export class RemoteServer {
   /** Handles local_ui commands (clear, compact, plan, resume, rewind, quit, etc.). */
   private async handleLocalUICommand(name: string, args: string): Promise<void> {
     if (!this.agentHandle) {
+      this.broadcast({ type: "command_done", data: null });
       return;
     }
 

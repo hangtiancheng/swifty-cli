@@ -32,9 +32,9 @@ export function ThinkingBlock({ text, label, streaming = false }: ThinkingBlockP
   return (
     <Collapsible
       header={
-        <span className="text-dim">
+        <span className="text-dim italic">
           {label}
-          {streaming && <span className="animate-blink ml-1">|</span>}
+          {streaming && <span className="animate-blink ml-1 text-accent not-italic">▎</span>}
         </span>
       }
     >

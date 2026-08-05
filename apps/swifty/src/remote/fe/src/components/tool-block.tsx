@@ -29,9 +29,12 @@ interface ToolBlockProps {
 }
 
 const STATUS_META: Record<ToolItem["status"], { label: string; className: string }> = {
-  running: { label: "✻ running...", className: "text-yellow" },
-  ok: { label: "✓", className: "text-green" },
-  err: { label: "✗", className: "text-red" },
+  running: {
+    label: "running...",
+    className: "animate-pulse bg-yellow/10 text-yellow",
+  },
+  ok: { label: "✓", className: "bg-green/10 text-green" },
+  err: { label: "✗", className: "bg-red/10 text-red" },
 };
 
 export function ToolBlock({ item }: ToolBlockProps) {
@@ -46,24 +49,27 @@ export function ToolBlock({ item }: ToolBlockProps) {
     <Collapsible
       header={
         <>
-          <span className="font-semibold text-blue">{item.toolName}</span>
+          <span className="font-mono font-semibold text-accent">{item.toolName}</span>
           {preview && (
-            <span className="ml-1 max-w-125 overflow-hidden text-ellipsis whitespace-nowrap text-xs text-dim">
+            <span className="ml-0.5 max-w-105 overflow-hidden font-mono text-xs text-ellipsis whitespace-nowrap text-dim">
               {preview}
             </span>
           )}
-          <span className={`ml-auto text-xs ${meta.className}`}>{statusText}</span>
+          <span
+            className={`ml-auto shrink-0 rounded-full px-2 py-0.5 font-mono text-[11px] tabular-nums ${meta.className}`}
+          >
+            {statusText}
+          </span>
         </>
       }
     >
       {argsStr && (
-        <div className="mb-2 text-blue">
-          Args:
-          {"\n"}
+        <div className="mb-2 text-accent/90">
+          Args:{"\n"}
           {argsStr}
         </div>
       )}
-      {output && <div className="whitespace-pre-wrap text-dim">{output}</div>}
+      {output && <div className="text-dim">{output}</div>}
     </Collapsible>
   );
 }

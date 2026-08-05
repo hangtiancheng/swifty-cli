@@ -28,11 +28,12 @@ interface InputAreaProps {
   streaming: boolean;
   commands: SlashCommand[];
   onSend: (text: string) => void;
+  onCancel: () => void;
 }
 
 const MAX_TEXTAREA_HEIGHT = 200;
 
-export function InputArea({ streaming, commands, onSend }: InputAreaProps) {
+export function InputArea({ streaming, commands, onSend, onCancel }: InputAreaProps) {
   const [value, setValue] = useState("");
   const [slashOpen, setSlashOpen] = useState(false);
   const [slashCursor, setSlashCursor] = useState(0);
@@ -111,33 +112,64 @@ export function InputArea({ streaming, commands, onSend }: InputAreaProps) {
   };
 
   return (
-    <div className="relative flex shrink-0 items-end gap-2 border-t border-border px-4 py-3">
-      {slashOpen && (
-        <SlashMenu
-          commands={filtered}
-          cursor={slashCursor}
-          onSelect={selectSlash}
-          onHover={setSlashCursor}
-        />
-      )}
-      <textarea
-        ref={textareaRef}
-        value={value}
-        onChange={(e) => setValue(e.target.value)}
-        onKeyDown={onKeyDown}
-        placeholder="Send a message... (Enter to send, Shift+Enter for newline)"
-        rows={1}
-        disabled={streaming}
-        className="min-h-10.5 max-h-50 flex-1 resize-none rounded-md border border-border bg-input px-3 py-2.5 font-[inherit] text-sm leading-relaxed text-bright outline-none placeholder:text-dim focus:border-accent disabled:opacity-50"
-      />
-      <button
-        type="button"
-        onClick={send}
-        disabled={streaming}
-        className="cursor-pointer whitespace-nowrap rounded-md border-none bg-accent px-4 py-2.5 font-[inherit] text-sm font-semibold text-bg hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
-      >
-        Send
-      </button>
-    </div>
+    <footer className="shrink-0 border-t border-border bg-bg">
+      <div className="relative mx-auto w-full max-w-3xl px-5 py-4">
+        {slashOpen && (
+          <SlashMenu
+            commands={filtered}
+            cursor={slashCursor}
+            onSelect={selectSlash}
+            onHover={setSlashCursor}
+          />
+        )}
+        <div className="flex items-end gap-2 rounded-2xl border border-border bg-surface p-2 shadow-card transition-colors focus-within:border-accent/50">
+          <textarea
+            ref={textareaRef}
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            onKeyDown={onKeyDown}
+            placeholder="Send a message... (Enter to send, Shift+Enter for newline)"
+            aria-label="Message"
+            rows={1}
+            disabled={streaming}
+            className="max-h-50 flex-1 resize-none bg-transparent px-2 py-1.5 text-sm leading-relaxed text-bright outline-none placeholder:text-dim/60 disabled:opacity-60"
+          />
+          {streaming ? (
+            <button
+              type="button"
+              onClick={onCancel}
+              aria-label="Stop generating"
+              title="Stop generating"
+              className="flex h-9 shrink-0 cursor-pointer items-center gap-1.5 rounded-xl border border-red/30 bg-red/5 px-3.5 text-[13px] font-semibold text-red transition-colors hover:bg-red/10"
+            >
+              <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+                <rect width="10" height="10" rx="1.5" fill="currentColor" />
+              </svg>
+              Stop
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={send}
+              aria-label="Send message"
+              className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-xl bg-accent text-white shadow-xs transition-colors hover:bg-accent-dim disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+                <path
+                  d="M7 12V2M7 2L2.5 6.5M7 2l4.5 4.5"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </button>
+          )}
+        </div>
+        <p className="mt-1.5 px-2 text-[11px] text-dim/70">
+          Type <span className="font-mono text-dim">/</span> for commands
+        </p>
+      </div>
+    </footer>
   );
 }

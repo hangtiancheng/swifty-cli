@@ -48,6 +48,10 @@ export function App() {
     [send],
   );
 
+  const handleCancel = useCallback(() => {
+    send({ type: "cancel", data: null });
+  }, [send]);
+
   const handleRespondPermission = useCallback(
     (id: string, response: PermissionResponse) => {
       respondPermission(id, response);
@@ -73,14 +77,19 @@ export function App() {
   );
 
   return (
-    <div className="flex h-screen w-full flex-col bg-bg font-mono text-sm text-base">
-      <StatusBar connection={state.connection} usage={state.usage} />
+    <div className="flex h-screen w-full flex-col bg-bg font-sans text-sm text-base antialiased">
+      <StatusBar connection={state.connection} usage={state.usage} cwd={state.cwd} />
       <MessageList
         items={state.items}
         onRespondPermission={handleRespondPermission}
         onAnswerAsk={handleAnswerAsk}
       />
-      <InputArea streaming={state.streaming} commands={state.commands} onSend={handleSend} />
+      <InputArea
+        streaming={state.streaming}
+        commands={state.commands}
+        onSend={handleSend}
+        onCancel={handleCancel}
+      />
     </div>
   );
 }

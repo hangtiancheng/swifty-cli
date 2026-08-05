@@ -23,31 +23,38 @@
 @import "tailwindcss";
 
 /*
- * Tokyo Night inspired palette, exposed as Tailwind v4 theme tokens so we can
- * use them as atomic utilities (bg-bg, text-bright, border-border, ...).
+ * Light theme built around React blue (#087ea4 / #149eca) on a slate-neutral
+ * canvas. Exposed as Tailwind v4 theme tokens so we can use them as atomic
+ * utilities (bg-bg, text-bright, border-border, ...).
  * No custom CSS classes are defined — only theme tokens + keyframes.
  */
 @theme {
-  --color-bg: #1a1b26;
-  --color-surface: #24283b;
-  --color-input: #1f2335;
-  --color-tool: #1f2335;
-  --color-code: #16161e;
-  --color-base: #c0caf5;
-  --color-dim: #565f89;
-  --color-bright: #e0e6ff;
-  --color-accent: #bb9af7;
-  --color-accent-dim: #7c6da4;
-  --color-green: #9ece6a;
-  --color-red: #f7768e;
-  --color-yellow: #e0af68;
-  --color-blue: #7aa2f7;
-  --color-border: #3b4261;
+  --color-bg: #f7f9fb;
+  --color-surface: #ffffff;
+  --color-input: #ffffff;
+  --color-tool: #f8fafc;
+  --color-code: #f1f5f9;
+  --color-base: #475569;
+  --color-dim: #64748b;
+  --color-bright: #0f172a;
+  --color-accent: #087ea4;
+  --color-accent-dim: #149eca;
+  --color-green: #15803d;
+  --color-red: #dc2626;
+  --color-yellow: #b45309;
+  --color-blue: #087ea4;
+  --color-border: #e2e8f0;
 
-  --font-mono: "SF Mono", "Fira Code", "Cascadia Code", Consolas, monospace;
+  --font-sans:
+    "Geist Mono", "Swifty", Menlo, "Cascadia Code", "PingFang SC", "Microsoft YaHei", monospace;
+  --font-mono:
+    "Geist Mono", "Swifty", Menlo, "Cascadia Code", "PingFang SC", "Microsoft YaHei", monospace;
 
   --animate-blink: blink 1s step-end infinite;
   --animate-spin-slow: spin 1s linear infinite;
+
+  --shadow-card: 0 1px 2px rgb(15 23 42 / 0.04), 0 2px 8px rgb(15 23 42 / 0.04);
+  --shadow-pop: 0 4px 12px rgb(15 23 42 / 0.08), 0 12px 32px rgb(15 23 42 / 0.1);
 }
 
 @keyframes blink {
@@ -59,5 +66,26 @@
 /* Thin scrollbar for the message stream. */
 * {
   scrollbar-width: thin;
-  scrollbar-color: var(--color-border) transparent;
+  scrollbar-color: #cbd5e1 transparent;
+}
+
+/* Consistent, visible keyboard focus for every interactive element. */
+:focus-visible {
+  outline: 2px solid var(--color-accent-dim);
+  outline-offset: 2px;
+}
+
+::selection {
+  background: rgb(20 158 202 / 0.25);
+}
+
+/* Respect users who prefer minimal motion. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

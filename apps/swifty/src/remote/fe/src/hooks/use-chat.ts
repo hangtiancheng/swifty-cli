@@ -102,7 +102,14 @@ function finalizeAssistant(state: ChatState): ChatState {
 function applyMessage(state: ChatState, msg: ServerMessage): ChatState {
   switch (msg.type) {
     case "connected": {
-      if (state.greeted) return state;
+      // The server may connect before the agent is initialized (empty
+      // session); don't consume the one-shot greeting for that.
+      if (!msg.data.session) {
+        return { ...state, cwd: msg.data.cwd || state.cwd };
+      }
+      if (state.greeted) {
+        return { ...state, session: msg.data.session, cwd: msg.data.cwd };
+      }
       return {
         ...state,
         greeted: true,
