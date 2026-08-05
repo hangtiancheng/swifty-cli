@@ -82,12 +82,12 @@ Because workers have Bash, git work belongs to them too. Merging a branch, cherr
 
 Most tasks break down into four phases:
 
-| Phase | Who | Purpose |
-|-------|-----|---------|
-| Research | Workers (parallel) | Investigate codebase, find files, understand the problem |
-| Synthesis | **You** (coordinator) | Read findings, understand the problem, craft implementation specs |
-| Implementation | Workers | Make targeted changes per spec, commit |
-| Verification | Workers | Test that changes work |
+| Phase          | Who                   | Purpose                                                           |
+|----------------|-----------------------|-------------------------------------------------------------------|
+| Research       | Workers (parallel)    | Investigate codebase, find files, understand the problem          |
+| Synthesis      | **You** (coordinator) | Read findings, understand the problem, craft implementation specs |
+| Implementation | Workers               | Make targeted changes per spec, commit                            |
+| Verification   | Workers.              | Test that changes work                                            |
 
 ### Concurrency
 
@@ -138,13 +138,13 @@ Include a brief purpose so workers can calibrate depth and emphasis:
 
 ### Choose continue vs. spawn by context overlap
 
-| Situation | Mechanism | Why |
-|-----------|-----------|-----|
-| Research explored exactly the files that need editing | **Continue** (SendMessage) | Worker already has the files in context |
-| Research was broad but implementation is narrow | **Spawn fresh** (Agent) | Avoid dragging along exploration noise |
-| Correcting a failure or extending recent work | **Continue** | Worker has the error context |
-| Verifying code a different worker just wrote | **Spawn fresh** | Verifier should see the code with fresh eyes |
-| First attempt used the wrong approach entirely | **Spawn fresh** | Wrong-approach context pollutes the retry |
+| Situation                                             | Mechanism                  | Why                                          |
+|-------------------------------------------------------|----------------------------|----------------------------------------------|
+| Research explored exactly the files that need editing | **Continue** (SendMessage) | Worker already has the files in context      |
+| Research was broad but implementation is narrow       | **Spawn fresh** (Agent)    | Avoid dragging along exploration noise       |
+| Correcting a failure or extending recent work         | **Continue**               | Worker has the error context                 |
+| Verifying code a different worker just wrote          | **Spawn fresh**            | Verifier should see the code with fresh eyes |
+| First attempt used the wrong approach entirely        | **Spawn fresh**            | Wrong-approach context pollutes the retry    |
 
 ### Prompt tips
 
@@ -180,12 +180,7 @@ You:
   Fix is in progress.`;
 
 /** Condensed version retaining only the hard constraints most easily forgotten by the model. */
-const coordinatorSparseReminder =
-  "Coordinator mode still active (see full instructions earlier in conversation). " +
-  "You cannot read files, run commands, or edit code — send a worker instead. " +
-  "Tools: Agent, SendMessage, TaskStop, SyntheticOutput, TeamDelete. " +
-  "Address workers by the name in the from= field of a team-notification. " +
-  "Synthesize worker findings yourself before directing follow-up work.";
+const coordinatorSparseReminder = `Coordinator mode still active (see full instructions earlier in conversation). You cannot read files, run commands, or edit code — send a worker instead. Tools: Agent, SendMessage, TaskStop, SyntheticOutput, TeamDelete. Address workers by the name in the from= field of a team-notification. Synthesize worker findings yourself before directing follow-up work.`;
 
 /** Re-inject the full text every few turns to prevent complete drift in long conversations. */
 const REMINDER_INTERVAL = 5;
