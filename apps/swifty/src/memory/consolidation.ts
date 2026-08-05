@@ -37,12 +37,12 @@ import { ConversationManager } from "../conversation/conversation.js";
 import type { LLMClient } from "../llm/client.js";
 import { PermissionChecker } from "../permissions/checker.js";
 import { listSessions } from "../session/session.js";
-import { GlobTool } from "../tools/wasm/glob.js";
-import { GrepTool } from "../tools/wasm/grep.js";
 import { BashTool } from "../tools/bash.js";
 import { EditFileTool } from "../tools/edit-file.js";
 import { ReadFileTool } from "../tools/read-file.js";
 import { ToolRegistry } from "../tools/registry.js";
+import { GlobTool } from "../tools/wasm/glob.js";
+import { GrepTool } from "../tools/wasm/grep.js";
 import { WriteFileTool } from "../tools/write-file.js";
 
 const DEFAULT_MIN_HOURS = 24;

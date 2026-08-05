@@ -24,47 +24,67 @@ import { ToolRegistry } from "../tools/registry.js";
 
 import type { AgentTool } from "./agent-tool.js";
 
+type AllTools =
+  | "InstallSkill"
+  | "LoadSkill"
+  | "Agent"
+  | "TaskStop"
+  | "TaskCreate"
+  | "TaskGet"
+  | "TaskList"
+  | "TaskUpdate"
+
+  // === team run agent ===
+  | "TeamCreate"
+  | "SpawnTeammate"
+  | "SendMessage"
+  | "ListTeams"
+  | "TeamDelete"
+  | "SyntheticOutput"
+  // === team run agent ===
+  | "AskUserQuestion"
+  | "Bash"
+  | "EditFile"
+  | "EnterWorktree"
+  | "ExitPlanMode"
+  | "ExitWorktree"
+  | "ReadFile"
+  | "ToolSearch"
+  | "WriteFile"
+  | "Glob"
+  | "Grep";
+
 // Global list of tools disallowed for subagents — prevents recursive Agent calls or using main-thread-only tools
-export const ALL_AGENT_DISALLOWED_TOOLS = new Set([
-  "TaskOutput",
+export const SUBAGENT_DISALLOWED_TOOLS = new Set<AllTools>([
   "ExitPlanMode",
-  "EnterPlanMode",
   "Agent", // Prevents recursive spawning of subagents
   "AskUserQuestion",
   "TaskStop",
-  "Workflow",
 ]);
 
 // Additional tools blocked for teammates beyond the global subagent list.
 // Team creation and dissolution are the Lead's responsibility; teammates
 // only execute work and coordinate with peers.
-export const TEAMMATE_DISALLOWED_TOOLS = new Set(["TeamCreate", "TeamDelete"]);
+export const TEAMMATE_DISALLOWED_TOOLS = new Set<AllTools>(["TeamCreate", "TeamDelete"]);
 
 // Additional tools disallowed for custom Agents (loaded from .swifty/agents/);
 // Currently identical to the global list, but maintained separately for future extensibility
-export const CUSTOM_AGENT_DISALLOWED_TOOLS = new Set([
-  "TaskOutput",
+export const CUSTOM_AGENT_DISALLOWED_TOOLS = new Set<AllTools>([
   "ExitPlanMode",
-  "EnterPlanMode",
   "Agent",
   "AskUserQuestion",
   "TaskStop",
-  "Workflow",
 ]);
 
 // Asynchronous (background) Agents are restricted to only these tools
-export const ASYNC_AGENT_ALLOWED_TOOLS = new Set([
+export const ASYNC_AGENT_ALLOWED_TOOLS = new Set<AllTools>([
   "ReadFile",
-  "WebSearch",
-  "TodoWrite",
+  // "WebSearch",
   "Grep",
-  "WebFetch",
   "Glob",
   "Bash",
   "EditFile",
   "WriteFile",
-  "NotebookEdit",
-  "Skill",
   "LoadSkill",
   "SyntheticOutput",
   "ToolSearch",
@@ -109,17 +129,20 @@ export function filterToolsForAgent(
     }
 
     // Layer 2: Global disallow — no subagent can use these
-    if (ALL_AGENT_DISALLOWED_TOOLS.has(name)) {
+    // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+    if ((SUBAGENT_DISALLOWED_TOOLS as Set<string>).has(name)) {
       continue;
     }
 
     // Layer 3: Additional restrictions for custom Agents
-    if (isCustom && CUSTOM_AGENT_DISALLOWED_TOOLS.has(name)) {
+    // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+    if (isCustom && (CUSTOM_AGENT_DISALLOWED_TOOLS as Set<string>).has(name)) {
       continue;
     }
 
     // Layer 4: Whitelist filtering for asynchronous Agents
-    if (isAsync && !ASYNC_AGENT_ALLOWED_TOOLS.has(name)) {
+    // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+    if (isAsync && !(ASYNC_AGENT_ALLOWED_TOOLS as Set<string>).has(name)) {
       continue;
     }
 

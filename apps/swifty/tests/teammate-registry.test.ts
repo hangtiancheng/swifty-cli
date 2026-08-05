@@ -27,7 +27,7 @@ import { join } from "node:path";
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 
 import { SkillCatalog } from "@/skills/catalog.js";
-import { ALL_AGENT_DISALLOWED_TOOLS, TEAMMATE_DISALLOWED_TOOLS } from "@/subagent/tool-filter.js";
+import { SUBAGENT_DISALLOWED_TOOLS, TEAMMATE_DISALLOWED_TOOLS } from "@/subagent/tool-filter.js";
 import { buildTeammateRegistry, parseTeammateFlags } from "@/teammate.js";
 import { ToolRegistry } from "@/tools/registry.js";
 import type { Tool } from "@/tools/types.js";
@@ -163,10 +163,12 @@ describe("in-process teammate tool filtering", () => {
     // Replicate the cloning logic from runAsTeammate
     const teammate = new ToolRegistry();
     for (const tool of parent.listTools()) {
-      if (ALL_AGENT_DISALLOWED_TOOLS.has(tool.name)) {
+      // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+      if ((SUBAGENT_DISALLOWED_TOOLS as Set<string>).has(tool.name)) {
         continue;
       }
-      if (TEAMMATE_DISALLOWED_TOOLS.has(tool.name)) {
+      // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+      if ((TEAMMATE_DISALLOWED_TOOLS as Set<string>).has(tool.name)) {
         continue;
       }
       teammate.register(tool);

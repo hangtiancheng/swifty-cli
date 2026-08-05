@@ -34,7 +34,7 @@ import { buildWorktreeNotice, createAgentWorktree } from "../worktree/worktree.j
 
 import type { AgentDefinition } from "./definition.js";
 import { loadAgentDefinitions } from "./loader.js";
-import { ALL_AGENT_DISALLOWED_TOOLS, TEAMMATE_DISALLOWED_TOOLS } from "./tool-filter.js";
+import { SUBAGENT_DISALLOWED_TOOLS, TEAMMATE_DISALLOWED_TOOLS } from "./tool-filter.js";
 
 import { asErrorString, boolArg, strArg } from "@/utils/index.js";
 
@@ -358,10 +358,12 @@ ${prompt}`;
     // have, and team membership management tools reserved for the Lead.
     const teammateRegistry = new ToolRegistry();
     for (const tool of this.registry.listTools()) {
-      if (ALL_AGENT_DISALLOWED_TOOLS.has(tool.name)) {
+      // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+      if ((SUBAGENT_DISALLOWED_TOOLS as Set<string>).has(tool.name)) {
         continue;
       }
-      if (TEAMMATE_DISALLOWED_TOOLS.has(tool.name)) {
+      // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+      if ((TEAMMATE_DISALLOWED_TOOLS as Set<string>).has(tool.name)) {
         continue;
       }
       teammateRegistry.register(tool);

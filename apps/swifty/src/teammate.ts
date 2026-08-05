@@ -47,8 +47,6 @@ import { FileMailbox } from "./teams/file-mailbox.js";
 import { TaskCreateTool, TaskGetTool, TaskListTool, TaskUpdateTool } from "./teams/task-tools.js";
 import { TeamManager } from "./teams/team.js";
 import { SendMessageTool } from "./teams/tools.js";
-import { GlobTool } from "./tools/wasm/glob.js";
-import { GrepTool } from "./tools/wasm/grep.js";
 import { BashTool } from "./tools/bash.js";
 import { EditFileTool } from "./tools/edit-file.js";
 import { EnterWorktreeTool } from "./tools/enter-worktree.js";
@@ -58,6 +56,8 @@ import { ReadFileTool } from "./tools/read-file.js";
 import { ToolRegistry } from "./tools/registry.js";
 import { SyntheticOutputTool } from "./tools/synthetic-output.js";
 import { ToolSearchTool } from "./tools/tool-search.js";
+import { GlobTool } from "./tools/wasm/glob.js";
+import { GrepTool } from "./tools/wasm/grep.js";
 import { WriteFileTool } from "./tools/write-file.js";
 import { asErrorString } from "./utils/index.js";
 

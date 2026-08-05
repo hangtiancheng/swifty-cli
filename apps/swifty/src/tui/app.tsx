@@ -90,8 +90,6 @@ import {
 import { TaskStore } from "../todo/store.js";
 import { TaskList } from "../todo/todo.js";
 import { TaskCreateTool, TaskGetTool, TaskListTool, TaskUpdateTool } from "../todo/tools.js";
-import { GlobTool } from "../tools/wasm/glob.js";
-import { GrepTool } from "../tools/wasm/grep.js";
 import { AskUserQuestionTool, type Question } from "../tools/ask-user.js";
 import { BashTool } from "../tools/bash.js";
 import { EditFileTool } from "../tools/edit-file.js";
@@ -103,6 +101,8 @@ import { ReadFileTool } from "../tools/read-file.js";
 import { ToolRegistry } from "../tools/registry.js";
 import { SyntheticOutputTool } from "../tools/synthetic-output.js";
 import { ToolSearchTool } from "../tools/tool-search.js";
+import { GlobTool } from "../tools/wasm/glob.js";
+import { GrepTool } from "../tools/wasm/grep.js";
 import { WriteFileTool } from "../tools/write-file.js";
 import { connectToIde, type IdeConnection } from "../vscode/ide-client.js";
 
@@ -140,20 +140,33 @@ interface Props {
 
 function createToolRegistry(workDir: string, taskList: TaskList): ToolRegistry {
   const registry = new ToolRegistry();
-  registry.register(new ReadFileTool());
+  // new InstallSkillTool
+  // new LoadSkillTool
+  // new AgentTool
+  // new TaskStopTool
+  registry.register(new TaskCreateTool(taskList)); // todo.TaskCreateTool
+  registry.register(new TaskGetTool(taskList)); // todo.TaskGetTool
+  registry.register(new TaskListTool(taskList)); // todo.TaskListTool
+
+  registry.register(new TaskUpdateTool(taskList)); // todo.TaskUpdateTool
+  // new TeamCreateTool
+  // new SpawnTeammateTool
+  // new SendMessageTool
+  // new ListTeamsTool
+  // new TeamDeleteTool
+  // new SyntheticOutputTool
+
+  // new AskUserQuestionTool
   registry.register(new BashTool());
+  registry.register(new EditFileTool());
+  registry.register(new EnterWorktreeTool());
+  registry.register(new ExitPlanModeTool());
+  registry.register(new ExitWorktreeTool());
+  registry.register(new ReadFileTool());
+  registry.register(new ToolSearchTool(registry));
+  registry.register(new WriteFileTool());
   registry.register(new GlobTool());
   registry.register(new GrepTool());
-  registry.register(new WriteFileTool());
-  registry.register(new EditFileTool());
-  registry.register(new ToolSearchTool(registry));
-  registry.register(new EnterWorktreeTool());
-  registry.register(new ExitWorktreeTool());
-  registry.register(new ExitPlanModeTool());
-  registry.register(new TaskCreateTool(taskList));
-  registry.register(new TaskGetTool(taskList));
-  registry.register(new TaskListTool(taskList));
-  registry.register(new TaskUpdateTool(taskList));
   return registry;
 }
 
