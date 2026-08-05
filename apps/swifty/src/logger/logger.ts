@@ -53,6 +53,12 @@ interface InitLoggerOptions {
   logDir?: string;
   /** Subprocess passes true to skip expired-log cleanup (avoid multi-process races). */
   skipCleanup?: boolean;
+  /**
+   * Mirror JSONL to stdout in addition to the log file. Only safe in remote
+   * mode (TUI owns stdout; teammates use it for IPC). Lets users watch logs
+   * live or pipe them through pino-pretty.
+   */
+  stdout?: boolean;
 }
 
 /** Default log level; overridable via SWIFTY_LOG_LEVEL. */
@@ -119,7 +125,14 @@ export function initLogger(opts: InitLoggerOptions): Logger {
     serializers: { err: errSerializer },
   };
 
-  currentLogger = pino(pinoOpts, currentDest);
+  if (opts.stdout) {
+    currentLogger = pino(
+      pinoOpts,
+      pino.multistream([{ stream: currentDest }, { stream: process.stdout }]),
+    );
+  } else {
+    currentLogger = pino(pinoOpts, currentDest);
+  }
 
   // Main-process startup: clean expired logs.
   if (!opts.skipCleanup) {

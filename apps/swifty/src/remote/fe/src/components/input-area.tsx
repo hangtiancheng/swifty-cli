@@ -132,7 +132,7 @@ export function InputArea({ streaming, commands, onSend, onCancel }: InputAreaPr
             aria-label="Message"
             rows={1}
             disabled={streaming}
-            className="max-h-50 flex-1 resize-none bg-transparent px-2 py-1.5 text-sm leading-relaxed text-bright outline-none placeholder:text-dim/60 disabled:opacity-60"
+            className="max-h-50 flex-1 resize-none bg-transparent px-2 py-1.5 text-sm leading-relaxed text-bright outline-none placeholder:text-dim/60 focus-visible:outline-none disabled:opacity-60"
           />
           {streaming ? (
             <button

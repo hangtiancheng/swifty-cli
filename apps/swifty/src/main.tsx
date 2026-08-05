@@ -78,7 +78,7 @@ async function main() {
 
   if (args.includes("--remote") && remoteAddr) {
     const { RemoteServer } = await import("./remote/server.js");
-    initLogger({ sessionId: newSessionId(), mode: "remote" });
+    initLogger({ sessionId: newSessionId(), mode: "remote", stdout: true });
     const srv = new RemoteServer({
       providers: cfg.providers,
       mcpServers: cfg.mcp_servers,

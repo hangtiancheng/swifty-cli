@@ -154,9 +154,9 @@ export class MemoryConsolidator {
       maxIterations: 15,
     });
 
-    for await (const e of subagent.run()) {
-      console.log(e.type);
-      // drain
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    for await (const _e of subagent.run()) {
+      /** noop */
     }
 
     const writtenPaths = extractWrittenPaths(conv.getMessages());

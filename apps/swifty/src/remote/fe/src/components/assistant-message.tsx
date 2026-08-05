@@ -45,7 +45,7 @@ export function AssistantMessage({ content, streaming }: AssistantMessageProps) 
 
   return (
     <div className="mb-5 leading-relaxed">
-      {thinking && <ThinkingBlock text={thinking} label="💭 Thought" />}
+      {thinking && <ThinkingBlock text={thinking} label="✻ Thought" />}
       {showOpenThinking && (
         <ThinkingBlock text={stripThinkOpen(content)} label="✻ Thinking..." streaming />
       )}

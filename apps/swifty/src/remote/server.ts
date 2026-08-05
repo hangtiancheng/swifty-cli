@@ -98,6 +98,8 @@ import { GlobTool } from "../tools/wasm/glob.js";
 import { GrepTool } from "../tools/wasm/grep.js";
 import { WriteFileTool } from "../tools/write-file.js";
 
+import { AgentEventLogger } from "./log.js";
+
 import { BUILTIN_AGENTS } from "@/subagent/definition.js";
 import { contentToText, strArg } from "@/utils/index.js";
 
@@ -746,6 +748,7 @@ export class RemoteServer {
   private agentHandle: RemoteAgentHandle | null = null;
   private streaming = false;
   private turnCount = 0;
+  private readonly eventLogger = new AgentEventLogger(log);
 
   // Pending permission/ask-user requests waiting for WS client responses
   private pendingPermissions = new Map<
@@ -1014,6 +1017,9 @@ export class RemoteServer {
     sessionId: string,
     appendStream: (text: string) => void,
   ): void {
+    // Unified structured event log (one JSONL line per discrete event).
+    this.eventLogger.onEvent(ev);
+
     switch (ev.type) {
       case "stream_text":
         appendStream(ev.text);

@@ -69,10 +69,14 @@
   scrollbar-color: #cbd5e1 transparent;
 }
 
-/* Consistent, visible keyboard focus for every interactive element. */
-:focus-visible {
-  outline: 2px solid var(--color-accent-dim);
-  outline-offset: 2px;
+/* Consistent, visible keyboard focus for every interactive element.
+ * Lives in @layer base so utility classes (e.g. focus-visible:outline-none
+ * on the input textarea) can override it. */
+@layer base {
+  :focus-visible {
+    outline: 2px solid var(--color-accent-dim);
+    outline-offset: 2px;
+  }
 }
 
 ::selection {
