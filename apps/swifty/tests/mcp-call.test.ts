@@ -43,7 +43,11 @@ const inputSchema: ToolSchema["input_schema"] = {
   },
 };
 
-const toolSchema: ToolSchema = { name: "", description: "", input_schema: inputSchema };
+const toolSchema: ToolSchema = {
+  name: "",
+  description: "",
+  input_schema: inputSchema,
+};
 
 /** 够用的 MCP 工具替身：暴露 schema、记录收到的参数。 */
 class FakeMcpTool implements MCPToolLike {
@@ -175,7 +179,7 @@ describe("coerceBySchema 契约", () => {
   });
 });
 
-describe("mcp_call 工具名解析", () => {
+describe("McpCall 工具名解析", () => {
   function setup() {
     const registry = new ToolRegistry();
     registry.mcpLoadingMode = "dispatch";
@@ -264,7 +268,7 @@ describe("三路分流", () => {
     expect(decideMode("", 200000, 500000)).toBe("native");
   });
 
-  test("第三方端点走 mcp_call", () => {
+  test("第三方端点走 McpCall", () => {
     expect(decideMode("https://api.minimaxi.com/anthropic", 200000, 500000)).toBe("dispatch");
   });
 
@@ -334,7 +338,7 @@ describe("权限 content 归一化", () => {
     });
   }
 
-  test("extractContent 把 mcp_call 路由到归一化逻辑", () => {
+  test("extractContent 把 McpCall 路由到归一化逻辑", () => {
     expect(
       extractContent("McpCall", {
         server: "linear",

@@ -170,7 +170,7 @@ function createToolRegistry(workDir: string, taskList: TaskList): ToolRegistry {
   registry.register(new ReadFileTool());
   registry.register(new ToolSearchTool(registry));
 
-  // mcp_call must be registered before connecting to MCP. Registering it after
+  // McpCall must be registered before connecting to MCP. Registering it after
   // connecting based on the load mode is itself a mid-flight mutation of
   // tools[], which breaks the cache prefix just the same.
   registry.register(new McpCallTool(registry));
@@ -1053,7 +1053,11 @@ export function App({
                   elapsed: 0,
                 };
               });
-              resumedMessages.push({ role: "turn_summary", content: "", toolSummary });
+              resumedMessages.push({
+                role: "turn_summary",
+                content: "",
+                toolSummary,
+              });
               continue;
             }
             const text = contentToText(m.content);

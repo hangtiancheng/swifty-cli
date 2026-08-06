@@ -70,7 +70,7 @@ export class ToolRegistry {
     // flagged with defer_loading, and the server decides whether to show them to
     // the model. This keeps the tools array byte-identical even when new tools are
     // discovered. Other endpoints can only hide deferred tools entirely and fall
-    // back on mcp_call.
+    // back on McpCall.
     const native = this.mcpLoadingMode === "native" && !isOpenAI;
 
     const schemas: (Anthropic.Tool | OpenAITool)[] = [];

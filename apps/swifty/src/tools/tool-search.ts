@@ -92,7 +92,7 @@ export class ToolSearchTool implements Tool {
           isError: false,
         });
       }
-      // Non-MCP deferred tools have no mcp_call entry point, so they can only be
+      // Non-MCP deferred tools have no McpCall entry point, so they can only be
       // marked as discovered as before, letting them into the next turn's tools[]
       const mcpNames: string[] = [];
       for (const t of tools) {
@@ -120,12 +120,12 @@ export class ToolSearchTool implements Tool {
       }
 
       // Other endpoints: show the raw schema to the model and route calls through
-      // mcp_call. This text lands at the end of messages, so it's an append and
+      // McpCall. This text lands at the end of messages, so it's an append and
       // does not affect the cache prefix.
       const schemas = tools.map((t) => JSON.stringify(t.schema(), null, 2));
       const suffix =
         mcpNames.length > 0
-          ? "\n\nTo invoke any of the tools above, call mcp_call with that tool's " +
+          ? "\n\nTo invoke any of the tools above, call McpCall with that tool's " +
             "full name and an `arguments` object matching its input_schema exactly, " +
             "using the same JSON types."
           : "";

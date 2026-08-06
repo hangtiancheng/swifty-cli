@@ -48,7 +48,7 @@ export interface ToolContext {
  *          server does not show them to the model, and ToolSearch returns a
  *          tool_reference so the server expands the schema
  * dispatch other endpoints support neither of the above; MCP tools never enter
- *          tools[] at all and go through mcp_call
+ *          tools[] at all and go through McpCall
  *
  * Why three modes: tools render after system and before messages, so any change to
  * the array invalidates the entire trailing conversation-history cache. In a test

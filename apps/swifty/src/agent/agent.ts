@@ -216,7 +216,7 @@ export class Agent {
         }
 
         // Deferred-load tools are not in tools[], so the model cannot see their existence; the name list has to be repeated every turn.
-        // In dispatch mode these tools never make it into tools[] at all, so we also have to explain that invocation goes through mcp_call —
+        // In dispatch mode these tools never make it into tools[] at all, so we also have to explain that invocation goes through McpCall —
         // otherwise the model reads the schema with no idea where to call it from.
         const deferredNames = this.registry.getDeferredToolNames();
         if (deferredNames.length > 0) {
@@ -226,7 +226,7 @@ export class Agent {
             "to load tool schemas";
           reminder +=
             this.registry.mcpLoadingMode === "dispatch"
-              ? ", then invoke them with the mcp_call tool"
+              ? ", then invoke them with the McpCall tool"
               : " before calling them";
           this.conversation.addSystemReminder(reminder + ":\n" + deferredNames.join("\n"));
         }

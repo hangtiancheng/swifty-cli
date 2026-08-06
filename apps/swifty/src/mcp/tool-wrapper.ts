@@ -92,7 +92,7 @@ export class MCPToolWrapper implements MCPToolLike {
     this.mcpServerName = serverName;
   }
 
-  /** Original JSON schema. mcp_call's argument coercion walks it layer by layer. */
+  /** Original JSON schema. McpCall's argument coercion walks it layer by layer. */
   mcpInputSchema(): Record<string, unknown> {
     return this.inputSchema ?? {};
   }

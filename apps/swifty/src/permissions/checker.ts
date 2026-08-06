@@ -125,9 +125,9 @@ const DEFAULT_DENY_WRITE = [
 ];
 
 export function extractContent(toolName: string, args: Record<string, unknown>): string {
-  // The match target for mcp_call is not a specific parameter but "which MCP
+  // The match target for McpCall is not a specific parameter but "which MCP
   // tool to call", derived from the server + tool parameters as server__tool.
-  // This lets a rule like mcp_call(linear__*) allow/deny per server or per tool.
+  // This lets a rule like McpCall(linear__*) allow/deny per server or per tool.
   if (toolName === MCP_CALL_TOOL_NAME) {
     return mcpCallPermissionContent(strArg(args, "server", ""), strArg(args, "tool", ""));
   }

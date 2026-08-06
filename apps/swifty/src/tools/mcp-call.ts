@@ -2,7 +2,7 @@
  * Unified call entry point for MCP tools.
  *
  * MCP tools never enter tools[]. The model first reads the schema via ToolSearch,
- * then passes the tool name and arguments through mcp_call. This keeps the tools
+ * then passes the tool name and arguments through McpCall. This keeps the tools
  * array byte-identical throughout the whole session, so the prompt cache prefix is
  * never broken — tools render after system and before messages, so any change to
  * the array forces the entire trailing history to be recomputed.
@@ -125,7 +125,7 @@ export function coerceBySchema(value: unknown, schema: unknown): unknown {
  *
  * It carries no mcp__ prefix and is unaffected by per-language wrapper naming
  * differences, so the permissions.yaml syntax is completely identical across all
- * four languages: mcp_call(linear__create_issue).
+ * four languages: McpCall(linear__create_issue).
  *
  * Both segments must go through sanitize. The model may pass a short name or a full
  * name; the segments in a full name are already processed by the wrapper, while a
@@ -172,7 +172,10 @@ export class McpCallTool implements Tool {
       input_schema: {
         type: "object",
         properties: {
-          server: { type: "string", description: "MCP server name, e.g. 'linear'." },
+          server: {
+            type: "string",
+            description: "MCP server name, e.g. 'linear'.",
+          },
           tool: {
             type: "string",
             description:
@@ -224,7 +227,7 @@ export class McpCallTool implements Tool {
     const server = strArg(args, "server", "");
     const tool = strArg(args, "tool", "");
     if (tool === "") {
-      return { output: "mcp_call requires a 'tool' name", isError: true };
+      return { output: "McpCall requires a 'tool' name", isError: true };
     }
 
     const target = this.resolve(server, tool);

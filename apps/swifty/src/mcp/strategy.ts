@@ -10,7 +10,7 @@
  *            the server expands the schema.
  *   dispatch Other endpoints (domestic vendors, various proxy gateways) support neither
  *            of the above, so we simulate it ourselves: MCP tools never enter tools[] and
- *            everything goes through the single mcp_call entry point.
+ *            everything goes through the single McpCall entry point.
  *
  * Why three modes: tools is rendered after system and before messages, so any change to
  * the array invalidates the prompt cache for the entire conversation history that follows.
@@ -100,7 +100,7 @@ export function measureSchemaChars(registry: ToolRegistry): number {
  * Applies the decision to the registry.
  *
  * Under eager, the defer flag on MCP tools must be cleared so they appear in tools[];
- * the other two modes keep them deferred. mcp_call is not registered here — it must
+ * the other two modes keep them deferred. McpCall is not registered here — it must
  * already be in tools[] before the MCP connection is established, otherwise adding it
  * after connecting would be a mid-session tools[] mutation and break the cache just the same.
  */
