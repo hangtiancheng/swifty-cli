@@ -35,7 +35,7 @@ export const DEFAULT_EAGER_THRESHOLD_PERCENT = 10;
 export const CHARS_PER_TOKEN = 2.5;
 
 /** Beta header for official endpoints; defer_loading and tool_reference both require it. */
-export const ADVANCED_TOOL_USE = "advanced-tool-use-2025-11-20";
+export const NATIVE_TOOL_USE_BETA = "advanced-tool-use-2025-11-20";
 
 const OFFICIAL_HOSTS = new Set(["api.anthropic.com"]);
 const ENV_OVERRIDE = "SWIFTY_MCP_LOADING";

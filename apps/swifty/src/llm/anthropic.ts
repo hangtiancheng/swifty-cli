@@ -32,7 +32,7 @@ import {
 import type { ConversationManager, Message } from "../conversation/conversation.js";
 import { ensureToolPairing } from "../conversation/pairing.js";
 import { createChildLogger } from "../logger/logger.js";
-import { ADVANCED_TOOL_USE } from "../mcp/strategy.js";
+import { NATIVE_TOOL_USE_BETA } from "../mcp/strategy.js";
 import {
   asErrorString,
   asRecord,
@@ -398,7 +398,7 @@ export class AnthropicClient implements LLMClient {
         ...(abortSignal ? { signal: abortSignal } : {}),
         // If any tool uses defer_loading this beta header is required, otherwise the server does not recognize the field.
         // Only the official endpoint reaches this code path (see mcp/strategy).
-        ...(sendToolSearchBeta ? { headers: { "anthropic-beta": ADVANCED_TOOL_USE } } : {}),
+        ...(sendToolSearchBeta ? { headers: { "anthropic-beta": NATIVE_TOOL_USE_BETA } } : {}),
       });
 
       let currentToolName = "";
