@@ -35,28 +35,30 @@ import { asErrorString } from "@/utils/index.js";
 
 const log = createChildLogger({ module: "mcp" });
 
-/** MCP 工具名的公共前缀。 */
+/** Common prefix for MCP tool names. */
 export const MCP_TOOL_PREFIX = "mcp__";
 /**
- * 工具名里服务器段和工具段的分隔符。用双下划线是为了让边界可逆——服务器名和
- * 工具名自身允许带单下划线。
+ * Separator between the server segment and the tool segment in a tool name. A double
+ * underscore keeps the boundary reversible — server names and tool names may themselves
+ * contain single underscores.
  */
 export const MCP_NAME_SEP = "__";
 
 /**
- * 把不合法字符换成下划线，保证拼出来的工具名能过 API 校验。
+ * Replaces illegal characters with underscores so the composed tool name passes API validation.
  *
- * 横杠虽然是 API 允许的字符，这里也一并换掉：Go 和 Python 版都是这么处理的，
- * 同一份 mcp_servers 配置在四个语言下必须算出同一个工具名，否则同一份
- * permissions.yaml 换个语言就匹配不上了。
+ * Hyphens are technically allowed by the API but are replaced here too: the Go and Python
+ * implementations do the same. The same mcp_servers config must produce the same tool name
+ * across all four languages, otherwise the same permissions.yaml would stop matching when
+ * the language changes.
  */
 export function sanitizeSegment(s: string): string {
   return s.replace(/[^a-zA-Z0-9_]/g, "_");
 }
 
 /**
- * 某个服务器下所有工具名的公共前缀。按服务器筛工具的地方都该用它，
- * 自己拼字符串会漏掉 sanitize。
+ * Common prefix for all tool names under a given server. Use this anywhere you filter
+ * tools by server; assembling the string by hand would skip sanitization.
  */
 export function mcpToolNamePrefix(serverName: string): string {
   return MCP_TOOL_PREFIX + sanitizeSegment(serverName) + MCP_NAME_SEP;
@@ -90,12 +92,12 @@ export class MCPToolWrapper implements MCPToolLike {
     this.mcpServerName = serverName;
   }
 
-  /** 原始 JSON schema。mcp_call 的参数强转要按它逐层走。 */
+  /** Original JSON schema. mcp_call's argument coercion walks it layer by layer. */
   mcpInputSchema(): Record<string, unknown> {
     return this.inputSchema ?? {};
   }
 
-  /** eager 模式下摘掉延迟标记，MCP 工具直接进 tools[]。 */
+  /** In eager mode the defer flag is cleared so MCP tools go straight into tools[]. */
   setDeferLoading(on: boolean): void {
     this.deferred = on;
   }

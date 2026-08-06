@@ -91,8 +91,8 @@ export const ASYNC_AGENT_ALLOWED_TOOLS = new Set<AllTools>([
   "ToolSearch",
   "EnterWorktree",
   "ExitWorktree",
-  // ToolSearch 只负责把 schema 读出来，真正调用要靠 McpCall
-  // 两个得成对放行，否则子 Agent 看得见工具却调不动
+  // ToolSearch only reads out schemas; actual invocation relies on McpCall.
+  // The two must be allowed together, or the subagent sees tools but cannot call them
   "McpCall",
 ]);
 

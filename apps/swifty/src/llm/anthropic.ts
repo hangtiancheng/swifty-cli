@@ -56,10 +56,11 @@ import { computeCompactThreshold } from "@/compact/compact.js";
 import type { ToolSchema } from "@/tools/types.js";
 
 /**
- * 这批工具里有没有带 defer_loading 的。
+ * Whether any tool in this batch has defer_loading set.
  *
- * 只在真用到时才发 beta header：不认识它的端点收到会直接拒请求，而
- * dispatch / eager 两条路压根不需要它。
+ * The beta header is only sent when it is actually needed: endpoints that do not
+ * recognize it reject the request outright, and the dispatch / eager paths do not
+ * use it at all.
  */
 export function needsToolSearchBeta(toolSchemas: ToolSchema[]): boolean {
   return toolSchemas.some((s) => s.defer_loading);
@@ -313,8 +314,8 @@ export class AnthropicClient implements LLMClient {
     // session restores, and concurrent interleaving can all leave dangling tool_use
     // entries, and a missing pairing causes the API to reject the request outright.
     const messages = buildAnthropicMessages(ensureToolPairing(conversation.getMessages()));
-    // 带 defer_loading 的工具留在 tools[] 里但服务端不给模型看，模型要先用
-    // ToolSearch 拿 tool_reference 才能调。这个字段需要 beta header 才被接受。
+    // Tools with defer_loading stay in tools[], but the server hides them from the model; the model must first
+    // fetch a tool_reference via ToolSearch before it can call them. This field is only accepted with the beta header.
     const sendToolSearchBeta = needsToolSearchBeta(toolSchemas);
     const antToolSchemas: Anthropic.Tool[] = toolSchemas.map((s) => {
       const inputSchema = s.input_schema;
@@ -395,8 +396,8 @@ export class AnthropicClient implements LLMClient {
     try {
       const response = this.client.messages.stream(params, {
         ...(abortSignal ? { signal: abortSignal } : {}),
-        // 工具带了 defer_loading 就必须带上这个 beta header，否则服务端不认这个
-        // 字段。只有官方端点会走到这里（见 mcp/strategy）。
+        // If any tool uses defer_loading this beta header is required, otherwise the server does not recognize the field.
+        // Only the official endpoint reaches this code path (see mcp/strategy).
         ...(sendToolSearchBeta ? { headers: { "anthropic-beta": ADVANCED_TOOL_USE } } : {}),
       });
 

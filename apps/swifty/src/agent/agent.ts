@@ -215,9 +215,9 @@ export class Agent {
           this.conversation.addSystemReminder(coordinatorReminder(iteration));
         }
 
-        // 延迟加载的工具不在 tools[] 里，模型看不到它们的存在，得每轮把名单告诉它。
-        // dispatch 模式下这些工具永远不会进 tools[]，还要额外说明调用要走 mcp_call，
-        // 否则它读完 schema 也不知道从哪儿调。
+        // Deferred-load tools are not in tools[], so the model cannot see their existence; the name list has to be repeated every turn.
+        // In dispatch mode these tools never make it into tools[] at all, so we also have to explain that invocation goes through mcp_call —
+        // otherwise the model reads the schema with no idea where to call it from.
         const deferredNames = this.registry.getDeferredToolNames();
         if (deferredNames.length > 0) {
           let reminder =

@@ -39,20 +39,25 @@ export interface ToolContext {
 }
 
 /**
- * MCP 工具怎么进上下文，由 mcp/strategy 在连上服务器后写入 ToolRegistry。
+ * How MCP tools enter the context, written into ToolRegistry by mcp/strategy
+ * after connecting to the server.
  *
- * eager    schema 总量不到上下文一成，全量进 tools[]，不延迟
- * native   官方端点，工具带 defer_loading 留在数组里但服务端不给模型看，
- *          ToolSearch 回 tool_reference 让服务端展开 schema
- * dispatch 其他端点不支持上面两样，MCP 工具完全不进 tools[]，走 mcp_call
+ * eager    total schema size under one tenth of the context; all go into tools[],
+ *          no deferral
+ * native   official endpoint; tools stay in the array with defer_loading but the
+ *          server does not show them to the model, and ToolSearch returns a
+ *          tool_reference so the server expands the schema
+ * dispatch other endpoints support neither of the above; MCP tools never enter
+ *          tools[] at all and go through mcp_call
  *
- * 分这三条的原因：tools 渲染在 system 之后、messages 之前，数组一变，它后面
- * 的整段对话历史缓存全部失效。实测两万 token 历史下，往 tools 末尾加一个工具
- * 的命中率从 99.4% 掉到 9.5%。
+ * Why three modes: tools render after system and before messages, so any change to
+ * the array invalidates the entire trailing conversation-history cache. In a test
+ * with twenty thousand tokens of history, appending one tool to the end of tools
+ * dropped the hit rate from 99.4% to 9.5%.
  */
 export type McpLoadingMode = "eager" | "native" | "dispatch";
 
-/** MCP 工具包装器额外暴露给分发和分流逻辑的能力。 */
+/** Extra capabilities the MCP tool wrapper exposes to dispatch and routing logic. */
 export interface MCPToolLike extends Tool {
   mcpServerName: string;
   mcpInputSchema(): Record<string, unknown>;

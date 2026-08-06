@@ -92,8 +92,8 @@ export class ToolSearchTool implements Tool {
           isError: false,
         });
       }
-      // 非 MCP 的延迟工具没有 mcp_call 这条入口，只能照旧标记成已发现、让它进
-      // 下一轮的 tools[]
+      // Non-MCP deferred tools have no mcp_call entry point, so they can only be
+      // marked as discovered as before, letting them into the next turn's tools[]
       const mcpNames: string[] = [];
       for (const t of tools) {
         if (t.name.startsWith(MCP_TOOL_PREFIX)) {
@@ -103,8 +103,9 @@ export class ToolSearchTool implements Tool {
         }
       }
 
-      // 官方端点：回 tool_reference，让服务端把 schema 展开进上下文。tools 数组
-      // 不动，缓存前缀因此不断。
+      // Official endpoint: return a tool_reference and let the server expand the
+      // schema into the context. The tools array stays untouched, so the cache
+      // prefix is not broken.
       if (mcpNames.length > 0 && this.registry.mcpLoadingMode === "native") {
         return Promise.resolve({
           output:
@@ -118,8 +119,9 @@ export class ToolSearchTool implements Tool {
         });
       }
 
-      // 其他端点：schema 原文给模型看，调用走 mcp_call。这段文本落在 messages
-      // 末尾，属于追加，不影响缓存前缀。
+      // Other endpoints: show the raw schema to the model and route calls through
+      // mcp_call. This text lands at the end of messages, so it's an append and
+      // does not affect the cache prefix.
       const schemas = tools.map((t) => JSON.stringify(t.schema(), null, 2));
       const suffix =
         mcpNames.length > 0

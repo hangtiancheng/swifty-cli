@@ -168,8 +168,9 @@ export async function runPrintMode(args: PrintArgs): Promise<void> {
   );
   registry.register(agentTool);
 
-  // 连 MCP。放在内建工具都注册完之后：MCP 工具的加载模式要按 schema 总量跟
-  // 上下文窗口比，得等工具都在位才算得准。
+  // Connect to MCP. Done after all built-in tools are registered: the MCP tool
+  // load mode compares total schema size against the context window, so it only
+  // computes accurately once all tools are in place.
   let mcpManager: MCPManager | undefined;
   if (cfg.mcp_servers && cfg.mcp_servers.length > 0) {
     mcpManager = new MCPManager();
@@ -279,13 +280,13 @@ export async function runPrintMode(args: PrintArgs): Promise<void> {
     console.log(JSON.stringify(resultLine));
   }
 
-  // MCP 服务器是 stdio 子进程，不断开的话事件循环一直有引用，进程不会退出。
-  // 结果已经打完了，收尾失败不该影响这次命令的输出。
+  // MCP servers are stdio subprocesses; without disconnecting them the event loop keeps references alive and the process never exits.
+  // Results are already printed, so a cleanup failure must not affect this command's output.
   if (mcpManager) {
     try {
       await mcpManager.disconnectAll();
     } catch {
-      /* 收尾失败无所谓，进程即将退出 */
+      /* Cleanup failure doesn't matter; the process is about to exit */
     }
   }
 }

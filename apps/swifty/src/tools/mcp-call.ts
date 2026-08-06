@@ -1,26 +1,29 @@
 /**
- * MCP 工具的统一调用入口。
+ * Unified call entry point for MCP tools.
  *
- * MCP 工具不进入 tools[]，模型先用 ToolSearch 读到 schema，再通过 mcp_call
- * 把工具名和参数传进来。这样 tools 数组在整场会话里字节不变，prompt cache
- * 的前缀不会被打断——工具排在 system 之后、messages 之前，数组一变，它后面
- * 的整段历史都要重算。
+ * MCP tools never enter tools[]. The model first reads the schema via ToolSearch,
+ * then passes the tool name and arguments through mcp_call. This keeps the tools
+ * array byte-identical throughout the whole session, so the prompt cache prefix is
+ * never broken — tools render after system and before messages, so any change to
+ * the array forces the entire trailing history to be recomputed.
  *
- * 代价是参数由模型自由生成，没有接口层的 schema 约束，偶尔会写错 JSON 类型。
- * coerceBySchema 按目标工具的完整 schema 逐层修正，修正规则四个语言必须逐条
- * 一致：
+ * The trade-off is that arguments are generated freely by the model with no schema
+ * constraint at the interface level, so the JSON type is occasionally wrong.
+ * coerceBySchema fixes values level by level against the target tool's full schema.
+ * The fix-up rules must be identical, item by item, across all four languages:
  *
- *   schema 声明        模型给的                修正为
- *   string            数字（非 boolean）       "8891"
- *   integer / number  数字形字符串             5 / 5.0
- *   boolean           "true" / "false"        true / false
- *   array             单键对象且值是数组        拆出内层数组
- *   array             逗号分隔字符串           按逗号切分去空白
- *   object            对象                     按 properties 递归
- *   array             数组                     按 items 递归每个元素
+ *   schema declares   model provides             coerced to
+ *   string            number (not boolean)       "8891"
+ *   integer / number  numeric-looking string     5 / 5.0
+ *   boolean           "true" / "false"           true / false
+ *   array             single-key obj, array val  unwrap the inner array
+ *   array             comma-separated string     split on commas, trim spaces
+ *   object            object                     recurse over properties
+ *   array             array                      recurse each element via items
  *
- * 修正不了的原样往下传，交给 MCP 服务器报它自己的错——服务器的域内错误比本地
- * 类型错误对模型更有指导性。
+ * Values that can't be fixed are passed through as-is, letting the MCP server
+ * report its own error — a server-side domain error is more instructive to the
+ * model than a local type error.
  */
 
 import {
@@ -36,12 +39,13 @@ import type { MCPToolLike, Tool, ToolContext, ToolResult, ToolSchema } from "./t
 
 import { asRecord, strArg } from "@/utils/index.js";
 
-/** 分发工具的名字，权限规则里也用它。 */
+/** The dispatcher tool's name; permission rules reference it too. */
 export { MCP_CALL_TOOL_NAME } from "./tool-names.js";
 
 function coerceScalar(value: unknown, want: string): unknown {
-  // boolean 是要先排掉的：typeof true !== "number"，但别的语言里 bool 是 int
-  // 的子类，四个语言统一按「boolean 不参与数字转换」处理
+  // boolean must be excluded first: typeof true !== "number", but in other
+  // languages bool is a subclass of int, so all four languages uniformly treat
+  // booleans as not participating in numeric conversion
   if (want === "string" && typeof value === "number" && Number.isFinite(value)) {
     return String(value);
   }
@@ -50,8 +54,9 @@ function coerceScalar(value: unknown, want: string): unknown {
     if (text === "") {
       return value;
     }
-    // 只有整串都是数字才接受，"5abc" 这种不动；integer 还要求没有小数部分，
-    // "5.7" 不做截断，原样交给 MCP 服务器报它的域内错误
+    // Only accept when the whole string is numeric; "5abc" is left untouched.
+    // integer further requires no fractional part, and "5.7" is not truncated —
+    // it's passed through as-is so the MCP server reports its own domain error
     const shape = want === "integer" ? /^[+-]?\d+$/ : /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/;
     if (!shape.test(text)) {
       return value;
@@ -90,14 +95,14 @@ export function coerceBySchema(value: unknown, schema: unknown): unknown {
   if (want === "array") {
     const itemSchema = schemaObj.items ?? {};
     let working: unknown = value;
-    // 模型常把数组包成 {"item": [...]} 这类单键对象
+    // The model often wraps arrays in single-key objects like {"item": [...]}
     if (typeof working === "object" && working !== null && !Array.isArray(working)) {
       const entries = Object.values(working);
       if (entries.length === 1 && Array.isArray(entries[0])) {
         working = entries[0];
       }
     } else if (typeof working === "string") {
-      // 也常拼成逗号分隔的字符串
+      // It also often joins them into a comma-separated string
       working = working
         .split(",")
         .map((p) => p.trim())
@@ -116,21 +121,24 @@ export function coerceBySchema(value: unknown, schema: unknown): unknown {
 }
 
 /**
- * 权限规则匹配用的 content，归一化成 server__tool。
+ * The content used for permission rule matching, normalized to server__tool.
  *
- * 不带 mcp__ 前缀，也不受各语言 wrapper 命名差异影响，四个语言的
- * permissions.yaml 写法因此完全一致：mcp_call(linear__create_issue)。
+ * It carries no mcp__ prefix and is unaffected by per-language wrapper naming
+ * differences, so the permissions.yaml syntax is completely identical across all
+ * four languages: mcp_call(linear__create_issue).
  *
- * 两段都要过一遍 sanitize。模型可能传短名也可能传全名，全名里的段是 wrapper
- * 已经处理过的，短名是模型原样给的——不统一处理的话，同一个调用传短名和传全名
- * 会算出不同的 content，规则就会漏匹配。
+ * Both segments must go through sanitize. The model may pass a short name or a full
+ * name; the segments in a full name are already processed by the wrapper, while a
+ * short name is given by the model as-is. Without uniform handling, the same call
+ * would yield different content for a short name vs. a full name, and rules would
+ * fail to match.
  */
 export function mcpCallPermissionContent(server: string, tool: string): string {
   if (tool.startsWith(MCP_TOOL_PREFIX)) {
     const rest = tool.slice(MCP_TOOL_PREFIX.length);
     const idx = rest.indexOf(MCP_NAME_SEP);
     if (idx >= 0) {
-      // 全名里已经带了服务器段，用它，避免拼出 linear__linear__x
+      // The full name already carries the server segment; use it to avoid building linear__linear__x
       return (
         sanitizeSegment(rest.slice(0, idx)) +
         MCP_NAME_SEP +
@@ -152,7 +160,7 @@ export class McpCallTool implements Tool {
     "tool's schema, then pass its arguments here exactly as that schema requires, " +
     "using the same JSON types.";
   category = "command" as const;
-  // 自己必须留在 tools[] 里，否则模型没有入口
+  // This tool must stay in tools[] itself, otherwise the model has no entry point
   deferred = false;
 
   constructor(private registry: ToolRegistry) {}
@@ -185,10 +193,11 @@ export class McpCallTool implements Tool {
   }
 
   /**
-   * 全名 / server+短名 / 短名后缀唯一匹配，依次尝试。
+   * Try in order: full name / server+short name / unique short-name suffix match.
    *
-   * 模型很常只传短名（实测约三成调用），所以这里必须容错，否则会白白换来
-   * 一轮重试。
+   * The model very often passes only the short name (roughly three in ten calls in
+   * practice), so this must be tolerant — otherwise it needlessly costs a retry
+   * round.
    */
   private resolve(server: string, tool: string): Tool | undefined {
     const direct = this.registry.get(tool) ?? this.registry.get(buildMcpToolName(server, tool));

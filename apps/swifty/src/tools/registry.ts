@@ -31,16 +31,19 @@ export class ToolRegistry {
   private discovered = new Set<string>();
 
   /**
-   * MCP 工具的加载方式，由 mcp/strategy 在连上服务器后写入。ToolSearch 靠它
-   * 决定回什么、client 靠它决定要不要发 defer_loading。没有 MCP 时保持 eager，
-   * 行为等同于不延迟。
+   * How MCP tools are loaded, written by mcp/strategy after connecting to the
+   * server. ToolSearch relies on it to decide what to return, and the client
+   * relies on it to decide whether to send defer_loading. It stays eager when
+   * there is no MCP, which behaves the same as no deferral.
    */
   mcpLoadingMode: McpLoadingMode = "eager";
 
   /**
-   * 检索和分发这两个工具发不发给模型，由 mcp/strategy 的 applyMode 在会话启动
-   * 时算一次。不每轮按「当前还有没有延迟工具」现算：工具可能被运行时禁用，
-   * 现算会让 tools[] 中途少一个，那就是一次数组变动，缓存前缀照样断。
+   * Whether to expose the search and dispatch tools to the model is computed once
+   * by applyMode in mcp/strategy at session start. It is not recomputed each turn
+   * based on "are there still deferred tools": tools may be disabled at runtime,
+   * and recomputing would drop one from tools[] mid-session — that's an array
+   * change, which breaks the cache prefix just the same.
    */
   exposeToolSearch = false;
   exposeMcpCall = false;
@@ -63,15 +66,18 @@ export class ToolRegistry {
     protocol: "anthropic" | "openai" | "openai-compat" = "anthropic",
   ): (Anthropic.Tool | OpenAITool)[] {
     const isOpenAI = protocol === "openai" || protocol === "openai-compat";
-    // 官方端点走原生延迟：工具留在 tools[] 里但打上 defer_loading，由服务端决定
-    // 给不给模型看。这样即使发现了新工具，tools 数组的字节也不变。其他端点只能
-    // 把延迟工具整个藏起来，靠 mcp_call 兜。
+    // The official endpoint uses native deferral: tools stay in tools[] but are
+    // flagged with defer_loading, and the server decides whether to show them to
+    // the model. This keeps the tools array byte-identical even when new tools are
+    // discovered. Other endpoints can only hide deferred tools entirely and fall
+    // back on mcp_call.
     const native = this.mcpLoadingMode === "native" && !isOpenAI;
 
     const schemas: (Anthropic.Tool | OpenAITool)[] = [];
     for (const tool of this.tools.values()) {
-      // 检索和分发只在用得上的模式里发。eager 下没有延迟工具可搜、也不需要
-      // 分发，两个都发过去只是白占 token，还可能引诱模型去绕一圈。
+      // Only expose search and dispatch in modes where they're useful. In eager
+      // mode there are no deferred tools to search and no need to dispatch; sending
+      // both would only waste tokens and might tempt the model into a detour.
       if (
         (tool.name === TOOL_SEARCH_TOOL_NAME && !this.exposeToolSearch) ||
         (tool.name === MCP_CALL_TOOL_NAME && !this.exposeMcpCall)

@@ -44,7 +44,7 @@ const MAX_RESULTS = 500;
 
 // JS regexes keep \w/\b/\d ASCII-only even in u-mode, unlike ripgrep whose
 // defaults are Unicode-aware. Rewrite them to property-escape equivalents
-// before compiling so "\w+" matches 中文 and "\b" works next to CJK.
+// before compiling so "\w+" matches Chinese text and "\b" works next to CJK.
 const WORD = "\\p{L}\\p{M}\\p{N}_";
 const TOP_LEVEL = new Map<string, string>([
   ["w", `[${WORD}]`],

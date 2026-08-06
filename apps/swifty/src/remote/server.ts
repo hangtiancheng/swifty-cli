@@ -616,7 +616,7 @@ export async function createRemoteAgent(
       log.error({ serverName, error }, "MCP server connection error");
     }
 
-    // 工具都注册完了才定加载模式：要按 schema 总量跟上下文窗口比
+    // Only decide the load mode after all tools are registered: it compares total schema size against the context window
     if (result.tools.length > 0) {
       decideAndApply(registry, provider.base_url, getContextWindow(provider));
     }

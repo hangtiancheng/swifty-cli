@@ -167,8 +167,9 @@ function createToolRegistry(workDir: string, taskList: TaskList): ToolRegistry {
   registry.register(new ReadFileTool());
   registry.register(new ToolSearchTool(registry));
 
-  // mcp_call 必须在 MCP 连接之前就注册好。等连上再按加载模式决定注不注册，
-  // 本身就是一次中途改动 tools[]，缓存前缀照样断。
+  // mcp_call must be registered before connecting to MCP. Registering it after
+  // connecting based on the load mode is itself a mid-flight mutation of
+  // tools[], which breaks the cache prefix just the same.
   registry.register(new McpCallTool(registry));
 
   registry.register(new WriteFileTool());
@@ -665,7 +666,7 @@ export function App({
                 toolCount: result.tools.length,
               });
             }
-            // 工具都注册完了才定加载模式：要按 schema 总量跟上下文窗口比
+            // Only decide the load mode after all tools are registered: it compares total schema size against the context window
             if (result.tools.length > 0) {
               decideAndApply(registryRef.current, provider.base_url, getContextWindow(provider));
             }

@@ -150,7 +150,7 @@ export async function buildTeammateRegistry(opts: {
   catalog: SkillCatalog;
   skillHost: SkillHost;
   mcpServers?: MCPServerConfig[];
-  /** 用来定 MCP 加载模式：schema 总量要跟上下文窗口比 */
+  /** Used to decide the MCP loading mode: total schema volume is weighed against the context window */
   baseUrl?: string;
   contextWindow?: number;
 }): Promise<ToolRegistry> {
@@ -193,7 +193,7 @@ export async function buildTeammateRegistry(opts: {
       for (const { serverName, error } of result.errors) {
         console.error(`MCP error [${serverName}]: ${error}`);
       }
-      // 工具都注册完了才定加载模式
+      // Decide the loading mode only after all tools have been registered
       if (result.tools.length > 0 && opts.contextWindow) {
         decideAndApply(registry, opts.baseUrl ?? "", opts.contextWindow);
       }
