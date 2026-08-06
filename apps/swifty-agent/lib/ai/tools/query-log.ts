@@ -48,8 +48,7 @@ export async function getLogMcpTools(): Promise<Record<string, Tool>> {
     const result: Record<string, Tool> = {};
     for (const t of tools) {
       const toolName = t.name;
-      const rawSchema = t.inputSchema ?? {};
-      const inputSchema = mcpInputSchemaShape.parse(rawSchema);
+      const inputSchema = mcpInputSchemaShape.parse(t.inputSchema ?? {});
       result[toolName] = tool({
         description: t.description ?? toolName,
         inputSchema: jsonSchema(inputSchema),

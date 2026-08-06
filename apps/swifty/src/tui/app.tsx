@@ -52,6 +52,7 @@ import { HookEngine, validate as validateHooks } from "../hooks/hooks.js";
 import type { LLMClient } from "../llm/client.js";
 import { createClient } from "../llm/client.js";
 import { MCPManager } from "../mcp/manager.js";
+import { decideAndApply } from "../mcp/strategy.js";
 import { MCPToolWrapper } from "../mcp/tool-wrapper.js";
 import { MemoryExtractor } from "../memory/extractor.js";
 import { loadInstructions } from "../memory/instructions.js";
@@ -97,6 +98,7 @@ import { EnterWorktreeTool } from "../tools/enter-worktree.js";
 import { ExitPlanModeTool } from "../tools/exit-plan-mode.js";
 import { ExitWorktreeTool } from "../tools/exit-worktree.js";
 import { FileStateCache } from "../tools/file-state-cache.js";
+import { McpCallTool } from "../tools/mcp-call.js";
 import { ReadFileTool } from "../tools/read-file.js";
 import { ToolRegistry } from "../tools/registry.js";
 import { SyntheticOutputTool } from "../tools/synthetic-output.js";
@@ -164,6 +166,11 @@ function createToolRegistry(workDir: string, taskList: TaskList): ToolRegistry {
   registry.register(new ExitWorktreeTool());
   registry.register(new ReadFileTool());
   registry.register(new ToolSearchTool(registry));
+
+  // mcp_call 必须在 MCP 连接之前就注册好。等连上再按加载模式决定注不注册，
+  // 本身就是一次中途改动 tools[]，缓存前缀照样断。
+  registry.register(new McpCallTool(registry));
+
   registry.register(new WriteFileTool());
   registry.register(new GlobTool());
   registry.register(new GrepTool());
@@ -657,6 +664,10 @@ export function App({
                 servers: result.servers,
                 toolCount: result.tools.length,
               });
+            }
+            // 工具都注册完了才定加载模式：要按 schema 总量跟上下文窗口比
+            if (result.tools.length > 0) {
+              decideAndApply(registryRef.current, provider.base_url, getContextWindow(provider));
             }
             // Inject each server's instructions into the conversation so the
             // model knows how to use that server's tools.

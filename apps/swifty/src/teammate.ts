@@ -23,7 +23,7 @@
 import { basename, dirname } from "node:path";
 
 import { Agent } from "./agent/agent.js";
-import { loadConfig } from "./config/config.js";
+import { getContextWindow, loadConfig } from "./config/config.js";
 import type { MCPServerConfig } from "./config/config.js";
 import { ConversationManager } from "./conversation/conversation.js";
 import { createClient } from "./llm/client.js";
@@ -34,6 +34,7 @@ import {
   sanitizeNameSegment,
 } from "./logger/logger.js";
 import { MCPManager } from "./mcp/manager.js";
+import { decideAndApply } from "./mcp/strategy.js";
 import { MCPToolWrapper } from "./mcp/tool-wrapper.js";
 import { PermissionChecker } from "./permissions/checker.js";
 import { buildSystemPrompt, detectEnvironment } from "./prompt/builder.js";
@@ -52,6 +53,7 @@ import { EditFileTool } from "./tools/edit-file.js";
 import { EnterWorktreeTool } from "./tools/enter-worktree.js";
 import { ExitWorktreeTool } from "./tools/exit-worktree.js";
 import { FileStateCache } from "./tools/file-state-cache.js";
+import { McpCallTool } from "./tools/mcp-call.js";
 import { ReadFileTool } from "./tools/read-file.js";
 import { ToolRegistry } from "./tools/registry.js";
 import { SyntheticOutputTool } from "./tools/synthetic-output.js";
@@ -148,6 +150,9 @@ export async function buildTeammateRegistry(opts: {
   catalog: SkillCatalog;
   skillHost: SkillHost;
   mcpServers?: MCPServerConfig[];
+  /** 用来定 MCP 加载模式：schema 总量要跟上下文窗口比 */
+  baseUrl?: string;
+  contextWindow?: number;
 }): Promise<ToolRegistry> {
   const registry = new ToolRegistry();
   registry.register(new ReadFileTool());
@@ -158,6 +163,7 @@ export async function buildTeammateRegistry(opts: {
   registry.register(new EditFileTool());
 
   registry.register(new ToolSearchTool(registry));
+  registry.register(new McpCallTool(registry));
   registry.register(new SyntheticOutputTool());
   registry.register(new EnterWorktreeTool());
   registry.register(new ExitWorktreeTool());
@@ -186,6 +192,10 @@ export async function buildTeammateRegistry(opts: {
       }
       for (const { serverName, error } of result.errors) {
         console.error(`MCP error [${serverName}]: ${error}`);
+      }
+      // 工具都注册完了才定加载模式
+      if (result.tools.length > 0 && opts.contextWindow) {
+        decideAndApply(registry, opts.baseUrl ?? "", opts.contextWindow);
       }
     } catch (e) {
       // MCP connectivity failures should not crash the teammate process
@@ -241,6 +251,8 @@ export async function runTeammate(args: TeammateArgs): Promise<void> {
     catalog,
     skillHost,
     mcpServers: cfg.mcp_servers,
+    baseUrl: provider.base_url,
+    contextWindow: getContextWindow(provider),
   });
 
   const checker = new PermissionChecker(workDir, "acceptEdits");

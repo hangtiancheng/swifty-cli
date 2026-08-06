@@ -215,6 +215,22 @@ export class Agent {
           this.conversation.addSystemReminder(coordinatorReminder(iteration));
         }
 
+        // 延迟加载的工具不在 tools[] 里，模型看不到它们的存在，得每轮把名单告诉它。
+        // dispatch 模式下这些工具永远不会进 tools[]，还要额外说明调用要走 mcp_call，
+        // 否则它读完 schema 也不知道从哪儿调。
+        const deferredNames = this.registry.getDeferredToolNames();
+        if (deferredNames.length > 0) {
+          let reminder =
+            "The following deferred tools are available via ToolSearch. Their schemas " +
+            'are NOT loaded - use ToolSearch with query "select:<name>[,<name>...]" ' +
+            "to load tool schemas";
+          reminder +=
+            this.registry.mcpLoadingMode === "dispatch"
+              ? ", then invoke them with the mcp_call tool"
+              : " before calling them";
+          this.conversation.addSystemReminder(reminder + ":\n" + deferredNames.join("\n"));
+        }
+
         // Drain queued hook notifications and any external notifications (e.g. a
         // team mailbox) into system reminders for this turn.
         if (this.hookEngine) {

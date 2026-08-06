@@ -32,6 +32,7 @@ import {
 import type { ConversationManager, Message } from "../conversation/conversation.js";
 import { ensureToolPairing } from "../conversation/pairing.js";
 import { createChildLogger } from "../logger/logger.js";
+import { ADVANCED_TOOL_USE } from "../mcp/strategy.js";
 import {
   asErrorString,
   asRecord,
@@ -53,6 +54,16 @@ import type { StreamEvent } from "./events.js";
 
 import { computeCompactThreshold } from "@/compact/compact.js";
 import type { ToolSchema } from "@/tools/types.js";
+
+/**
+ * 这批工具里有没有带 defer_loading 的。
+ *
+ * 只在真用到时才发 beta header：不认识它的端点收到会直接拒请求，而
+ * dispatch / eager 两条路压根不需要它。
+ */
+export function needsToolSearchBeta(toolSchemas: ToolSchema[]): boolean {
+  return toolSchemas.some((s) => s.defer_loading);
+}
 
 const log = createChildLogger({ module: "llm" });
 
@@ -302,9 +313,12 @@ export class AnthropicClient implements LLMClient {
     // session restores, and concurrent interleaving can all leave dangling tool_use
     // entries, and a missing pairing causes the API to reject the request outright.
     const messages = buildAnthropicMessages(ensureToolPairing(conversation.getMessages()));
+    // 带 defer_loading 的工具留在 tools[] 里但服务端不给模型看，模型要先用
+    // ToolSearch 拿 tool_reference 才能调。这个字段需要 beta header 才被接受。
+    const sendToolSearchBeta = needsToolSearchBeta(toolSchemas);
     const antToolSchemas: Anthropic.Tool[] = toolSchemas.map((s) => {
       const inputSchema = s.input_schema;
-      return {
+      const tool: Anthropic.Tool = {
         name: s.name,
         description: s.description,
         input_schema: {
@@ -313,6 +327,10 @@ export class AnthropicClient implements LLMClient {
           required: inputSchema.required ?? [],
         },
       };
+      if (s.defer_loading === true) {
+        tool.defer_loading = true;
+      }
+      return tool;
     });
 
     // Mark last tool for cache control
@@ -377,6 +395,9 @@ export class AnthropicClient implements LLMClient {
     try {
       const response = this.client.messages.stream(params, {
         ...(abortSignal ? { signal: abortSignal } : {}),
+        // 工具带了 defer_loading 就必须带上这个 beta header，否则服务端不认这个
+        // 字段。只有官方端点会走到这里（见 mcp/strategy）。
+        ...(sendToolSearchBeta ? { headers: { "anthropic-beta": ADVANCED_TOOL_USE } } : {}),
       });
 
       let currentToolName = "";

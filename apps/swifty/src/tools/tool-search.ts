@@ -20,9 +20,11 @@
  * SOFTWARE.
  */
 
+import { MCP_TOOL_PREFIX } from "../mcp/tool-wrapper.js";
 import { intArg, strArg } from "../utils/index.js";
 
 import type { ToolRegistry } from "./registry.js";
+import { TOOL_SEARCH_TOOL_NAME } from "./tool-names.js";
 import {
   type Tool,
   type ToolCategory,
@@ -32,7 +34,8 @@ import {
 } from "./types.js";
 
 export class ToolSearchTool implements Tool {
-  name = "ToolSearch";
+  name = TOOL_SEARCH_TOOL_NAME;
+
   description = "Search for and load deferred tools by name or keyword.";
   category: ToolCategory = "read";
 
@@ -83,18 +86,49 @@ export class ToolSearchTool implements Tool {
         .split(",")
         .map((n) => n.trim());
       const tools = this.registry.findDeferredByNames(names);
-      for (const t of tools) {
-        this.registry.markDiscovered(t.name);
-      }
       if (tools.length === 0) {
         return Promise.resolve({
           output: `No deferred tools found matching: ${names.join(", ")}`,
           isError: false,
         });
       }
+      // 非 MCP 的延迟工具没有 mcp_call 这条入口，只能照旧标记成已发现、让它进
+      // 下一轮的 tools[]
+      const mcpNames: string[] = [];
+      for (const t of tools) {
+        if (t.name.startsWith(MCP_TOOL_PREFIX)) {
+          mcpNames.push(t.name);
+        } else {
+          this.registry.markDiscovered(t.name);
+        }
+      }
+
+      // 官方端点：回 tool_reference，让服务端把 schema 展开进上下文。tools 数组
+      // 不动，缓存前缀因此不断。
+      if (mcpNames.length > 0 && this.registry.mcpLoadingMode === "native") {
+        return Promise.resolve({
+          output:
+            `Loaded ${String(mcpNames.length)} tool(s): ${mcpNames.join(", ")}. ` +
+            "You can call them directly now.",
+          isError: false,
+          contentBlocks: mcpNames.map((name) => ({
+            type: "tool_reference",
+            tool_name: name,
+          })),
+        });
+      }
+
+      // 其他端点：schema 原文给模型看，调用走 mcp_call。这段文本落在 messages
+      // 末尾，属于追加，不影响缓存前缀。
       const schemas = tools.map((t) => JSON.stringify(t.schema(), null, 2));
+      const suffix =
+        mcpNames.length > 0
+          ? "\n\nTo invoke any of the tools above, call mcp_call with that tool's " +
+            "full name and an `arguments` object matching its input_schema exactly, " +
+            "using the same JSON types."
+          : "";
       return Promise.resolve({
-        output: schemas.join("\n\n"),
+        output: schemas.join("\n\n") + suffix,
         isError: false,
       });
     }

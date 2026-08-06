@@ -52,6 +52,7 @@ import { createClient, type LLMClient } from "../llm/client.js";
 import { resolveModelId } from "../llm/model-resolver.js";
 import { createChildLogger } from "../logger/logger.js";
 import { MCPManager } from "../mcp/manager.js";
+import { decideAndApply } from "../mcp/strategy.js";
 import { MCPToolWrapper } from "../mcp/tool-wrapper.js";
 import { MemoryConsolidator } from "../memory/consolidation.js";
 import { MemoryExtractor } from "../memory/extractor.js";
@@ -89,6 +90,7 @@ import { EnterWorktreeTool } from "../tools/enter-worktree.js";
 import { ExitPlanModeTool } from "../tools/exit-plan-mode.js";
 import { ExitWorktreeTool } from "../tools/exit-worktree.js";
 import { FileStateCache } from "../tools/file-state-cache.js";
+import { McpCallTool } from "../tools/mcp-call.js";
 import { ReadFileTool } from "../tools/read-file.js";
 import { ToolRegistry } from "../tools/registry.js";
 import { SyntheticOutputTool } from "../tools/synthetic-output.js";
@@ -614,6 +616,11 @@ export async function createRemoteAgent(
       log.error({ serverName, error }, "MCP server connection error");
     }
 
+    // 工具都注册完了才定加载模式：要按 schema 总量跟上下文窗口比
+    if (result.tools.length > 0) {
+      decideAndApply(registry, provider.base_url, getContextWindow(provider));
+    }
+
     // Collect MCP instructions
     if (result.instructions.length > 0) {
       const parts = result.instructions.map(({ serverName, text }) => `## ${serverName}\n${text}`);
@@ -666,6 +673,7 @@ function buildToolRegistry(workDir: string, sessionId: string): ToolRegistry {
   registry.register(new WriteFileTool());
   registry.register(new EditFileTool());
   registry.register(new ToolSearchTool(registry));
+  registry.register(new McpCallTool(registry));
   registry.register(new EnterWorktreeTool());
   registry.register(new ExitWorktreeTool());
   registry.register(new ExitPlanModeTool());

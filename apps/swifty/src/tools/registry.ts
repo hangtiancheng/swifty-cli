@@ -23,11 +23,27 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import type { FunctionTool as OpenAITool } from "openai/resources/responses/responses";
 
-import type { Tool } from "./types.js";
+import { MCP_CALL_TOOL_NAME, TOOL_SEARCH_TOOL_NAME } from "./tool-names.js";
+import type { McpLoadingMode, Tool } from "./types.js";
 
 export class ToolRegistry {
   private tools = new Map<string, Tool>();
   private discovered = new Set<string>();
+
+  /**
+   * MCP 工具的加载方式，由 mcp/strategy 在连上服务器后写入。ToolSearch 靠它
+   * 决定回什么、client 靠它决定要不要发 defer_loading。没有 MCP 时保持 eager，
+   * 行为等同于不延迟。
+   */
+  mcpLoadingMode: McpLoadingMode = "eager";
+
+  /**
+   * 检索和分发这两个工具发不发给模型，由 mcp/strategy 的 applyMode 在会话启动
+   * 时算一次。不每轮按「当前还有没有延迟工具」现算：工具可能被运行时禁用，
+   * 现算会让 tools[] 中途少一个，那就是一次数组变动，缓存前缀照样断。
+   */
+  exposeToolSearch = false;
+  exposeMcpCall = false;
 
   register(tool: Tool): void {
     this.tools.set(tool.name, tool);
@@ -46,34 +62,59 @@ export class ToolRegistry {
   getAllSchemas(
     protocol: "anthropic" | "openai" | "openai-compat" = "anthropic",
   ): (Anthropic.Tool | OpenAITool)[] {
-    const result: (Anthropic.Tool | OpenAITool)[] = [];
+    const isOpenAI = protocol === "openai" || protocol === "openai-compat";
+    // 官方端点走原生延迟：工具留在 tools[] 里但打上 defer_loading，由服务端决定
+    // 给不给模型看。这样即使发现了新工具，tools 数组的字节也不变。其他端点只能
+    // 把延迟工具整个藏起来，靠 mcp_call 兜。
+    const native = this.mcpLoadingMode === "native" && !isOpenAI;
+
+    const schemas: (Anthropic.Tool | OpenAITool)[] = [];
     for (const tool of this.tools.values()) {
-      if (tool.deferred && !this.discovered.has(tool.name)) {
+      // 检索和分发只在用得上的模式里发。eager 下没有延迟工具可搜、也不需要
+      // 分发，两个都发过去只是白占 token，还可能引诱模型去绕一圈。
+      if (
+        (tool.name === TOOL_SEARCH_TOOL_NAME && !this.exposeToolSearch) ||
+        (tool.name === MCP_CALL_TOOL_NAME && !this.exposeMcpCall)
+      ) {
+        continue;
+      }
+      const deferred = Boolean(tool.deferred) && !this.discovered.has(tool.name);
+      if (deferred && !native) {
         continue;
       }
       const s = tool.schema();
-      if (protocol === "anthropic") {
-        result.push({
-          name: s.name,
-          description: s.description,
-          input_schema: {
-            type: "object",
-            properties: s.input_schema.properties,
-            required: s.input_schema.required ?? [],
-          },
-        });
-      } else {
+      if (isOpenAI) {
         // openai and openai-compat both use FunctionTool shape
-        result.push({
+        schemas.push({
           strict: false, // Whether to enforce strict parameter validation. Default true.
           type: "function",
           name: s.name,
           description: s.description,
           parameters: s.input_schema,
-        });
+          // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+          // @ts-ignore
+          function: {
+            name: s.name,
+            description: s.description,
+            parameters: s.input_schema,
+          },
+        } satisfies OpenAITool);
+      } else {
+        schemas.push(
+          deferred
+            ? ({
+                ...s,
+                type: "custom",
+                defer_loading: true,
+              } satisfies Anthropic.Tool)
+            : ({
+                ...s,
+                type: "custom",
+              } satisfies Anthropic.Tool),
+        );
       }
     }
-    return result;
+    return schemas;
   }
 
   getDeferredToolNames(): string[] {

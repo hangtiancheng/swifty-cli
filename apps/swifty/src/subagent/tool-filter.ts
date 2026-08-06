@@ -52,7 +52,8 @@ type AllTools =
   | "ToolSearch"
   | "WriteFile"
   | "Glob"
-  | "Grep";
+  | "Grep"
+  | "McpCall";
 
 // Global list of tools disallowed for subagents — prevents recursive Agent calls or using main-thread-only tools
 export const SUBAGENT_DISALLOWED_TOOLS = new Set<AllTools>([
@@ -90,6 +91,9 @@ export const ASYNC_AGENT_ALLOWED_TOOLS = new Set<AllTools>([
   "ToolSearch",
   "EnterWorktree",
   "ExitWorktree",
+  // ToolSearch 只负责把 schema 读出来，真正调用要靠 McpCall
+  // 两个得成对放行，否则子 Agent 看得见工具却调不动
+  "McpCall",
 ]);
 
 function isMCPTool(name: string): boolean {

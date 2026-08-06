@@ -28,6 +28,7 @@ import yaml from "js-yaml";
 import z, { parse } from "zod";
 
 import { createChildLogger } from "../logger/logger.js";
+import { MCP_CALL_TOOL_NAME, mcpCallPermissionContent } from "../tools/mcp-call.js";
 import { strArg } from "../utils/index.js";
 
 const log = createChildLogger({ module: "permissions" });
@@ -124,6 +125,12 @@ const DEFAULT_DENY_WRITE = [
 ];
 
 export function extractContent(toolName: string, args: Record<string, unknown>): string {
+  // mcp_call 的匹配对象不是某一个参数，而是「要调用哪个 MCP 工具」，由
+  // server + tool 两个参数合成 server__tool。这样规则写成 mcp_call(linear__*)
+  // 就能按服务器或按工具做 allow/deny。
+  if (toolName === MCP_CALL_TOOL_NAME) {
+    return mcpCallPermissionContent(strArg(args, "server", ""), strArg(args, "tool", ""));
+  }
   const field = CONTENT_FIELDS[toolName];
   if (!field) {
     return "";
