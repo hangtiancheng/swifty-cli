@@ -20,6 +20,8 @@
  * SOFTWARE.
  */
 
+/* eslint-disable no-console -- non-interactive output mode: console.log is the program output channel */
+
 import { Agent } from "./agent/agent.js";
 import type { AgentEvent } from "./agent/events.js";
 import { forkEnabled, loadConfig } from "./config/config.js";

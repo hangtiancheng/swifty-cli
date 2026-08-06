@@ -51,6 +51,7 @@ import * as historyMod from "../history/history.js";
 import { HookEngine, validate as validateHooks } from "../hooks/hooks.js";
 import type { LLMClient } from "../llm/client.js";
 import { createClient } from "../llm/client.js";
+import { createChildLogger } from "../logger/logger.js";
 import { MCPManager } from "../mcp/manager.js";
 import { decideAndApply } from "../mcp/strategy.js";
 import { MCPToolWrapper } from "../mcp/tool-wrapper.js";
@@ -127,6 +128,8 @@ import { version } from "./version.js";
 
 import type { ToolSchema } from "@/tools/types.js";
 import { asErrorString, asRecord, contentToText, strArg } from "@/utils/index.js";
+
+const log = createChildLogger({ module: "tui" });
 
 type AppState = "providerSelect" | "chat";
 
@@ -1448,8 +1451,7 @@ export function App({
             }
           })
           .catch((err: unknown) => {
-            // Suppress logging in production; debug via memory-extractor logs
-            console.error("[memory-extractor]", asErrorString(err));
+            log.error({ err }, "memory extractor failed");
           })
           .finally(() => {
             memExtractingRef.current = false;

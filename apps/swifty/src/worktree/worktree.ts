@@ -26,7 +26,6 @@ import { dirname, isAbsolute, join } from "path";
 import { promisify } from "util";
 
 import { createChildLogger } from "../logger/logger.js";
-import { asErrorString } from "../utils/index.js";
 
 const log = createChildLogger({ module: "worktree" });
 
@@ -457,7 +456,7 @@ async function symlinkNodeModules(repoRoot: string, worktreePath: string): Promi
     } // already present
     await symlink(src, dst);
   } catch (err) {
-    console.error(`Warning: failed to symlink node_modules in worktree: ${asErrorString(err)}`);
+    log.warn({ err }, "failed to symlink node_modules in worktree");
   }
 }
 

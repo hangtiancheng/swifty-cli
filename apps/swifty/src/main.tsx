@@ -20,6 +20,8 @@
  * SOFTWARE.
  */
 
+/* eslint-disable no-console -- process entry point: pre-init errors and crash handlers need stderr output */
+
 import { render } from "ink";
 
 import { forkEnabled, loadConfig } from "./config/config.js";

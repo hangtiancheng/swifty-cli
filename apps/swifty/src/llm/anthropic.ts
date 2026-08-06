@@ -123,13 +123,13 @@ export async function fetchModelContextWindow(config: ProviderConfig): Promise<n
     const body: unknown = await res.json();
     const { success, error, data } = await safeParseAsync(ModelContextWindowResSchema, body);
     if (!success) {
-      console.error(error.message);
+      log.warn({ message: error.message }, "model context window schema validation failed");
       return 0;
     }
     const maxInputTokens = data.max_input_tokens;
     return Math.max(maxInputTokens, 0);
   } catch (e) {
-    console.error(e);
+    log.error({ err: e }, "failed to fetch model context window");
     return 0;
   } finally {
     clearTimeout(timer);

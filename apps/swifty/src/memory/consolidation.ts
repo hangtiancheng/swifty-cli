@@ -35,6 +35,7 @@ import { join, basename } from "node:path";
 import { Agent } from "../agent/agent.js";
 import { ConversationManager } from "../conversation/conversation.js";
 import type { LLMClient } from "../llm/client.js";
+import { createChildLogger } from "../logger/logger.js";
 import { PermissionChecker } from "../permissions/checker.js";
 import { listSessions } from "../session/session.js";
 import { BashTool } from "../tools/bash.js";
@@ -44,6 +45,8 @@ import { ToolRegistry } from "../tools/registry.js";
 import { GlobTool } from "../tools/wasm/glob.js";
 import { GrepTool } from "../tools/wasm/grep.js";
 import { WriteFileTool } from "../tools/write-file.js";
+
+const log = createChildLogger({ module: "memory" });
 
 const DEFAULT_MIN_HOURS = 24;
 const DEFAULT_MIN_SESSIONS = 5;
@@ -204,7 +207,7 @@ function tryAcquireLock(memDir: string): number | null {
         holderPid = parsed;
       }
     } catch (err) {
-      console.error(err);
+      log.error({ err }, "failed to read consolidation lock file");
     }
   }
 
@@ -241,7 +244,7 @@ function rollbackLock(memDir: string, priorMtime: number): void {
     const t = priorMtime / 1000;
     utimesSync(path, t, t);
   } catch (err) {
-    console.error(err);
+    log.error({ err }, "failed to rollback consolidation lock");
   }
 }
 

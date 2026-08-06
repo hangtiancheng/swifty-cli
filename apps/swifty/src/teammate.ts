@@ -61,7 +61,6 @@ import { ToolSearchTool } from "./tools/tool-search.js";
 import { GlobTool } from "./tools/wasm/glob.js";
 import { GrepTool } from "./tools/wasm/grep.js";
 import { WriteFileTool } from "./tools/write-file.js";
-import { asErrorString } from "./utils/index.js";
 
 interface TeammateArgs {
   teamDir: string;
@@ -191,7 +190,7 @@ export async function buildTeammateRegistry(opts: {
         }
       }
       for (const { serverName, error } of result.errors) {
-        console.error(`MCP error [${serverName}]: ${error}`);
+        log.error({ serverName, error }, "MCP connection error");
       }
       // Decide the loading mode only after all tools have been registered
       if (result.tools.length > 0 && opts.contextWindow) {
@@ -199,7 +198,7 @@ export async function buildTeammateRegistry(opts: {
       }
     } catch (e) {
       // MCP connectivity failures should not crash the teammate process
-      console.error(`MCP setup failed: ${asErrorString(e)}`);
+      log.error({ err: e }, "MCP setup failed");
     }
   }
 
@@ -278,6 +277,7 @@ export async function runTeammate(args: TeammateArgs): Promise<void> {
         process.stdout.write(event.text);
         break;
       case "tool_result":
+        // eslint-disable-next-line no-console -- teammate stdout output
         console.log(
           `[${event.toolName}] ${event.isError ? "ERROR" : "OK"} (${event.elapsed.toFixed(1)}s)`,
         );
@@ -292,6 +292,7 @@ export async function runTeammate(args: TeammateArgs): Promise<void> {
         log.debug({ output }, "tool output");
         break;
       case "loop_complete":
+        // eslint-disable-next-line no-console -- teammate stdout output
         console.log("--- Task complete ---");
         log.info("task complete");
         break;
@@ -310,11 +311,13 @@ export async function runTeammate(args: TeammateArgs): Promise<void> {
   for await (const msg of mailbox.poll(2000)) {
     // Graceful shutdown: stop polling and exit when the lead requests it.
     if (isShutdownRequest(msg)) {
+      // eslint-disable-next-line no-console -- teammate stdout output
       console.log(`Shutdown requested, ${args.memberName} exiting.`);
       log.info({ memberName: args.memberName }, "shutdown requested, exiting");
       break;
     }
 
+    // eslint-disable-next-line no-console -- teammate stdout output
     console.log(`Message from ${msg.from}: ${msg.text}`);
     log.info({ from: msg.from, text: msg.text }, "message received");
     conversation.addUserMessage(msg.text);
