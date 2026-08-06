@@ -44,7 +44,7 @@ writeFileSync(join(workDir, "src", "md", "notes.md"), "function notes() {}\n");
 writeFileSync(join(workDir, "node_modules", "pkg", "index.js"), "function hidden() {}\n");
 writeFileSync(
   join(workDir, "unicode.txt"),
-  "这是一行中文注释\nemoji 😄 line\n全角数字１２３\nmixed 变量名abc end\nplain ascii only\n",
+  "中文注释\nemoji 😄 line\n全角数字１２３\nmixed 变量名abc end\nplain ascii only\n",
 );
 writeFileSync(join(workDir, "legacy.txt"), "match foo{ here\n");
 writeFileSync(join(workDir, "bin.dat"), Buffer.from("BINARY_NEEDLE\0\x01\x02binary junk"));
@@ -118,13 +118,13 @@ describe("GrepTool unicode", () => {
   const grep = new GrepTool();
 
   it("matches literal CJK text", async () => {
-    const res = await grep.execute(ctx, { pattern: "中文注释", include: "*.txt" });
-    expect(res.output).toContain("unicode.txt:1:这是一行中文注释");
+    const res = await grep.execute(ctx, { pattern: "注释", include: "*.txt" });
+    expect(res.output).toContain("unicode.txt:1:中文注释");
   });
 
   it("supports unicode property escapes", async () => {
     const res = await grep.execute(ctx, { pattern: "^\\p{Script=Han}+$", include: "*.txt" });
-    expect(res.output).toContain("unicode.txt:1:这是一行中文注释");
+    expect(res.output).toContain("unicode.txt:1:中文注释");
     expect(res.output).not.toContain("plain ascii only");
   });
 
@@ -144,6 +144,13 @@ describe("GrepTool unicode", () => {
   it("matches full-width digits with \\d", async () => {
     const res = await grep.execute(ctx, { pattern: "数字\\d{3}", include: "*.txt" });
     expect(res.output).toContain("unicode.txt:3:全角数字１２３");
+  });
+
+  it("supports ripgrep-style \\x{...} hex escapes", async () => {
+    const res = await grep.execute(ctx, { pattern: "[\\x{4e00}-\\x{9fff}]", include: "*.txt" });
+    expect(res.isError).toBe(false);
+    expect(res.output).toContain("unicode.txt:1:中文注释");
+    expect(res.output).not.toContain("plain ascii only");
   });
 
   it("falls back to legacy mode for patterns invalid in unicode mode", async () => {

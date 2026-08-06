@@ -49,7 +49,7 @@ const toolSchema: ToolSchema = {
   input_schema: inputSchema,
 };
 
-/** 够用的 MCP 工具替身：暴露 schema、记录收到的参数。 */
+/** A good-enough MCP tool stand-in: exposes its schema and records received arguments. */
 class FakeMcpTool implements MCPToolLike {
   name: string;
   description = "fake";
@@ -92,20 +92,24 @@ class FakeMcpTool implements MCPToolLike {
   }
 }
 
-// 强转契约：这七条四个语言必须逐条一致
-describe("coerceBySchema 契约", () => {
+// Coercion contract: these cases must match verbatim across all four languages
+describe("coerceBySchema contract", () => {
   const cases: [string, Record<string, unknown>, Record<string, unknown>][] = [
-    ["string ← 整数", { issueId: 8891 }, { issueId: "8891" }],
-    ["string ← 小数", { issueId: 1.5 }, { issueId: "1.5" }],
-    ["integer ← 数字串", { limit: "5" }, { limit: 5 }],
-    ["number ← 数字串带空白", { ratio: " 1.5 " }, { ratio: 1.5 }],
+    ["string ← integer", { issueId: 8891 }, { issueId: "8891" }],
+    ["string ← float", { issueId: 1.5 }, { issueId: "1.5" }],
+    ["integer ← numeric string", { limit: "5" }, { limit: 5 }],
+    ["number ← numeric string with whitespace", { ratio: " 1.5 " }, { ratio: 1.5 }],
     ["boolean ← true", { flag: "true" }, { flag: true }],
-    ["boolean ← 大写 FALSE", { flag: "FALSE" }, { flag: false }],
-    ["array ← 单键对象拆包", { labels: { item: ["a", "b"] } }, { labels: ["a", "b"] }],
-    ["array ← 逗号串", { labels: "a, b" }, { labels: ["a", "b"] }],
-    ["array 按 items 递归", { ports: ["8080", "9090"] }, { ports: [8080, 9090] }],
+    ["boolean ← uppercase FALSE", { flag: "FALSE" }, { flag: false }],
     [
-      "object 按 properties 递归，嵌套层同样适用",
+      "array ← single-key object unwrapped",
+      { labels: { item: ["a", "b"] } },
+      { labels: ["a", "b"] },
+    ],
+    ["array ← comma-separated string", { labels: "a, b" }, { labels: ["a", "b"] }],
+    ["array recurses through items", { ports: ["8080", "9090"] }, { ports: [8080, 9090] }],
+    [
+      "object recurses through properties, including nested levels",
       { config: { replicas: "4", features: { item: ["x"] } } },
       { config: { replicas: 4, features: ["x"] } },
     ],
@@ -116,13 +120,13 @@ describe("coerceBySchema 契约", () => {
     });
   }
 
-  test("boolean 不被当成数字转成字符串", () => {
+  test("boolean is not treated as a number and stringified", () => {
     expect(coerceBySchema({ issueId: true }, inputSchema)).toEqual({
       issueId: true,
     });
   });
 
-  test("转不了的原样保留，交给 MCP 服务器报它自己的错", () => {
+  test("values that cannot be coerced are passed through, letting the MCP server report its own error", () => {
     expect(coerceBySchema({ limit: "many" }, inputSchema)).toEqual({
       limit: "many",
     });
@@ -134,8 +138,8 @@ describe("coerceBySchema 契约", () => {
     });
   });
 
-  // 各语言的字符串转数字各有各的宽松处，这几条锁住四个语言都不接受的形状
-  test("integer 不截小数、不收下划线和指数", () => {
+  // String-to-number leniency differs per language; these cases pin down shapes all four languages reject
+  test("integer does not truncate floats, nor accept underscores or exponents", () => {
     expect(coerceBySchema({ limit: "5.7" }, inputSchema)).toEqual({
       limit: "5.7",
     });
@@ -148,7 +152,7 @@ describe("coerceBySchema 契约", () => {
     expect(coerceBySchema({ limit: "+5" }, inputSchema)).toEqual({ limit: 5 });
   });
 
-  test("number 收指数但不收 inf / nan", () => {
+  test("number accepts exponents but not inf / nan", () => {
     expect(coerceBySchema({ ratio: "1e3" }, inputSchema)).toEqual({
       ratio: 1000,
     });
@@ -160,26 +164,26 @@ describe("coerceBySchema 契约", () => {
     });
   });
 
-  test("array 收到多键对象时不猜，原样传下去", () => {
+  test("array given a multi-key object does not guess and passes it through", () => {
     const given = { labels: { item: "metrics", tracing: "" } };
     expect(coerceBySchema(given, inputSchema)).toEqual(given);
   });
 
-  test("schema 里没有的键不动", () => {
+  test("keys not present in the schema are left untouched", () => {
     expect(coerceBySchema({ extra: 1 }, inputSchema)).toEqual({ extra: 1 });
   });
 
-  test("已经正确的参数不动", () => {
+  test("already-correct arguments are left untouched", () => {
     const good = { issueId: "X-1", limit: 3, flag: false, ports: [1, 2] };
     expect(coerceBySchema(good, inputSchema)).toEqual(good);
   });
 
-  test("空 schema 是 no-op", () => {
+  test("empty schema is a no-op", () => {
     expect(coerceBySchema({ a: "1" }, {})).toEqual({ a: "1" });
   });
 });
 
-describe("McpCall 工具名解析", () => {
+describe("McpCall tool name resolution", () => {
   function setup() {
     const registry = new ToolRegistry();
     registry.mcpLoadingMode = "dispatch";
@@ -190,7 +194,7 @@ describe("McpCall 工具名解析", () => {
     return { registry, dispatcher, tool };
   }
 
-  test("全名", async () => {
+  test("fully qualified name", async () => {
     const { dispatcher, tool } = setup();
     const res = await dispatcher.execute(toolContext, {
       server: "linear",
@@ -201,8 +205,9 @@ describe("McpCall 工具名解析", () => {
     expect(tool.received).toEqual({ issueId: "A" });
   });
 
-  // 模型很常只传短名（实测约三成调用），必须容错，否则白白多一轮重试
-  test("server + 短名", async () => {
+  // Models very often pass only the short name (~30% of observed calls); this must be
+  // tolerated, otherwise we waste an extra retry round-trip
+  test("server + short name", async () => {
     const { dispatcher, tool } = setup();
     const res = await dispatcher.execute(toolContext, {
       server: "linear",
@@ -213,7 +218,7 @@ describe("McpCall 工具名解析", () => {
     expect(tool.received).toEqual({ issueId: "A" });
   });
 
-  test("服务器名写错时按后缀唯一匹配兜底", async () => {
+  test("misspelled server name falls back to a unique suffix match", async () => {
     const { dispatcher, tool } = setup();
     const res = await dispatcher.execute(toolContext, {
       server: "typo",
@@ -224,7 +229,7 @@ describe("McpCall 工具名解析", () => {
     expect(tool.received).toEqual({ issueId: "A" });
   });
 
-  test("后缀有歧义时报错并列出可用工具", async () => {
+  test("ambiguous suffix errors out and lists the available tools", async () => {
     const registry = new ToolRegistry();
     registry.register(new FakeMcpTool("linear", "create_issue"));
     registry.register(new FakeMcpTool("jira", "create_issue"));
@@ -238,7 +243,7 @@ describe("McpCall 工具名解析", () => {
     expect(res.output).toContain("mcp__linear__create_issue");
   });
 
-  test("转发之前先按 schema 强转", async () => {
+  test("coerces arguments against the schema before forwarding", async () => {
     const { dispatcher, tool } = setup();
     await dispatcher.execute(toolContext, {
       server: "linear",
@@ -249,30 +254,30 @@ describe("McpCall 工具名解析", () => {
   });
 });
 
-describe("三路分流", () => {
-  test("官方端点判定", () => {
+describe("three-way routing", () => {
+  test("official endpoint detection", () => {
     expect(isOfficialAnthropicEndpoint("")).toBe(true);
     expect(isOfficialAnthropicEndpoint("https://api.anthropic.com")).toBe(true);
     expect(isOfficialAnthropicEndpoint("https://api.minimaxi.com/anthropic")).toBe(false);
   });
 
-  test("schema 很小就全量上", () => {
+  test("small schema size loads everything eagerly", () => {
     expect(decideMode("https://proxy.example.com", 200000, 1000)).toBe("eager");
   });
 
-  test("没有 MCP 工具也全量上", () => {
+  test("no MCP tools at all also loads eagerly", () => {
     expect(decideMode("https://proxy.example.com", 200000, 0)).toBe("eager");
   });
 
-  test("官方端点走原生延迟", () => {
+  test("official endpoint uses native deferred loading", () => {
     expect(decideMode("", 200000, 500000)).toBe("native");
   });
 
-  test("第三方端点走 McpCall", () => {
+  test("third-party endpoint uses McpCall dispatch", () => {
     expect(decideMode("https://api.minimaxi.com/anthropic", 200000, 500000)).toBe("dispatch");
   });
 
-  test("只统计 MCP 工具的 schema 体量", () => {
+  test("only MCP tools count toward schema size", () => {
     const registry = new ToolRegistry();
     expect(measureSchemaChars(registry)).toBe(0);
     registry.register(new FakeMcpTool("linear", "create_issue", inputSchema));
@@ -280,12 +285,12 @@ describe("三路分流", () => {
   });
 });
 
-describe("applyMode 对 tools[] 的影响", () => {
+describe("applyMode effect on tools[]", () => {
   function mcpSchemas(registry: ToolRegistry) {
     return registry.getAllSchemas("anthropic").filter((s) => s.name.startsWith("mcp__"));
   }
 
-  test("eager: 进数组且不带 defer_loading", () => {
+  test("eager: included in the array without defer_loading", () => {
     const registry = new ToolRegistry();
     registry.register(new FakeMcpTool("linear", "create_issue", inputSchema));
     applyMode(registry, "eager");
@@ -294,7 +299,7 @@ describe("applyMode 对 tools[] 的影响", () => {
     expect(mcp[0].defer_loading).toBeUndefined();
   });
 
-  test("native：进数组且带 defer_loading", () => {
+  test("native: included in the array with defer_loading", () => {
     const registry = new ToolRegistry();
     registry.register(new FakeMcpTool("linear", "create_issue", inputSchema));
     applyMode(registry, "native");
@@ -303,15 +308,15 @@ describe("applyMode 对 tools[] 的影响", () => {
     expect(mcp[0].defer_loading).toBe(true);
   });
 
-  test("dispatch：完全不进数组", () => {
+  test("dispatch: excluded from the array entirely", () => {
     const registry = new ToolRegistry();
     registry.register(new FakeMcpTool("linear", "create_issue", inputSchema));
     applyMode(registry, "dispatch");
     expect(mcpSchemas(registry)).toHaveLength(0);
   });
 
-  test("openai 协议下不带出 defer_loading", () => {
-    // defer_loading 是 Anthropic 的字段
+  test("openai protocol does not leak defer_loading", () => {
+    // defer_loading is an Anthropic-only field
     const registry = new ToolRegistry();
     registry.register(new FakeMcpTool("linear", "create_issue", inputSchema));
     applyMode(registry, "native");
@@ -323,12 +328,13 @@ describe("applyMode 对 tools[] 的影响", () => {
   });
 });
 
-describe("权限 content 归一化", () => {
+describe("permission content normalization", () => {
   const cases: [string, string, string][] = [
     ["linear", "mcp__linear__create_issue", "linear__create_issue"],
     ["linear", "create_issue", "linear__create_issue"],
     ["chrome-2", "mcp__chrome_2__click", "chrome_2__click"],
-    // 短名和全名必须算出同一个 content，否则规则会漏匹配
+    // Short name and fully qualified name must produce the same content,
+    // otherwise permission rules would fail to match
     ["chrome-devtools", "click", "chrome_devtools__click"],
     ["chrome-devtools", "mcp__chrome_devtools__click", "chrome_devtools__click"],
   ];
@@ -338,7 +344,7 @@ describe("权限 content 归一化", () => {
     });
   }
 
-  test("extractContent 把 McpCall 路由到归一化逻辑", () => {
+  test("extractContent routes McpCall to the normalization logic", () => {
     expect(
       extractContent("McpCall", {
         server: "linear",
@@ -347,22 +353,24 @@ describe("权限 content 归一化", () => {
     ).toBe("linear__create_issue");
   });
 
-  test("其他工具的 content 抽取不变", () => {
+  test("content extraction for other tools is unchanged", () => {
     expect(extractContent("Bash", { command: "ls" })).toBe("ls");
     expect(extractContent("mcp__linear__create_issue", { title: "x" })).toBe("");
   });
 });
 
-// beta header 的开关条件：只有工具真带了 defer_loading 才发。
+// Gate for the beta header: send it only when some tool actually carries defer_loading.
 //
-// 官方端点这条路没法拿第三方端点真机验证，这里只能盯住请求该长什么样：header
-// 漏了，defer_loading 会被服务端直接拒；header 多发了，不认识它的端点也会拒。
-describe("原生延迟的 beta header", () => {
-  test("没有工具", () => {
+// The official-endpoint path cannot be verified against third-party endpoints in the wild,
+// so we pin down exactly what the request must look like: a missing header makes the server
+// reject defer_loading outright, while sending it to an endpoint that does not recognize it
+// gets rejected just the same.
+describe("beta header for native deferred loading", () => {
+  test("no tools", () => {
     expect(needsToolSearchBeta([])).toBe(false);
   });
 
-  test("工具都不延迟", () => {
+  test("no tool is deferred", () => {
     expect(
       needsToolSearchBeta([
         { ...toolSchema, name: "Bash" },
@@ -371,7 +379,7 @@ describe("原生延迟的 beta header", () => {
     ).toBe(false);
   });
 
-  test("有一个带 defer_loading", () => {
+  test("one tool carries defer_loading", () => {
     expect(
       needsToolSearchBeta([
         { ...toolSchema, name: "Bash" },
@@ -380,32 +388,33 @@ describe("原生延迟的 beta header", () => {
     ).toBe(true);
   });
 
-  test("defer_loading 是 false 不算", () => {
+  test("defer_loading set to false does not count", () => {
     expect(needsToolSearchBeta([{ ...toolSchema, name: "x", defer_loading: false }])).toBe(false);
   });
 });
 
-describe("工具命名", () => {
-  test("双下划线分隔", () => {
+describe("tool naming", () => {
+  test("double underscore separator", () => {
     expect(buildMcpToolName("linear", "create_issue")).toBe("mcp__linear__create_issue");
   });
 
-  test("横杠和点都换成下划线，与 Go/Python 一致", () => {
+  test("hyphens and dots become underscores, consistent with Go/Python", () => {
     expect(buildMcpToolName("chrome-devtools", "take.snapshot")).toBe(
       "mcp__chrome_devtools__take_snapshot",
     );
   });
 
-  test("前缀助手与拼出来的名字对得上", () => {
+  test("the prefix helper matches the composed name", () => {
     expect(buildMcpToolName("chrome-2", "click").startsWith(mcpToolNamePrefix("chrome-2"))).toBe(
       true,
     );
   });
 });
 
-// 检索和分发只在用得上的模式里发给模型。eager 下 MCP 工具全在 tools[] 里，
-// 既没有可搜的对象也不需要分发入口，两个都发过去只是白占 token。
-describe("按模式决定发哪些工具", () => {
+// Search and dispatch tools are only sent to the model in modes that need them. In eager
+// mode every MCP tool is already in tools[], so there is nothing to search and no dispatch
+// entry point needed — sending both would just waste tokens.
+describe("per-mode tool selection", () => {
   function names(mode: McpLoadingMode): string[] {
     const registry = new ToolRegistry();
     registry.register(new ToolSearchTool(registry));
@@ -418,20 +427,20 @@ describe("按模式决定发哪些工具", () => {
       .sort();
   }
 
-  test("eager：两个都不发", () => {
+  test("eager: neither is sent", () => {
     expect(names("eager")).toEqual(["mcp__linear__create_issue"]);
   });
 
-  test("native：只发 ToolSearch", () => {
+  test("native: only ToolSearch is sent", () => {
     expect(names("native")).toEqual(["ToolSearch", "mcp__linear__create_issue"]);
   });
 
-  test("dispatch：两个都发，MCP 工具不发", () => {
+  test("dispatch: both are sent, MCP tools are not", () => {
     expect(names("dispatch")).toEqual(["McpCall", "ToolSearch"]);
   });
 
-  test("没连 MCP 时两个都不发", () => {
-    // applyMode 不会被调用，开关保持默认关闭
+  test("neither is sent when no MCP server is connected", () => {
+    // applyMode is never called, so the toggles stay off by default
     const registry = new ToolRegistry();
     registry.register(new ToolSearchTool(registry));
     registry.register(new McpCallTool(registry));

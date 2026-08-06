@@ -68,6 +68,15 @@ function toUnicodePattern(pattern: string): string {
     const ch = pattern.charAt(i);
     if (ch === "\\" && i + 1 < pattern.length) {
       const next = pattern.charAt(i + 1);
+      if (next === "x") {
+        // ripgrep/PCRE hex escape \x{FFFF} → JS u-mode \u{FFFF}.
+        const braced = /^\{[0-9a-fA-F]{1,6}\}/.exec(pattern.slice(i + 2));
+        if (braced) {
+          out += `\\u${braced[0]}`;
+          i += 1 + braced[0].length;
+          continue;
+        }
+      }
       const rep = inClass ? IN_CLASS.get(next) : TOP_LEVEL.get(next);
       out += rep ?? ch + next;
       i++;
