@@ -29,7 +29,6 @@ import { parse, z } from "zod";
 
 import { createChildLogger } from "../logger/logger.js";
 
-import { loadBuiltins } from "./builtins.js";
 import type { Skill, SkillMeta } from "./skill.js";
 
 import { asRecord, strArg } from "@/utils/index.js";
@@ -56,15 +55,6 @@ export class SkillCatalog {
 
   load(workDir: string): void {
     this.workDir = workDir;
-    // Three-tier loading: later tiers override same-named skills from earlier tiers:
-    // Tier 1: Built-in skills (currently empty)
-    for (const skill of loadBuiltins()) {
-      this.entries.set(skill.meta.name, {
-        skill,
-        filePath: "",
-        loadedMtimeMs: 0,
-      });
-    }
 
     // Tier 2: User-global ~/.swifty/skills/
     // Tier 3: Project-level $workDir/.swifty/skills/ (highest priority)

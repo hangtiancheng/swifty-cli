@@ -87,12 +87,7 @@ export default defineConfig({
     // is missing, copyFileSync throws ENOENT — run `pnpm build` (which
     // triggers prebuild) instead of calling `tsup` directly.
 
-    // 1. builtin skills — SKILL.md + references, read by loadBuiltinFile()
-    cpSync(join(__dirname, "src/skills/builtin"), join(__dirname, "dist/builtin"), {
-      recursive: true,
-    });
-
-    // 2. glob.wasm — WebAssembly module backing the Glob/Grep tools; the
+    // 1. glob.wasm — WebAssembly module backing the Glob/Grep tools; the
     //    bundled wrapper loads it from next to the bundle entry at runtime
     //    (the wrapper also embeds the module as base64, but the file keeps
     //    the bundle small and debuggable). Unlike the old native addon this
