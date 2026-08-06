@@ -345,8 +345,20 @@ else
 	PKG_VERSION="$PACKAGE@latest"
 fi
 
+# Legacy standalone packages own the swifty/swiftx bin links; if left in
+# place, uninstalling them later would delete larky's bin links too.
+for LEGACY_PKG in "@swifty.js/swifty" "@swifty.js/swiftx"; do
+	if npm ls -g "$LEGACY_PKG" --depth=0 >/dev/null 2>&1; then
+		info "Removing legacy package $LEGACY_PKG..."
+		npm uninstall -g "$LEGACY_PKG" >/dev/null 2>&1 || true
+	fi
+done
+
 info "Installing $PKG_VERSION globally..."
-npm install -g "$PKG_VERSION" --registry=https://registry.npmjs.org/
+# --force overwrites stale swifty/swiftx bin links left behind by previous
+# installs of @swifty.js/swifty, @swifty.js/swiftx, or older larky versions;
+# without it npm aborts with EEXIST.
+npm install -g "$PKG_VERSION" --force --registry=https://registry.npmjs.org/
 
 # ── Verify ────────────────────────────────────────────────────────────
 # npm global bin should be on PATH. If not, print the prefix/bin hint.

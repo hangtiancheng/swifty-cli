@@ -39,6 +39,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **install.sh**: `npm install -g` now runs with `--force`, and legacy standalone global packages (`@swifty.js/swifty`, `@swifty.js/swiftx`) are uninstalled before installing larky. Fixes `EEXIST: file already exists` on the `swifty`/`swiftx` bin links left behind by previous installs.
+- **apps/larky**: dependencies on `@swifty.js/swifty` and `@swifty.js/swiftx` changed from `workspace:*` to `latest`, so fresh installs of `@swifty.js/larky` always resolve the newest swifty/swiftx without republishing larky on every dependency release. Root `package.json` gained `pnpm.overrides` mapping both packages back to `workspace:*` so local monorepo installs keep linking the workspace sources (overrides are dev-only and not published).
+
 - **apps/swifty**: Removed the content-addressed session image store (`src/images/store.ts`, `.swifty/sessions/<id>/images/`). Image blocks are now persisted inline as base64 in the session JSONL (matching how tool results already flow to providers), and resume reads them straight back — no `image_ref` indirection. `saveMessage`, `toolResultsToRecords`, and compaction boundary writes persist content verbatim; `persistableContent`, `sessionCtxFromFilePath`, and the expired-session `images/` cleanup were deleted along with the store.
 
 ### Known Issues

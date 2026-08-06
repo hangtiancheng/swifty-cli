@@ -43,8 +43,8 @@
     "publish:dev": "pnpm publish --access public --no-git-checks --registry=https://registry.npmjs.org/ --tag dev"
   },
   "dependencies": {
-    "@swifty.js/swifty": "workspace:*",
-    "@swifty.js/swiftx": "workspace:*"
+    "@swifty.js/swifty": "latest",
+    "@swifty.js/swiftx": "latest"
   },
   "devDependencies": {},
   "packageManager": "pnpm@10.33.1"
