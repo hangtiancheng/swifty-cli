@@ -70,8 +70,10 @@ function toUnicodePattern(pattern: string): string {
       const next = pattern.charAt(i + 1);
       if (next === "x") {
         // ripgrep/PCRE hex escape \x{FFFF} → JS u-mode \u{FFFF}.
-        const braced = /^\{[0-9a-fA-F]{1,6}\}/.exec(pattern.slice(i + 2));
-        if (braced) {
+        const braced = /^\{([0-9a-fA-F]{1,6})\}/.exec(pattern.slice(i + 2));
+        // Values above 0x10FFFF are invalid in both PCRE and JS u-mode; pass
+        // them through so compilation fails and the legacy fallback kicks in.
+        if (braced && Number.parseInt(braced[1], 16) <= 0x10ffff) {
           out += `\\u${braced[0]}`;
           i += 1 + braced[0].length;
           continue;

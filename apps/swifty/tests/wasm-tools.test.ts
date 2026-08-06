@@ -153,6 +153,12 @@ describe("GrepTool unicode", () => {
     expect(res.output).not.toContain("plain ascii only");
   });
 
+  it("does not crash on out-of-range \\x{...} values", async () => {
+    const res = await grep.execute(ctx, { pattern: "\\x{110000}", include: "*.txt" });
+    expect(res.isError).toBe(false);
+    expect(res.output).toContain("No matches found.");
+  });
+
   it("falls back to legacy mode for patterns invalid in unicode mode", async () => {
     const res = await grep.execute(ctx, { pattern: "foo{", include: "*.txt" });
     expect(res.isError).toBe(false);
