@@ -179,7 +179,7 @@ interface TurnSummaryBlockProps {
 
 function clampOutput(text: string): string {
   return text.length > 200
-    ? text.slice(0, 200) + `\n…${String(text.length - 200)} chars (ctrl+o to expand)`
+    ? text.slice(0, 200) + `\n… ${String(text.length - 200)} chars (ctrl+o to expand)`
     : text;
 }
 

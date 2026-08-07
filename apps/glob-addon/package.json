@@ -1,13 +1,21 @@
 {
   "name": "@swifty.js/glob-addon",
-  "version": "0.1.0",
-  "description": "High-performance glob matching for Node.js",
+  "version": "0.0.1",
+  "description": "Glob matching and scanning for Node.js, powered by C++",
   "main": "dist/glob.js",
   "types": "dist/glob.d.ts",
   "scripts": {
     "build": "node-gyp rebuild && tsc",
     "test": "tsc -p test && node --test",
-    "cmake": "cmake -S ./ -B ./build && cmake --build ./build"
+    "cmake": "cmake -S ./ -B ./build && cmake --build ./build",
+    "headers": "node scripts/download-node-headers.mjs",
+    "cross": "node scripts/cross-build.mjs",
+    "cross:darwin-arm64": "node scripts/cross-build.mjs darwin arm64",
+    "cross:darwin-x64": "node scripts/cross-build.mjs darwin x64",
+    "cross:linux-arm64": "node scripts/cross-build.mjs linux arm64",
+    "cross:linux-x64": "node scripts/cross-build.mjs linux x64",
+    "cross:windows-arm64": "node scripts/cross-build.mjs windows arm64",
+    "cross:windows-x64": "node scripts/cross-build.mjs windows x64"
   },
   "dependencies": {
     "node-addon-api": "^8.9.0"

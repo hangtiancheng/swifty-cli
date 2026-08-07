@@ -1,7 +1,7 @@
 {
   "name": "@swifty.js/glob-wasm",
-  "version": "1.0.0",
-  "description": "Bun.Glob-compatible glob matching and scanning for Node.js, powered by WebAssembly",
+  "version": "0.0.1",
+  "description": "Glob matching and scanning for Node.js, powered by WebAssembly",
   "main": "dist/glob.js",
   "types": "dist/glob.d.ts",
   "scripts": {
