@@ -205,13 +205,14 @@ target
 
 .swifty/
 **/.swifty/
-.larky/
-**/.larky/
+.swiftx/
+**/.swiftx/
 
 !apps/swifty/.swifty/
 apps/swifty/.swifty/*
 !apps/swifty/.swifty/config.yaml
 
-!apps/larky/.larky/
-apps/larky/.larky/*
-!apps/larky/.larky/config.yaml
+!apps/swiftx/.swiftx/
+apps/swiftx/.swiftx/*
+!apps/swiftx/.swiftx/config.yaml
+apps/swifty-agent/data

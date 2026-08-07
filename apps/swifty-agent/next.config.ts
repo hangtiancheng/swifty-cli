@@ -21,10 +21,18 @@
  */
 
 import type { NextConfig } from "next";
+import { fileURLToPath } from "node:url";
+import { dirname, resolve } from "node:path";
+
+const filename__ = fileURLToPath(import.meta.url);
+const dirname__ = dirname(filename__);
 
 const nextConfig: NextConfig = {
   // Native/binary deps with dynamic requires should not be bundled by webpack.
   serverExternalPackages: ["redis", "mysql2", "knex"],
+  turbopack: {
+    root: resolve(dirname__, "..", "..")
+  }
 };
 
 export default nextConfig;
