@@ -25,7 +25,7 @@ endif()
 get_filename_component(SCRIPT_DIR "${CMAKE_CURRENT_LIST_DIR}" ABSOLUTE)
 set(HEADERS_DIR "${SCRIPT_DIR}/node-headers/${NODE_VERSION}/${TARGET_PLATFORM}-${TARGET_ARCH}")
 
-if(NOT EXISTS "${HEADERS_DIR}/include/node/node_api.h")
+if(NOT EXISTS "${HEADERS_DIR}/node-${NODE_VERSION}/include/node/node_api.h")
   set(TARBALL "node-${NODE_VERSION}-headers.tar.gz")
   set(URL "https://nodejs.org/download/release/${NODE_VERSION}/${TARBALL}")
   set(DOWNLOAD_PATH "${HEADERS_DIR}/${TARBALL}")

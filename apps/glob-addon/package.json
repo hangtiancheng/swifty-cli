@@ -8,7 +8,7 @@
     "build": "node-gyp rebuild && tsc",
     "test": "tsc -p test && node --test",
     "cmake": "cmake -S ./ -B ./build_cmake -G Ninja && cmake --build ./build_cmake",
-    "headers": "node scripts/download-node-headers.mjs",
+    "headers": "node scripts/cross-build.mjs --headers-only",
     "cross": "node scripts/cross-build.mjs",
     "cross:darwin-arm64": "node scripts/cross-build.mjs darwin arm64",
     "cross:darwin-x64": "node scripts/cross-build.mjs darwin x64",

@@ -26,12 +26,15 @@ const allTargets = [
   ["windows", "x64"],
 ];
 
+const headersOnly = process.argv.includes("--headers-only");
+
 let targets;
-if (process.argv.length >= 4) {
-  const p = PLATFORM_MAP[process.argv[2]];
-  const a = ARCH_MAP[process.argv[3]];
+const positional = process.argv.slice(2).filter((a) => !a.startsWith("--"));
+if (positional.length >= 2) {
+  const p = PLATFORM_MAP[positional[0]];
+  const a = ARCH_MAP[positional[1]];
   if (!p || !a) {
-    console.error(`Unknown target: ${process.argv[2]}-${process.argv[3]}`);
+    console.error(`Unknown target: ${positional[0]}-${positional[1]}`);
     process.exit(1);
   }
   targets = [[p === "win" ? "windows" : p, a]];
@@ -57,6 +60,8 @@ for (const [platform, arch] of targets) {
       join(root, "cmake", "download-node-headers.cmake"),
     ], { stdio: "inherit", cwd: root });
   }
+
+  if (headersOnly) continue;
 
   const toolchainFile = join(root, "cmake", "toolchains", `${platform}-${TOOLCHAIN_ARCH[arch]}.cmake`);
   const buildDir = join(root, `build-${platform}-${arch}`);
