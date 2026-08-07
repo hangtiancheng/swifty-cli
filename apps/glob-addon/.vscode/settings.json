@@ -1,0 +1,18 @@
+{
+  "files.associations": {
+    "*.page-template": "vue",
+    "*.layout-template": "vue",
+    "*.vue": "vue",
+    "*.gyp": "json"
+  },
+  "cmake.ignoreCMakeListsMissing": true,
+  "cSpell.words": [
+    "DNAPI",
+    "gypfile",
+    "hangtiancheng",
+    "minimatch",
+    "stdc",
+    "STDCPPFS",
+    "swifty"
+  ]
+}
