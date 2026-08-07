@@ -20,10 +20,11 @@
  * SOFTWARE.
  */
 
-// Knowledge index pipeline: FileLoader → MarkdownHeaderSplitter → RedisIndexer
+// Knowledge index pipeline: FileLoader → RecursiveCharacterTextSplitter → RedisIndexer
 import { randomUUID } from "node:crypto";
 import { readdir } from "node:fs/promises";
 import path from "node:path";
+import { RecursiveCharacterTextSplitter } from "@langchain/textsplitters";
 import { loadFile } from "../loader";
 import { config } from "@/lib/config";
 import { indexChunks, deleteBySource, type IndexChunk } from "@/lib/redis/indexer";
@@ -33,44 +34,61 @@ interface MarkdownChunk {
   title: string;
 }
 
-// Split markdown by '#' headers; the header line is kept at the start of
-// each chunk's content.
-function splitMarkdownByHeader(content: string): MarkdownChunk[] {
-  const lines = content.split("\n");
-  const chunks: MarkdownChunk[] = [];
-  let title = "";
-  let acc: string[] = [];
+// Sizes match the proven swifty-chatbot RAG setup; 1000 chars stays far below
+// both the indexer's 8192-char storage cap and embedding-provider input
+// limits, so the embedded text is always identical to the stored text.
+const CHUNK_SIZE = 1000;
+const CHUNK_OVERLAP = 200;
 
-  const flush = () => {
-    if (acc.length > 0) {
-      chunks.push({ content: acc.join("\n"), title });
-    }
-  };
+const splitter = RecursiveCharacterTextSplitter.fromLanguage("markdown", {
+  chunkSize: CHUNK_SIZE,
+  chunkOverlap: CHUNK_OVERLAP,
+});
 
-  for (const line of lines) {
-    if (line.startsWith("# ")) {
-      flush();
-      title = line.slice(2).trim();
-      acc = [line];
-    } else {
-      acc.push(line);
+const HEADING_PATTERN = /^#{1,6} +(.+)$/;
+
+function headingsIn(chunk: string): string[] {
+  const titles: string[] = [];
+  for (const line of chunk.split("\n")) {
+    const match = HEADING_PATTERN.exec(line);
+    if (match) {
+      titles.push(match[1].trim());
     }
   }
-  flush();
+  return titles;
+}
+
+// Split markdown into retrieval chunks via LangChain's markdown-aware
+// recursive splitter. Each chunk is annotated with a section title: the first
+// heading inside the chunk, or the nearest heading carried over from earlier
+// chunks (chunks arrive in document order).
+async function splitMarkdown(content: string): Promise<MarkdownChunk[]> {
+  const parts = await splitter.splitText(content);
+  const chunks: MarkdownChunk[] = [];
+  let currentTitle = "";
+  for (const part of parts) {
+    const titles = headingsIn(part);
+    chunks.push({ content: part, title: titles[0] ?? currentTitle });
+    if (titles.length > 0) {
+      currentTitle = titles[titles.length - 1];
+    }
+  }
   return chunks;
 }
 
 // Build the knowledge index for a file: delete old records with the same
-// _source, split by markdown headers, embed and insert.
+// _source, split into chunks, embed and insert.
 export async function buildKnowledgeIndex(filePath: string): Promise<number> {
   const doc = await loadFile(filePath);
   await deleteBySource(doc.source);
-  const parts = splitMarkdownByHeader(doc.content);
-  const chunks: IndexChunk[] = parts.map((p) => ({
-    id: randomUUID(),
-    content: p.content,
-    metadata: { _source: doc.source, title: p.title },
-  }));
+  const parts = await splitMarkdown(doc.content);
+  const chunks: IndexChunk[] = parts
+    .filter((p) => p.content.trim() !== "")
+    .map((p) => ({
+      id: randomUUID(),
+      content: p.content,
+      metadata: { _source: doc.source, title: p.title },
+    }));
   return indexChunks(chunks);
 }
 
