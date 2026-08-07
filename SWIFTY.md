@@ -1,1 +1,1 @@
-@./apps/swifty/eslint.config.js
+@AGENTS.md
