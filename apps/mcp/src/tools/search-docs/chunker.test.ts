@@ -1,37 +1,66 @@
 import { describe, expect, it } from "vitest";
 
-import { splitMarkdownByHeader } from "./chunker.js";
+import { CHUNK_OVERLAP, CHUNK_SIZE, splitMarkdown } from "./chunker.js";
 
-describe("splitMarkdownByHeader", () => {
-  it("splits on top-level headers and keeps the header line in the chunk", () => {
-    const md = "# One\nalpha\n# Two\nbeta\ngamma";
-    const chunks = splitMarkdownByHeader(md);
-    expect(chunks).toEqual([
-      { title: "One", content: "# One\nalpha" },
-      { title: "Two", content: "# Two\nbeta\ngamma" },
-    ]);
+describe("splitMarkdown", () => {
+  it("keeps a small document as a single chunk with its heading title", async () => {
+    const chunks = await splitMarkdown("# One\nalpha\nbeta");
+    expect(chunks).toHaveLength(1);
+    expect(chunks[0].title).toBe("One");
+    expect(chunks[0].content).toContain("alpha");
   });
 
-  it("keeps preamble before the first header as an untitled chunk", () => {
-    const md = "intro line\n\n# First\nbody";
-    const chunks = splitMarkdownByHeader(md);
-    expect(chunks).toHaveLength(2);
-    expect(chunks[0]).toEqual({ title: "", content: "intro line\n" });
-    expect(chunks[1].title).toBe("First");
+  it("splits large documents into chunks within the size budget", async () => {
+    const md = Array.from(
+      { length: 8 },
+      (_, i) => `# Section ${String(i)}\n${"word ".repeat(120)}`,
+    ).join("\n");
+    const chunks = await splitMarkdown(md);
+    expect(chunks.length).toBeGreaterThan(1);
+    for (const chunk of chunks) {
+      expect(chunk.content.length).toBeLessThanOrEqual(CHUNK_SIZE);
+    }
   });
 
-  it("ignores deeper headers (##) as split points", () => {
-    const md = "# Top\n## Sub\ntext";
-    expect(splitMarkdownByHeader(md)).toEqual([{ title: "Top", content: "# Top\n## Sub\ntext" }]);
+  it("annotates chunks with the nearest heading title", async () => {
+    const md = `# Alpha\n${"a ".repeat(400)}\n# Bravo\n${"b ".repeat(400)}`;
+    const chunks = await splitMarkdown(md);
+    expect(chunks.length).toBeGreaterThan(1);
+    // Every chunk maps to one of the two sections; order follows the document.
+    const titles = chunks.map((c) => c.title);
+    expect(titles[0]).toBe("Alpha");
+    expect(titles[titles.length - 1]).toBe("Bravo");
+    expect(new Set(titles)).toEqual(new Set(["Alpha", "Bravo"]));
   });
 
-  it("returns a single untitled chunk for files without headers", () => {
-    expect(splitMarkdownByHeader("plain text file")).toEqual([
-      { title: "", content: "plain text file" },
-    ]);
+  it("carries the previous heading into continuation chunks (overlap-aware)", async () => {
+    const md = `# Only Title\n${"text ".repeat(600)}`;
+    const chunks = await splitMarkdown(md);
+    expect(chunks.length).toBeGreaterThan(1);
+    for (const chunk of chunks) {
+      expect(chunk.title).toBe("Only Title");
+    }
   });
 
-  it("handles empty content", () => {
-    expect(splitMarkdownByHeader("")).toEqual([{ title: "", content: "" }]);
+  it("hard-splits pathological single lines", async () => {
+    const chunks = await splitMarkdown("x".repeat(CHUNK_SIZE * 3));
+    expect(chunks.length).toBeGreaterThan(1);
+    for (const chunk of chunks) {
+      expect(chunk.content.length).toBeLessThanOrEqual(CHUNK_SIZE);
+    }
+  });
+
+  it("returns no chunks for empty or whitespace-only content", async () => {
+    expect(await splitMarkdown("")).toEqual([]);
+    expect(await splitMarkdown("  \n  ")).toEqual([]);
+  });
+
+  it("uses an empty title for content without headings", async () => {
+    const chunks = await splitMarkdown("plain text file");
+    expect(chunks).toEqual([{ content: "plain text file", title: "" }]);
+  });
+
+  it("exposes sane constants", () => {
+    expect(CHUNK_OVERLAP).toBeLessThan(CHUNK_SIZE);
   });
 });

@@ -1,4 +1,4 @@
-import os from "node:os";
+import { homedir } from "node:os";
 import path from "node:path";
 
 import { z } from "zod";
@@ -26,6 +26,8 @@ export interface AppConfig {
   redis: RedisConfig;
   /** Directory scanned recursively for knowledge-base documents. */
   docsDir: string;
+  /** HTTP transport listen address (only used with --http). */
+  host: string;
   /** HTTP transport listen port (only used with --http). */
   port: number;
 }
@@ -39,8 +41,11 @@ const EnvSchema = z.object({
   REDIS_URL: z.string().default("redis://localhost:6379"),
   REDIS_INDEX_NAME: z.string().default("idx:swifty"),
   REDIS_KEY_PREFIX: z.string().default("swifty:"),
-  SWIFTY_DOCS_DIR: z.string().optional(),
-  PORT: z.coerce.number().int().positive().default(3300),
+  SWIFTY_DOCS_DIR: z.string().default(path.resolve(homedir(), ".swifty", "docs")),
+  // .catch: a malformed HOST/PORT in the environment must degrade to the
+  // default instead of crashing the stdio server at startup.
+  HOST: z.string().default("127.0.0.1"),
+  PORT: z.coerce.number().int().positive().default(3300).catch(3300),
 });
 
 /** Empty strings behave as "unset" so placeholder env entries don't mask defaults. */
@@ -92,7 +97,8 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
       indexName: parsed.REDIS_INDEX_NAME,
       keyPrefix: parsed.REDIS_KEY_PREFIX,
     },
-    docsDir: parsed.SWIFTY_DOCS_DIR ?? path.join(os.homedir(), ".swifty", "docs"),
+    docsDir: parsed.SWIFTY_DOCS_DIR,
+    host: parsed.HOST,
     port: parsed.PORT,
   };
 }

@@ -34,6 +34,14 @@ export async function indexChunks(ctx: SearchDocsContext, chunks: IndexChunk[]):
   return chunks.length;
 }
 
+/** Thrown when another server instance holds the per-source delete lock. */
+export class LockConflictError extends Error {
+  constructor(source: string) {
+    super(`another deletion is in progress for source "${source}"`);
+    this.name = "LockConflictError";
+  }
+}
+
 // Delete all chunks whose _source TAG matches `source`. Redis has no
 // DELETE-WHERE, so search-then-delete in batches. A SETNX lock guards against
 // concurrent deletions of the same source from parallel server instances
@@ -45,7 +53,7 @@ export async function deleteBySource(ctx: SearchDocsContext, source: string): Pr
   // 30s TTL as a safety net against deadlocks from crashed holders.
   const acquired = await ctx.client.set(lockKey, "1", { NX: true, EX: 30 });
   if (!acquired) {
-    throw new Error(`cannot acquire delete lock for source "${source}"`);
+    throw new LockConflictError(source);
   }
 
   try {

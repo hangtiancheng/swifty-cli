@@ -15,6 +15,10 @@ function shutdown(reason: string, closeTransport: () => Promise<void>): void {
   }
   shuttingDown = true;
   logger.info({ reason }, "shutting down");
+  // Safety net: a wedged transport/module must never keep the process alive.
+  setTimeout(() => {
+    process.exit(0);
+  }, 5000).unref();
   void (async () => {
     try {
       await closeTransport();
@@ -45,16 +49,9 @@ async function main(): Promise<void> {
   const useHttp = process.argv.includes("--http") || process.env["MCP_TRANSPORT"] === "http";
 
   if (useHttp) {
-    const { port } = loadConfig();
-    const httpServer = startHttpServer(port);
-    registerSignalHandlers(
-      () =>
-        new Promise<void>((resolve) => {
-          httpServer.close(() => {
-            resolve();
-          });
-        }),
-    );
+    const { host, port } = loadConfig();
+    const httpServer = startHttpServer(host, port);
+    registerSignalHandlers(() => httpServer.close());
   } else {
     const server = createServer();
     const transport = new StdioServerTransport();

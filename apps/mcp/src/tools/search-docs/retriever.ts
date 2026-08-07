@@ -76,13 +76,15 @@ export async function retrieve(
   const result = SearchResultSchema.parse(raw);
   const prefix = ctx.redis.keyPrefix;
 
-  return result.documents
-    .map((doc) => ({
-      id: doc.id.startsWith(prefix) ? doc.id.slice(prefix.length) : doc.id,
-      content: String(doc.value.content ?? ""),
-      metadata: parseMetadata(doc.value.metadata),
-      score: distanceToScore(doc.value.__vector_score),
-    }))
-    // RediSearch does not guarantee KNN results ordered by distance.
-    .sort((a, b) => b.score - a.score);
+  return (
+    result.documents
+      .map((doc) => ({
+        id: doc.id.startsWith(prefix) ? doc.id.slice(prefix.length) : doc.id,
+        content: String(doc.value.content ?? ""),
+        metadata: parseMetadata(doc.value.metadata),
+        score: distanceToScore(doc.value.__vector_score),
+      }))
+      // RediSearch does not guarantee KNN results ordered by distance.
+      .sort((a, b) => b.score - a.score)
+  );
 }

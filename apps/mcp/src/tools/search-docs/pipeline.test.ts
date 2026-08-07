@@ -1,6 +1,7 @@
 import { createClient } from "redis";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { LockConflictError } from "./indexer.js";
 import { buildChunks, syncDocs } from "./pipeline.js";
 import type { SearchDocsContext } from "./redis-client.js";
 import { sha256 } from "./utils.js";
@@ -21,7 +22,10 @@ const scannerMocks = vi.hoisted(() => ({
   scanDocsDir: vi.fn<() => Promise<{ source: string; content: string }[]>>(async () => []),
 }));
 
-vi.mock("./indexer.js", () => indexerMocks);
+vi.mock("./indexer.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./indexer.js")>();
+  return { ...indexerMocks, LockConflictError: actual.LockConflictError };
+});
 vi.mock("./scanner.js", () => scannerMocks);
 
 function makeCtx(): SearchDocsContext {
@@ -43,15 +47,16 @@ beforeEach(() => {
 });
 
 describe("buildChunks", () => {
-  it("assigns deterministic ids derived from the source", () => {
-    const chunks = buildChunks("a.md", "# One\nx\n# Two\ny");
+  it("assigns deterministic ids derived from the source", async () => {
+    const chunks = await buildChunks("a.md", "# One\nx\n\n# Two\ny");
     const prefix = sha256("a.md");
-    expect(chunks.map((c) => c.id)).toEqual([`${prefix}:0`, `${prefix}:1`]);
-    expect(buildChunks("a.md", "# One\nx\n# Two\ny")).toEqual(chunks);
+    expect(chunks.length).toBeGreaterThan(0);
+    expect(chunks.map((c) => c.id)).toEqual(chunks.map((_, i) => `${prefix}:${String(i)}`));
+    expect(await buildChunks("a.md", "# One\nx\n\n# Two\ny")).toEqual(chunks);
   });
 
-  it("filters blank chunks and records source/title metadata", () => {
-    const chunks = buildChunks("a.md", "\n\n# Title\nbody");
+  it("filters blank chunks and records source/title metadata", async () => {
+    const chunks = await buildChunks("a.md", "\n\n# Title\nbody");
     expect(chunks).toHaveLength(1);
     expect(chunks[0].metadata).toEqual({ _source: "a.md", title: "Title" });
   });
@@ -115,5 +120,16 @@ describe("syncDocs", () => {
       "good.md",
       expect.any(String),
     );
+  });
+
+  it("counts lock conflicts as skipped, not failed", async () => {
+    scannerMocks.scanDocsDir.mockResolvedValue([{ source: "busy.md", content: "# Busy" }]);
+    indexerMocks.deleteBySource.mockRejectedValueOnce(new LockConflictError("busy.md"));
+
+    const stats = await syncDocs(makeCtx(), "/docs");
+
+    expect(stats.skipped).toBe(1);
+    expect(stats.failed).toBe(0);
+    expect(indexerMocks.writeSourceHash).not.toHaveBeenCalled();
   });
 });

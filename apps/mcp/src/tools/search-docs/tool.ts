@@ -13,12 +13,30 @@ type EngineState =
   | { status: "ready"; ctx: SearchDocsContext }
   | { status: "degraded"; reason: string };
 
-// Process-wide engine singleton: initialization runs once in the background
-// and every tool call (from any transport session) awaits the same promise.
+// Fast phase budget (connect + dimension probe + index check). Callers sit on
+// the MCP client's 60s call timeout, so a hanging provider must degrade early.
+const INIT_TIMEOUT_MS = 15_000;
+// A degraded engine retries at most this often (Redis/provider may come back
+// up mid-session without restarting the CLI).
+const DEGRADED_RETRY_MS = 30_000;
+
+// Process-wide engine singleton shared by every transport session.
 let statePromise: Promise<EngineState> | null = null;
+let settled: EngineState | null = null;
+let lastDegradedAt = 0;
 
 function getState(): Promise<EngineState> {
-  statePromise ??= initEngine();
+  if (settled?.status === "degraded" && Date.now() - lastDegradedAt >= DEGRADED_RETRY_MS) {
+    statePromise = null;
+    settled = null;
+  }
+  statePromise ??= initEngine().then((state) => {
+    settled = state;
+    if (state.status === "degraded") {
+      lastDegradedAt = Date.now();
+    }
+    return state;
+  });
   return statePromise;
 }
 
@@ -26,11 +44,30 @@ function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`${label} timed out after ${String(ms)}ms`));
+    }, ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (err: unknown) => {
+        clearTimeout(timer);
+        reject(err instanceof Error ? err : new Error(String(err)));
+      },
+    );
+  });
+}
+
 /**
- * Build the engine, degrading (never throwing) on any failure: a missing
- * embedding config, an unreachable provider, or a Redis without RediSearch
- * must not crash the server — the tool stays registered and reports why it
- * is unavailable.
+ * Two-phase initialization, degrading (never throwing) on any failure:
+ * - fast phase (awaited): config check, Redis connect, dimension probe +
+ *   index ensure — after this queries can already run against existing data;
+ * - background phase (fire-and-forget): incremental docs sync, so a large
+ *   knowledge base never blocks the first tool call into the client timeout.
  */
 async function initEngine(): Promise<EngineState> {
   const config = loadConfig();
@@ -44,7 +81,11 @@ async function initEngine(): Promise<EngineState> {
 
   let ctx: SearchDocsContext;
   try {
-    const client = await connectRedis(config.redis);
+    const client = await withTimeout(
+      connectRedis(config.redis),
+      INIT_TIMEOUT_MS,
+      "redis connection",
+    );
     ctx = { client, embedder, redis: config.redis };
   } catch (err) {
     const reason =
@@ -55,8 +96,7 @@ async function initEngine(): Promise<EngineState> {
   }
 
   try {
-    await ensureIndex(ctx);
-    await syncDocs(ctx, config.docsDir);
+    await withTimeout(ensureIndex(ctx), INIT_TIMEOUT_MS, "vector index initialization");
   } catch (err) {
     await closeRedis(ctx.client);
     const reason =
@@ -66,7 +106,11 @@ async function initEngine(): Promise<EngineState> {
     return { status: "degraded", reason };
   }
 
-  logger.info("search_docs ready");
+  void syncDocs(ctx, config.docsDir).catch((err: unknown) => {
+    logger.warn({ err }, "background docs sync failed");
+  });
+
+  logger.info("search_docs ready (docs sync continues in the background)");
   return { status: "ready", ctx };
 }
 
@@ -152,12 +196,11 @@ export const searchDocsModule: ToolModule = {
   },
 
   async shutdown(): Promise<void> {
-    if (!statePromise) {
-      return;
-    }
-    const state = await statePromise.catch(() => null);
-    if (state !== null && state.status === "ready") {
-      await closeRedis(state.ctx.client);
+    // Never wait for an in-flight init/sync (the CLI client force-kills after
+    // ~4s); only close what is already connected. In-flight work dies with
+    // the process.
+    if (settled?.status === "ready") {
+      await closeRedis(settled.ctx.client);
     }
   },
 };

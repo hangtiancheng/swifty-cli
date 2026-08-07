@@ -70,18 +70,27 @@ mcp_servers:
   #   transport: sse                         # optional, string — "sse" for SSE; any other value/omitted
   #                                          #   uses streamable HTTP (only relevant with `url`)
   #   headers: { Authorization: "Bearer x" } # optional, map<string, string>, default: {} — HTTP headers
+  
   # Swifty official MCP tools (apps/mcp) — embedding-powered docs search (RAG)
   # over ~/.swifty/docs. Requires Redis Stack (RediSearch) + an OpenAI-compatible
   # embedding endpoint; on any failure the tool degrades gracefully.
-  # Remote transports (start the server with `swifty-mcp --http`, default port 3300):
+  #
+  # Launch forms for `command`/`args` (pick one):
+  #   pnpm --filter (below) — monorepo dev; requires swifty to be launched from
+  #     inside this repo (the child process inherits swifty's cwd).
+  #   command: npx,  args: ["-y", "@swifty.js/mcp"]        # after npm publish
+  #   command: pnpm, args: ["dlx", "@swifty.js/mcp"]       # after npm publish
+  #   command: node, args: ["/abs/path/to/apps/mcp/dist/main.js"]  # cwd-independent fallback
+  #
+  # Remote transports (start the server with `swifty-mcp --http`, default 127.0.0.1:3300):
   #   - name: swifty-mcp
   #     url: http://localhost:3300/mcp        # Streamable HTTP
   #   - name: swifty-mcp
   #     url: http://localhost:3300/sse        # legacy SSE
   #     transport: sse
   - name: "swifty-mcp"
-    command: node
-    args: ["/Users/hangtiancheng/github/swifty-cli/apps/mcp/dist/main.js"] # dev: tsx apps/mcp/src/main.ts
+    command: pnpm
+    args: ["--filter", "@swifty.js/mcp", "exec", "node", "dist/main.js"]
     env:
       EMBEDDING_MODEL: "text-embedding-v4"
       EMBEDDING_PROTOCOL: "openai" # optional, default "openai" (the only supported value for now)

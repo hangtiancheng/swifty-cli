@@ -1,5 +1,3 @@
-import type { Server } from "node:http";
-
 import { bodyParser } from "@koa/bodyparser";
 import Router from "@koa/router";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
@@ -9,14 +7,19 @@ import Koa from "koa";
 import { createServer } from "./server.js";
 import { logger } from "./shared/logger.js";
 
+export interface HttpServerHandle {
+  /** Close SSE streams and all sockets; resolves when the listener is down. */
+  close(): Promise<void>;
+}
+
 /**
  * HTTP transports host. Exposes both remote MCP transports on one port:
  * - Streamable HTTP:  POST /mcp        (stateless, JSON responses)
  * - legacy SSE:       GET /sse + POST /messages?sessionId=...
- * No authentication in this iteration: intended for localhost / trusted
- * networks only.
+ * No authentication in this iteration: binds to localhost by default and is
+ * intended for local / trusted networks only.
  */
-export function startHttpServer(port: number): Server {
+export function startHttpServer(host: string, port: number): HttpServerHandle {
   const app = new Koa();
   const router = new Router();
 
@@ -79,10 +82,31 @@ export function startHttpServer(port: number): Server {
   app.use(router.routes());
   app.use(router.allowedMethods());
 
-  return app.listen(port, () => {
+  const server = app.listen(port, host, () => {
     logger.info(
-      { port, streamableHttp: "POST /mcp", sse: "GET /sse, POST /messages?sessionId=..." },
+      { host, port, streamableHttp: "POST /mcp", sse: "GET /sse, POST /messages?sessionId=..." },
       "MCP HTTP server listening",
     );
   });
+
+  return {
+    async close(): Promise<void> {
+      // Long-lived SSE responses would keep server.close() waiting forever;
+      // shut the transports first, then drop any remaining sockets.
+      for (const transport of sseTransports.values()) {
+        try {
+          await transport.close();
+        } catch {
+          // Best-effort: the stream may already be gone.
+        }
+      }
+      sseTransports.clear();
+      server.closeAllConnections();
+      await new Promise<void>((resolve) => {
+        server.close(() => {
+          resolve();
+        });
+      });
+    },
+  };
 }

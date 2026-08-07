@@ -1,8 +1,9 @@
 import { logger } from "../../shared/logger.js";
-import { splitMarkdownByHeader } from "./chunker.js";
+import { splitMarkdown } from "./chunker.js";
 import {
   deleteBySource,
   indexChunks,
+  LockConflictError,
   readSourceHashes,
   removeSourceHash,
   writeSourceHash,
@@ -21,9 +22,10 @@ export interface SyncStats {
 }
 
 /** Split a document into index chunks with deterministic ids (idempotent re-index). */
-export function buildChunks(source: string, content: string): IndexChunk[] {
+export async function buildChunks(source: string, content: string): Promise<IndexChunk[]> {
   const sourceHash = sha256(source);
-  return splitMarkdownByHeader(content)
+  const parts = await splitMarkdown(content);
+  return parts
     .filter((part) => part.content.trim() !== "")
     .map((part, i) => ({
       id: `${sourceHash}:${String(i)}`,
@@ -37,7 +39,9 @@ export function buildChunks(source: string, content: string): IndexChunk[] {
  * - unchanged files (same content sha256 as the recorded one) are skipped,
  * - new/changed files are delete-then-reindexed under their _source,
  * - records of files deleted from disk are removed from the index.
- * Per-file failures are logged and skipped so one bad file never aborts the sync.
+ * Per-file failures are logged and skipped so one bad file never aborts the
+ * sync; a lock conflict means a sibling server instance is already handling
+ * that source and counts as skipped, not failed.
  */
 export async function syncDocs(ctx: SearchDocsContext, docsDir: string): Promise<SyncStats> {
   const docs = await scanDocsDir(docsDir);
@@ -54,11 +58,16 @@ export async function syncDocs(ctx: SearchDocsContext, docsDir: string): Promise
     }
     try {
       await deleteBySource(ctx, doc.source);
-      const count = await indexChunks(ctx, buildChunks(doc.source, doc.content));
+      const count = await indexChunks(ctx, await buildChunks(doc.source, doc.content));
       await writeSourceHash(ctx, doc.source, hash);
       stats.indexed++;
       stats.chunks += count;
     } catch (err) {
+      if (err instanceof LockConflictError) {
+        stats.skipped++;
+        logger.info({ source: doc.source }, "another instance is indexing this source, skipping");
+        continue;
+      }
       stats.failed++;
       logger.warn({ err, source: doc.source }, "failed to index document");
     }
@@ -73,6 +82,10 @@ export async function syncDocs(ctx: SearchDocsContext, docsDir: string): Promise
       await removeSourceHash(ctx, source);
       stats.removed++;
     } catch (err) {
+      if (err instanceof LockConflictError) {
+        stats.skipped++;
+        continue;
+      }
       stats.failed++;
       logger.warn({ err, source }, "failed to remove deleted document from index");
     }
