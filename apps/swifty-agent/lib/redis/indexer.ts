@@ -98,7 +98,9 @@ export async function deleteBySource(source: string): Promise<void> {
   }
 }
 
-// Redis TAG query requires escaping special characters; see RediSearch docs.
+// Redis TAG query requires escaping special characters (`-`, `.`, spaces,
+// punctuation...); escape everything except letters, numbers and underscore
+// so filenames like "upload-test.md" don't break the query syntax.
 function escapeTagValue(value: string): string {
-  return value.replace(/[,;<>(){}\[\]!"#$%&'*+/=?@^`|~\\]/g, "\\$&");
+  return value.replace(/[^\p{L}\p{N}_]/gu, "\\$&");
 }

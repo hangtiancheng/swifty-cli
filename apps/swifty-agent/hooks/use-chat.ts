@@ -32,6 +32,8 @@ export interface ChatMessage {
   content: string;
   /** Optional step details for AI Ops results. */
   detail?: string[];
+  /** Transient: reply not yet arrived — render a thinking placeholder. */
+  pending?: boolean;
 }
 
 export interface ChatHistory {
@@ -237,6 +239,9 @@ export function useChat() {
 
       try {
         if (mode === "quick") {
+          // Show a thinking placeholder until the reply arrives.
+          currentMsgs = [...currentMsgs, { type: "assistant", content: "", pending: true }];
+          setMessages(currentMsgs);
           const resp = await fetch("/api/chat", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -247,7 +252,7 @@ export function useChat() {
           if (!parsed.success) throw new Error("invalid chat response");
           const answer = parsed.data.data?.answer;
           if (parsed.data.message === "OK" && answer) {
-            currentMsgs = [...currentMsgs, { type: "assistant", content: answer }];
+            currentMsgs = [...currentMsgs.slice(0, -1), { type: "assistant", content: answer }];
             setMessages(currentMsgs);
           } else {
             throw new Error(parsed.data.message || "Unknown error");
@@ -266,8 +271,37 @@ export function useChat() {
           let buffer = "";
           let full = "";
           let currentEvent = "";
-          currentMsgs = [...currentMsgs, { type: "assistant", content: "" }];
+          let dataLines: string[] = [];
+          currentMsgs = [...currentMsgs, { type: "assistant", content: "", pending: true }];
           setMessages(currentMsgs);
+
+          // Dispatch one complete SSE event: per spec, multiple `data:` lines
+          // belong to the same event and are joined with "\n" — this is how
+          // newlines inside streamed chunks survive the transport.
+          const dispatchEvent = () => {
+            if (dataLines.length === 0) {
+              currentEvent = "";
+              return;
+            }
+            const payload = dataLines.join("\n");
+            dataLines = [];
+            const event = currentEvent;
+            currentEvent = "";
+            if (event === "message") {
+              full += payload;
+              currentMsgs = [
+                ...currentMsgs.slice(0, -1),
+                { type: "assistant" as const, content: full },
+              ];
+              setMessages(currentMsgs);
+            } else if (event === "error") {
+              // P1-3 fix: surface server-side error events instead of
+              // silently ignoring them.
+              throw new Error(payload || "Stream error");
+            }
+            // "done" event: clean termination — the reader will return
+            // done=true on the next read and the loop will break.
+          };
 
           while (true) {
             // Check abort before each read so unmount cancels promptly (P1-1 fix).
@@ -280,27 +314,20 @@ export function useChat() {
             for (const rawLine of lines) {
               // Strip trailing \r for SSE spec compliance (\r\n line endings).
               const line = rawLine.endsWith("\r") ? rawLine.slice(0, -1) : rawLine;
+              // Blank line terminates the current event.
+              if (line === "") {
+                dispatchEvent();
+                continue;
+              }
               if (line.startsWith("id: ")) continue;
               if (line.startsWith("event: ")) {
                 currentEvent = line.slice(7);
                 continue;
               }
               if (line.startsWith("data: ")) {
-                const d = line.slice(6);
-                if (currentEvent === "message") {
-                  full += d === "" ? "\n" : d;
-                  currentMsgs = [
-                    ...currentMsgs.slice(0, -1),
-                    { type: "assistant" as const, content: full },
-                  ];
-                  setMessages(currentMsgs);
-                } else if (currentEvent === "error") {
-                  // P1-3 fix: surface server-side error events instead of
-                  // silently ignoring them.
-                  throw new Error(d || "Stream error");
-                }
-                // "done" event: clean termination — the reader will return
-                // done=true on the next read and the loop will break.
+                dataLines.push(line.slice(6));
+              } else if (line === "data:") {
+                dataLines.push("");
               }
             }
           }
@@ -309,11 +336,20 @@ export function useChat() {
         // AbortError: user navigated away — suppress the error message.
         if (e instanceof DOMException && e.name === "AbortError") return;
         const msg = e instanceof Error ? e.message : String(e);
-        currentMsgs = [...currentMsgs, { type: "assistant", content: "Error: " + msg }];
+        const errorMsg: ChatMessage = { type: "assistant", content: "Error: " + msg };
+        // Replace a trailing thinking placeholder instead of appending after it.
+        currentMsgs = currentMsgs.at(-1)?.pending
+          ? [...currentMsgs.slice(0, -1), errorMsg]
+          : [...currentMsgs, errorMsg];
         setMessages(currentMsgs);
       } finally {
         setStreamController(null);
         setIsStreaming(false);
+        // Clear a leftover thinking placeholder (e.g. stream ended empty).
+        if (currentMsgs.at(-1)?.pending) {
+          currentMsgs = currentMsgs.slice(0, -1);
+          setMessages(currentMsgs);
+        }
         // P1-2 fix: upsertHistory is called with the local messages array,
         // NOT inside a setMessages state updater.
         if (!controller.signal.aborted && currentMsgs.length > 0) {

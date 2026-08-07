@@ -24,7 +24,8 @@
 // Replaces lib/milvus/client.ts. Stores embeddings as native Float32 vectors
 // with HNSW + COSINE (vs. Milvus BinaryVector + HAMMING).
 import { createClient, type RedisClientType } from "redis";
-import { config, EMBEDDING_DIM } from "@/lib/config";
+import { embedText } from "@/lib/ai/embedder";
+import { config } from "@/lib/config";
 
 let clientPromise: Promise<RedisClientType> | null = null;
 
@@ -58,13 +59,15 @@ async function initClient(): Promise<RedisClientType> {
   return client;
 }
 
-// P1-7 fix: verify the existing index's vector dimension matches EMBEDDING_DIM.
-// If the embedding provider was switched (e.g. openai 2048d → ollama 768d)
-// without dropping the index, searches silently fail. We detect the mismatch
-// via FT.INFO and auto-recreate the index.
-// P2-12 fix: use FT.INFO to check index existence instead of locale-dependent
-// string matching on "Index already exists".
+// Probe the embedding provider for the real vector dimension and make the
+// index match it. The dimension is NOT taken from static config: the actual
+// model output is authoritative (e.g. a model returning 1024 floats while
+// config assumed 2048 made every HSET silently fail RediSearch indexing —
+// num_docs stayed 0 with hash_indexing_failures climbing). Also covers
+// provider switches (openai ↔ ollama): stored dim ≠ probed dim → recreate.
 async function ensureIndex(client: RedisClientType): Promise<void> {
+  const dim = (await embedText("dimension probe")).length;
+
   let indexExists = false;
   try {
     const info = await client.ft.info(config.redis.indexName);
@@ -74,9 +77,9 @@ async function ensureIndex(client: RedisClientType): Promise<void> {
     const vectorAttr = attrs.find((a) => a.attribute === "vector" || a.identifier === "vector");
     if (vectorAttr) {
       const storedDim = Number(vectorAttr.DIM ?? vectorAttr.dim ?? 0);
-      if (storedDim && storedDim !== EMBEDDING_DIM) {
+      if (storedDim && storedDim !== dim) {
         console.warn(
-          `[redis] Index dimension mismatch: stored=${storedDim}, expected=${EMBEDDING_DIM}. ` +
+          `[redis] Index dimension mismatch: stored=${storedDim}, actual=${dim}. ` +
             "Dropping and recreating index.",
         );
         await client.ft.dropIndex(config.redis.indexName);
@@ -90,6 +93,19 @@ async function ensureIndex(client: RedisClientType): Promise<void> {
   // If the index exists and dimension matches, nothing to do.
   if (indexExists) return;
 
+  // Clean slate: wipe all hashes under the prefix before (re)creating the
+  // index. Old vectors are useless after a dimension change, and RediSearch's
+  // background rescan would otherwise resurrect them as duplicates that
+  // source-based dedup can't see yet. Startup indexing repopulates the data.
+  for await (const keys of client.scanIterator({
+    MATCH: `${config.redis.keyPrefix}*`,
+    COUNT: 500,
+  })) {
+    if (keys.length > 0) {
+      await client.del(keys);
+    }
+  }
+
   // Create the RediSearch vector index.
   await client.ft.create(
     config.redis.indexName,
@@ -98,7 +114,7 @@ async function ensureIndex(client: RedisClientType): Promise<void> {
         type: "VECTOR",
         ALGORITHM: "HNSW",
         TYPE: "FLOAT32",
-        DIM: EMBEDDING_DIM,
+        DIM: dim,
         DISTANCE_METRIC: "COSINE",
       },
       content: { type: "TEXT" },

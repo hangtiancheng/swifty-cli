@@ -22,7 +22,10 @@
 
 // Knowledge index pipeline: FileLoader → MarkdownHeaderSplitter → RedisIndexer
 import { randomUUID } from "node:crypto";
+import { readdir } from "node:fs/promises";
+import path from "node:path";
 import { loadFile } from "../loader";
+import { config } from "@/lib/config";
 import { indexChunks, deleteBySource, type IndexChunk } from "@/lib/redis/indexer";
 
 interface MarkdownChunk {
@@ -69,4 +72,35 @@ export async function buildKnowledgeIndex(filePath: string): Promise<number> {
     metadata: { _source: doc.source, title: p.title },
   }));
   return indexChunks(chunks);
+}
+
+const SUPPORTED_EXTENSIONS = new Set([".md", ".markdown", ".txt"]);
+
+// Index every supported document in the knowledge-base directory
+// (config.fileDir). Called at server startup from instrumentation.ts.
+// Per-file failures are logged and skipped so one bad file doesn't block
+// the rest — or the server boot.
+export async function indexDataDir(): Promise<void> {
+  const dir = path.resolve(config.fileDir);
+  let entries;
+  try {
+    entries = await readdir(dir, { withFileTypes: true });
+  } catch {
+    console.warn(`[knowledge-index] data dir not found, skipping: ${dir}`);
+    return;
+  }
+
+  const files = entries
+    .filter((e) => e.isFile() && SUPPORTED_EXTENSIONS.has(path.extname(e.name).toLowerCase()))
+    .map((e) => e.name);
+  console.log(`[knowledge-index] indexing ${files.length} file(s) from ${dir}`);
+
+  for (const file of files) {
+    try {
+      const count = await buildKnowledgeIndex(path.join(dir, file));
+      console.log(`[knowledge-index] indexed ${file}: ${count} chunk(s)`);
+    } catch (e) {
+      console.error(`[knowledge-index] failed to index ${file}:`, e);
+    }
+  }
 }

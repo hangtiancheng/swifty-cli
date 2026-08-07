@@ -21,7 +21,19 @@
  */
 
 @import "tailwindcss";
-@import "highlight.js/styles/github.css";
+
+/* Let Tailwind detect the utility classes used inside Streamdown's dist files. */
+@source "../node_modules/streamdown/dist/*.js";
+@source "../node_modules/@streamdown/code/dist/*.js";
+
+/*
+ * Streamdown ships a pre-level background class with a syntax error
+ * (`bg-[var(--sdm-bg,inherit]`, missing paren), so Tailwind never generates
+ * it. Recreate the intended rule: Shiki sets --sdm-bg inline per theme.
+ */
+[data-streamdown="code-block-body"] pre {
+  background-color: var(--sdm-bg, transparent);
+}
 
 @theme {
   --font-sans:

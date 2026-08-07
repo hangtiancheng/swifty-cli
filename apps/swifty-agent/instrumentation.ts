@@ -20,33 +20,18 @@
  * SOFTWARE.
  */
 
-import type { Metadata } from "next";
-import { Geist_Mono } from "next/font/google";
-import { Swifty } from "@swifty.js/fonts";
-import "./globals.css";
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
-
-export const metadata: Metadata = {
-  title: "Swifty Agent",
-  description: "Swifty Agent — AI intelligent OnCall assistant",
-};
-
-export default function RootLayout({
-  children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
-  return (
-    <html
-      lang="en"
-      className={`${Swifty.variable} ${geistMono.variable} h-full antialiased`}
-      suppressHydrationWarning
-    >
-      <body className="min-h-full flex flex-col">{children}</body>
-    </html>
-  );
+// Next.js instrumentation: runs once per server start.
+// Embeds every document in the knowledge-base data directory so the vector
+// index is populated without requiring a manual upload first.
+export async function register(): Promise<void> {
+  if (process.env.NEXT_RUNTIME !== "nodejs") {
+    return;
+  }
+  const { indexDataDir } = await import("@/lib/ai/pipelines/knowledge-index");
+  try {
+    await indexDataDir();
+  } catch (e) {
+    // Never block server boot on indexing problems (e.g. Redis down).
+    console.error("[instrumentation] startup knowledge indexing failed:", e);
+  }
 }

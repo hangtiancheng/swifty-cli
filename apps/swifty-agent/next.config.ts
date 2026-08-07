@@ -31,8 +31,8 @@ const nextConfig: NextConfig = {
   // Native/binary deps with dynamic requires should not be bundled by webpack.
   serverExternalPackages: ["redis", "mysql2", "knex"],
   turbopack: {
-    root: resolve(dirname__, "..", "..")
-  }
+    root: resolve(dirname__, "..", ".."),
+  },
 };
 
 export default nextConfig;

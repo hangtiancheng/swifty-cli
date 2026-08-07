@@ -53,7 +53,14 @@ export async function POST(request: Request) {
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       const send = (event: string, data: string) => {
-        controller.enqueue(encoder.encode(`id: ${Date.now()}\nevent: ${event}\ndata: ${data}\n\n`));
+        // SSE payloads must not contain raw newlines: emit one `data:` line
+        // per text line (the client rejoins them with "\n"), otherwise
+        // multi-line chunks break the framing and lines get dropped.
+        const dataLines = data
+          .split("\n")
+          .map((line) => `data: ${line}`)
+          .join("\n");
+        controller.enqueue(encoder.encode(`id: ${Date.now()}\nevent: ${event}\n${dataLines}\n\n`));
       };
       // Send a connected event first.
       send("connected", JSON.stringify({ status: "connected", client_id: id }));

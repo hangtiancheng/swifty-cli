@@ -82,23 +82,5 @@ export const config = {
   embeddingProvider: (process.env.EMBEDDING_PROVIDER ?? "openai") as "openai" | "ollama",
 } as const;
 
-// Embedding dimension per provider (float32 count).
-// - openai text-embedding-v4: 2048
-// - ollama nomic-embed-text: 768
-export const EMBEDDING_DIM_MAP = {
-  openai: 2048,
-  ollama: 768,
-} as const;
-
-// Active embedding dimension. Derived from the selected provider by default; override via
-// the EMBEDDING_DIM env var when using a non-default model (e.g. ollama bge-m3 = 1024).
-const envEmbeddingDim = process.env.EMBEDDING_DIM
-  ? Number.parseInt(process.env.EMBEDDING_DIM, 10)
-  : undefined;
-export const EMBEDDING_DIM =
-  envEmbeddingDim && envEmbeddingDim > 0
-    ? envEmbeddingDim
-    : EMBEDDING_DIM_MAP[config.embeddingProvider];
-
 // Conversation memory window size.
 export const MEMORY_WINDOW_SIZE = 6;

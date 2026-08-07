@@ -56,11 +56,20 @@ export async function embedText(text: string): Promise<number[]> {
   return embedding;
 }
 
-// Batch get embeddings
+// Batch get embeddings.
+// OpenAI-compatible endpoints cap inputs per request (DashScope
+// text-embedding-v4 allows 10), while the SDK default is 2048 per call —
+// large documents would fail with "batch size is invalid" without splitting.
+const EMBED_BATCH_SIZE = 10;
+
 export async function embedTexts(texts: string[]): Promise<number[][]> {
-  const { embeddings } = await embedMany({
-    model: embeddingModel,
-    values: texts,
-  });
-  return embeddings;
+  const results: number[][] = [];
+  for (let i = 0; i < texts.length; i += EMBED_BATCH_SIZE) {
+    const { embeddings } = await embedMany({
+      model: embeddingModel,
+      values: texts.slice(i, i + EMBED_BATCH_SIZE),
+    });
+    results.push(...embeddings);
+  }
+  return results;
 }
