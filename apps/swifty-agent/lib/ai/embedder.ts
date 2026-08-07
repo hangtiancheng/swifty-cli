@@ -21,7 +21,7 @@
  */
 
 // Embedding via @ai-sdk/openai-compatible; provider selected by EMBEDDING_PROVIDER:
-//   "dashscope" (default, text-embedding-v4) | "ollama" (local, nomic-embed-text)
+//   "openai" (default, text-embedding-v4) | "ollama" (local, nomic-embed-text)
 import { embed, embedMany, type EmbeddingModel } from "ai";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { config } from "@/lib/config";
@@ -36,16 +36,16 @@ function createEmbeddingProvider(): EmbeddingModel {
       baseURL: `${config.ollama.baseURL}/v1`,
       apiKey: "ollama",
     });
-    return ollama.textEmbeddingModel(config.ollama.model);
+    return ollama.embeddingModel(config.ollama.model);
   }
 
-  // Default: dashscope (text-embedding-v4, OpenAI compatible)
-  const dashscope = createOpenAICompatible({
-    name: "dashscope",
-    baseURL: config.dashscope.baseURL,
-    apiKey: config.dashscope.apiKey,
+  // Default: openai (text-embedding-v4, OpenAI compatible)
+  const openai = createOpenAICompatible({
+    name: "openai",
+    baseURL: config.openaiEmbedding.baseURL,
+    apiKey: config.openaiEmbedding.apiKey,
   });
-  return dashscope.textEmbeddingModel(config.dashscope.model);
+  return openai.embeddingModel(config.openaiEmbedding.model);
 }
 
 export const embeddingModel = createEmbeddingProvider();

@@ -52,11 +52,12 @@ export const config = {
     thinking: process.env.ANTHROPIC_THINKING !== "false", // default enabled
     maxOutputTokens: Number.parseInt(process.env.ANTHROPIC_MAX_OUTPUT_TOKENS ?? "8192", 10),
   },
-  // Alibaba Bailian DashScope embedding (OpenAI compatible)
-  dashscope: {
-    model: process.env.DASHSCOPE_EMBEDDING_MODEL ?? "text-embedding-v4",
-    apiKey: process.env.DASHSCOPE_API_KEY ?? "",
-    baseURL: process.env.DASHSCOPE_BASE_URL ?? "https://dashscope.aliyuncs.com/compatible-mode/v1",
+  // Alibaba Bailian OpenAI embedding (OpenAI compatible)
+  openaiEmbedding: {
+    model: process.env.OPENAI_EMBEDDING_MODEL ?? "text-embedding-v4",
+    apiKey: process.env.OPENAI_EMBEDDING_API_KEY ?? "",
+    baseURL:
+      process.env.OPENAI_EMBEDDING_BASE_URL ?? "https://openai.aliyuncs.com/compatible-mode/v1",
   },
   // Ollama local embedding (OpenAI compatible endpoint, v0.1.24+)
   ollama: {
@@ -77,15 +78,15 @@ export const config = {
   prometheusBaseUrl: process.env.PROMETHEUS_BASE_URL ?? "http://127.0.0.1:9090",
   // LLM provider selection: "openai" (default) | "anthropic"
   provider: (process.env.LLM_PROVIDER ?? "openai") as "openai" | "anthropic",
-  // Embedding provider selection: "dashscope" (default) | "ollama"
-  embeddingProvider: (process.env.EMBEDDING_PROVIDER ?? "dashscope") as "dashscope" | "ollama",
+  // Embedding provider selection: "openai" (default) | "ollama"
+  embeddingProvider: (process.env.EMBEDDING_PROVIDER ?? "openai") as "openai" | "ollama",
 } as const;
 
 // Embedding dimension per provider (float32 count).
-// - dashscope text-embedding-v4: 2048
+// - openai text-embedding-v4: 2048
 // - ollama nomic-embed-text: 768
 export const EMBEDDING_DIM_MAP = {
-  dashscope: 2048,
+  openai: 2048,
   ollama: 768,
 } as const;
 

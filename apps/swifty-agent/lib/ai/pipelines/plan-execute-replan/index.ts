@@ -56,9 +56,7 @@ const planSchema = z.object({
 
 const replanSchema = z.object({
   done: z.boolean().describe("Whether the overall task is complete"),
-  remaining: z
-    .array(z.string())
-    .describe("Remaining steps if not done; empty when done"),
+  remaining: z.array(z.string()).describe("Remaining steps if not done; empty when done"),
   summary: z.string().describe("Final report / summary when done"),
 });
 

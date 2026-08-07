@@ -59,7 +59,7 @@ async function initClient(): Promise<RedisClientType> {
 }
 
 // P1-7 fix: verify the existing index's vector dimension matches EMBEDDING_DIM.
-// If the embedding provider was switched (e.g. dashscope 2048d → ollama 768d)
+// If the embedding provider was switched (e.g. openai 2048d → ollama 768d)
 // without dropping the index, searches silently fail. We detect the mismatch
 // via FT.INFO and auto-recreate the index.
 // P2-12 fix: use FT.INFO to check index existence instead of locale-dependent

@@ -44,7 +44,7 @@ const eslintConfig = defineConfig([
         tsconfigRootDir: import.meta.dirname,
       },
     },
-  }
+  },
 ]);
 
 export default eslintConfig;
