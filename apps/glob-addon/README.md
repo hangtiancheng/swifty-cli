@@ -68,7 +68,7 @@ cmake -DNODE_VERSION=v24.16.0 -DTARGET_PLATFORM=linux -DTARGET_ARCH=arm64 \
   -P cmake/download-node-headers.cmake
 
 # 2. Configure & build
-cmake -S . -B build-linux-arm64 -G "Unix Makefiles" \
+cmake -S . -B build-linux-arm64 -G Ninja \
   -DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/linux-arm64.cmake \
   -DNODE_HEADERS_DIR=cmake/node-headers/v24.16.0/linux-arm64/node-v24.16.0/include/node \
   -DCMAKE_BUILD_TYPE=Release

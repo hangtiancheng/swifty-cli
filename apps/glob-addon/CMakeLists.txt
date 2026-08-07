@@ -131,6 +131,8 @@ if(CMAKE_CROSSCOMPILING)
   string(TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" _arch)
   if(_arch STREQUAL "aarch64")
     set(_arch "arm64")
+  elseif(_arch STREQUAL "x86_64")
+    set(_arch "x64")
   endif()
   set_target_properties(addon PROPERTIES
     LIBRARY_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/prebuilds/${_platform}-${_arch}"

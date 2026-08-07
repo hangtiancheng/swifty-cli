@@ -40,10 +40,12 @@ interface Binding {
 function loadBinding(): Binding {
   // Candidate locations for the native binary:
   // 1. package layout — dist/glob.js next to build/Release/glob_addon.node
-  // 2. bundled layout — consumers (e.g. swifty's tsup build) inline this
+  // 2. source layout — glob.ts run directly via Node type stripping
+  // 3. bundled layout — consumers (e.g. swifty's tsup build) inline this
   //    wrapper and copy glob_addon.node next to their bundle entry.
   const candidates = [
     new URL("../build/Release/glob_addon.node", import.meta.url),
+    new URL("./build/Release/glob_addon.node", import.meta.url),
     new URL("./glob_addon.node", import.meta.url),
   ];
   for (const url of candidates) {

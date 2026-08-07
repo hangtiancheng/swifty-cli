@@ -32,7 +32,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, it } from "node:test";
 
-import { Glob } from "../glob.js";
+import { Glob } from "../glob.ts";
 
 describe("Glob.match", () => {
   it("matches basename patterns", () => {
