@@ -31,8 +31,8 @@ interface WasmExports {
   memory: WebAssembly.Memory;
   compile(pattern: number): number;
   hasSlash(id: number): number;
-  match(id: number, text: number): number;
-  canDescend(id: number, dirPath: number): number;
+  match(id: number, text: number, dot: number): number;
+  canDescend(id: number, dirPath: number, dot: number): number;
   __new(size: number, id: number): number;
   __pin(ptr: number): number;
   __unpin(ptr: number): void;
@@ -142,6 +142,11 @@ export interface GlobOptions {
  * - A pattern without `/` is matched against basenames at every depth
  *   (so `*.js` finds matches recursively); patterns with `/` match the
  *   `/`-separated path relative to `cwd`.
+ * - Dot handling follows minimatch/picomatch: wildcards (`*`, `?`, `[...]`,
+ *   `**`) never match a name starting with `.` unless `dot` is set, but a
+ *   pattern segment that starts with a literal `.` (e.g. `.github` in
+ *   `**\/.github/workflows/*.yml`) always matches, including during
+ *   directory traversal.
  * - Symlinks are never followed: they are reported as plain files and
  *   symlinked directories are not descended into (cycle-safe).
  * - Throws if `cwd` does not exist or is not a directory, if brace
@@ -173,7 +178,8 @@ export class Glob {
 
   match(text: string): boolean {
     const exports = this.ensureCompiled();
-    return withString(exports, text, (ptr) => exports.match(this.id, ptr)) !== 0;
+    const dotFlag = this.dot ? 1 : 0;
+    return withString(exports, text, (ptr) => exports.match(this.id, ptr, dotFlag)) !== 0;
   }
 
   scan(options?: GlobScanOptions): string[] {
@@ -205,6 +211,7 @@ export class Glob {
 
     const excludeDirs = new Set(options?.exclude ?? []);
     const includeDot = options?.dot ?? this.dot;
+    const dotFlag = includeDot ? 1 : 0;
     const hasSlash = exports.hasSlash(this.id) !== 0;
     // Leading '!' runs toggle negation (odd count => negated), same as the
     // addon. Pruning only helps (and is only applied) for positive slash
@@ -213,7 +220,8 @@ export class Glob {
     while (bangs < this.pattern.length && this.pattern.charCodeAt(bangs) === 0x21) {
       bangs++;
     }
-    const canPrune = hasSlash && bangs % 2 === 0;
+    const negated = bangs % 2 === 1;
+    const canPrune = hasSlash && !negated;
 
     const results: string[] = [];
 
@@ -235,7 +243,11 @@ export class Glob {
       }
       const entries: Entry[] = [];
       for (const name of names) {
-        if (!includeDot && name.length > 0 && name.charAt(0) === ".") {
+        // Dot entries are no longer skipped wholesale: the matcher enforces
+        // the explicit-dot rule (see class doc), so `**/.github/*.yml` can
+        // still traverse `.github`. Negated patterns keep the legacy
+        // wildcard-only view where hidden entries stay invisible.
+        if (!includeDot && negated && name.charAt(0) === ".") {
           continue;
         }
         let type: "dir" | "file" | "other";
@@ -275,11 +287,15 @@ export class Glob {
           if (canPrune) {
             const dirPath = relPrefix + entry.name;
             const descend = withString(exports, dirPath, (ptr) =>
-              exports.canDescend(this.id, ptr),
+              exports.canDescend(this.id, ptr, dotFlag),
             );
             if (!descend) {
               continue;
             }
+          } else if (!includeDot && entry.name.charAt(0) === ".") {
+            // Basename patterns walk the tree via an implicit `**`, which
+            // never crosses dot directories when dot matching is off.
+            continue;
           }
 
           scanDir(`${dirAbs}/${entry.name}`, relPrefix + entry.name + "/");
@@ -287,14 +303,14 @@ export class Glob {
           if (hasSlash) {
             const relativePath = relPrefix + entry.name;
             const matched = withString(exports, relativePath, (ptr) =>
-              exports.match(this.id, ptr),
+              exports.match(this.id, ptr, dotFlag),
             );
             if (matched) {
               results.push(relativePath);
             }
           } else {
             const matched = withString(exports, entry.name, (ptr) =>
-              exports.match(this.id, ptr),
+              exports.match(this.id, ptr, dotFlag),
             );
             if (matched) {
               results.push(relPrefix + entry.name);

@@ -44,6 +44,12 @@ namespace fs = std::filesystem;
 //   \x       escapes the next character
 //   !glob    leading '!' run negates the whole pattern
 //
+// Dot handling (the `dot` flag of match/scan): when false, a name that
+// starts with '.' is only matched by a pattern segment that itself starts
+// with a literal '.' (or the escape "\."); '*', '?', '[...]' never match a
+// leading dot and '**' never consumes a dot-leading segment. When true,
+// wildcards match dot names like any other character.
+//
 // Matching is byte-wise over UTF-8. Escaped '/' is not supported (patterns
 // are split on '/' before per-segment matching, like minimatch).
 //
@@ -326,7 +332,23 @@ bool matchOne(const std::string &p, size_t pi, char c, size_t &nextPi) {
   return pc == c;
 }
 
-bool segMatch(const std::string &p, const std::string &t) {
+bool startsWithDot(const std::string &s) { return !s.empty() && s[0] == '.'; }
+
+// A pattern segment may match a dot-leading name (with dot=false) only when
+// it starts with a literal '.' — plain "." or the escape "\.". A character
+// class like "[.]" does not count, mirroring minimatch/picomatch.
+bool segCanMatchDot(const std::string &p) {
+  if (p.empty())
+    return false;
+  if (p[0] == '.')
+    return true;
+  return p[0] == '\\' && p.size() > 1 && p[1] == '.';
+}
+
+bool segMatch(const std::string &p, const std::string &t, bool dot) {
+  if (!dot && startsWithDot(t) && !segCanMatchDot(p))
+    return false;
+
   size_t pi = 0, ti = 0;
   size_t starPi = std::string::npos; // resume position after last star run
   size_t starTi = 0;                 // text position the star run started at
@@ -379,7 +401,7 @@ void splitTextSegments(const std::string &t, std::vector<std::string> &out) {
 // Rolling two-row DP over rows i = P..0 where row(i)[j] means: pattern
 // segments i.. match text segments j.. exactly. O(T) memory.
 bool matchPattern(const CompiledPattern &cp,
-                  const std::vector<std::string> &tsegs,
+                  const std::vector<std::string> &tsegs, bool dot,
                   std::vector<uint8_t> &dp) {
   const size_t P = cp.segs.size();
   const size_t T = tsegs.size();
@@ -400,9 +422,11 @@ bool matchPattern(const CompiledPattern &cp,
     const PatternSegment &ps = cp.segs[ii];
     for (size_t jj = T + 1; jj-- > 0;) {
       if (ps.isGlobstar) {
-        cur[jj] = next[jj] || (jj < T && cur[jj + 1]);
+        const bool canConsume =
+            jj < T && (dot || !startsWithDot(tsegs[jj]));
+        cur[jj] = next[jj] || (canConsume && cur[jj + 1]);
       } else if (jj < T) {
-        cur[jj] = next[jj + 1] && segMatch(ps.text, tsegs[jj]);
+        cur[jj] = next[jj + 1] && segMatch(ps.text, tsegs[jj], dot);
       } else {
         cur[jj] = 0;
       }
@@ -412,13 +436,13 @@ bool matchPattern(const CompiledPattern &cp,
   return next[0] != 0; // after the last swap, `next` holds row 0
 }
 
-bool matchCompiled(const CompiledGlob &g, const std::string &text,
+bool matchCompiled(const CompiledGlob &g, const std::string &text, bool dot,
                    std::vector<std::string> &tsegScratch,
                    std::vector<uint8_t> &dpScratch) {
   splitTextSegments(text, tsegScratch);
   bool matched = false;
   for (const CompiledPattern &cp : g.alts) {
-    if (matchPattern(cp, tsegScratch, dpScratch)) {
+    if (matchPattern(cp, tsegScratch, dot, dpScratch)) {
       matched = true;
       break;
     }
@@ -432,7 +456,7 @@ bool matchCompiled(const CompiledGlob &g, const std::string &text,
 // Rolling two-row DP; row(i)[j] means: pattern i.. can match dirSegs j..
 // followed by at least one future (unknown) segment.
 bool canDescendPattern(const CompiledPattern &cp,
-                       const std::vector<std::string> &dirSegs,
+                       const std::vector<std::string> &dirSegs, bool dot,
                        std::vector<uint8_t> &dp) {
   const size_t P = cp.segs.size();
   const size_t T = dirSegs.size();
@@ -453,9 +477,10 @@ bool canDescendPattern(const CompiledPattern &cp,
     cur[T] = 1;
     for (size_t jj = T; jj-- > 0;) {
       if (ps.isGlobstar) {
-        cur[jj] = next[jj] || cur[jj + 1];
+        const bool canConsume = dot || !startsWithDot(dirSegs[jj]);
+        cur[jj] = next[jj] || (canConsume && cur[jj + 1]);
       } else {
-        cur[jj] = next[jj + 1] && segMatch(ps.text, dirSegs[jj]);
+        cur[jj] = next[jj + 1] && segMatch(ps.text, dirSegs[jj], dot);
       }
     }
     std::swap(cur, next);
@@ -502,7 +527,10 @@ void scanDir(const fs::path &dir, ScanState &st) {
     const fs::directory_entry &entry = *it;
 
     std::string name = pathFilenameUtf8(entry.path());
-    if (!st.includeDot && !name.empty() && name[0] == '.')
+    // Dot entries are no longer skipped wholesale: the matcher enforces the
+    // explicit-dot rule, so `**/.github/*.yml` can still traverse `.github`.
+    // Negated patterns keep the legacy wildcard-only view of the tree.
+    if (!st.includeDot && st.glob.negated && !name.empty() && name[0] == '.')
       continue;
 
     std::error_code sec;
@@ -543,7 +571,7 @@ void scanDir(const fs::path &dir, ScanState &st) {
         st.dirSegs.push_back(entry.name);
         bool descend = false;
         for (const CompiledPattern &cp : st.glob.alts) {
-          if (canDescendPattern(cp, st.dirSegs, st.dpScratch)) {
+          if (canDescendPattern(cp, st.dirSegs, st.includeDot, st.dpScratch)) {
             descend = true;
             break;
           }
@@ -551,6 +579,11 @@ void scanDir(const fs::path &dir, ScanState &st) {
         st.dirSegs.pop_back();
         if (!descend)
           continue;
+      } else if (!st.includeDot && !entry.name.empty() &&
+                 entry.name[0] == '.') {
+        // Basename patterns walk the tree via an implicit `**`, which never
+        // crosses dot directories when dot matching is off.
+        continue;
       }
 
       const size_t prevLen = st.relPrefix.size();
@@ -566,13 +599,13 @@ void scanDir(const fs::path &dir, ScanState &st) {
       bool matched;
       if (st.glob.hasSlash) {
         std::string relativePath = st.relPrefix + entry.name;
-        matched =
-            matchCompiled(st.glob, relativePath, st.tsegScratch, st.dpScratch);
+        matched = matchCompiled(st.glob, relativePath, st.includeDot,
+                                st.tsegScratch, st.dpScratch);
         if (matched)
           st.results.push_back(std::move(relativePath));
       } else {
-        matched =
-            matchCompiled(st.glob, entry.name, st.tsegScratch, st.dpScratch);
+        matched = matchCompiled(st.glob, entry.name, st.includeDot,
+                                st.tsegScratch, st.dpScratch);
         if (matched)
           st.results.push_back(st.relPrefix + entry.name);
       }
@@ -590,7 +623,9 @@ Napi::Value GlobMatch(const Napi::CallbackInfo &info) {
   Napi::Env env = info.Env();
 
   if (info.Length() < 2 || !info[0].IsString() || !info[1].IsString()) {
-    Napi::TypeError::New(env, "Expected (pattern: string, text: string)")
+    Napi::TypeError::New(env,
+                         "Expected (pattern: string, text: string, dot?: "
+                         "boolean)")
         .ThrowAsJavaScriptException();
     return env.Null();
   }
@@ -598,6 +633,10 @@ Napi::Value GlobMatch(const Napi::CallbackInfo &info) {
   try {
     std::string pattern = info[0].As<Napi::String>().Utf8Value();
     std::string text = info[1].As<Napi::String>().Utf8Value();
+    bool dot = false;
+    if (info.Length() > 2 && info[2].IsBoolean()) {
+      dot = info[2].As<Napi::Boolean>().Value();
+    }
 
     CompiledGlob glob;
     std::string err;
@@ -609,7 +648,7 @@ Napi::Value GlobMatch(const Napi::CallbackInfo &info) {
     std::vector<std::string> tsegScratch;
     std::vector<uint8_t> dpScratch;
     return Napi::Boolean::New(
-        env, matchCompiled(glob, text, tsegScratch, dpScratch));
+        env, matchCompiled(glob, text, dot, tsegScratch, dpScratch));
   } catch (const std::exception &e) {
     Napi::Error::New(env, e.what()).ThrowAsJavaScriptException();
     return env.Null();

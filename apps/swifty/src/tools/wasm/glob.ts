@@ -87,6 +87,9 @@ export class GlobTool implements Tool {
       const matches = g.scan({
         cwd: basePath,
         exclude: [...SKIP_DIRS],
+        // Agents need hidden-but-tracked paths (.github/workflows, .eslintrc…);
+        // SKIP_DIRS already prunes noisy dot dirs like .git.
+        dot: true,
         maxResults,
       });
 

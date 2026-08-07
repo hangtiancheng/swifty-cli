@@ -32,6 +32,12 @@
 //   \x       escapes the next character
 //   !glob    leading '!' run negates the whole pattern
 //
+// Dot handling (the `dot` parameter of match/canDescend/globMatch): when
+// false, a name that starts with '.' is only matched by a pattern segment
+// that itself starts with a literal '.' (or the escape "\."); '*', '?',
+// '[...]' never match a leading dot and '**' never consumes a dot-leading
+// segment. When true, wildcards match dot names like any other character.
+//
 // Matching is per UTF-16 code unit (equivalent to the addon's byte-wise
 // UTF-8 matching for BMP code points). Escaped '/' is not supported
 // (patterns are split on '/' before per-segment matching, like minimatch).
@@ -312,7 +318,29 @@ function matchOne(p: string, pi: i32, c: i32, nextPi: i32[]): bool {
   return pc == c;
 }
 
-function segMatch(p: string, t: string): bool {
+function startsWithDot(s: string): bool {
+  return s.length > 0 && s.charCodeAt(0) == 0x2e; // '.'
+}
+
+// A pattern segment may match a dot-leading name (with dot=false) only when
+// it starts with a literal '.' — plain "." or the escape "\.". A character
+// class like "[.]" does not count, mirroring minimatch/picomatch.
+function segCanMatchDot(p: string): bool {
+  if (p.length == 0) {
+    return false;
+  }
+  const c0 = p.charCodeAt(0);
+  if (c0 == 0x2e) {
+    return true;
+  }
+  return c0 == 0x5c && p.length > 1 && p.charCodeAt(1) == 0x2e;
+}
+
+function segMatch(p: string, t: string, dot: bool): bool {
+  if (!dot && startsWithDot(t) && !segCanMatchDot(p)) {
+    return false;
+  }
+
   let pi = 0;
   let ti = 0;
   let starPi = STAR_PI_NONE; // resume position after last star run
@@ -368,7 +396,7 @@ function splitTextSegments(t: string, out: string[]): void {
 
 // Rolling two-row DP over rows i = P..0 where row(i)[j] means: pattern
 // segments i.. match text segments j.. exactly. O(T) memory.
-function matchPattern(cp: CompiledPattern, tsegs: string[], dp: u8[]): bool {
+function matchPattern(cp: CompiledPattern, tsegs: string[], dot: bool, dp: u8[]): bool {
   const P = cp.segs.length;
   const T = tsegs.length;
 
@@ -394,9 +422,10 @@ function matchPattern(cp: CompiledPattern, tsegs: string[], dp: u8[]): bool {
     const ps = cp.segs[ii];
     for (let jj = T; jj >= 0; jj--) {
       if (ps.isGlobstar) {
-        dp[curOff + jj] = dp[nextOff + jj] | ((jj < T ? dp[curOff + jj + 1] : 0) as u8);
+        const canConsume = jj < T && (dot || !startsWithDot(tsegs[jj]));
+        dp[curOff + jj] = dp[nextOff + jj] | ((canConsume ? dp[curOff + jj + 1] : 0) as u8);
       } else if (jj < T) {
-        dp[curOff + jj] = dp[nextOff + jj + 1] & (segMatch(ps.text, tsegs[jj]) ? 1 : 0);
+        dp[curOff + jj] = dp[nextOff + jj + 1] & (segMatch(ps.text, tsegs[jj], dot) ? 1 : 0);
       } else {
         dp[curOff + jj] = 0;
       }
@@ -408,12 +437,18 @@ function matchPattern(cp: CompiledPattern, tsegs: string[], dp: u8[]): bool {
   return dp[nextOff] != 0; // after the last swap, `next` holds row 0
 }
 
-function matchCompiled(g: CompiledGlob, text: string, tsegScratch: string[], dpScratch: u8[]): bool {
+function matchCompiled(
+  g: CompiledGlob,
+  text: string,
+  dot: bool,
+  tsegScratch: string[],
+  dpScratch: u8[],
+): bool {
   splitTextSegments(text, tsegScratch);
   let matched = false;
   const alts = g.alts;
   for (let i = 0; i < alts.length; i++) {
-    if (matchPattern(alts[i], tsegScratch, dpScratch)) {
+    if (matchPattern(alts[i], tsegScratch, dot, dpScratch)) {
       matched = true;
       break;
     }
@@ -426,7 +461,7 @@ function matchCompiled(g: CompiledGlob, text: string, tsegScratch: string[], dpS
 // satisfiable, so `true` means "must descend", `false` means "safe to prune".
 // Rolling two-row DP; row(i)[j] means: pattern i.. can match dirSegs j..
 // followed by at least one future (unknown) segment.
-function canDescendPattern(cp: CompiledPattern, dirSegs: string[], dp: u8[]): bool {
+function canDescendPattern(cp: CompiledPattern, dirSegs: string[], dot: bool, dp: u8[]): bool {
   const P = cp.segs.length;
   const T = dirSegs.length;
 
@@ -451,9 +486,10 @@ function canDescendPattern(cp: CompiledPattern, dirSegs: string[], dp: u8[]): bo
     dp[curOff + T] = 1;
     for (let jj = T - 1; jj >= 0; jj--) {
       if (ps.isGlobstar) {
-        dp[curOff + jj] = dp[nextOff + jj] | dp[curOff + jj + 1];
+        const canConsume = dot || !startsWithDot(dirSegs[jj]);
+        dp[curOff + jj] = dp[nextOff + jj] | ((canConsume ? dp[curOff + jj + 1] : 0) as u8);
       } else {
-        dp[curOff + jj] = dp[nextOff + jj + 1] & (segMatch(ps.text, dirSegs[jj]) ? 1 : 0);
+        dp[curOff + jj] = dp[nextOff + jj + 1] & (segMatch(ps.text, dirSegs[jj], dot) ? 1 : 0);
       }
     }
     const tmp = curOff;
@@ -486,23 +522,24 @@ export function hasSlash(id: i32): bool {
   return gCompiled[id - 1].hasSlash;
 }
 
-// Match `text` against the compiled pattern.
-export function match(id: i32, text: string): bool {
+// Match `text` against the compiled pattern. `dot` controls whether
+// wildcards may match dot-leading names (see header).
+export function match(id: i32, text: string, dot: bool): bool {
   const g = gCompiled[id - 1];
   const tsegScratch: string[] = [];
   const dpScratch: u8[] = [];
-  return matchCompiled(g, text, tsegScratch, dpScratch);
+  return matchCompiled(g, text, dot, tsegScratch, dpScratch);
 }
 
 // Match a single pattern string against `text` without keeping a handle.
-export function globMatch(pattern: string, text: string): bool {
-  return match(compile(pattern), text);
+export function globMatch(pattern: string, text: string, dot: bool): bool {
+  return match(compile(pattern), text, dot);
 }
 
 // Pruning query: `dirPath` is the '/'-separated path of a directory
 // relative to the scan root; returns whether any file strictly below it
 // could still match. Over-approximates, so `true` means "must descend".
-export function canDescend(id: i32, dirPath: string): bool {
+export function canDescend(id: i32, dirPath: string, dot: bool): bool {
   const g = gCompiled[id - 1];
   const dirSegs: string[] = [];
   if (dirPath.length > 0) {
@@ -511,7 +548,7 @@ export function canDescend(id: i32, dirPath: string): bool {
   const dp: u8[] = [];
   const alts = g.alts;
   for (let i = 0; i < alts.length; i++) {
-    if (canDescendPattern(alts[i], dirSegs, dp)) {
+    if (canDescendPattern(alts[i], dirSegs, dot, dp)) {
       return true;
     }
   }

@@ -179,6 +179,34 @@ describe("Glob.match", () => {
     );
   });
 
+  it("hides dot names from wildcards but honors explicit dots", () => {
+    assert.equal(new Glob("*.js").match(".hidden.js"), false);
+    assert.equal(new Glob("*.js", { dot: true }).match(".hidden.js"), true);
+    assert.equal(new Glob(".*.js").match(".hidden.js"), true);
+    assert.equal(new Glob("?env").match(".env"), false);
+    assert.equal(new Glob("**/*.yml").match(".github/workflows/ci.yml"), false);
+    assert.equal(
+      new Glob("**/*.yml", { dot: true }).match(".github/workflows/ci.yml"),
+      true,
+    );
+    // an explicit dot segment always matches, even mid-pattern after **
+    assert.equal(
+      new Glob("**/.github/workflows/*.{yml,yaml}").match(
+        ".github/workflows/ci.yml",
+      ),
+      true,
+    );
+    assert.equal(
+      new Glob("**/.github/workflows/*.{yml,yaml}").match(
+        "pkg/.github/workflows/ci.yaml",
+      ),
+      true,
+    );
+    // an escaped dot counts as literal; a character class does not
+    assert.equal(new Glob("\\.github/*").match(".github/x"), true);
+    assert.equal(new Glob("[.]github/*").match(".github/x"), false);
+  });
+
   it("rejects pathological star backtracking quickly", () => {
     const started = Date.now();
     const matched = new Glob("*a*a*a*a*a*a*a*a*a*b").match("a".repeat(60));
@@ -331,6 +359,57 @@ describe("Glob.scan", () => {
       // the symlink itself is reported as a plain file entry
       const links = new Glob("**/loop").scan({ cwd: dir });
       assert.deepEqual(links, ["real/loop"]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("traverses explicit dot directories in slash patterns without dot", () => {
+    const dir = mkdtempSync(join(tmpdir(), "glob-addon-dotdir-"));
+    try {
+      mkdirSync(join(dir, ".github", "workflows"), { recursive: true });
+      mkdirSync(join(dir, ".cache", "deep"), { recursive: true });
+      mkdirSync(join(dir, "src"));
+      writeFileSync(join(dir, ".github", "workflows", "ci.yml"), "\n");
+      writeFileSync(join(dir, ".github", "workflows", "release.yaml"), "\n");
+      writeFileSync(join(dir, ".cache", "deep", "x.yml"), "\n");
+      writeFileSync(join(dir, "src", "a.yml"), "\n");
+
+      const explicit = new Glob("**/.github/workflows/*.{yml,yaml}").scan({
+        cwd: dir,
+      });
+      assert.deepEqual(explicit.sort(), [
+        ".github/workflows/ci.yml",
+        ".github/workflows/release.yaml",
+      ]);
+
+      // wildcards still hide dot entries unless dot is set
+      const wildcard = new Glob("**/*.yml").scan({ cwd: dir });
+      assert.deepEqual(wildcard.sort(), ["src/a.yml"]);
+      const withDot = new Glob("**/*.yml").scan({ cwd: dir, dot: true });
+      assert.deepEqual(withDot.sort(), [
+        ".cache/deep/x.yml",
+        ".github/workflows/ci.yml",
+        "src/a.yml",
+      ]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("matches explicitly dotted basename patterns at any depth", () => {
+    const dir = mkdtempSync(join(tmpdir(), "glob-addon-dotbase-"));
+    try {
+      mkdirSync(join(dir, "sub"));
+      mkdirSync(join(dir, ".hiddendir"));
+      writeFileSync(join(dir, ".env.local"), "\n");
+      writeFileSync(join(dir, "sub", ".env"), "\n");
+      writeFileSync(join(dir, "sub", "env"), "\n");
+      writeFileSync(join(dir, ".hiddendir", ".env"), "\n");
+
+      const matches = new Glob(".env*").scan({ cwd: dir });
+      // the implicit ** of basename patterns still does not cross dot dirs
+      assert.deepEqual(matches.sort(), [".env.local", "sub/.env"]);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

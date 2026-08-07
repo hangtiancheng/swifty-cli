@@ -27,7 +27,7 @@ import { fileURLToPath } from "node:url";
 const require = createRequire(import.meta.url);
 
 interface Binding {
-  globMatch: (pattern: string, text: string) => boolean;
+  globMatch: (pattern: string, text: string, dot: boolean) => boolean;
   globScan: (
     pattern: string,
     cwd: string | null,
@@ -86,6 +86,11 @@ export interface GlobOptions {
  * - A pattern without `/` is matched against basenames at every depth
  *   (so `*.js` finds matches recursively); patterns with `/` match the
  *   `/`-separated path relative to `cwd`.
+ * - Dot handling follows minimatch/picomatch: wildcards (`*`, `?`, `[...]`,
+ *   `**`) never match a name starting with `.` unless `dot` is set, but a
+ *   pattern segment that starts with a literal `.` (e.g. `.github` in
+ *   `**\/.github/workflows/*.yml`) always matches, including during
+ *   directory traversal.
  * - Symlinks are never followed: they are reported as plain files and
  *   symlinked directories are not descended into (cycle-safe).
  * - Throws if `cwd` does not exist or is not a directory, if brace
@@ -101,7 +106,7 @@ export class Glob {
   }
 
   match(text: string): boolean {
-    return binding.globMatch(this.pattern, text);
+    return binding.globMatch(this.pattern, text, this.dot);
   }
 
   scan(options?: GlobScanOptions): string[] {
