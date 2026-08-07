@@ -1,10 +1,10 @@
 import { createClient } from "redis";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { LockConflictError } from "./indexer.js";
-import { buildChunks, syncDocs } from "./pipeline.js";
-import type { SearchDocsContext } from "./redis-client.js";
-import { sha256 } from "./utils.js";
+import { LockConflictError } from "@/tools/search-docs/indexer.js";
+import { buildChunks, syncDocs } from "@/tools/search-docs/pipeline.js";
+import type { SearchDocsContext } from "@/tools/search-docs/redis-client.js";
+import { sha256 } from "@/tools/search-docs/utils.js";
 
 const indexerMocks = vi.hoisted(() => ({
   deleteBySource: vi.fn<(ctx: unknown, source: string) => Promise<void>>(async () => undefined),
@@ -23,7 +23,7 @@ const scannerMocks = vi.hoisted(() => ({
 }));
 
 vi.mock("./indexer.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("./indexer.js")>();
+  const actual = await importOriginal<typeof import("@/tools/search-docs/indexer.js")>();
   return { ...indexerMocks, LockConflictError: actual.LockConflictError };
 });
 vi.mock("./scanner.js", () => scannerMocks);

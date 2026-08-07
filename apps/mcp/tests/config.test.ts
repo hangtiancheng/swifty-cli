@@ -3,7 +3,7 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { loadConfig } from "./config.js";
+import { loadConfig } from "@/shared/config.js";
 
 describe("loadConfig", () => {
   it("applies defaults when env is empty", () => {

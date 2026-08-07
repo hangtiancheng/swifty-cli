@@ -5,23 +5,23 @@
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import type { RedisConfig } from "../../shared/config.js";
-import type { Embedder } from "./embedder.js";
+import type { RedisConfig } from "@/shared/config.js";
+import type { Embedder } from "@/tools/search-docs/embedder.js";
 import {
   deleteBySource,
   indexChunks,
   readSourceHashes,
   removeSourceHash,
   writeSourceHash,
-} from "./indexer.js";
+} from "@/tools/search-docs/indexer.js";
 import {
   closeRedis,
   connectRedis,
   ensureIndex,
   sourcesKey,
   type SearchDocsContext,
-} from "./redis-client.js";
-import { retrieve } from "./retriever.js";
+} from "@/tools/search-docs/redis-client.js";
+import { retrieve } from "@/tools/search-docs/retriever.js";
 
 const redisUrl = process.env["REDIS_URL"];
 

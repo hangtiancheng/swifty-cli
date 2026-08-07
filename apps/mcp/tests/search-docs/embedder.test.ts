@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { createEmbedder, EMBED_BATCH_SIZE } from "./embedder.js";
+import { createEmbedder, EMBED_BATCH_SIZE } from "@/tools/search-docs/embedder.js";
 
 const embedManyMock = vi.hoisted(() =>
   vi.fn(async ({ values }: { values: string[] }) => ({
