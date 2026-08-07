@@ -2,10 +2,10 @@
 
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import path from "node:path";
+import { dirname, resolve, join } from "node:path";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const root = path.resolve(__dirname, "..");
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const root = resolve(__dirname, "..");
 
 const NODE_VERSION = process.argv[2] ?? `v${process.versions.node}`;
 
@@ -25,7 +25,7 @@ for (const [platform, arch] of targets) {
     `-DTARGET_PLATFORM=${platform}`,
     `-DTARGET_ARCH=${arch}`,
     "-P",
-    path.join(root, "cmake", "download-node-headers.cmake"),
+    join(root, "cmake", "download-node-headers.cmake"),
   ], { stdio: "inherit", cwd: root });
 }
 
