@@ -45,7 +45,7 @@ interface ToolDisplayProps {
   tools: ToolBlockInfo[];
 }
 
-function ToolBlock(props: ToolBlockProps) {
+export function ToolBlock(props: ToolBlockProps) {
   const { tool } = props;
   const argSummary = formatArgs(tool.args);
   if (tool.loading) {

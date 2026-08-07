@@ -122,7 +122,7 @@ import { BORDER_COLORS, ICONS } from "./styles.js";
 import { TeamStatus } from "./team-status.js";
 import { TeammateSpinnerTree } from "./teammate-spinner-tree.js";
 import { TeamsDialog } from "./teams-dialog.js";
-import { ToolDisplay, type ToolBlockInfo } from "./tool-display.js";
+import { ToolBlock, ToolDisplay, type ToolBlockInfo } from "./tool-display.js";
 import { randomCompletionVerb } from "./verbs.js";
 import { version } from "./version.js";
 
@@ -1921,17 +1921,31 @@ export function App({
           expanded={toolsExpanded}
         />
 
-        {activeTools.length > 0 && !askRequest && <ToolDisplay tools={activeTools} />}
+        {activeTools.length > 0 && !askRequest && subagents.length === 0 && (
+          <ToolDisplay tools={activeTools} />
+        )}
 
         {subagents.length > 0 && !askRequest && (
-          <Box flexDirection="column" paddingLeft={1}>
-            {subagents.map((s) => (
-              <Text key={s.id} color="magenta">
-                {ICONS.dot} {s.label} subagent · turn {s.turn}
-                {s.lastTool ? ` · ${s.lastTool}` : ""}
-              </Text>
-            ))}
-          </Box>
+          <>
+            <ToolDisplay
+              tools={activeTools.filter((t) => !(t.toolName === "Agent" && t.loading))}
+            />
+            <Box flexDirection="column" paddingLeft={1}>
+              {subagents.map((s, idx) => {
+                // Pair each subagent with its still-running Agent tool call.
+                const tool = activeTools.filter((t) => t.toolName === "Agent" && t.loading).at(idx);
+                return (
+                  <Box key={s.id} gap={1}>
+                    {tool && <ToolBlock tool={tool} />}
+                    <Text color="magenta">
+                      {ICONS.dot} {s.label} subagent · turn {s.turn}
+                      {s.lastTool ? ` · ${s.lastTool}` : ""}
+                    </Text>
+                  </Box>
+                );
+              })}
+            </Box>
+          </>
         )}
 
         {isStreaming && !askRequest && (
