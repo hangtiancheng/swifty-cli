@@ -128,8 +128,8 @@ export async function fetchModelContextWindow(config: ProviderConfig): Promise<n
     }
     const maxInputTokens = data.max_input_tokens;
     return Math.max(maxInputTokens, 0);
-  } catch (e) {
-    log.error({ err: e }, "failed to fetch model context window");
+  } catch (err) {
+    log.error({ err }, "failed to fetch model context window");
     return 0;
   } finally {
     clearTimeout(timer);
@@ -391,7 +391,6 @@ export class AnthropicClient implements LLMClient {
     let thinkingAccumulate = "";
     let thinkingSignature = "";
     let inThinking = false;
-    let startTime = 0;
 
     try {
       const response = this.client.messages.stream(params, {
@@ -438,7 +437,6 @@ export class AnthropicClient implements LLMClient {
             }
             // end if (delta.type === "thinking_delta")
             else if (delta.type === "signature_delta") {
-              log.debug({ signature: delta.signature }, "thinking signature received");
               thinkingSignature = delta.signature;
             }
             // end if (delta.type === "signature_delta")
@@ -521,20 +519,12 @@ export class AnthropicClient implements LLMClient {
           } // end case "message_delta"
 
           case "message_start": {
-            startTime = Date.now();
             inputTokens = event.message.usage.input_tokens;
             outputTokens = event.message.usage.output_tokens;
             cacheReadInputTokens = event.message.usage.cache_read_input_tokens ?? 0;
             cacheCreationInputTokens = event.message.usage.cache_creation_input_tokens ?? 0;
             break;
           } // end "message_start"
-
-          case "message_stop": {
-            const stopTime = Date.now();
-            const elapsed = stopTime - startTime;
-            log.debug({ elapsedMs: elapsed }, "message stream complete");
-            break;
-          }
         }
       }
 

@@ -815,7 +815,6 @@ export class RemoteServer {
   private setupWebSocket(): void {
     this.wss.on("connection", (ws: WebSocket) => {
       this.clients.add(ws);
-      log.info({ clients: this.clients.size }, "WebSocket client connected");
 
       // Send initial connected message to the newly connected client only.
       // Deferred until the agent exists so the session id is never empty;
@@ -848,7 +847,6 @@ export class RemoteServer {
 
       ws.on("close", () => {
         this.clients.delete(ws);
-        log.info({ clients: this.clients.size }, "WebSocket client disconnected");
       });
 
       ws.on("error", () => {
@@ -1651,7 +1649,6 @@ export class RemoteServer {
         enableCoordinatorMode: this.opts.enableCoordinatorMode,
         forkDisabled: this.opts.forkDisabled,
       });
-      log.info({ sessionId: this.agentHandle.sessionId }, "agent initialized");
     } catch (err) {
       log.warn({ err }, "agent init deferred -- will retry on first message");
       this.agentHandle = null;
@@ -1665,8 +1662,6 @@ export class RemoteServer {
     return new Promise((resolve, reject) => {
       this.server.on("error", reject);
       this.server.listen(port, host, () => {
-        log.info({ host, port }, "Koa server listening");
-        log.info({ host, port }, "WebSocket server ready");
         resolve();
       });
     });

@@ -20,7 +20,7 @@
  * SOFTWARE.
  */
 
-import { basename, dirname } from "node:path";
+import { basename, dirname, join } from "node:path";
 
 import { Agent } from "./agent/agent.js";
 import { getContextWindow, loadConfig } from "./config/config.js";
@@ -196,9 +196,9 @@ export async function buildTeammateRegistry(opts: {
       if (result.tools.length > 0 && opts.contextWindow) {
         decideAndApply(registry, opts.baseUrl ?? "", opts.contextWindow);
       }
-    } catch (e) {
+    } catch (err) {
       // MCP connectivity failures should not crash the teammate process
-      log.error({ err: e }, "MCP setup failed");
+      log.error({ err }, "MCP setup failed");
     }
   }
 
@@ -208,15 +208,16 @@ export async function buildTeammateRegistry(opts: {
 export async function runTeammate(args: TeammateArgs): Promise<void> {
   // Initialize logger for this teammate subprocess. Subprocess skips cleanup
   // to avoid multi-process races on unlinkSync.
+  // args.teamDir is the mailbox dir (~/.swifty/teams/<team>/inboxes); logs
+  // live in the sibling logs/ dir, which cleanExpiredLogs scans.
   const safeMemberName = sanitizeNameSegment(args.memberName);
   initLogger({
     sessionId: `teammate-${safeMemberName}-${Date.now().toString(36)}`,
     mode: "teammate",
-    workDir: args.teamDir,
+    logDir: join(dirname(args.teamDir), "logs"),
     skipCleanup: true,
   });
   process.on("exit", closeLogger);
-  log.info({ memberName: args.memberName, teamDir: args.teamDir }, "teammate started");
 
   const cfg = loadConfig();
   const provider = args.providerName
@@ -269,11 +270,9 @@ export async function runTeammate(args: TeammateArgs): Promise<void> {
   // Start with initial task
   conversation.addUserMessage(args.initialTask);
 
-  let output = "";
   for await (const event of agent.run()) {
     switch (event.type) {
       case "stream_text":
-        output += event.text;
         process.stdout.write(event.text);
         break;
       case "tool_result":
@@ -281,20 +280,10 @@ export async function runTeammate(args: TeammateArgs): Promise<void> {
         console.log(
           `[${event.toolName}] ${event.isError ? "ERROR" : "OK"} (${event.elapsed.toFixed(1)}s)`,
         );
-        log.info(
-          {
-            toolName: event.toolName,
-            isError: event.isError,
-            elapsed: event.elapsed,
-          },
-          "tool result",
-        );
-        log.debug({ output }, "tool output");
         break;
       case "loop_complete":
         // eslint-disable-next-line no-console -- teammate stdout output
         console.log("--- Task complete ---");
-        log.info("task complete");
         break;
       case "error":
         log.error({ err: event.error }, "agent error");
@@ -313,13 +302,11 @@ export async function runTeammate(args: TeammateArgs): Promise<void> {
     if (isShutdownRequest(msg)) {
       // eslint-disable-next-line no-console -- teammate stdout output
       console.log(`Shutdown requested, ${args.memberName} exiting.`);
-      log.info({ memberName: args.memberName }, "shutdown requested, exiting");
       break;
     }
 
     // eslint-disable-next-line no-console -- teammate stdout output
     console.log(`Message from ${msg.from}: ${msg.text}`);
-    log.info({ from: msg.from, text: msg.text }, "message received");
     conversation.addUserMessage(msg.text);
     for await (const event of agent.run()) {
       if (event.type === "stream_text") {

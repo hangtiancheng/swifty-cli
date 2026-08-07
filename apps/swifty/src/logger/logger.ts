@@ -20,21 +20,22 @@
  * SOFTWARE.
  */
 
-// Root logger singleton: initLogger() / getLogger() / closeLogger().
+// Root logger singleton: initLogger() / closeLogger(), plus the module-level
+// `logger` export and the createChildLogger() factory.
 //
 // Design:
-// - pino.destination(fd) writes synchronously, no worker thread, compatible
-//   with tsup noExternal bundling.
-// - Always writes to a file fd, never stdout (Ink owns stdout in TUI mode;
-//   teammate uses stdout for IPC).
+// - pino.destination(fd) writes from the main thread (no worker), compatible
+//   with tsup noExternal bundling. Writes are buffered asynchronously; the
+//   process exit handler calls closeLogger(), which flushSync()s the buffer.
+// - Writes to a file fd; stdout is only mirrored in remote mode via the
+//   `stdout` option (Ink owns stdout in TUI mode; teammates use it for IPC).
 // - Before initLogger(), a Proxy falls back to a silent pino logger so early
 //   log calls are safe no-ops (startup errors should use console.error).
-// - At serialize time, AsyncLocalStorage context (agentName, etc.) is merged.
 
-import { AsyncLocalStorage } from "node:async_hooks";
-import { openSync, closeSync, mkdirSync } from "node:fs";
-import { readdir, stat, unlink, access } from "node:fs/promises";
-import { join, dirname } from "node:path";
+import { openSync, closeSync, mkdirSync, writeFileSync } from "node:fs";
+import { readdir, stat, unlink } from "node:fs/promises";
+import { homedir } from "node:os";
+import { join, dirname, basename } from "node:path";
 
 import pino, { type Logger, type LoggerOptions } from "pino";
 
@@ -49,7 +50,7 @@ interface InitLoggerOptions {
   mode: LoggerMode;
   /** Working directory; defaults .swifty/logs/ root. */
   workDir?: string;
-  /** Override log directory (external teammates use .swifty/teams/<team>/logs/). */
+  /** Override log directory (teammates use ~/.swifty/teams/<team>/logs/). */
   logDir?: string;
   /** Subprocess passes true to skip expired-log cleanup (avoid multi-process races). */
   skipCleanup?: boolean;
@@ -61,26 +62,36 @@ interface InitLoggerOptions {
   stdout?: boolean;
 }
 
-/** Default log level; overridable via SWIFTY_LOG_LEVEL. */
-const DEFAULT_LEVEL = "info";
-
 let currentLogger: Logger | null = null;
 let currentDest: ReturnType<typeof pino.destination> | null = null;
 let currentFd: number | null = null;
-
-/** Resolve log level: env var > default info. */
-function resolveLevel(): string {
-  const envLevel = process.env.SWIFTY_LOG_LEVEL;
-  if (envLevel) {
-    return envLevel;
-  }
-  return DEFAULT_LEVEL;
-}
 
 /** Compute the log file path. */
 function resolveLogPath(opts: InitLoggerOptions): string {
   const dir = opts.logDir ?? join(opts.workDir ?? process.cwd(), ".swifty", "logs");
   return join(dir, `${opts.sessionId}.jsonl`);
+}
+
+/**
+ * Write a self-ignoring .gitignore ("*") into the nearest `.swifty` ancestor
+ * of the log file, so the runtime directory never gets committed. Existing
+ * files are left untouched; failures are non-fatal.
+ */
+function ensureSwiftyGitignore(logPath: string): void {
+  let dir = dirname(logPath);
+  while (basename(dir) !== ".swifty") {
+    const parent = dirname(dir);
+    if (parent === dir) {
+      return; // no .swifty ancestor (custom logDir outside .swifty)
+    }
+    dir = parent;
+  }
+  try {
+    // wx: create only if missing, so user edits are never clobbered.
+    writeFileSync(join(dir, ".gitignore"), "*\n", { flag: "wx" });
+  } catch {
+    // Already exists or unwritable — either way logging proceeds.
+  }
 }
 
 /** Sanitize a filename segment to prevent path traversal (member names, etc.). */
@@ -101,6 +112,9 @@ function flushDestination(dest: unknown): void {
   }
 }
 
+// Only warnings and errors are recorded, by design.
+const LOG_LEVEL = "warn";
+
 /**
  * Initialize the root logger. Creates the log file, opens the fd, and builds
  * the pino instance. When called by the main process (skipCleanup defaults
@@ -114,21 +128,27 @@ export function initLogger(opts: InitLoggerOptions): Logger {
 
   const logPath = resolveLogPath(opts);
   mkdirSync(dirname(logPath), { recursive: true });
+  ensureSwiftyGitignore(logPath);
   // Append mode: multi-process safe, supports resume.
   const fd = openSync(logPath, "a");
   currentFd = fd;
   currentDest = pino.destination(fd);
 
   const pinoOpts: LoggerOptions = {
-    level: resolveLevel(),
+    level: LOG_LEVEL,
     base: { sessionId: opts.sessionId, mode: opts.mode },
     serializers: { err: errSerializer },
   };
 
   if (opts.stdout) {
+    // Explicit per-stream level: multistream would otherwise filter each
+    // stream at its own default ("info"), ignoring the logger level.
     currentLogger = pino(
       pinoOpts,
-      pino.multistream([{ stream: currentDest }, { stream: process.stdout }]),
+      pino.multistream([
+        { stream: currentDest, level: LOG_LEVEL },
+        { stream: process.stdout, level: LOG_LEVEL },
+      ]),
     );
   } else {
     currentLogger = pino(pinoOpts, currentDest);
@@ -177,31 +197,23 @@ export function closeLogger(): void {
   }
 }
 
-/**
- * Merge AsyncLocalStorage context into bindings. Called by the logger when
- * writing, so in-process subagent tool logs automatically carry agentName.
- */
-function mergeContext(bindings: Record<string, unknown>): Record<string, unknown> {
-  const ctx = getLogContext();
-  return { ...ctx, ...bindings };
-}
-
-// A real silent pino logger used as the Proxy target. Its methods are never
-// actually called — the handler intercepts all property access and forwards
-// to the current logger. Using a real Logger instance as the target gives us
-// the correct return type without type assertions.
-const proxyTarget = pino({ level: "silent" });
+// A real silent pino logger used as the Proxy target for the global logger
+// and pre-init child loggers. Its methods are only reached before
+// initLogger(); afterwards every access is forwarded to the current logger.
+// Using a real Logger instance as the target gives the correct return type
+// without type assertions.
+const silentFallback = pino({ level: "silent" });
 
 /**
  * Global logger export. Modules can import and use it at file top level:
  * ```ts
  * import { logger } from "../logger/logger.js";
- * logger.info({ module: "app" }, "session started");
+ * logger.warn({ module: "app" }, "something looks off");
  * ```
  * Before initLogger(), calls fall back to the silent target (pre-init logs
  * are discarded; startup errors should use console.error directly).
  */
-export const logger: Logger = new Proxy(proxyTarget, {
+export const logger: Logger = new Proxy(silentFallback, {
   get(_target, prop, receiver) {
     const current = getLogger();
     const target = current ?? _target;
@@ -213,94 +225,69 @@ export const logger: Logger = new Proxy(proxyTarget, {
     }
     return value;
   },
+  set(_target, prop, value) {
+    // Route writes (e.g. logger.level = ...) to the live logger; without
+    // this trap they would silently land on the silent fallback.
+    return Reflect.set(getLogger() ?? _target, prop, value);
+  },
 });
 
-// createChildLogger convenience factory.
-// Each module creates a child logger at file top, carrying static fields like
-// { module: "session" } plus AsyncLocalStorage context (agentName, etc.).
-
-// A real silent pino logger used as the Proxy target for pre-init children.
-const silentTarget = pino({ level: "silent" });
-
 /**
- * Create a module-level child logger.
- * bindings typically holds static fields like { module: "session" };
- * AsyncLocalStorage context (agentName) is merged at access time.
+ * Create a module-level child logger. Each module calls this at file top,
+ * with bindings holding static fields like { module: "session" }.
  *
  * Returns a Proxy that forwards every access to the current root logger's
- * child, so it stays valid across initLogger() calls.
- *
- * The child pino instance is cached per (rootLogger, context) pair and only
- * rebuilt when either changes, avoiding redundant pino.child() allocations
- * on every log call.
+ * child, so it stays valid across initLogger() calls. The child pino
+ * instance is cached and only rebuilt when the root logger changes,
+ * avoiding redundant pino.child() allocations on every log call.
  */
-export function createChildLogger(bindings: Record<string, unknown>): Logger {
+export function createChildLogger(bindings: { module: string }): Logger {
   let cachedChild: Logger | null = null;
   let cachedLogger: Logger | null = null;
-  let cachedCtxKey = "";
 
-  return new Proxy(silentTarget, {
+  const resolveChild = (): Logger | null => {
+    const current = getLogger();
+    if (!current) {
+      return null;
+    }
+    if (cachedChild === null || cachedLogger !== current) {
+      cachedChild = current.child(bindings);
+      cachedLogger = current;
+    }
+    return cachedChild;
+  };
+
+  return new Proxy(silentFallback, {
     get(_target, prop, receiver) {
-      const current = getLogger();
-      if (current) {
-        const ctx = mergeContext(bindings);
-        const ctxKey = JSON.stringify(ctx);
-        if (cachedChild === null || cachedLogger !== current || cachedCtxKey !== ctxKey) {
-          cachedChild = current.child(ctx);
-          cachedLogger = current;
-          cachedCtxKey = ctxKey;
-        }
-        // Reflect.get returns `any`; annotate unknown so typeof narrows correctly.
-        const value: unknown = Reflect.get(cachedChild, prop, receiver);
-        if (typeof value === "function") {
-          // Function.bind returns `any` in lib.es5; the bound callable is
-          // type-safe by construction (pino method signatures are preserved).
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-return
-          return value.bind(cachedChild);
-        }
-        return value;
-      }
-      // Pre-init: fall back to silent target.
-      const fallbackValue: unknown = Reflect.get(_target, prop, receiver);
-      if (typeof fallbackValue === "function") {
+      const target = resolveChild() ?? _target;
+      // Reflect.get returns `any`; annotate unknown so typeof narrows correctly.
+      const value: unknown = Reflect.get(target, prop, receiver);
+      if (typeof value === "function") {
+        // Function.bind returns `any` in lib.es5; the bound callable is
+        // type-safe by construction (pino method signatures are preserved).
         // eslint-disable-next-line @typescript-eslint/no-unsafe-return
-        return fallbackValue.bind(_target);
+        return value.bind(target);
       }
-      return fallbackValue;
+      return value;
+    },
+    set(_target, prop, value) {
+      return Reflect.set(resolveChild() ?? _target, prop, value);
     },
   });
 }
 
 // Expired log cleanup. Mirrors session.ts cleanExpiredSessions:
 // same directory iteration, 30-day mtime check, silent unlink failure.
-// Scans .swifty/logs/ and .swifty/teams/<team>/logs/.
+// Scans <workDir>/.swifty/logs/ and ~/.swifty/teams/<team>/logs/.
 // All fs operations are async to avoid blocking the event loop.
-
-/** Log retention days, matches SESSION_EXPIRY_DAYS. */
-const LOG_EXPIRY_DAYS = 30;
-const LOG_EXPIRY_MS = LOG_EXPIRY_DAYS * 24 * 60 * 60 * 1000;
-
-/** Check whether a path is accessible. Returns false on any error. */
-async function pathExists(p: string): Promise<boolean> {
-  try {
-    await access(p);
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 /** Clean expired log files in a single directory. Returns count removed. Failures are silent. */
 async function cleanDir(dir: string): Promise<number> {
-  if (!(await pathExists(dir))) {
-    return 0;
-  }
-
   let files: string[];
   try {
     files = (await readdir(dir)).filter((f) => f.endsWith(".jsonl"));
   } catch {
-    return 0;
+    return 0; // missing or unreadable directory
   }
 
   const now = Date.now();
@@ -309,7 +296,7 @@ async function cleanDir(dir: string): Promise<number> {
     const filePath = join(dir, file);
     try {
       const s = await stat(filePath);
-      if (now - s.mtimeMs > LOG_EXPIRY_MS) {
+      if (now - s.mtimeMs > 30 * 24 * 60 * 60 * 1000) {
         await unlink(filePath);
         removed++;
       }
@@ -321,47 +308,26 @@ async function cleanDir(dir: string): Promise<number> {
 }
 
 /**
- * Clean expired logs. Scans the default .swifty/logs/ and all team-specific
- * .swifty/teams/<team>/logs/ directories. Only called by the main process
- * (teammate subprocesses skip via skipCleanup).
+ * Clean expired logs. Scans the project .swifty/logs/ and all team-specific
+ * ~/.swifty/teams/<team>/logs/ directories (team data lives under the home
+ * directory — see teams/team-file.ts teamsBaseDir). Only called by the main
+ * process (teammate subprocesses skip via skipCleanup).
  */
 async function cleanExpiredLogs(workDir: string): Promise<number> {
   let removed = 0;
   removed += await cleanDir(join(workDir, ".swifty", "logs"));
 
-  const teamsDir = join(workDir, ".swifty", "teams");
-  if (!(await pathExists(teamsDir))) {
-    return removed;
-  }
-
+  const teamsDir = join(homedir(), ".swifty", "teams");
   let teams: string[];
   try {
     teams = await readdir(teamsDir);
   } catch {
-    return removed;
+    return removed; // no teams directory
   }
   for (const team of teams) {
     removed += await cleanDir(join(teamsDir, team, "logs"));
   }
   return removed;
-}
-
-/** Log context fields, injected via withLogContext, auto-merged by the logger. */
-interface LogContext {
-  /** Name of the current subagent / fork / teammate-in-process. */
-  agentName?: string;
-  /** Agent kind, distinguishes context source. */
-  agentKind?: "subagent" | "fork" | "teammate-in-process";
-  /** Current tool name (for dynamic child loggers). */
-  toolName?: string;
-}
-
-/** Global AsyncLocalStorage singleton. */
-const logContext = new AsyncLocalStorage<LogContext>();
-
-/** Read the current async context's log bindings. Returns empty object if none. */
-function getLogContext(): LogContext {
-  return logContext.getStore() ?? {};
 }
 
 // Custom error serializer for pino.
@@ -398,9 +364,7 @@ function serializeErrorInstance(err: Error, depth: number): SerializedError {
     if (cause instanceof Error) {
       out.cause = serializeErrorInstance(cause, depth + 1);
     } else if (cause !== undefined) {
-      out.cause = {
-        message: typeof cause === "string" ? cause : JSON.stringify(cause),
-      };
+      out.cause = { message: safeStringify(cause) };
     }
   }
 
@@ -422,13 +386,39 @@ function serializeErrorInstance(err: Error, depth: number): SerializedError {
 }
 
 /**
+ * Stringify an arbitrary value without ever throwing. pino does not guard
+ * serializer exceptions, so a throwing serializer would crash the log call
+ * site: JSON.stringify throws on circular structures and String() throws on
+ * null-prototype objects.
+ */
+function safeStringify(value: unknown): string {
+  if (typeof value === "string") {
+    return value;
+  }
+  try {
+    const json = JSON.stringify(value);
+    if (json !== undefined) {
+      return json;
+    }
+  } catch {
+    // Circular structure or throwing toJSON — fall through.
+  }
+  try {
+    return String(value);
+  } catch {
+    return Object.prototype.toString.call(value);
+  }
+}
+
+/**
  * pino err serializer: tolerates Error instances and non-Error values.
  * - Error instance: recursive cause chain + preserved extra fields.
  * - string/undefined/plain object: normalized to { message, value }.
+ * Never throws — pino propagates serializer exceptions to the caller.
  */
 function errSerializer(err: unknown): Record<string, unknown> {
   if (err instanceof Error) {
     return serializeErrorInstance(err, 0);
   }
-  return { message: String(err), value: err };
+  return { message: safeStringify(err), value: err };
 }

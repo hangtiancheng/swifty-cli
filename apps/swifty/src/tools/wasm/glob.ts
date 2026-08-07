@@ -105,8 +105,8 @@ export class GlobTool implements Tool {
         let mtime = 0;
         try {
           mtime = statSync(join(basePath, match)).mtimeMs;
-        } catch (err) {
-          log.debug({ err, match }, "stat failed while sorting glob results");
+        } catch {
+          // stat failed: sort as oldest (mtime 0)
         }
         mtimes.set(match, mtime);
       }

@@ -126,7 +126,6 @@ export async function connectToIde(opts: {
     log.error({ err }, "failed to send ide_connected notification");
   }
 
-  log.info({ ideName: ide.ideName, port: ide.port }, "connected to IDE extension");
   return {
     ideName: ide.ideName,
     close: async () => {
