@@ -22,11 +22,11 @@ const scannerMocks = vi.hoisted(() => ({
   scanDocsDir: vi.fn<() => Promise<{ source: string; content: string }[]>>(async () => []),
 }));
 
-vi.mock("./indexer.js", async (importOriginal) => {
+vi.mock("@/tools/search-docs/indexer.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/tools/search-docs/indexer.js")>();
   return { ...indexerMocks, LockConflictError: actual.LockConflictError };
 });
-vi.mock("./scanner.js", () => scannerMocks);
+vi.mock("@/tools/search-docs/scanner.js", () => scannerMocks);
 
 function makeCtx(): SearchDocsContext {
   return {
