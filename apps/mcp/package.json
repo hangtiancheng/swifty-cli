@@ -1,0 +1,48 @@
+{
+  "name": "@swifty.js/mcp",
+  "version": "0.0.1",
+  "description": "Swifty official MCP tools collection",
+  "private": true,
+  "bin": {
+    "swifty-mcp": "dist/main.js"
+  },
+  "scripts": {
+    "dev": "tsx ./src/main.ts",
+    "build": "tsup",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "format": "oxfmt --write ./",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "keywords": [
+    "embedding",
+    "MCP",
+    "RAG",
+    "Swifty"
+  ],
+  "author": "https://github.com/hangtiancheng",
+  "license": "MIT",
+  "type": "module",
+  "packageManager": "pnpm@10.33.1",
+  "dependencies": {
+    "@ai-sdk/openai-compatible": "^3.0.18",
+    "@koa/bodyparser": "^6.1.0",
+    "@koa/router": "^15.7.0",
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "ai": "^7.0.43",
+    "koa": "^3.2.1",
+    "pino": "^10.3.1",
+    "redis": "^6.1.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/koa": "^3.0.3",
+    "@types/koa__router": "^12.0.5",
+    "@types/node": "^24.13.3",
+    "oxfmt": "^0.62.0",
+    "tsup": "^8.5.1",
+    "tsx": "^4.23.1",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.10"
+  }
+}
