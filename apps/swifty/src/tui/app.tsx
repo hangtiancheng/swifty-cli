@@ -126,6 +126,13 @@ import { ToolBlock, ToolDisplay, type ToolBlockInfo } from "./tool-display.js";
 import { randomCompletionVerb } from "./verbs.js";
 import { version } from "./version.js";
 
+import { MAX_IMAGES_PER_MESSAGE } from "@/images/image.js";
+import {
+  appendPendingImagesToContent,
+  appendPendingImageLabels,
+  appendPendingImageLabelsToContent,
+  type PromptSubmission,
+} from "@/images/paste.js";
 import type { ToolSchema } from "@/tools/types.js";
 import { asErrorString, asRecord, contentToText, strArg } from "@/utils/index.js";
 
@@ -1683,7 +1690,7 @@ export function App({
           { role: "system", content: "Plan approved. Entered YOLO mode." },
         ]);
         if (planContent) {
-          void handleSubmit(`Execute this plan:\n\n${planContent}`);
+          handleSubmit({ text: `Execute this plan:\n\n${planContent}`, images: [] });
         }
       } else if (choice === "manual") {
         // Exit plan mode and restore the pre-plan permission mode
@@ -1698,10 +1705,10 @@ export function App({
           },
         ]);
         if (planContent) {
-          void handleSubmit(`Execute this plan:\n\n${planContent}`);
+          handleSubmit({ text: `Execute this plan:\n\n${planContent}`, images: [] });
         }
       } else if (choice === "feedback" && feedback) {
-        void handleSubmit(feedback);
+        handleSubmit({ text: feedback, images: [] });
       }
     },
     [workDir, prePlanMode],
@@ -1782,58 +1789,72 @@ export function App({
 
   const submittingRef = useRef(false);
 
-  const handleSubmit = async (text: string) => {
-    if (submittingRef.current) {
-      return;
-    }
-    submittingRef.current = true;
+  const handleAcceptedSubmit = async ({ text, images }: PromptSubmission) => {
+    let streamStarted = false;
+    try {
+      refreshSkillsIfNeeded();
 
-    refreshSkillsIfNeeded();
+      // Image attachments are deliberately excluded from prompt history: the
+      // history store is text-only and cannot restore their binary payloads.
+      if (text) {
+        historyMod.append(historyDir, text);
+        setPromptHistory((prev) => [...prev, text]);
+      }
 
-    // Save to prompt history
-    historyMod.append(historyDir, text);
-    setPromptHistory((prev) => [...prev, text]);
+      // Slash commands consume their text only. Any attached images are
+      // discarded with the accepted draft when the command handles itself.
+      if (text.startsWith("/")) {
+        const handled = await handleSlashCommand(text);
+        if (handled) {
+          return;
+        }
+      }
 
-    // Handle slash commands
-    if (text.startsWith("/")) {
-      const handled = await handleSlashCommand(text);
-      if (handled) {
-        submittingRef.current = false;
+      if (!clientRef.current) {
+        setError("LLM client not ready yet");
         return;
       }
-    }
 
-    if (!clientRef.current) {
-      setError("LLM client not ready yet");
-      submittingRef.current = false;
-      return;
-    }
+      const displayText = appendPendingImageLabels(text, images);
+      setMessages((prev) => [...prev, { role: "user", content: displayText }]);
 
-    setMessages((prev) => [...prev, { role: "user", content: text }]);
-    // Inline any @file references for the model; @image references become
-    // inline image content blocks. The UI keeps the original text the user typed.
-    const expanded = await expandAtRefsWithImages(text, workDir);
-    convRef.current.addUserMessage(expanded);
+      // Inline @file references for the model, counting clipboard images
+      // against the same per-message limit. Clipboard image blocks are then
+      // appended to the provider-neutral content array.
+      const expanded = await expandAtRefsWithImages(
+        text,
+        workDir,
+        Math.min(images.length, MAX_IMAGES_PER_MESSAGE),
+      );
+      const modelContent = appendPendingImagesToContent(
+        appendPendingImageLabelsToContent(expanded, images),
+        images,
+      );
+      convRef.current.addUserMessage(modelContent);
 
-    // Save to session: the original typed text, plus any attached image
-    // blocks (persisted inline as base64 in the JSONL).
-    sessionMod.saveMessage(workDir, sessionIdRef.current, {
-      role: "user",
-      content:
-        typeof expanded === "string"
-          ? text
-          : [{ type: "text", text }, ...expanded.filter((b) => b.type === "image")],
-      timestamp: Math.floor(Date.now() / 1000),
-    });
+      // Persist the original typed text plus all resolved image blocks. The
+      // inline base64 payloads round-trip through the existing session schema.
+      const imageBlocks =
+        typeof modelContent === "string"
+          ? []
+          : modelContent.filter((block) => block.type === "image");
+      sessionMod.saveMessage(workDir, sessionIdRef.current, {
+        role: "user",
+        content:
+          imageBlocks.length === 0
+            ? text
+            : [...(text ? [{ type: "text", text }] : []), ...imageBlocks],
+        timestamp: Math.floor(Date.now() / 1000),
+      });
 
-    streamStartRef.current = Date.now();
-    setCompletionMark(null);
-    setIsStreaming(true);
-    setStreamingText("");
-    setError(null);
-    setActiveTools([]);
+      streamStarted = true;
+      streamStartRef.current = Date.now();
+      setCompletionMark(null);
+      setIsStreaming(true);
+      setStreamingText("");
+      setError(null);
+      setActiveTools([]);
 
-    try {
       await runAgentLoop();
     } catch (err) {
       const msg = asErrorString(err);
@@ -1857,13 +1878,27 @@ export function App({
         setMessages((prev) => [...prev, { role: "system", content: `Error: ${msg}` }]);
       }
     } finally {
-      const elapsed = Math.floor((Date.now() - streamStartRef.current) / 1000);
-      setCompletionMark(`✻ ${randomCompletionVerb()} for ${String(elapsed)}s`);
-      setIsStreaming(false);
-      setActiveTools([]);
-      abortControllerRef.current = null;
+      if (streamStarted) {
+        const elapsed = Math.floor((Date.now() - streamStartRef.current) / 1000);
+        setCompletionMark(`✻ ${randomCompletionVerb()} for ${String(elapsed)}s`);
+        setIsStreaming(false);
+        setActiveTools([]);
+        abortControllerRef.current = null;
+      }
       submittingRef.current = false;
     }
+  };
+
+  // Accept synchronously so InputBox only clears a draft that this app owns.
+  // The async work can then expand @refs and run the agent without a second
+  // Enter silently discarding the next draft during that preparation window.
+  const handleSubmit = (submission: PromptSubmission): boolean => {
+    if (submittingRef.current) {
+      return false;
+    }
+    submittingRef.current = true;
+    void handleAcceptedSubmit(submission);
+    return true;
   };
 
   if (appState === "providerSelect") {
@@ -2052,10 +2087,14 @@ export function App({
         count={teammateStates.filter((t) => t.status === "running" || t.status === "idle").length}
       />
       <InputBox
-        onSubmit={(text: string) => {
-          void handleSubmit(text);
-        }}
-        disabled={rewindDialogActive || permissionRequest !== null || askRequest !== null}
+        onSubmit={handleSubmit}
+        disabled={
+          rewindDialogActive ||
+          permissionRequest !== null ||
+          askRequest !== null ||
+          planApprovalActive ||
+          teamsDialogOpen
+        }
         submitDisabled={isStreaming || isCompacting}
         history={promptHistory}
         commands={cmdRegistryRef.current.listCommands()}

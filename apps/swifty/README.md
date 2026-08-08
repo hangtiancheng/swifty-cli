@@ -183,4 +183,8 @@ Inside the TUI, these commands are available:
 | Ctrl+C    | Interrupt streaming (first press), exit app (second press within 2s) |
 | Ctrl+O    | Toggle full vs. truncated tool output                                |
 | Ctrl+T    | Toggle Teams dialog overlay                                          |
+| Ctrl+V    | Paste an image from the clipboard on macOS and Linux                 |
+| Alt+V     | Paste an image from the clipboard on Windows                         |
 | Shift+Tab | Cycle permission modes                                               |
+
+Clipboard image paste is supported on macOS, Linux, and Windows. On macOS, Swifty also handles the empty paste event produced by a regular clipboard paste, but Ctrl+V is the most reliable shortcut. Linux requires either `wl-clipboard` (preferred) or `xclip`.
