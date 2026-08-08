@@ -96,4 +96,52 @@ describe("@image mention expansion (expandAtRefsWithImages)", () => {
       true,
     );
   });
+
+  it("rejects image refs when existing attachments fill all image slots", async () => {
+    const workDir = mkdtempSync(join(tmpdir(), "swifty-at-img-"));
+    copyFileSync(TEST_PNG_PATH, join(workDir, "shot.png"));
+
+    const out = await expandAtRefsWithImages("see @shot.png", workDir, 10);
+
+    expect(typeof out).toBe("string");
+    expect(out).toContain("see @shot.png");
+    expect(out).toContain("Error: too many images attached (limit 10 per message)");
+    expect(out).not.toContain("<image");
+  });
+
+  it("counts existing attachments against the shared image limit", async () => {
+    const workDir = mkdtempSync(join(tmpdir(), "swifty-at-img-"));
+    copyFileSync(TEST_PNG_PATH, join(workDir, "first.png"));
+    copyFileSync(TEST_PNG_PATH, join(workDir, "second.png"));
+
+    const out = await expandAtRefsWithImages("compare @first.png with @second.png", workDir, 9);
+    if (typeof out === "string") {
+      throw new Error("expected content blocks");
+    }
+
+    expect(out.filter((block) => block.type === "image")).toHaveLength(1);
+    const text = strArg(out[0], "text");
+    expect(text).toContain('<image type="base64" media_type="image/jpeg" path="first.png" />');
+    expect(text).not.toContain('path="second.png"');
+    expect(text).toContain("Error: too many images attached (limit 10 per message)");
+  });
+
+  it("keeps the default image limit when no allowance is provided", async () => {
+    const workDir = mkdtempSync(join(tmpdir(), "swifty-at-img-"));
+    const refs = Array.from({ length: 11 }, (_, index) => {
+      const filename = `shot-${String(index)}.png`;
+      copyFileSync(TEST_PNG_PATH, join(workDir, filename));
+      return `@${filename}`;
+    });
+
+    const out = await expandAtRefsWithImages(`compare ${refs.join(" ")}`, workDir);
+    if (typeof out === "string") {
+      throw new Error("expected content blocks");
+    }
+
+    expect(out.filter((block) => block.type === "image")).toHaveLength(10);
+    expect(strArg(out[0], "text")).toContain(
+      "Error: too many images attached (limit 10 per message)",
+    );
+  });
 });

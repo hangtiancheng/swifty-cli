@@ -24,8 +24,8 @@ import { readdirSync, statSync } from "fs";
 import { join } from "path";
 
 import Fuse from "fuse.js";
-import { Box, Text, useInput } from "ink";
-import { useState, useMemo, useRef, useEffect } from "react";
+import { Box, Text, useInput, usePaste } from "ink";
+import { useState, useMemo, useRef, useEffect, useReducer } from "react";
 
 import { createChildLogger } from "../logger/logger.js";
 
@@ -33,8 +33,19 @@ import { BORDER_COLORS, COLORS, ICONS, THEME } from "./styles.js";
 
 import type { Command } from "@/commands/commands.js";
 import type { CommandUsageTracker } from "@/commands/usage-tracker.js";
+import { readClipboardImage } from "@/images/clipboard.js";
+import { MAX_IMAGES_PER_MESSAGE } from "@/images/image.js";
+import {
+  canSubmitPrompt,
+  createPendingImageState,
+  formatPendingImageLabels,
+  isImagePasteShortcut,
+  pendingImageReducer,
+  type PromptSubmission,
+} from "@/images/paste.js";
 import type { PermissionMode } from "@/permissions/checker.js";
 import { SKIP_DIRS } from "@/tools/types.js";
+import { asErrorString } from "@/utils/index.js";
 
 const log = createChildLogger({ module: "tui" });
 
@@ -91,7 +102,9 @@ const MODEL_DISPLAY: Record<PermissionMode, { name: string; color: string }> = {
 const MODEL_CYCLE: PermissionMode[] = ["default", "acceptEdits", "plan", "bypassPermissions"];
 
 interface InputBoxProps {
-  onSubmit: (text: string) => void;
+  /** Returns true when the parent accepted the submission. A rejected
+   *  submission keeps the full text-and-image draft intact. */
+  onSubmit: (submission: PromptSubmission) => boolean;
   disabled?: boolean;
   /** Blocks Enter-to-send while still allowing typing/editing (e.g. while
    *  the agent is streaming or the conversation is being compacted). */
@@ -138,6 +151,14 @@ export function InputBox(props: InputBoxProps) {
   } | null>(null);
   const [dropdownIndex, setDropdownIndex] = useState(0);
   const [dropdownDismissed, setDropdownDismissed] = useState(false);
+  const [pendingImageState, dispatchPendingImage] = useReducer(
+    pendingImageReducer,
+    undefined,
+    createPendingImageState,
+  );
+  const [isReadingClipboardImage, setIsReadingClipboardImage] = useState(false);
+  const [clipboardImageError, setClipboardImageError] = useState("");
+  const clipboardReadInFlightRef = useRef(false);
 
   useEffect(() => {
     if (!insertTextRef) {
@@ -290,6 +311,75 @@ export function InputBox(props: InputBoxProps) {
     setDropdownIndex(0);
   };
 
+  const insertPastedText = (rawText: string) => {
+    const normalized = rawText.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+    if (!normalized) {
+      return;
+    }
+
+    const pasteLines = normalized.split("\n");
+    const cl = cursorLine;
+    const col = Math.min(cursorCol, (lines[cl] ?? "").length);
+    const lastLen = pasteLines[pasteLines.length - 1].length;
+    setLines((prev) => {
+      const updated = [...prev];
+      const line = updated[cl] ?? "";
+      const segments = [...pasteLines];
+      segments[0] = line.slice(0, col) + segments[0];
+      segments[segments.length - 1] = segments[segments.length - 1] + line.slice(col);
+      updated.splice(cl, 1, ...segments);
+      return updated;
+    });
+    setCursorLine(cl + pasteLines.length - 1);
+    setCursorCol(pasteLines.length === 1 ? col + lastLen : lastLen);
+    setDropdownIndex(0);
+    setDropdownDismissed(false);
+  };
+
+  const pasteImageFromClipboard = async () => {
+    if (disabled || clipboardReadInFlightRef.current) {
+      return;
+    }
+    if (pendingImageState.images.length >= MAX_IMAGES_PER_MESSAGE) {
+      setClipboardImageError(
+        `Too many images attached (limit ${String(MAX_IMAGES_PER_MESSAGE)} per message).`,
+      );
+      return;
+    }
+
+    clipboardReadInFlightRef.current = true;
+    setIsReadingClipboardImage(true);
+    setClipboardImageError("");
+    try {
+      const result = await readClipboardImage();
+      if (result.ok) {
+        dispatchPendingImage({ type: "add", attachment: result.image });
+        return;
+      }
+      setClipboardImageError(
+        result.error.installHint
+          ? `${result.error.message} ${result.error.installHint}`
+          : result.error.message,
+      );
+    } catch (err) {
+      setClipboardImageError(`Could not read an image from the clipboard: ${asErrorString(err)}`);
+    } finally {
+      clipboardReadInFlightRef.current = false;
+      setIsReadingClipboardImage(false);
+    }
+  };
+
+  usePaste(
+    (text) => {
+      if (text.length > 0) {
+        insertPastedText(text);
+      } else {
+        void pasteImageFromClipboard();
+      }
+    },
+    { isActive: !disabled },
+  );
+
   useInput((input, key) => {
     if (input.includes("[<") && /\[<\d+;\d+;\d+[Mm]/.test(input)) {
       return;
@@ -320,6 +410,11 @@ export function InputBox(props: InputBoxProps) {
       return;
     }
 
+    if (isImagePasteShortcut(input, key)) {
+      void pasteImageFromClipboard();
+      return;
+    }
+
     const hasReturn = key.return || input.includes("\r") || input.includes("\n");
     const cleanInput = input.replace(/[\r\n]/g, "");
 
@@ -328,23 +423,7 @@ export function InputBox(props: InputBoxProps) {
     // at the cursor instead of submitting.
     const normalized = input.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
     if (normalized.includes("\n") && normalized !== "\n") {
-      const pasteLines = normalized.split("\n");
-      const cl = cursorLine;
-      const col = Math.min(cursorCol, (lines[cl] ?? "").length);
-      const lastLen = pasteLines[pasteLines.length - 1].length;
-      setLines((prev) => {
-        const updated = [...prev];
-        const line = updated[cl] ?? "";
-        const segments = [...pasteLines];
-        segments[0] = line.slice(0, col) + segments[0];
-        segments[segments.length - 1] = segments[segments.length - 1] + line.slice(col);
-        updated.splice(cl, 1, ...segments);
-        return updated;
-      });
-      setCursorLine(cl + pasteLines.length - 1);
-      setCursorCol(lastLen);
-      setDropdownIndex(0);
-      setDropdownDismissed(false);
+      insertPastedText(input);
       return;
     }
 
@@ -387,13 +466,20 @@ export function InputBox(props: InputBoxProps) {
       const updated = [...lines];
       updated[cursorLine] = finalLine;
       const finalValue = updated.join("\n").trim();
-      if (finalValue) {
+      if (canSubmitPrompt(finalValue, pendingImageState.images)) {
         // Sending is locked (agent streaming / compacting): keep the draft
         // instead of submitting, so nothing is silently dropped.
-        if (submitDisabled) {
+        if (submitDisabled || isReadingClipboardImage) {
           return;
         }
-        onSubmit(finalValue);
+        const accepted = onSubmit({
+          text: finalValue,
+          images: [...pendingImageState.images],
+        });
+        dispatchPendingImage({ type: "submission-result", accepted });
+        if (!accepted) {
+          return;
+        }
         setLines([""]);
         setCursorLine(0);
         setCursorCol(0);
@@ -401,6 +487,7 @@ export function InputBox(props: InputBoxProps) {
         historyDraftRef.current = null;
         setDropdownIndex(0);
         setDropdownDismissed(false);
+        setClipboardImageError("");
       }
       return;
     }
@@ -460,6 +547,17 @@ export function InputBox(props: InputBoxProps) {
     }
 
     if (key.backspace || key.delete) {
+      if (
+        key.backspace &&
+        lines.length === 1 &&
+        lines[0] === "" &&
+        cursorCol === 0 &&
+        pendingImageState.images.length > 0
+      ) {
+        dispatchPendingImage({ type: "remove-last" });
+        setClipboardImageError("");
+        return;
+      }
       if (cursorCol > 0) {
         const col = cursorCol;
         setLines((prev) => {
@@ -596,6 +694,7 @@ export function InputBox(props: InputBoxProps) {
   return (
     <Box flexDirection="column">
       <Box
+        flexDirection="column"
         borderStyle="round"
         borderTop={true}
         borderBottom={true}
@@ -637,6 +736,21 @@ export function InputBox(props: InputBoxProps) {
             </>
           )}
         </Text>
+        {!disabled && pendingImageState.images.length > 0 && (
+          <Box paddingLeft={2}>
+            <Text color="cyan">{formatPendingImageLabels(pendingImageState.images)}</Text>
+          </Box>
+        )}
+        {!disabled && isReadingClipboardImage && (
+          <Box paddingLeft={2}>
+            <Text dimColor>Reading image from clipboard...</Text>
+          </Box>
+        )}
+        {!disabled && clipboardImageError && (
+          <Box paddingLeft={2}>
+            <Text color="red">{clipboardImageError}</Text>
+          </Box>
+        )}
       </Box>
       {showDropdown && (
         <Box flexDirection="column">
