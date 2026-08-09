@@ -363,7 +363,7 @@ export function InputBox(props: InputBoxProps) {
         const line = lines[cursorLine] ?? "";
         const before = line.slice(0, Math.min(cursorCol, line.length));
         const pad = before.length > 0 && !/\s$/.test(before) ? " " : "";
-        insertPastedText(`${pad}@${relative(workDir, result.value)} `);
+        insertPastedText(`${pad}'@${relative(workDir, result.value)}' `);
       } else {
         setPasteError(result.reason);
       }
