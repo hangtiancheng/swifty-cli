@@ -403,17 +403,18 @@ async function performPostCreationSetup(repoRoot: string, wtPath: string): Promi
  */
 const SHARED_SWIFTY_ENTRIES = [
   "config.yaml",
+  "config.local.yaml",
   "permissions.yaml",
   "permissions.local.yaml",
+  "agents",
   "memory",
   "skills",
-  "agents",
 ];
 
 /** Copy shared .swifty/ settings from the main repo to the worktree. */
 async function copySwiftySettings(repoRoot: string, wtPath: string): Promise<void> {
-  const srcRoot = join(repoRoot, ".swifty");
-  if (!(await pathExists(srcRoot))) {
+  const swiftyDir = join(repoRoot, ".swifty");
+  if (!(await pathExists(swiftyDir))) {
     return;
   }
   const dstRoot = join(wtPath, ".swifty");
@@ -424,7 +425,7 @@ async function copySwiftySettings(repoRoot: string, wtPath: string): Promise<voi
     return;
   }
   for (const entry of SHARED_SWIFTY_ENTRIES) {
-    const src = join(srcRoot, entry);
+    const src = join(swiftyDir, entry);
     if (!(await pathExists(src))) {
       continue;
     }
