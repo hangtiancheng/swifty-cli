@@ -104,7 +104,7 @@ describe("image tool results over OpenAI endpoints", () => {
         {
           toolUseId: "c1",
           content: [
-            { type: "text", text: "[image: a.png]" },
+            { type: "text", text: "[Image: a.png]" },
             { type: "image", source: { type: "base64", media_type: "image/png", data: DATA } },
           ],
           isError: false,
@@ -116,7 +116,7 @@ describe("image tool results over OpenAI endpoints", () => {
   it("chat completions: flattens role:tool text and appends a synthetic user message with the image", () => {
     const msgs = buildChatCompletionMessages(history);
     const toolMsg = msgs.find((m) => m.role === "tool");
-    expect(toolMsg?.content).toContain("[image: a.png]");
+    expect(toolMsg?.content).toContain("[Image: a.png]");
     expect(JSON.stringify(toolMsg)).not.toContain(DATA);
 
     const synthetic = msgs.find((m) => m.role === "user" && Array.isArray(m.content));
@@ -138,7 +138,7 @@ describe("image tool results over OpenAI endpoints", () => {
   it("responses API: emits function_call_output text plus a synthetic user message with input_image", () => {
     const items = buildOpenAIInput(history);
     const fco = items.find((i) => "type" in i && i.type === "function_call_output");
-    expect(fco && "output" in fco ? fco.output : "").toContain("[image: a.png]");
+    expect(fco && "output" in fco ? fco.output : "").toContain("[Image: a.png]");
 
     const synthetic = items.find(
       (i) => "role" in i && i.role === "user" && Array.isArray(i.content),

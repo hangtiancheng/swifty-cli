@@ -43,7 +43,7 @@ export function contentToText(content: string | Record<string, unknown>[]): stri
       const source = asRecord(block.source);
       const mediaType =
         strArg(source, "type") === "base64" ? strArg(source, "media_type") : "image";
-      parts.push(`[image: ${mediaType}]`);
+      parts.push(`[Image: ${mediaType}]`);
     }
   }
   return parts.join("\n");

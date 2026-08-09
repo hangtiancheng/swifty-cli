@@ -198,7 +198,7 @@ describe("ConversationManager", () => {
       mgr.addToolResultMessage(
         "tu-1",
         [
-          { type: "text", text: "[image: shot.png]" },
+          { type: "text", text: "[Image: shot.png]" },
           { type: "image", source: { type: "base64", media_type: "image/png", data: "QUJD" } },
         ],
         false,

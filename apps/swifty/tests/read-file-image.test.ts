@@ -63,7 +63,7 @@ describe("ReadFileTool images", () => {
     const result = await new ReadFileTool().execute(c, { file_path: p });
     expect(result.isError).toBe(false);
     const blocks = blocksOf(result.output);
-    expect(strArg(blocks[0], "text")).toContain("[image: shot.png");
+    expect(strArg(blocks[0], "text")).toContain("[Image: shot.png");
     const source = blocks[1].source;
     expect(blocks[1].type).toBe("image");
     expect(isRecord(source) ? source.media_type : null).toBe("image/png");

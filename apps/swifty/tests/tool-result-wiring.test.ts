@@ -209,7 +209,6 @@ describe("tool result budget wiring", () => {
 describe("image tool result wiring", () => {
   const PNG_DATA = Buffer.from("not-a-real-png-but-that-is-fine").toString("base64");
   const imageBlocks: Record<string, unknown>[] = [
-    { type: "text", text: "[image: shot.png · image/png · 31B]" },
     {
       type: "image",
       source: { type: "base64", media_type: "image/png", data: PNG_DATA },
