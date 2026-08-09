@@ -1,7 +1,9 @@
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
+
+import { fileHistoryDir } from "@/file-history/file-history.js";
 
 export type SaveClipboardImageResult = { ok: true; value: string } | { ok: false; reason: string };
 
@@ -22,10 +24,6 @@ export function clipboardImageFileName(bytes: Buffer): string {
   return `${createHash("sha256").update(bytes).digest("hex").slice(0, 16)}.png`;
 }
 
-export function clipboardImageDir(workDir: string, sessionId: string): string {
-  return join(resolve(workDir), ".swifty", "file-history", sessionId);
-}
-
 export async function storeClipboardImage(
   workDir: string,
   sessionId: string,
@@ -39,7 +37,7 @@ export async function storeClipboardImage(
       `Clipboard image is too large (${String(bytes.length)} bytes, limit ${String(MAX_CLIPBOARD_IMAGE_BYTES)}).`,
     );
   }
-  const dir = clipboardImageDir(workDir, sessionId);
+  const dir = fileHistoryDir(workDir, sessionId);
   await mkdir(dir, { recursive: true });
   const path = join(dir, clipboardImageFileName(bytes));
   await writeFile(path, bytes);
@@ -230,7 +228,7 @@ export async function saveClipboardImage(
   workDir: string,
   sessionId: string,
 ): Promise<SaveClipboardImageResult> {
-  const dir = clipboardImageDir(workDir, sessionId);
+  const dir = fileHistoryDir(workDir, sessionId);
   const tempPath = join(dir, `.clipboard-${String(process.pid)}.tmp`);
   try {
     let bytes: Buffer;

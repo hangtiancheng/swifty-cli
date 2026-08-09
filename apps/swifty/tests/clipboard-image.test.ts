@@ -5,12 +5,8 @@ import { dirname, join } from "node:path";
 
 import { describe, it, expect } from "vitest";
 
-import {
-  clipboardImageDir,
-  clipboardImageFileName,
-  isPngBuffer,
-  storeClipboardImage,
-} from "@/images/clipboard.js";
+import { fileHistoryDir } from "@/file-history/file-history.js";
+import { clipboardImageFileName, isPngBuffer, storeClipboardImage } from "@/images/clipboard.js";
 
 const PNG_BYTES = Buffer.concat([
   Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
@@ -29,14 +25,14 @@ describe("clipboard image storage", () => {
     expect(clipboardImageFileName(PNG_BYTES)).toBe(`${expected}.png`);
   });
 
-  it("writes the image under .swifty/file-history/<sessionId> and dedupes repeats", async () => {
+  it("writes the image into the session's file-history dir and dedupes repeats", async () => {
     const workDir = mkdtempSync(join(tmpdir(), "swifty-clip-"));
 
     const first = await storeClipboardImage(workDir, "session-a", PNG_BYTES);
     const second = await storeClipboardImage(workDir, "session-a", PNG_BYTES);
 
     expect(first).toBe(second);
-    expect(dirname(first)).toBe(clipboardImageDir(workDir, "session-a"));
+    expect(dirname(first)).toBe(fileHistoryDir(workDir, "session-a"));
     expect(dirname(first)).toBe(join(workDir, ".swifty", "file-history", "session-a"));
     expect(first.endsWith(".png")).toBe(true);
     expect(readFileSync(first)).toEqual(PNG_BYTES);
