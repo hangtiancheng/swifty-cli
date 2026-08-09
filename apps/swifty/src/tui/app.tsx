@@ -2072,6 +2072,7 @@ export function App({
           setPermMode(mode);
         }}
         workDir={workDir}
+        sessionId={sessionIdRef.current}
         insertTextRef={insertInputTextRef}
         onEscape={() => {
           if (isStreaming) {

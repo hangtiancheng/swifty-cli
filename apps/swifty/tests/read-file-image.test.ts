@@ -34,7 +34,7 @@ import { describe, it, expect } from "vitest";
 import { FileStateCache } from "../src/tools/file-state-cache.js";
 import { ReadFileTool } from "../src/tools/read-file.js";
 import type { ToolContext } from "../src/tools/types.js";
-import { isRecord, strArg } from "../src/utils/index.js";
+import { isRecord } from "../src/utils/index.js";
 
 const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 const JPEG_MAGIC = Buffer.from([0xff, 0xd8, 0xff, 0xe0]);
@@ -63,9 +63,8 @@ describe("ReadFileTool images", () => {
     const result = await new ReadFileTool().execute(c, { file_path: p });
     expect(result.isError).toBe(false);
     const blocks = blocksOf(result.output);
-    expect(strArg(blocks[0], "text")).toContain("[image: shot.png");
-    const source = blocks[1].source;
-    expect(blocks[1].type).toBe("image");
+    const source = blocks[0].source;
+    expect(blocks[0].type).toBe("image");
     expect(isRecord(source) ? source.media_type : null).toBe("image/png");
     expect(isRecord(source) ? source.data : null).toBe(buf.toString("base64"));
   });
@@ -78,7 +77,7 @@ describe("ReadFileTool images", () => {
 
     const result = await new ReadFileTool().execute(c, { file_path: p });
     expect(result.isError).toBe(false);
-    const source = blocksOf(result.output)[1].source;
+    const source = blocksOf(result.output)[0].source;
     expect(isRecord(source) ? source.media_type : null).toBe("image/jpeg");
   });
 

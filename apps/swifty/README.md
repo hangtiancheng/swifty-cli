@@ -183,4 +183,7 @@ Inside the TUI, these commands are available:
 | Ctrl+C    | Interrupt streaming (first press), exit app (second press within 2s) |
 | Ctrl+O    | Toggle full vs. truncated tool output                                |
 | Ctrl+T    | Toggle Teams dialog overlay                                          |
+| Ctrl+V    | Paste a clipboard image (Alt+V on Windows)                           |
 | Shift+Tab | Cycle permission modes                                               |
+
+Pasting an image saves it as a PNG under `.swifty/file-history/<session-id>/` and inserts the file path into the prompt; the agent reads it on demand with the ReadFile tool. Linux requires `wl-clipboard` (Wayland) or `xclip` (X11).

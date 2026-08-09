@@ -24,7 +24,7 @@ import { readdirSync, statSync } from "fs";
 import { join } from "path";
 
 import Fuse from "fuse.js";
-import { Box, Text, useInput } from "ink";
+import { Box, Text, useInput, usePaste } from "ink";
 import { useState, useMemo, useRef, useEffect } from "react";
 
 import { createChildLogger } from "../logger/logger.js";
@@ -33,6 +33,7 @@ import { BORDER_COLORS, COLORS, ICONS, THEME } from "./styles.js";
 
 import type { Command } from "@/commands/commands.js";
 import type { CommandUsageTracker } from "@/commands/usage-tracker.js";
+import { saveClipboardImage } from "@/images/clipboard.js";
 import type { PermissionMode } from "@/permissions/checker.js";
 import { SKIP_DIRS } from "@/tools/types.js";
 
@@ -104,6 +105,7 @@ interface InputBoxProps {
   permMode?: PermissionMode;
   onModeChange?: (mode: PermissionMode) => void;
   workDir?: string;
+  sessionId?: string;
   /** Receives an insert-at-cursor function so the parent can inject text
    *  (e.g. IDE at-mentions) into the input programmatically. */
   insertTextRef?: { current: ((text: string) => void) | null };
@@ -122,6 +124,7 @@ export function InputBox(props: InputBoxProps) {
     permMode = "default",
     onModeChange,
     workDir = ".",
+    sessionId = "default",
     insertTextRef,
   } = props;
 
@@ -138,6 +141,8 @@ export function InputBox(props: InputBoxProps) {
   } | null>(null);
   const [dropdownIndex, setDropdownIndex] = useState(0);
   const [dropdownDismissed, setDropdownDismissed] = useState(false);
+  const [pasteImageError, setPasteImageError] = useState("");
+  const pasteImageInflightRef = useRef(false);
 
   useEffect(() => {
     if (!insertTextRef) {
@@ -290,6 +295,64 @@ export function InputBox(props: InputBoxProps) {
     setDropdownIndex(0);
   };
 
+  const insertPastedText = (rawText: string) => {
+    const normalized = rawText.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+    if (!normalized) {
+      return;
+    }
+    const pasteLines = normalized.split("\n");
+    const cl = cursorLine;
+    const col = Math.min(cursorCol, (lines[cl] ?? "").length);
+    const lastLen = pasteLines[pasteLines.length - 1].length;
+    setLines((prev) => {
+      const updated = [...prev];
+      const line = updated[cl] ?? "";
+      const segments = [...pasteLines];
+      segments[0] = line.slice(0, col) + segments[0];
+      segments[segments.length - 1] = segments[segments.length - 1] + line.slice(col);
+      updated.splice(cl, 1, ...segments);
+      return updated;
+    });
+    setCursorLine(cl + pasteLines.length - 1);
+    setCursorCol(pasteLines.length === 1 ? col + lastLen : lastLen);
+    setDropdownIndex(0);
+    setDropdownDismissed(false);
+  };
+
+  // Save the clipboard image under .swifty/file-history/ and insert its path
+  // as plain text; the agent later reads the file with the ReadFile tool.
+  const pasteImageFromClipboard = async () => {
+    if (disabled || pasteImageInflightRef.current) {
+      return;
+    }
+    pasteImageInflightRef.current = true;
+    setPasteImageError("");
+    try {
+      const result = await saveClipboardImage(workDir, sessionId);
+      if (result.ok) {
+        insertPastedText(`'${result.value}' `);
+      } else {
+        setPasteImageError(result.reason);
+      }
+    } catch (err) {
+      log.error({ err }, "clipboard image paste failed");
+      setPasteImageError("Could not read an image from the clipboard.");
+    } finally {
+      pasteImageInflightRef.current = false;
+    }
+  };
+
+  usePaste(
+    (text) => {
+      if (text.length > 0) {
+        insertPastedText(text);
+      } else {
+        void pasteImageFromClipboard();
+      }
+    },
+    { isActive: !disabled },
+  );
+
   useInput((input, key) => {
     if (input.includes("[<") && /\[<\d+;\d+;\d+[Mm]/.test(input)) {
       return;
@@ -320,31 +383,23 @@ export function InputBox(props: InputBoxProps) {
       return;
     }
 
-    const hasReturn = key.return || input.includes("\r") || input.includes("\n");
+    // Ctrl+V pastes a clipboard image (Alt+V on Windows, where terminals
+    // reserve Ctrl+V for text paste).
+    if (input === "v" && (process.platform === "win32" ? key.meta : key.ctrl)) {
+      void pasteImageFromClipboard();
+      return;
+    }
+
+    const hasLineBreak = input.includes("\r") || input.includes("\n");
+    const hasReturn = key.return || hasLineBreak;
     const cleanInput = input.replace(/[\r\n]/g, "");
 
-    // A chunk containing newlines plus other content is a paste, not an Enter
-    // press (Enter arrives as a lone "\r"/"\n"). Insert it as multi-line text
+    // A chunk containing line breaks plus other content is a paste, not an Enter
+    // press (Enter arrives as a lone "\r", "\n", or "\r\n"). Insert it as multi-line text
     // at the cursor instead of submitting.
-    const normalized = input.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
-    if (normalized.includes("\n") && normalized !== "\n") {
-      const pasteLines = normalized.split("\n");
-      const cl = cursorLine;
-      const col = Math.min(cursorCol, (lines[cl] ?? "").length);
-      const lastLen = pasteLines[pasteLines.length - 1].length;
-      setLines((prev) => {
-        const updated = [...prev];
-        const line = updated[cl] ?? "";
-        const segments = [...pasteLines];
-        segments[0] = line.slice(0, col) + segments[0];
-        segments[segments.length - 1] = segments[segments.length - 1] + line.slice(col);
-        updated.splice(cl, 1, ...segments);
-        return updated;
-      });
-      setCursorLine(cl + pasteLines.length - 1);
-      setCursorCol(lastLen);
-      setDropdownIndex(0);
-      setDropdownDismissed(false);
+    const isLoneEnter = input === "\r" || input === "\n" || input === "\r\n";
+    if (hasLineBreak && !isLoneEnter) {
+      insertPastedText(input);
       return;
     }
 
@@ -401,6 +456,7 @@ export function InputBox(props: InputBoxProps) {
         historyDraftRef.current = null;
         setDropdownIndex(0);
         setDropdownDismissed(false);
+        setPasteImageError("");
       }
       return;
     }
@@ -638,6 +694,11 @@ export function InputBox(props: InputBoxProps) {
           )}
         </Text>
       </Box>
+      {!disabled && pasteImageError && (
+        <Box paddingLeft={2}>
+          <Text color="red">{pasteImageError}</Text>
+        </Box>
+      )}
       {showDropdown && (
         <Box flexDirection="column">
           {recentCount > 0 && <Text dimColor>{"RECENTLY USED"}</Text>}

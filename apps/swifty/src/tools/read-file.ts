@@ -138,12 +138,6 @@ export class ReadFileTool implements Tool {
     try {
       const attachment = await loadImageAttachment(filePath);
       ctx.fileStateCache?.record(filePath, mtimeMs);
-      // A leading text block anchors the image to its file for the model and
-      // gives text-only consumers (TUI summary, transcripts) a useful label.
-      const labelBlock: Record<string, unknown> = {
-        type: "text",
-        text: `[image: ${basename(filePath)} · ${attachment.mediaType} · ${formatSize(attachment.byteLength)}]`,
-      };
       const imageBlock: Record<string, unknown> = {
         type: "image",
         source: {
@@ -152,7 +146,7 @@ export class ReadFileTool implements Tool {
           data: attachment.data,
         },
       };
-      return { output: [labelBlock, imageBlock], isError: false };
+      return { output: [imageBlock], isError: false };
     } catch (err) {
       log.error({ err }, "image read failed");
       return {
@@ -161,14 +155,4 @@ export class ReadFileTool implements Tool {
       };
     }
   }
-}
-
-function formatSize(bytes: number): string {
-  if (bytes >= 1024 * 1024) {
-    return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
-  }
-  if (bytes >= 1024) {
-    return `${String(Math.round(bytes / 1024))}KB`;
-  }
-  return `${String(bytes)}B`;
 }

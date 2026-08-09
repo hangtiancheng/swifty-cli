@@ -49,6 +49,11 @@ function getBackupName(filePath: string, version: number): string {
   return `${hash}@v${String(version)}`;
 }
 
+/** Single source of truth for a session's file-history directory layout. */
+export function fileHistoryDir(baseDir: string, sessionId: string): string {
+  return join(baseDir, ".swifty", "file-history", sessionId);
+}
+
 export class FileHistory {
   private sessionDir: string;
 
@@ -57,7 +62,7 @@ export class FileHistory {
   private snapshots: Snapshot[] = [];
 
   constructor(baseDir: string, sessionID: string) {
-    this.sessionDir = join(baseDir, ".swifty", "file-history", sessionID);
+    this.sessionDir = fileHistoryDir(baseDir, sessionID);
     mkdirSync(this.sessionDir, { recursive: true });
   }
 
