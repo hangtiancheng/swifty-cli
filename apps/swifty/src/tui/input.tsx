@@ -140,7 +140,7 @@ export function InputBox(props: InputBoxProps) {
   const [dropdownIndex, setDropdownIndex] = useState(0);
   const [dropdownDismissed, setDropdownDismissed] = useState(false);
   const [pasteImageError, setPasteImageError] = useState("");
-  const pasteImageInFlightRef = useRef(false);
+  const pasteImageInflightRef = useRef(false);
 
   useEffect(() => {
     if (!insertTextRef) {
@@ -320,15 +320,15 @@ export function InputBox(props: InputBoxProps) {
   // Save the clipboard image under .swifty/file-history/ and insert its path
   // as plain text; the agent later reads the file with the ReadFile tool.
   const pasteImageFromClipboard = async () => {
-    if (disabled || pasteImageInFlightRef.current) {
+    if (disabled || pasteImageInflightRef.current) {
       return;
     }
-    pasteImageInFlightRef.current = true;
+    pasteImageInflightRef.current = true;
     setPasteImageError("");
     try {
       const result = await saveClipboardImage(workDir);
       if (result.ok) {
-        insertPastedText(`${result.path} `);
+        insertPastedText(`'${result.path}' `);
       } else {
         setPasteImageError(result.message);
       }
@@ -336,7 +336,7 @@ export function InputBox(props: InputBoxProps) {
       log.error({ err }, "clipboard image paste failed");
       setPasteImageError("Could not read an image from the clipboard.");
     } finally {
-      pasteImageInFlightRef.current = false;
+      pasteImageInflightRef.current = false;
     }
   };
 
@@ -388,14 +388,15 @@ export function InputBox(props: InputBoxProps) {
       return;
     }
 
-    const hasReturn = key.return || input.includes("\r") || input.includes("\n");
+    const hasLineBreak = input.includes("\r") || input.includes("\n");
+    const hasReturn = key.return || hasLineBreak;
     const cleanInput = input.replace(/[\r\n]/g, "");
 
-    // A chunk containing newlines plus other content is a paste, not an Enter
-    // press (Enter arrives as a lone "\r"/"\n"). Insert it as multi-line text
+    // A chunk containing line breaks plus other content is a paste, not an Enter
+    // press (Enter arrives as a lone "\r", "\n", or "\r\n"). Insert it as multi-line text
     // at the cursor instead of submitting.
-    const normalized = input.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
-    if (normalized.includes("\n") && normalized !== "\n") {
+    const isLoneEnter = input === "\r" || input === "\n" || input === "\r\n";
+    if (hasLineBreak && !isLoneEnter) {
       insertPastedText(input);
       return;
     }

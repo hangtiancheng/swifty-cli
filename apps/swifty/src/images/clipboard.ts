@@ -3,9 +3,7 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
-export type SaveClipboardImageResult =
-  | { ok: true; path: string }
-  | { ok: false; message: string };
+export type SaveClipboardImageResult = { ok: true; path: string } | { ok: false; message: string };
 
 const CLIPBOARD_TIMEOUT_MS = 5_000;
 const MAX_CLIPBOARD_IMAGE_BYTES = 32 * 1024 * 1024;
