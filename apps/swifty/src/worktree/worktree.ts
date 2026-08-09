@@ -394,17 +394,45 @@ async function performPostCreationSetup(repoRoot: string, wtPath: string): Promi
   await copyWorktreeIncludeFiles(repoRoot, wtPath);
 }
 
-/** Copy .swifty/ settings directory from the main repo to the worktree. */
+/**
+ * Shared settings entries under .swifty/ that are propagated to worktrees.
+ * Runtime state (sessions, file-history, plans, logs, teams) is excluded, and
+ * worktrees/ must never be included: worktrees live inside .swifty itself, so
+ * copying the whole directory targets a subdirectory of its own source and
+ * Node's cp rejects that with EINVAL.
+ */
+const SHARED_SWIFTY_ENTRIES = [
+  "config.yaml",
+  "permissions.yaml",
+  "permissions.local.yaml",
+  "memory",
+  "skills",
+  "agents",
+];
+
+/** Copy shared .swifty/ settings from the main repo to the worktree. */
 async function copySwiftySettings(repoRoot: string, wtPath: string): Promise<void> {
+  const srcRoot = join(repoRoot, ".swifty");
+  if (!(await pathExists(srcRoot))) {
+    return;
+  }
+  const dstRoot = join(wtPath, ".swifty");
   try {
-    const src = join(repoRoot, ".swifty");
-    if (!(await pathExists(src))) {
-      return;
-    }
-    const dst = join(wtPath, ".swifty");
-    await cp(src, dst, { recursive: true });
+    await mkdir(dstRoot, { recursive: true });
   } catch (err) {
-    log.error({ err }, "failed to copy .swifty/ to worktree");
+    log.error({ err }, "failed to create .swifty/ in worktree");
+    return;
+  }
+  for (const entry of SHARED_SWIFTY_ENTRIES) {
+    const src = join(srcRoot, entry);
+    if (!(await pathExists(src))) {
+      continue;
+    }
+    try {
+      await cp(src, join(dstRoot, entry), { recursive: true });
+    } catch (err) {
+      log.error({ err, entry }, "failed to copy .swifty/ entry to worktree");
+    }
   }
 }
 
