@@ -21,7 +21,7 @@
  */
 
 import { readdirSync, statSync } from "fs";
-import { join } from "path";
+import { join, relative } from "path";
 
 import Fuse from "fuse.js";
 import { Box, Text, useInput, usePaste } from "ink";
@@ -347,8 +347,9 @@ export function InputBox(props: InputBoxProps) {
     setDropdownDismissed(false);
   };
 
-  // Save the clipboard image under .swifty/file-history/ and insert its path
-  // as plain text; the agent later reads the file with the ReadFile tool.
+  // Save the clipboard image under the session's file-history dir and insert
+  // a workDir-relative @ mention; on submit, at-expansion inlines it as an
+  // image content block like any other @image reference.
   const pasteImageFromClipboard = async () => {
     if (disabled || pasteImageInflightRef.current) {
       return;
@@ -358,7 +359,11 @@ export function InputBox(props: InputBoxProps) {
     try {
       const result = await saveClipboardImage(workDir, sessionId);
       if (result.ok) {
-        insertPastedText(`'${result.value}' `);
+        // The @ ref only expands when preceded by start-of-text or whitespace.
+        const line = lines[cursorLine] ?? "";
+        const before = line.slice(0, Math.min(cursorCol, line.length));
+        const pad = before.length > 0 && !/\s$/.test(before) ? " " : "";
+        insertPastedText(`${pad}@${relative(workDir, result.value)} `);
       } else {
         setPasteError(result.reason);
       }

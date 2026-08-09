@@ -186,4 +186,4 @@ Inside the TUI, these commands are available:
 | Ctrl+V    | Paste a clipboard image (Alt+V on Windows)                           |
 | Shift+Tab | Cycle permission modes                                               |
 
-Pasting an image saves it as a PNG under `.swifty/file-history/<session-id>/` and inserts the file path into the prompt; the agent reads it on demand with the ReadFile tool. Linux requires `wl-clipboard` (Wayland) or `xclip` (X11).
+Pasting an image saves it as a PNG under `.swifty/file-history/<session-id>/` and inserts a workDir-relative `@` reference into the prompt; on submit it expands into an inline image block like any other `@image` mention. Linux requires `wl-clipboard` (Wayland) or `xclip` (X11).
