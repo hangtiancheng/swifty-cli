@@ -29,7 +29,7 @@ import { createChildLogger } from "@/logger/logger.js";
 
 const log = createChildLogger({ module: "images" });
 
-export type ImageMediaType = "image/png" | "image/jpeg" | "image/gif" | "image/webp";
+type ImageMediaType = "image/png" | "image/jpeg" | "image/gif" | "image/webp";
 
 export function asImageMediaType(type: string): ImageMediaType {
   if (
@@ -43,7 +43,7 @@ export function asImageMediaType(type: string): ImageMediaType {
   throw new Error(`Unsupported image media type: "${type}"`);
 }
 
-export interface ImageAttachment {
+interface ImageAttachment {
   mediaType: ImageMediaType;
   /** Raw base64 payload without a data: URL prefix. */
   data: string;
@@ -59,11 +59,6 @@ export const MAX_IMAGE_BYTES_PASSTHROUGH = (MAX_IMAGE_BYTES * 3) / 4;
 
 export const MAX_DIMENSION_PX = 2000;
 
-// Clipboard formats such as TIFF can encode enormous canvases in relatively
-// small byte streams. Keep Sharp's in-process decode bounded before any
-// conversion allocates a full raster.
-const MAX_CLIPBOARD_INPUT_PIXELS = 64 * 1024 * 1024;
-
 // Cap images per user message to stay well under provider block limits.
 export const MAX_IMAGES_PER_MESSAGE = 10;
 
@@ -71,13 +66,6 @@ export class ImageTooLargeError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "ImageTooLargeError";
-  }
-}
-
-export class InvalidImageError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "InvalidImageError";
   }
 }
 
@@ -135,147 +123,21 @@ export async function loadImageAttachment(absPath: string): Promise<ImageAttachm
     throw new Error(`Not a file: ${absPath}`);
   }
   const buf = readFileSync(absPath);
+
   const sniffed = sniffMediaType(buf);
   if (!sniffed) {
     throw new Error(
       `File ${absPath} has an image extension but its contents are not a supported image format (png/jpeg/gif/webp)`,
     );
   }
-
   // Magic bytes win over the extension when they disagree.
   const resized = await maybeResizeAndDownsampleImage(buf, sniffed);
-  return { ...resized, sourcePath: absPath };
-}
-
-export interface LoadImageBufferOptions {
-  /** Optional clipboard-advertised MIME type, used only for error context. */
-  mimeHint?: string | undefined;
-  /** Optional file path, used for UI labels and session provenance. */
-  sourcePath?: string | undefined;
-}
-
-function isBmp(buf: Buffer): boolean {
-  return buf.length >= 2 && buf[0] === 0x42 && buf[1] === 0x4d;
-}
-
-function isTiff(buf: Buffer): boolean {
-  return (
-    buf.length >= 4 &&
-    ((buf[0] === 0x49 && buf[1] === 0x49 && buf[2] === 0x2a && buf[3] === 0x00) ||
-      (buf[0] === 0x4d && buf[1] === 0x4d && buf[2] === 0x00 && buf[3] === 0x2a))
-  );
-}
-
-/**
- * Validate and normalize an in-memory image, such as bytes read from a
- * clipboard helper. PNG/JPEG/GIF/WebP use the same magic-byte and resizing
- * path as regular files. BMP/TIFF are decoded by sharp and normalized to PNG.
- */
-export async function loadImageBufferAttachment(
-  buf: Buffer,
-  options: LoadImageBufferOptions = {},
-): Promise<ImageAttachment> {
-  if (buf.length === 0) {
-    throw new InvalidImageError("Clipboard image is empty");
-  }
-
-  const sniffed = sniffMediaType(buf);
-  let resized: ResizedImage;
-  if (sniffed) {
-    resized = await validateAndNormalizeClipboardImage(buf, sniffed, options.mimeHint);
-  } else if (isBmp(buf) || isTiff(buf)) {
-    try {
-      await validateClipboardImage(buf, options.mimeHint);
-      const png = await sharp(buf, {
-        failOn: "warning",
-        limitInputPixels: MAX_CLIPBOARD_INPUT_PIXELS,
-      })
-        .resize(MAX_DIMENSION_PX, MAX_DIMENSION_PX, {
-          fit: "inside",
-          withoutEnlargement: true,
-        })
-        .png({ compressionLevel: 8, palette: true })
-        .toBuffer();
-      resized = await validateAndNormalizeClipboardImage(png, "image/png", options.mimeHint);
-    } catch (err) {
-      if (err instanceof ImageTooLargeError) {
-        throw err;
-      }
-      throw new InvalidImageError(
-        `Clipboard data${options.mimeHint ? ` (${options.mimeHint})` : ""} could not be decoded as BMP/TIFF: ${err instanceof Error ? err.message : String(err)}`,
-      );
-    }
-  } else {
-    throw new InvalidImageError(
-      `Clipboard data${options.mimeHint ? ` (${options.mimeHint})` : ""} is not a supported image format (png/jpeg/gif/webp/bmp/tiff)`,
-    );
-  }
-
   return {
-    ...resized,
-    ...(options.sourcePath ? { sourcePath: options.sourcePath } : {}),
+    mediaType: resized.mediaType,
+    data: resized.data,
+    sourcePath: absPath,
+    byteLength: resized.byteLength,
   };
-}
-
-async function validateAndNormalizeClipboardImage(
-  buf: Buffer,
-  mediaType: ImageMediaType,
-  mimeHint?: string,
-): Promise<ResizedImage> {
-  const { width, height } = await validateClipboardImage(buf, mimeHint);
-
-  // Clipboard images can be highly compressed yet far beyond the provider's
-  // useful pixel dimensions. Route those through the existing resize ladder
-  // even when their encoded byte size would otherwise pass through unchanged.
-  if (
-    buf.length <= MAX_IMAGE_BYTES_PASSTHROUGH &&
-    (width > MAX_DIMENSION_PX || height > MAX_DIMENSION_PX)
-  ) {
-    try {
-      return await compressWithSharp(buf, mediaType);
-    } catch (err) {
-      if (err instanceof ImageTooLargeError) {
-        throw err;
-      }
-      throw new InvalidImageError(
-        `Clipboard data${mimeHint ? ` (${mimeHint})` : ""} could not be resized: ${err instanceof Error ? err.message : String(err)}`,
-      );
-    }
-  }
-
-  return maybeResizeAndDownsampleImage(buf, mediaType);
-}
-
-async function validateClipboardImage(
-  buf: Buffer,
-  mimeHint?: string,
-): Promise<{ width: number; height: number }> {
-  try {
-    // Read dimensions without allocating the full raster, reject unreasonable
-    // canvases, then force a real pixel decode so a truncated image cannot be
-    // accepted solely because its header and magic bytes look valid.
-    const metadata = await sharp(buf, { failOn: "warning", limitInputPixels: false }).metadata();
-    if (!metadata.width || !metadata.height) {
-      throw new Error("image dimensions are missing");
-    }
-    if (metadata.width * metadata.height > MAX_CLIPBOARD_INPUT_PIXELS) {
-      throw new ImageTooLargeError(
-        `Clipboard image dimensions ${String(metadata.width)}x${String(metadata.height)} exceed the ${String(MAX_CLIPBOARD_INPUT_PIXELS)}-pixel decode limit.`,
-      );
-    }
-    await sharp(buf, {
-      failOn: "warning",
-      limitInputPixels: MAX_CLIPBOARD_INPUT_PIXELS,
-    }).stats();
-    return { width: metadata.width, height: metadata.height };
-  } catch (err) {
-    if (err instanceof ImageTooLargeError) {
-      throw err;
-    }
-    throw new InvalidImageError(
-      `Clipboard data${mimeHint ? ` (${mimeHint})` : ""} could not be decoded: ${err instanceof Error ? err.message : String(err)}`,
-    );
-  }
 }
 
 type ResizedImage = Omit<ImageAttachment, "sourcePath">;

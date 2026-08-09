@@ -25,7 +25,7 @@ import { join } from "path";
 
 import Fuse from "fuse.js";
 import { Box, Text, useInput, usePaste } from "ink";
-import { useState, useMemo, useRef, useEffect, useReducer } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 
 import { createChildLogger } from "../logger/logger.js";
 
@@ -33,19 +33,9 @@ import { BORDER_COLORS, COLORS, ICONS, THEME } from "./styles.js";
 
 import type { Command } from "@/commands/commands.js";
 import type { CommandUsageTracker } from "@/commands/usage-tracker.js";
-import { readClipboardImage } from "@/images/clipboard.js";
-import { MAX_IMAGES_PER_MESSAGE } from "@/images/image.js";
-import {
-  canSubmitPrompt,
-  createPendingImageState,
-  formatPendingImageLabels,
-  isImagePasteShortcut,
-  pendingImageReducer,
-  type PromptSubmission,
-} from "@/images/paste.js";
+import { saveClipboardImage } from "@/images/clipboard.js";
 import type { PermissionMode } from "@/permissions/checker.js";
 import { SKIP_DIRS } from "@/tools/types.js";
-import { asErrorString } from "@/utils/index.js";
 
 const log = createChildLogger({ module: "tui" });
 
@@ -102,9 +92,7 @@ const MODEL_DISPLAY: Record<PermissionMode, { name: string; color: string }> = {
 const MODEL_CYCLE: PermissionMode[] = ["default", "acceptEdits", "plan", "bypassPermissions"];
 
 interface InputBoxProps {
-  /** Returns true when the parent accepted the submission. A rejected
-   *  submission keeps the full text-and-image draft intact. */
-  onSubmit: (submission: PromptSubmission) => boolean;
+  onSubmit: (text: string) => void;
   disabled?: boolean;
   /** Blocks Enter-to-send while still allowing typing/editing (e.g. while
    *  the agent is streaming or the conversation is being compacted). */
@@ -151,14 +139,8 @@ export function InputBox(props: InputBoxProps) {
   } | null>(null);
   const [dropdownIndex, setDropdownIndex] = useState(0);
   const [dropdownDismissed, setDropdownDismissed] = useState(false);
-  const [pendingImageState, dispatchPendingImage] = useReducer(
-    pendingImageReducer,
-    undefined,
-    createPendingImageState,
-  );
-  const [isReadingClipboardImage, setIsReadingClipboardImage] = useState(false);
-  const [clipboardImageError, setClipboardImageError] = useState("");
-  const clipboardReadInFlightRef = useRef(false);
+  const [pasteImageError, setPasteImageError] = useState("");
+  const pasteImageInFlightRef = useRef(false);
 
   useEffect(() => {
     if (!insertTextRef) {
@@ -316,7 +298,6 @@ export function InputBox(props: InputBoxProps) {
     if (!normalized) {
       return;
     }
-
     const pasteLines = normalized.split("\n");
     const cl = cursorLine;
     const col = Math.min(cursorCol, (lines[cl] ?? "").length);
@@ -336,36 +317,26 @@ export function InputBox(props: InputBoxProps) {
     setDropdownDismissed(false);
   };
 
+  // Save the clipboard image under .swifty/file-history/ and insert its path
+  // as plain text; the agent later reads the file with the ReadFile tool.
   const pasteImageFromClipboard = async () => {
-    if (disabled || clipboardReadInFlightRef.current) {
+    if (disabled || pasteImageInFlightRef.current) {
       return;
     }
-    if (pendingImageState.images.length >= MAX_IMAGES_PER_MESSAGE) {
-      setClipboardImageError(
-        `Too many images attached (limit ${String(MAX_IMAGES_PER_MESSAGE)} per message).`,
-      );
-      return;
-    }
-
-    clipboardReadInFlightRef.current = true;
-    setIsReadingClipboardImage(true);
-    setClipboardImageError("");
+    pasteImageInFlightRef.current = true;
+    setPasteImageError("");
     try {
-      const result = await readClipboardImage();
+      const result = await saveClipboardImage(workDir);
       if (result.ok) {
-        dispatchPendingImage({ type: "add", attachment: result.image });
-        return;
+        insertPastedText(`${result.path} `);
+      } else {
+        setPasteImageError(result.message);
       }
-      setClipboardImageError(
-        result.error.installHint
-          ? `${result.error.message} ${result.error.installHint}`
-          : result.error.message,
-      );
     } catch (err) {
-      setClipboardImageError(`Could not read an image from the clipboard: ${asErrorString(err)}`);
+      log.error({ err }, "clipboard image paste failed");
+      setPasteImageError("Could not read an image from the clipboard.");
     } finally {
-      clipboardReadInFlightRef.current = false;
-      setIsReadingClipboardImage(false);
+      pasteImageInFlightRef.current = false;
     }
   };
 
@@ -410,7 +381,9 @@ export function InputBox(props: InputBoxProps) {
       return;
     }
 
-    if (isImagePasteShortcut(input, key)) {
+    // Ctrl+V pastes a clipboard image (Alt+V on Windows, where terminals
+    // reserve Ctrl+V for text paste).
+    if (input === "v" && (process.platform === "win32" ? key.meta : key.ctrl)) {
       void pasteImageFromClipboard();
       return;
     }
@@ -466,20 +439,13 @@ export function InputBox(props: InputBoxProps) {
       const updated = [...lines];
       updated[cursorLine] = finalLine;
       const finalValue = updated.join("\n").trim();
-      if (canSubmitPrompt(finalValue, pendingImageState.images)) {
+      if (finalValue) {
         // Sending is locked (agent streaming / compacting): keep the draft
         // instead of submitting, so nothing is silently dropped.
-        if (submitDisabled || isReadingClipboardImage) {
+        if (submitDisabled) {
           return;
         }
-        const accepted = onSubmit({
-          text: finalValue,
-          images: [...pendingImageState.images],
-        });
-        dispatchPendingImage({ type: "submission-result", accepted });
-        if (!accepted) {
-          return;
-        }
+        onSubmit(finalValue);
         setLines([""]);
         setCursorLine(0);
         setCursorCol(0);
@@ -487,7 +453,7 @@ export function InputBox(props: InputBoxProps) {
         historyDraftRef.current = null;
         setDropdownIndex(0);
         setDropdownDismissed(false);
-        setClipboardImageError("");
+        setPasteImageError("");
       }
       return;
     }
@@ -547,17 +513,6 @@ export function InputBox(props: InputBoxProps) {
     }
 
     if (key.backspace || key.delete) {
-      if (
-        key.backspace &&
-        lines.length === 1 &&
-        lines[0] === "" &&
-        cursorCol === 0 &&
-        pendingImageState.images.length > 0
-      ) {
-        dispatchPendingImage({ type: "remove-last" });
-        setClipboardImageError("");
-        return;
-      }
       if (cursorCol > 0) {
         const col = cursorCol;
         setLines((prev) => {
@@ -694,7 +649,6 @@ export function InputBox(props: InputBoxProps) {
   return (
     <Box flexDirection="column">
       <Box
-        flexDirection="column"
         borderStyle="round"
         borderTop={true}
         borderBottom={true}
@@ -736,22 +690,12 @@ export function InputBox(props: InputBoxProps) {
             </>
           )}
         </Text>
-        {!disabled && pendingImageState.images.length > 0 && (
-          <Box paddingLeft={2}>
-            <Text color="cyan">{formatPendingImageLabels(pendingImageState.images)}</Text>
-          </Box>
-        )}
-        {!disabled && isReadingClipboardImage && (
-          <Box paddingLeft={2}>
-            <Text dimColor>Reading image from clipboard...</Text>
-          </Box>
-        )}
-        {!disabled && clipboardImageError && (
-          <Box paddingLeft={2}>
-            <Text color="red">{clipboardImageError}</Text>
-          </Box>
-        )}
       </Box>
+      {!disabled && pasteImageError && (
+        <Box paddingLeft={2}>
+          <Text color="red">{pasteImageError}</Text>
+        </Box>
+      )}
       {showDropdown && (
         <Box flexDirection="column">
           {recentCount > 0 && <Text dimColor>{"RECENTLY USED"}</Text>}

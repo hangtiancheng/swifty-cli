@@ -106,7 +106,6 @@ export function expandAtRefs(text: string, workDir: string): string {
 export async function expandAtRefsWithImages(
   text: string,
   workDir: string,
-  existingImageCount = 0,
 ): Promise<string | Record<string, unknown>[]> {
   const refs = [...text.matchAll(/(?:^|\s)@([^\s]+)/g)].map((m) => m[1]);
   if (refs.length === 0) {
@@ -129,7 +128,7 @@ export async function expandAtRefsWithImages(
         continue;
       }
       if (isImagePath(p)) {
-        if (existingImageCount + imageBlocks.length >= MAX_IMAGES_PER_MESSAGE) {
+        if (imageBlocks.length >= MAX_IMAGES_PER_MESSAGE) {
           appendix += `\n\nError: too many images attached (limit ${String(MAX_IMAGES_PER_MESSAGE)} per message)`;
           continue;
         }
