@@ -29,20 +29,23 @@ describe("clipboard image storage", () => {
     expect(clipboardImageFileName(PNG_BYTES)).toBe(`${expected}.png`);
   });
 
-  it("writes the image under .swifty/file-history and dedupes repeats", async () => {
+  it("writes the image under .swifty/file-history/<sessionId> and dedupes repeats", async () => {
     const workDir = mkdtempSync(join(tmpdir(), "swifty-clip-"));
 
-    const first = await storeClipboardImage(workDir, PNG_BYTES);
-    const second = await storeClipboardImage(workDir, PNG_BYTES);
+    const first = await storeClipboardImage(workDir, "session-a", PNG_BYTES);
+    const second = await storeClipboardImage(workDir, "session-a", PNG_BYTES);
 
     expect(first).toBe(second);
-    expect(dirname(first)).toBe(clipboardImageDir(workDir));
+    expect(dirname(first)).toBe(clipboardImageDir(workDir, "session-a"));
+    expect(dirname(first)).toBe(join(workDir, ".swifty", "file-history", "session-a"));
     expect(first.endsWith(".png")).toBe(true);
     expect(readFileSync(first)).toEqual(PNG_BYTES);
   });
 
   it("rejects non-PNG bytes", async () => {
     const workDir = mkdtempSync(join(tmpdir(), "swifty-clip-"));
-    await expect(storeClipboardImage(workDir, Buffer.from("GIF89a"))).rejects.toThrow(/not a PNG/);
+    await expect(storeClipboardImage(workDir, "session-a", Buffer.from("GIF89a"))).rejects.toThrow(
+      /not a PNG/,
+    );
   });
 });

@@ -105,6 +105,7 @@ interface InputBoxProps {
   permMode?: PermissionMode;
   onModeChange?: (mode: PermissionMode) => void;
   workDir?: string;
+  sessionId?: string;
   /** Receives an insert-at-cursor function so the parent can inject text
    *  (e.g. IDE at-mentions) into the input programmatically. */
   insertTextRef?: { current: ((text: string) => void) | null };
@@ -123,6 +124,7 @@ export function InputBox(props: InputBoxProps) {
     permMode = "default",
     onModeChange,
     workDir = ".",
+    sessionId = "default",
     insertTextRef,
   } = props;
 
@@ -326,11 +328,11 @@ export function InputBox(props: InputBoxProps) {
     pasteImageInflightRef.current = true;
     setPasteImageError("");
     try {
-      const result = await saveClipboardImage(workDir);
+      const result = await saveClipboardImage(workDir, sessionId);
       if (result.ok) {
-        insertPastedText(`'${result.path}' `);
+        insertPastedText(`'${result.value}' `);
       } else {
-        setPasteImageError(result.message);
+        setPasteImageError(result.reason);
       }
     } catch (err) {
       log.error({ err }, "clipboard image paste failed");

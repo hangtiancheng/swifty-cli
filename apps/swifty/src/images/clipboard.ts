@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
-export type SaveClipboardImageResult = { ok: true; path: string } | { ok: false; message: string };
+export type SaveClipboardImageResult = { ok: true; value: string } | { ok: false; reason: string };
 
 const CLIPBOARD_TIMEOUT_MS = 5_000;
 const MAX_CLIPBOARD_IMAGE_BYTES = 32 * 1024 * 1024;
@@ -22,11 +22,15 @@ export function clipboardImageFileName(bytes: Buffer): string {
   return `${createHash("sha256").update(bytes).digest("hex").slice(0, 16)}.png`;
 }
 
-export function clipboardImageDir(workDir: string): string {
-  return join(resolve(workDir), ".swifty", "file-history");
+export function clipboardImageDir(workDir: string, sessionId: string): string {
+  return join(resolve(workDir), ".swifty", "file-history", sessionId);
 }
 
-export async function storeClipboardImage(workDir: string, bytes: Buffer): Promise<string> {
+export async function storeClipboardImage(
+  workDir: string,
+  sessionId: string,
+  bytes: Buffer,
+): Promise<string> {
   if (!isPngBuffer(bytes)) {
     throw new Error("Clipboard data is not a PNG image.");
   }
@@ -35,7 +39,7 @@ export async function storeClipboardImage(workDir: string, bytes: Buffer): Promi
       `Clipboard image is too large (${String(bytes.length)} bytes, limit ${String(MAX_CLIPBOARD_IMAGE_BYTES)}).`,
     );
   }
-  const dir = clipboardImageDir(workDir);
+  const dir = clipboardImageDir(workDir, sessionId);
   await mkdir(dir, { recursive: true });
   const path = join(dir, clipboardImageFileName(bytes));
   await writeFile(path, bytes);
@@ -100,9 +104,11 @@ function run(
       stdoutChunks.push(chunk);
     });
     child.stderr.on("data", (chunk: Buffer) => {
-      if (stderrBytes < MAX_STDERR_BYTES) {
-        stderrBytes += chunk.length;
-        stderrChunks.push(chunk.subarray(0, MAX_STDERR_BYTES));
+      const remaining = MAX_STDERR_BYTES - stderrBytes;
+      if (remaining > 0) {
+        const retained = chunk.subarray(0, remaining);
+        stderrBytes += retained.length;
+        stderrChunks.push(retained);
       }
     });
     child.on("error", (err: NodeJS.ErrnoException) => {
@@ -217,37 +223,47 @@ async function readWindowsClipboard(tempPath: string): Promise<Buffer> {
 
 /**
  * Read an image from the system clipboard and save it as a PNG under
- * `${workDir}/.swifty/file-history/`. Returns the absolute file path, ready
- * to be referenced in a prompt and read back via the ReadFile tool.
+ * `${workDir}/.swifty/file-history/${sessionId}/`. Returns the absolute file
+ * path, ready to be referenced in a prompt and read back via ReadFile.
  */
-export async function saveClipboardImage(workDir: string): Promise<SaveClipboardImageResult> {
-  const tempPath = join(clipboardImageDir(workDir), `.clipboard-${String(process.pid)}.tmp`);
+export async function saveClipboardImage(
+  workDir: string,
+  sessionId: string,
+): Promise<SaveClipboardImageResult> {
+  const dir = clipboardImageDir(workDir, sessionId);
+  const tempPath = join(dir, `.clipboard-${String(process.pid)}.tmp`);
   try {
     let bytes: Buffer;
     switch (process.platform) {
       case "darwin":
-        await mkdir(clipboardImageDir(workDir), { recursive: true });
+        await mkdir(dir, { recursive: true });
         bytes = await readMacClipboard(tempPath);
         break;
       case "linux":
         bytes = await readLinuxClipboard();
         break;
       case "win32":
-        await mkdir(clipboardImageDir(workDir), { recursive: true });
+        await mkdir(dir, { recursive: true });
         bytes = await readWindowsClipboard(tempPath);
         break;
       default:
         return {
           ok: false,
-          message: `Clipboard image paste is not supported on ${process.platform}.`,
+          reason: `Clipboard image paste is not supported on ${process.platform}.`,
         };
     }
     if (bytes.length === 0) {
-      return { ok: false, message: NO_IMAGE_MESSAGE };
+      return { ok: false, reason: NO_IMAGE_MESSAGE };
     }
-    return { ok: true, path: await storeClipboardImage(workDir, bytes) };
+    return {
+      ok: true,
+      value: await storeClipboardImage(workDir, sessionId, bytes),
+    };
   } catch (err) {
-    return { ok: false, message: err instanceof Error ? err.message : String(err) };
+    return {
+      ok: false,
+      reason: err instanceof Error ? err.message : String(err),
+    };
   } finally {
     await rm(tempPath, { force: true }).catch(() => undefined);
   }
