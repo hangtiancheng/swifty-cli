@@ -109,6 +109,9 @@ interface InputBoxProps {
   /** Receives an insert-at-cursor function so the parent can inject text
    *  (e.g. IDE at-mentions) into the input programmatically. */
   insertTextRef?: { current: ((text: string) => void) | null };
+  /** Receives a function that clears the input draft, so the parent can
+   *  bind it to shortcuts handled outside this component (e.g. Ctrl+C). */
+  clearRef?: { current: (() => void) | null };
 }
 
 export function InputBox(props: InputBoxProps) {
@@ -126,6 +129,7 @@ export function InputBox(props: InputBoxProps) {
     workDir = ".",
     sessionId = "default",
     insertTextRef,
+    clearRef,
   } = props;
 
   const [lines, setLines] = useState<string[]>([""]);
@@ -141,7 +145,7 @@ export function InputBox(props: InputBoxProps) {
   } | null>(null);
   const [dropdownIndex, setDropdownIndex] = useState(0);
   const [dropdownDismissed, setDropdownDismissed] = useState(false);
-  const [pasteImageError, setPasteImageError] = useState("");
+  const [pasteError, setPasteError] = useState("");
   const pasteImageInflightRef = useRef(false);
 
   useEffect(() => {
@@ -166,6 +170,30 @@ export function InputBox(props: InputBoxProps) {
       insertTextRef.current = null;
     };
   }, [insertTextRef, lines, cursorLine, cursorCol]);
+
+  useEffect(() => {
+    if (!clearRef) {
+      return;
+    }
+    clearRef.current = () => {
+      // While disabled (dialog overlay) the draft is hidden; leave it intact
+      // so it reappears unchanged when the input re-enables.
+      if (disabled) {
+        return;
+      }
+      setLines([""]);
+      setCursorLine(0);
+      setCursorCol(0);
+      setHistoryIndex(-1);
+      historyDraftRef.current = null;
+      setDropdownIndex(0);
+      setDropdownDismissed(false);
+      setPasteError("");
+    };
+    return () => {
+      clearRef.current = null;
+    };
+  }, [clearRef, disabled]);
 
   const isMultiline = lines.length > 1;
 
@@ -326,17 +354,17 @@ export function InputBox(props: InputBoxProps) {
       return;
     }
     pasteImageInflightRef.current = true;
-    setPasteImageError("");
+    setPasteError("");
     try {
       const result = await saveClipboardImage(workDir, sessionId);
       if (result.ok) {
         insertPastedText(`'${result.value}' `);
       } else {
-        setPasteImageError(result.reason);
+        setPasteError(result.reason);
       }
     } catch (err) {
       log.error({ err }, "clipboard image paste failed");
-      setPasteImageError("Could not read an image from the clipboard.");
+      setPasteError("Could not read an image from the clipboard.");
     } finally {
       pasteImageInflightRef.current = false;
     }
@@ -456,7 +484,7 @@ export function InputBox(props: InputBoxProps) {
         historyDraftRef.current = null;
         setDropdownIndex(0);
         setDropdownDismissed(false);
-        setPasteImageError("");
+        setPasteError("");
       }
       return;
     }
@@ -694,9 +722,9 @@ export function InputBox(props: InputBoxProps) {
           )}
         </Text>
       </Box>
-      {!disabled && pasteImageError && (
+      {!disabled && pasteError && (
         <Box paddingLeft={2}>
-          <Text color="red">{pasteImageError}</Text>
+          <Text color="red">{pasteError}</Text>
         </Box>
       )}
       {showDropdown && (

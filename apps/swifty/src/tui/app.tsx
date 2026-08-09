@@ -389,6 +389,7 @@ export function App({
   // VSCode integration: connect to the Claude Code extension's MCP server so
   // Cmd+Option+K in the editor inserts @file#Lx-y references into the input.
   const insertInputTextRef = useRef<((text: string) => void) | null>(null);
+  const clearInputRef = useRef<(() => void) | null>(null);
   useEffect(() => {
     let conn: IdeConnection | null = null;
     let cancelled = false;
@@ -425,12 +426,14 @@ export function App({
   // Mode cycling logic for InputBox useInput (input.tsx),
   // app raw stdin listener.
 
-  // ctrl+c: interrupt streaming or exit app
+  // ctrl+c: interrupt streaming, or clear the input draft and exit app
   const ctrlCCountRef = useRef(0);
   const ctrlCTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [ctrlCHint, setCtrlCHint] = useState(false);
   useInput((input, key) => {
     if (key.ctrl && input === "c") {
+      // Streaming keeps the old semantics: Ctrl+C only interrupts the agent
+      // and never touches the draft the user may be typing for the next turn.
       if (isStreaming && abortControllerRef.current) {
         abortControllerRef.current.abort();
         ctrlCCountRef.current = 0;
@@ -441,7 +444,9 @@ export function App({
         exit();
         return;
       }
-      // First press shows hint; exit after 2 consecutive presses
+      // First press clears the input draft, shows the hint, and arms the
+      // 2s exit window.
+      clearInputRef.current?.();
       setCtrlCHint(true);
       if (ctrlCTimerRef.current) {
         clearTimeout(ctrlCTimerRef.current);
@@ -450,6 +455,24 @@ export function App({
         ctrlCCountRef.current = 0;
         setCtrlCHint(false);
       }, 2000);
+      return;
+    }
+
+    // Mouse reporting sequences are not user intent; don't let them disarm
+    // the exit confirmation.
+    if (input.includes("[<") && /\[<\d+;\d+;\d+[Mm]/.test(input)) {
+      return;
+    }
+
+    // Any other keypress cancels a pending exit confirmation: the user kept
+    // working, so the next Ctrl+C should clear again rather than exit.
+    if (ctrlCCountRef.current > 0) {
+      ctrlCCountRef.current = 0;
+      setCtrlCHint(false);
+      if (ctrlCTimerRef.current) {
+        clearTimeout(ctrlCTimerRef.current);
+        ctrlCTimerRef.current = null;
+      }
     }
   });
 
@@ -2074,6 +2097,7 @@ export function App({
         workDir={workDir}
         sessionId={sessionIdRef.current}
         insertTextRef={insertInputTextRef}
+        clearRef={clearInputRef}
         onEscape={() => {
           if (isStreaming) {
             abortControllerRef.current?.abort();

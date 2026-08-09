@@ -180,7 +180,7 @@ Inside the TUI, these commands are available:
 
 | Key       | Action                                                               |
 | --------- | -------------------------------------------------------------------- |
-| Ctrl+C    | Interrupt streaming (first press), exit app (second press within 2s) |
+| Ctrl+C    | Clear input or interrupt streaming (first press), exit app (second press within 2s) |
 | Ctrl+O    | Toggle full vs. truncated tool output                                |
 | Ctrl+T    | Toggle Teams dialog overlay                                          |
 | Ctrl+V    | Paste a clipboard image (Alt+V on Windows)                           |
