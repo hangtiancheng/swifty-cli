@@ -178,12 +178,12 @@ Inside the TUI, these commands are available:
 
 ### Keyboard Shortcuts
 
-| Key       | Action                                                               |
-| --------- | -------------------------------------------------------------------- |
+| Key       | Action                                                                              |
+| --------- | ----------------------------------------------------------------------------------- |
 | Ctrl+C    | Clear input or interrupt streaming (first press), exit app (second press within 2s) |
-| Ctrl+O    | Toggle full vs. truncated tool output                                |
-| Ctrl+T    | Toggle Teams dialog overlay                                          |
-| Ctrl+V    | Paste a clipboard image (Alt+V on Windows)                           |
-| Shift+Tab | Cycle permission modes                                               |
+| Ctrl+O    | Toggle full vs. truncated tool output                                               |
+| Ctrl+T    | Toggle Teams dialog overlay                                                         |
+| Ctrl+V    | Paste a clipboard image (Alt+V on Windows)                                          |
+| Shift+Tab | Cycle permission modes                                                              |
 
 Pasting an image saves it as a PNG under `.swifty/file-history/<session-id>/` and inserts a workDir-relative `@` reference into the prompt; on submit it expands into an inline image block like any other `@image` mention. Linux requires `wl-clipboard` (Wayland) or `xclip` (X11).
