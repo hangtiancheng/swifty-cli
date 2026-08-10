@@ -128,8 +128,7 @@ else
 # Swifty project-level configuration (.swifty/config.yaml)
 #
 # Load order (later layers override earlier ones, see src/config/config.ts loadConfig):
-#   ~/.swifty/config.yml -> ~/.swifty/config.yaml -> ./.swifty/config.yml -> ./.swifty/config.yaml
-#   -> ./.swifty/config.local.yml -> ./.swifty/config.local.yaml
+#   ~/.swifty/config.yaml -> ./.swifty/config.yaml -> ./.swifty/config.local.yaml
 # Merge semantics: `providers` replaced wholesale when the override layer is non-empty;
 # `permission_mode` overridden; `mcp_servers` merged by name; `hooks` appended;
 # `sandbox` shallow-merged; `enable_coordinator_mode` sticky once true.

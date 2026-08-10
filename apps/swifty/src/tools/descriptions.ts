@@ -90,7 +90,7 @@ Usage Notes
 
 - Supports patterns like "**/*.ts", "src/js/*.js", "*.{ts,tsx}".
 - Search from "." or a specific path, never from "/".
-- Hidden (dot) files and directories are included, so "**/*.yml" also finds ".github/workflows/ci.yml".
+- Hidden (dot) files and directories are included.
 - Automatically skips .git, node_modules, __pycache__, and similar directories.
 - Use this instead of find or ls command via Bash.
 `;

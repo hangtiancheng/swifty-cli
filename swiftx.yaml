@@ -1,4 +1,4 @@
-# Swifty project-level configuration
+# Swiftx project-level configuration
 # See src/config/config.ts for schema details.
 
 # Permission mode: "default" | "acceptEdits" | "plan" | "bypassPermissions"
@@ -59,5 +59,5 @@ hooks: []
   #   condition: 'tool == "EditFile"'
   #   action:
   #     type: command
-  #     command: npx eslint --fix "$SWIFTY_FILE_PATH"
+  #     command: npx eslint --fix "$SWIFTX_FILE_PATH"
   #   on_error: ignore

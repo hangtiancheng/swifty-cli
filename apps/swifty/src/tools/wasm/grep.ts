@@ -163,7 +163,7 @@ export class GrepTool implements Tool {
     }
 
     // dot:true — the walker below surfaces hidden files, so the include
-    // filter must match them too (e.g. include "*.yml" on .github files).
+    // filter must match them too (e.g. include "*.yaml" on .github files).
     const includeGlob = include ? new Glob(include, { dot: true }) : null;
     // Patterns with "/" match the workDir-relative path (gitignore/ripgrep
     // semantics, same form as printed results); bare patterns match the

@@ -70,11 +70,11 @@ pnpm dev
 
 Swifty reads YAML configuration files from multiple locations, merged in order:
 
-1. ~/.swifty/config.yml or ~/.swifty/config.yaml
-2. .swifty/config.yml or .swifty/config.yaml (project root)
-3. .swifty/config.local.yml or .swifty/config.local.yaml (project root, gitignored)
+1. ~/.swifty/config.yaml
+2. .swifty/config.yaml (project root)
+3. .swifty/config.local.yaml (project root, gitignored)
 
-At least one provider must be configured. Example config.yml:
+At least one provider must be configured. Example config.yaml:
 
 ```yaml
 providers:

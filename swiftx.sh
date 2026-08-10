@@ -128,8 +128,7 @@ else
 # Swiftx project-level configuration (.swiftx/config.yaml)
 #
 # Load order (later layers override earlier ones, see src/config/config.ts loadConfig):
-#   ~/.swiftx/config.yml -> ~/.swiftx/config.yaml -> ./.swiftx/config.yml -> ./.swiftx/config.yaml
-#   -> ./.swiftx/config.local.yml -> ./.swiftx/config.local.yaml
+#   ~/.swiftx/config.yaml -> ./.swiftx/config.yaml -> ./.swiftx/config.local.yaml
 # Merge semantics: `providers` replaced wholesale when the override layer is non-empty;
 # `permission_mode` overridden; `mcp_servers` merged by name; `hooks` appended;
 # `sandbox` shallow-merged; `enable_coordinator_mode` sticky once true.

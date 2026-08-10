@@ -447,11 +447,8 @@ export function loadConfig(path?: string): AppConfig {
   const wd = process.cwd();
   const home = homedir();
   const candidates = [
-    join(home, ".swifty", "config.yml"),
     join(home, ".swifty", "config.yaml"),
-    join(wd, ".swifty", "config.yml"),
     join(wd, ".swifty", "config.yaml"),
-    join(wd, ".swifty", "config.local.yml"),
     join(wd, ".swifty", "config.local.yaml"),
   ];
 
