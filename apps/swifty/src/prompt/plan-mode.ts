@@ -82,8 +82,8 @@ const reminderInterval = 5;
 
 /**
  * Builds the Plan Mode reminder, switching between full and sparse reminders based on the iteration count.
- * 首轮以及之后每 reminderInterval 轮展示完整提示，
- * and returns the sparse reminder for other iterations to save tokens.
+ * Shows the full reminder on the first iteration and every `reminderInterval` iterations thereafter;
+ * returns the sparse reminder for other iterations to save tokens.
  */
 export function buildPlanModeReminder(
   planPath: string,
@@ -98,8 +98,9 @@ export function buildPlanModeReminder(
     planFileInfo += `\nNo plan file exists yet. You should create your plan at ${planPath} using the WriteFile tool.`;
   }
 
-  // 首轮和之后每隔 reminderInterval 轮发一次完整提示：完整版每轮重发太费 token，
-  // 但只发一次模型会逐渐漂移，周期性复述是两者的折中
+  // Send the full reminder on the first iteration and every `reminderInterval` iterations thereafter:
+  // resending it every iteration is too token-expensive, but sending it only once causes gradual drift;
+  // periodic repetition strikes a balance between the two
   if ((iteration - 1) % reminderInterval === 0) {
     return planModeFullReminder.replace("%PLAN_FILE_INFO%", planFileInfo);
   }

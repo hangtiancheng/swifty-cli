@@ -6,7 +6,7 @@ import { describe, it, expect, afterEach } from "vitest";
 
 import { record, recordError, recordExit } from "../src/recover.js";
 
-// 崩溃日志固定写在当前工作目录下，用例切进临时目录再切回来
+// The crash log is always written under cwd; tests chdir into a temp directory and restore afterward
 const originalCwd = process.cwd();
 
 afterEach(() => {
@@ -29,14 +29,14 @@ describe("crash log", () => {
     expect(log).toContain("start pid=1");
     expect(log).toContain("crash [uncaughtException] Error: boom");
     expect(log).toContain("crashlog.test.ts");
-    // 追加写：后一条不能把前一条冲掉
+    // Append semantics: a later entry must not overwrite an earlier one
     expect(log.indexOf("start pid=1")).toBeLessThan(log.indexOf("crash ["));
 
     process.chdir(originalCwd);
     rmSync(dir, { recursive: true, force: true });
   });
 
-  // 幂等标志是模块级的，整个文件里只有这一处调用 recordExit
+  // The idempotency flag is module-level; this is the only call site for recordExit in this file
   it("writes the exit marker only once", () => {
     const dir = mkdtempSync(join(tmpdir(), "swifty-crash-"));
     process.chdir(dir);

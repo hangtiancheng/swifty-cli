@@ -1,4 +1,4 @@
-// 记录进程的启动、退出和崩溃现场，供异常退出后追查。
+// Records process lifecycle events (start, exit, crash) for post-mortem analysis.
 
 import { appendFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
@@ -9,19 +9,19 @@ const LOG_DIR = ".swifty";
 const LOG_PATH = join(LOG_DIR, "crash.log");
 
 /**
- * 往崩溃日志追加一行带时间戳的记录。
- * 诊断本身不能反过来把进程搞挂，所以写失败一律静默跳过。
+ * Appends a timestamped entry to the crash log.
+ * Write failures are silently ignored so diagnostics never crash the process.
  */
 export function record(text: string): void {
   try {
     mkdirSync(LOG_DIR, { recursive: true });
     appendFileSync(LOG_PATH, `[${new Date().toISOString()}] ${text}\n`, "utf8");
   } catch {
-    // 忽略
+    // Swallow write errors
   }
 }
 
-/** 记录一次异常，带完整调用栈。context 用来区分现场来自哪一层。 */
+/** Records an exception with its full stack trace. `context` identifies the originating layer. */
 export function recordError(context: string, error: unknown): void {
   const stack = error instanceof Error ? (error.stack ?? error.message) : String(error);
   record(`crash [${context}] ${stack}`);
@@ -30,10 +30,10 @@ export function recordError(context: string, error: unknown): void {
 let exitRecorded = false;
 
 /**
- * 写下 exit 标记，重复调用只写一次。
+ * Writes the exit marker; subsequent calls are no-ops.
  *
- * 进入 raw mode 的 TUI 退出时 exit 事件未必派发得到，所以主流程跑完也会主动
- * 调一次，两条路径谁先到都算数。
+ * The TUI runs in raw mode where the `exit` event may not fire on teardown,
+ * so the main flow also calls this explicitly. Whichever path arrives first wins.
  */
 export function recordExit(code: number | string): void {
   if (exitRecorded) {
@@ -44,20 +44,21 @@ export function recordExit(code: number | string): void {
 }
 
 /**
- * 安装崩溃诊断，进程启动时调用一次。
+ * Installs crash diagnostics; call once at process startup.
  *
- * 留下三类痕迹：start 行标记本次运行开始；exit 行在进程自行退出时由 exit 事件
- * 写出；uncaughtException 与 unhandledRejection 兜住漏到事件循环顶层的错误，
- * 这类错误默认只把栈打到终端，终端一关就什么都不剩。三者组合即可判定退出方式：
- * 有 crash 有 exit 是崩溃退出，只有 start 和 exit 是正常退出，只有 start 说明
- * 进程是被外部强制结束的。
+ * Three kinds of traces are recorded: a `start` line marks the beginning of a run;
+ * an `exit` line is written by the `exit` event on graceful shutdown; and
+ * `uncaughtException` / `unhandledRejection` handlers capture errors that escape
+ * to the top of the event loop (which would otherwise only print to the terminal
+ * and be lost once it closes). Together they determine the exit mode:
+ * crash + exit → crashed; start + exit only → clean shutdown; start only → killed externally.
  */
 export function recover(): void {
   record(`start pid=${String(process.pid)}`);
 
   process.on("uncaughtException", (err) => {
     recordError("uncaught exception", err);
-    // 处理器接管后运行时不再自己打印，这里补上，保持终端输出行为不变
+    // Once a handler is registered the runtime no longer prints on its own; restore terminal output
     logger.fatal({ err }, "uncaught exception");
     process.exit(1);
   });
