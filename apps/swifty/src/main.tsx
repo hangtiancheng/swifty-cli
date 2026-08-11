@@ -25,8 +25,9 @@
 import { render } from "ink";
 
 import { forkEnabled, loadConfig } from "./config/config.js";
-import { initLogger, closeLogger, logger } from "./logger/logger.js";
+import { initLogger, logger } from "./logger/logger.js";
 import { parsePrintFlags, runPrintMode } from "./print-mode.js";
+import { recover, recordError, recordExit } from "./recover.js";
 import { newSessionId } from "./session/session.js";
 import { parseTeammateFlags, runTeammate } from "./teammate.js";
 import { App } from "./tui/app.js";
@@ -34,6 +35,7 @@ import { installSyncOutput } from "./tui/sync-output.js";
 import { asErrorString } from "./utils/index.js";
 
 async function main() {
+  recover();
   const args = process.argv.slice(2);
 
   const teammateArgs = parseTeammateFlags(args);
@@ -120,24 +122,12 @@ async function main() {
   await instance.waitUntilExit();
 }
 
-main().catch((err: unknown) => {
-  console.error(err);
-  logger.fatal({ err }, "main() unhandled error");
-  process.exit(-1);
-});
-
-// Flush logs on exit.
-process.on("exit", closeLogger);
-
-// Catch async errors that escape the main loop.
-process.on("unhandledRejection", (reason) => {
-  console.error("unhandled rejection:", reason);
-  logger.fatal({ err: reason }, "unhandled rejection");
-  process.exit(1);
-});
-
-process.on("uncaughtException", (err) => {
-  console.error("uncaught exception:", err);
-  logger.fatal({ err }, "uncaught exception");
-  process.exit(1);
-});
+main()
+  .then(() => {
+    recordExit(0);
+  })
+  .catch((err: unknown) => {
+    recordError("main", err);
+    logger.fatal({ err }, "main() unhandled error");
+    process.exit(-1);
+  });
