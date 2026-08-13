@@ -28,7 +28,7 @@ describe("crash log", () => {
     const log = readFileSync(join(dir, ".swifty", "crash.log"), "utf8");
     expect(log).toContain("start pid=1");
     expect(log).toContain("crash [uncaughtException] Error: boom");
-    expect(log).toContain("crashlog.test.ts");
+    expect(log).toContain("recover.test.ts");
     // Append semantics: a later entry must not overwrite an earlier one
     expect(log.indexOf("start pid=1")).toBeLessThan(log.indexOf("crash ["));
 
