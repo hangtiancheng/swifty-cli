@@ -1,9 +1,11 @@
-// 延迟工具清单提醒的注入时机，跑的是真实主循环。
+// Injection timing for the deferred-tool reminder, exercised through the real agent loop.
 //
-// 这条提醒是 push 进历史的，发一次就一直在上下文里，所以每轮重发只是拿相同内容占
-// 窗口，六十来个 MCP 工具一份清单五百多 token，四十轮下来两万多。
+// The reminder is pushed into history and stays in context, so re-injecting identical
+// content every turn just wastes window space: ~60 MCP tools produce a 500+ token list,
+// which adds up to 20k+ tokens over 40 turns.
 //
-// 该长什么样：一场多轮的工具调用里只出现一次；池子变了补一次；历史被压掉之后重新发。
+// Expected behavior: injected once across a multi-turn tool-call session; re-injected
+// when the pool changes; re-injected after history is compacted.
 import { describe, it, expect } from "vitest";
 
 import { Agent } from "../src/agent/agent.js";
@@ -70,7 +72,7 @@ function deferredStub(name: string): Tool {
   };
 }
 
-// 一轮工具调用的脚本
+// Script for a single tool-call turn
 const toolTurn = (id: string): StreamEvent[] => [
   { type: "tool_call_start", toolName: "Echo", toolId: id },
   { type: "tool_call_complete", toolId: id, toolName: "Echo", arguments: {} },
@@ -96,13 +98,13 @@ function count(conv: ConversationManager): number {
 async function drain(agent: Agent): Promise<void> {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   for await (const _ of agent.run()) {
-    // 只关心副作用落在 conversation 上
+    // Only side effects on the conversation matter
   }
 }
 
-describe("延迟工具清单提醒", () => {
-  it("四个轮次里只注入一次", async () => {
-    // 三轮工具调用 + 一轮收尾，主循环一共转四次
+describe("deferred tool reminder", () => {
+  it("is injected only once across four turns", async () => {
+    // Three tool-call turns + one final turn, four iterations total
     const client = new MockClient([
       toolTurn("t1"),
       toolTurn("t2"),
@@ -122,35 +124,35 @@ describe("延迟工具清单提醒", () => {
     expect(count(conv)).toBe(1);
   });
 
-  it("工具池变了补一次", async () => {
+  it("re-injects when the tool pool changes", async () => {
     const registry = new ToolRegistry();
     registry.register(deferredStub("mcp__linear__create_issue"));
     const conv = new ConversationManager();
 
     const c1 = new MockClient([[{ type: "text_delta", text: "one" }, end()]]);
-    conv.addUserMessage("第一个回合");
+    conv.addUserMessage("first turn");
     await drain(makeAgent(c1, registry, conv));
     expect(count(conv)).toBe(1);
 
-    // MCP 服务器姗姗来迟，池子多出一个工具
+    // MCP server connects late, adding a tool to the pool
     registry.register(deferredStub("mcp__infra__scale_service"));
     const c2 = new MockClient([[{ type: "text_delta", text: "two" }, end()]]);
-    conv.addUserMessage("第二个回合");
+    conv.addUserMessage("second turn");
     await drain(makeAgent(c2, registry, conv));
     expect(count(conv)).toBe(2);
   });
 
-  it("历史被压掉之后重新宣告", async () => {
+  it("re-announces after history is compacted", async () => {
     const registry = new ToolRegistry();
     registry.register(deferredStub("mcp__linear__create_issue"));
     const conv = new ConversationManager();
 
     const c1 = new MockClient([[{ type: "text_delta", text: "one" }, end()]]);
-    conv.addUserMessage("第一个回合");
+    conv.addUserMessage("first turn");
     await drain(makeAgent(c1, registry, conv));
     expect(count(conv)).toBe(1);
 
-    // 模拟 compact：历史被压成一条摘要，那条提醒随之消失
+    // Simulate compaction: history is collapsed into a summary, removing the reminder
     conv.truncateTo(0);
     conv.addUserMessage("summary of earlier conversation");
 
@@ -159,7 +161,7 @@ describe("延迟工具清单提醒", () => {
     expect(count(conv)).toBe(1);
   });
 
-  it("延迟工具名按字典序返回，顺序稳定", () => {
+  it("returns deferred tool names in stable lexicographic order", () => {
     const registry = new ToolRegistry();
     for (const n of ["mcp__z__b", "mcp__a__c", "mcp__m__a"]) {
       registry.register(deferredStub(n));
@@ -169,7 +171,7 @@ describe("延迟工具清单提醒", () => {
     expect(registry.getDeferredToolNames()).toEqual(want);
   });
 
-  it("没有延迟工具时完全不注入", async () => {
+  it("injects nothing when there are no deferred tools", async () => {
     const client = new MockClient([[{ type: "text_delta", text: "hi" }, end()]]);
     const conv = new ConversationManager();
     conv.addUserMessage("hi");

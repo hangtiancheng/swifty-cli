@@ -1,8 +1,9 @@
-// 缓存断点的落点。
+// Cache breakpoint placement.
 //
-// 该长什么样：落在最后一个非延迟工具上。一个工具同时带 defer_loading 和 cache_control
-// 会被官方端点直接拒掉整个请求（400），而 MCP 工具在内建工具之后注册，数组尾部往往正是
-// 延迟工具，所以不能简单地标记最后一个。
+// Expected behavior: the breakpoint lands on the last non-deferred tool. A tool carrying
+// both defer_loading and cache_control causes the API to reject the entire request (400),
+// and MCP tools are registered after built-in tools, so the array tail is often a deferred
+// tool — we cannot simply mark the last element.
 import { describe, it, expect } from "vitest";
 
 import { markToolsForCache } from "../src/llm/anthropic.js";
@@ -19,8 +20,8 @@ const rest: Omit<ToolSchema, "name"> = {
     properties: {},
   },
 };
-describe("缓存断点落点", () => {
-  it("尾部是延迟工具时往前找", () => {
+describe("cache breakpoint placement", () => {
+  it("scans backwards when the tail is a deferred tool", () => {
     const tools: ToolSchema[] = [
       { name: "ReadFile", ...rest },
       { name: "WriteFile", ...rest },
@@ -32,7 +33,7 @@ describe("缓存断点落点", () => {
     expect(marked(tools)).toEqual(["ToolSearch"]);
   });
 
-  it("全是非延迟工具时标记最后一个", () => {
+  it("marks the last tool when none are deferred", () => {
     const tools: ToolSchema[] = [
       { name: "ReadFile", ...rest },
       { name: "Bash", ...rest },
@@ -41,7 +42,7 @@ describe("缓存断点落点", () => {
     expect(marked(tools)).toEqual(["Bash"]);
   });
 
-  it("延迟工具夹在中间也不会被选中", () => {
+  it("skips deferred tools interleaved in the middle", () => {
     const tools: ToolSchema[] = [
       { name: "Bash", ...rest },
       { name: "mcp__a__x", defer_loading: true, ...rest },
@@ -52,9 +53,10 @@ describe("缓存断点落点", () => {
     expect(marked(tools)).toEqual(["Grep"]);
   });
 
-  it("全是延迟工具时一个都不标记", () => {
-    // 官方要求至少有一个非延迟工具，真实注册表里内建工具永远非延迟，
-    // 所以这是防御分支：宁可不缓存，也不能发出会被 400 的请求
+  it("marks nothing when all tools are deferred", () => {
+    // The API requires at least one non-deferred tool; in practice built-in tools are
+    // never deferred, so this is a defensive branch: skip caching rather than emit a
+    // request that would be rejected with 400
     const tools: ToolSchema[] = [
       { name: "mcp__a__x", defer_loading: true, ...rest },
       { name: "mcp__b__y", defer_loading: true, ...rest },
@@ -63,7 +65,7 @@ describe("缓存断点落点", () => {
     expect(marked(tools)).toEqual([]);
   });
 
-  it("空数组不炸", () => {
+  it("does not throw on an empty array", () => {
     expect(() => {
       markToolsForCache([]);
     }).not.toThrow();

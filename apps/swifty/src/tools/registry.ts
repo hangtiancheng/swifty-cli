@@ -124,10 +124,11 @@ export class ToolRegistry {
   }
 
   /**
-   * 还没被捞出来的延迟工具名，按字典序。
+   * Names of deferred tools not yet discovered, in lexicographic order.
    *
-   * 排序不只是为了好看：调用方要靠比较这份清单判断工具池到底变没变，顺序飘的话
-   * 同一批工具会拼出不同的文本，比较就失效了。
+   * Sorting is not cosmetic: callers compare this list to detect pool changes;
+   * unstable ordering would produce different text for the same set of tools
+   * and break the comparison.
    */
   getDeferredToolNames(): string[] {
     const names: string[] = [];

@@ -61,8 +61,9 @@ const MAX_OUTPUT_TOKENS_RECOVERIES = 3;
 // pass without needing an extra ReadFile round-trip to view the full result.
 const MAX_OUTPUT_CHARS = 50000;
 
-// 延迟工具清单提醒的固定开头。用它在历史里回认这条提醒还在不在：compact 把历史压成
-// 摘要之后原来那条就没了，得重发一遍。
+// Fixed prefix of the deferred-tool reminder. Used to detect whether the reminder
+// is still present in history: after compaction collapses history into a summary,
+// the original reminder is gone and must be re-injected.
 const DEFERRED_REMINDER_MARKER = "The following deferred tools are available via ToolSearch.";
 
 export interface AgentConfig {
@@ -105,8 +106,8 @@ export interface AgentConfig {
 }
 
 export class Agent {
-  // 上一次告诉模型的延迟工具清单，按字典序。跟当前清单一比就知道工具池有没有变，
-  // 没变就不重发那条提醒。
+  // Deferred tool names announced to the model last time, in lexicographic order.
+  // Compared against the current pool to skip re-injection when nothing changed.
   private announcedDeferred: string[] = [];
   private client: LLMClient;
   private registry: ToolRegistry;
@@ -225,13 +226,15 @@ export class Agent {
         // Deferred-load tools are not in tools[], so the model cannot see their existence; the name list has to be repeated.
         // In dispatch mode these tools never make it into tools[] at all, so we also have to explain that invocation goes through McpCall —
         // otherwise the model reads the schema with no idea where to call it from.
-        // 只在需要的时候发，不每轮重发。这条提醒是 push 进历史的，发过一次就一直在
-        // 上下文里，之后每轮再发一遍只是拿同样的内容占窗口：六十来个 MCP 工具一份
-        // 清单五百多 token，四十轮下来就是两万多。
+        // Only inject when necessary instead of every turn. The reminder is pushed into
+        // history and stays in context, so re-injecting identical content each turn just
+        // wastes window space: ~60 MCP tools produce a 500+ token list, which adds up to
+        // 20k+ tokens over 40 turns.
         //
-        // 两种情况要重发：池子变了（MCP 是异步连上的，服务器也可能掉线重连），或者
-        // 历史里那条已经被 compact 压掉了。后者靠回扫历史发现，这样就不用在 compact
-        // 那边额外挂钩子。
+        // Two cases require re-injection: the pool changed (MCP servers connect
+        // asynchronously and may disconnect/reconnect), or the previous reminder was
+        // removed by compaction. The latter is detected by scanning history, avoiding
+        // the need for a hook on the compaction path.
         const deferredNames = this.registry.getDeferredToolNames();
         if (deferredNames.length > 0) {
           const poolChanged =
