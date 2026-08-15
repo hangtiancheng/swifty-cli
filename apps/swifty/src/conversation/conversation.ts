@@ -20,6 +20,8 @@
  * SOFTWARE.
  */
 
+import { contentToText } from "@/utils";
+
 export interface ToolUseBlock {
   toolUseId: string;
   toolName: string;
@@ -115,6 +117,17 @@ export class ConversationManager {
       role: "user",
       content: `<system-reminder>\n${content}\n</system-reminder>`,
     });
+  }
+
+  /**
+   * 历史里还有没有包含 marker 的提醒。
+   *
+   * 用来判断一条「只需要说一次」的提醒是否还在上下文里。compact 会把历史压成摘要，
+   * 原来那条提醒随之消失，这时候必须重发，否则模型再也看不到。调用方拿这个结果决定
+   * 重发，就不用在 compact 那边额外挂钩子。
+   */
+  hasReminderContaining(marker: string): boolean {
+    return this.history.some((m) => m.role === "user" && contentToText(m.content).includes(marker));
   }
 
   injectLongTermMemory(instructions: string, memories: string, skills = ""): void {

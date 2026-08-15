@@ -61,6 +61,10 @@ const MAX_OUTPUT_TOKENS_RECOVERIES = 3;
 // pass without needing an extra ReadFile round-trip to view the full result.
 const MAX_OUTPUT_CHARS = 50000;
 
+// 延迟工具清单提醒的固定开头。用它在历史里回认这条提醒还在不在：compact 把历史压成
+// 摘要之后原来那条就没了，得重发一遍。
+const DEFERRED_REMINDER_MARKER = "The following deferred tools are available via ToolSearch.";
+
 export interface AgentConfig {
   client: LLMClient;
   registry: ToolRegistry;
@@ -101,6 +105,9 @@ export interface AgentConfig {
 }
 
 export class Agent {
+  // 上一次告诉模型的延迟工具清单，按字典序。跟当前清单一比就知道工具池有没有变，
+  // 没变就不重发那条提醒。
+  private announcedDeferred: string[] = [];
   private client: LLMClient;
   private registry: ToolRegistry;
   private checker: PermissionChecker;
@@ -215,20 +222,33 @@ export class Agent {
           this.conversation.addSystemReminder(coordinatorReminder(iteration));
         }
 
-        // Deferred-load tools are not in tools[], so the model cannot see their existence; the name list has to be repeated every turn.
+        // Deferred-load tools are not in tools[], so the model cannot see their existence; the name list has to be repeated.
         // In dispatch mode these tools never make it into tools[] at all, so we also have to explain that invocation goes through McpCall —
         // otherwise the model reads the schema with no idea where to call it from.
+        // 只在需要的时候发，不每轮重发。这条提醒是 push 进历史的，发过一次就一直在
+        // 上下文里，之后每轮再发一遍只是拿同样的内容占窗口：六十来个 MCP 工具一份
+        // 清单五百多 token，四十轮下来就是两万多。
+        //
+        // 两种情况要重发：池子变了（MCP 是异步连上的，服务器也可能掉线重连），或者
+        // 历史里那条已经被 compact 压掉了。后者靠回扫历史发现，这样就不用在 compact
+        // 那边额外挂钩子。
         const deferredNames = this.registry.getDeferredToolNames();
         if (deferredNames.length > 0) {
-          let reminder =
-            "The following deferred tools are available via ToolSearch. Their schemas " +
-            'are NOT loaded - use ToolSearch with query "select:<name>[,<name>...]" ' +
-            "to load tool schemas";
-          reminder +=
-            this.registry.mcpLoadingMode === "dispatch"
-              ? ", then invoke them with the McpCall tool"
-              : " before calling them";
-          this.conversation.addSystemReminder(reminder + ":\n" + deferredNames.join("\n"));
+          const poolChanged =
+            deferredNames.length !== this.announcedDeferred.length ||
+            deferredNames.some((n, i) => n !== this.announcedDeferred[i]);
+          if (poolChanged || !this.conversation.hasReminderContaining(DEFERRED_REMINDER_MARKER)) {
+            let reminder =
+              DEFERRED_REMINDER_MARKER +
+              ' Their schemas are NOT loaded - use ToolSearch with query "select:<name>[,<name>...]" ' +
+              "to load tool schemas";
+            reminder +=
+              this.registry.mcpLoadingMode === "dispatch"
+                ? ", then invoke them with the mcp_call tool"
+                : " before calling them";
+            this.conversation.addSystemReminder(reminder + ":\n" + deferredNames.join("\n"));
+            this.announcedDeferred = deferredNames;
+          }
         }
 
         // Drain queued hook notifications and any external notifications (e.g. a

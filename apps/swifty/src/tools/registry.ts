@@ -123,6 +123,12 @@ export class ToolRegistry {
     return schemas;
   }
 
+  /**
+   * 还没被捞出来的延迟工具名，按字典序。
+   *
+   * 排序不只是为了好看：调用方要靠比较这份清单判断工具池到底变没变，顺序飘的话
+   * 同一批工具会拼出不同的文本，比较就失效了。
+   */
   getDeferredToolNames(): string[] {
     const names: string[] = [];
     for (const tool of this.tools.values()) {
@@ -130,7 +136,7 @@ export class ToolRegistry {
         names.push(tool.name);
       }
     }
-    return names;
+    return names.sort();
   }
 
   getDeferredTools(): Tool[] {

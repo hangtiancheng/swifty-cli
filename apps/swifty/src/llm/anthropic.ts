@@ -56,6 +56,25 @@ import { computeCompactThreshold } from "@/compact/compact.js";
 import type { ToolSchema } from "@/tools/types.js";
 
 /**
+ * 把缓存断点打在最后一个非延迟工具上。
+ *
+ * tool schema 在多轮之间稳定，标记尾部就能把整个工具块缓存下来，几乎是免费的。但断点
+ * 不能落在带 defer_loading 的工具上：一个工具同时带 defer_loading 和 cache_control
+ * 会被官方端点直接拒掉整个请求。MCP 工具在内建工具之后注册，数组尾部往往正是延迟工具，
+ * 所以必须从尾部往前找。内建工具永远不延迟，总能找到落点。
+ */
+export function markToolsForCache(tools: ToolSchema[]): void {
+  for (let i = tools.length - 1; i >= 0; i--) {
+    const t = tools[i];
+    if (t.defer_loading === true) {
+      continue;
+    }
+    t.cache_control = { type: "ephemeral" };
+    return;
+  }
+}
+
+/**
  * Whether any tool in this batch has defer_loading set.
  *
  * The beta header is only sent when it is actually needed: endpoints that do not
@@ -334,19 +353,8 @@ export class AnthropicClient implements LLMClient {
       return tool;
     });
 
-    // Mark last tool for cache control
-    if (antToolSchemas.length > 0) {
-      // Mark last tool schema for cache control
-      antToolSchemas[antToolSchemas.length - 1].cache_control = {
-        type: "ephemeral", // ephemeral cache
-      };
-
-      // for (const schema of antToolSchemas) {
-      //   schema.cache_control = {
-      //     type: "ephemeral",
-      //   };
-      // }
-    }
+    // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+    markToolsForCache(antToolSchemas as ToolSchema[]);
 
     // Mark last user message tail for cache control
     markLastUserTailForCache(messages);
