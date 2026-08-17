@@ -25,6 +25,7 @@ import { Geist_Mono, Geist } from "next/font/google";
 import { Swifty } from "@swifty.js/fonts";
 import "./globals.css";
 import { cn } from "@/lib/utils";
+import { SentryProvider } from "@/components/sentry-provider";
 
 const geist = Geist({ subsets: ["latin"], variable: "--font-sans" });
 
@@ -56,7 +57,9 @@ export default function RootLayout({
       )}
       suppressHydrationWarning
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col">
+        <SentryProvider>{children}</SentryProvider>
+      </body>
     </html>
   );
 }

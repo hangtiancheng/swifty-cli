@@ -1,0 +1,42 @@
+"use client";
+
+import { enablePlugin, init, isInitialized } from "@swifty.js/sentry";
+import { ExposurePlugin, PerformancePlugin, ScreenRecordPlugin } from "@swifty.js/sentry/plugins";
+import { ReactErrorBoundary } from "@swifty.js/sentry/react";
+import type { ReactNode } from "react";
+
+// Browser-only SDK: this module is also evaluated during SSR of client
+// components, so gate on window before touching it.
+//
+// Oversized single events (rrweb ScreenRecord payloads, ResourceList on dev
+// pages that load hundreds of modules) push the batch past the 64KB
+// fetch-keepalive body limit, permanently wedging every retry — drop them.
+const MAX_EVENT_BYTES = 50 * 1024;
+
+if (typeof window !== "undefined" && !isInitialized()) {
+  init({
+    dsn: "/api/log",
+    projectId: "swifty-agent",
+    debug: true,
+    beforePushEventList: (eventList) =>
+      eventList.filter((item) => JSON.stringify(item).length <= MAX_EVENT_BYTES),
+  });
+  enablePlugin(new PerformancePlugin(), new ScreenRecordPlugin(), new ExposurePlugin());
+}
+
+export function SentryProvider({ children }: { children: ReactNode }) {
+  return (
+    <ReactErrorBoundary
+      fallback={
+        <div className="flex min-h-screen flex-col items-center justify-center gap-2">
+          <p className="text-lg font-medium">Something went wrong</p>
+          <p className="text-sm text-muted-foreground">
+            The error has been reported. Please refresh the page.
+          </p>
+        </div>
+      }
+    >
+      {children}
+    </ReactErrorBoundary>
+  );
+}
