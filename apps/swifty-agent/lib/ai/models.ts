@@ -117,7 +117,7 @@ function resolveQuickModel(): LanguageModel {
   return provider.chat(config.openai.quick.model);
 }
 
-// ToolCallingChatModel (LanguageModelV4), used for streamText/generateText/generateObject
+// ToolCallingChatModel (LanguageModelV4), used for streamText/generateText
 export const thinkModel = resolveThinkModel();
 export const quickModel = resolveQuickModel();
 

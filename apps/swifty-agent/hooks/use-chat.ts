@@ -49,6 +49,7 @@ export interface ChatHistory {
 export interface AIOpsResult {
   result: string;
   detail: string[];
+  a2ui?: unknown[];
 }
 
 export type NotificationType = "info" | "success" | "warning" | "error";
@@ -409,9 +410,11 @@ export function useChat() {
       if (!parsed.success) throw new Error("invalid ai ops response");
       const result = parsed.data.data?.result;
       if (parsed.data.message === "OK" && result) {
+        const a2ui = parsed.data.data?.a2ui;
         return {
           result,
           detail: parsed.data.data?.detail ?? [],
+          ...(a2ui && a2ui.length > 0 ? { a2ui } : {}),
         };
       }
       throw new Error(parsed.data.message || "Unknown error");

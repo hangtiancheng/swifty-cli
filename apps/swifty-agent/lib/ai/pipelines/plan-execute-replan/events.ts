@@ -26,5 +26,5 @@ export type PlanExecuteEvent =
   | { type: "step_start"; index: number; step: string }
   | { type: "step_done"; index: number; output: string }
   | { type: "replan"; done: boolean; remaining: string[] }
-  | { type: "done"; result: string; detail: string[] }
+  | { type: "done"; result: string; detail: string[]; a2ui?: unknown[] }
   | { type: "error"; error: string };

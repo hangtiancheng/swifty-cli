@@ -23,7 +23,8 @@
 // Chat pipeline: RAG retrieval + system prompt + ReAct agent (streamText/generateText with tools + maxSteps).
 import { streamText, generateText, type Tool, type ModelMessage, isStepCount } from "ai";
 import { quickModel, providerOptions } from "../models";
-import { A2UI_CLOSE_TAG, A2UI_OPEN_TAG, A2UI_PROMPT_SECTION } from "../a2ui/prompt";
+import { A2UI_OPEN_TAG, A2UI_PROMPT_SECTION } from "../a2ui/prompt";
+import { correctA2uiBlock } from "../a2ui/correct";
 import { createA2uiStreamFilter, extractA2ui, parseA2uiBlock } from "../a2ui/extract";
 import { builtinTools } from "../tools";
 import { getLogMcpTools } from "../tools/query-log";
@@ -81,40 +82,6 @@ async function buildChatTools(): Promise<Record<string, Tool>> {
   return { ...mcpTools, ...builtinTools };
 }
 
-// One corrective retry when the LLM produced an invalid A2UI block: replay
-// the conversation with the invalid output and the validation error, without
-// tools, asking for ONLY a corrected block. Returns undefined when the retry
-// is still invalid — callers must degrade honestly, never fabricate UI data.
-async function correctA2uiBlock(params: {
-  system: string;
-  history: ModelMessage[];
-  question: string;
-  rawAnswer: string;
-  error: string;
-}): Promise<unknown[] | undefined> {
-  console.warn(`[a2ui] invalid block (${params.error}), retrying once`);
-  const result = await generateText({
-    model: quickModel,
-    system: params.system,
-    messages: [
-      ...params.history,
-      { role: "user", content: params.question },
-      { role: "assistant", content: params.rawAnswer },
-      {
-        role: "user",
-        content:
-          `Your A2UI block was invalid: ${params.error}. ` +
-          `Reply with ONLY the corrected JSON array of A2UI v0.9 messages wrapped between ${A2UI_OPEN_TAG} and ${A2UI_CLOSE_TAG} — no other text.`,
-      },
-    ] satisfies ModelMessage[],
-    providerOptions,
-  });
-  const retried = extractA2ui(result.text);
-  if (retried.messages) return retried.messages;
-  console.error(`[a2ui] corrective retry still invalid: ${retried.error ?? "no A2UI block found"}`);
-  return undefined;
-}
-
 export interface ChatResult {
   answer: string;
   a2ui?: unknown[];
@@ -147,6 +114,7 @@ export async function chat(id: string, question: string): Promise<ChatResult> {
   let a2ui = extracted.messages;
   if (!a2ui && extracted.error) {
     a2ui = await correctA2uiBlock({
+      model: quickModel,
       system,
       history,
       question,
@@ -200,6 +168,7 @@ export async function* chatStream(id: string, question: string): AsyncGenerator<
       return;
     }
     const corrected = await correctA2uiBlock({
+      model: quickModel,
       system,
       history,
       question,

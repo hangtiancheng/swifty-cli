@@ -41,7 +41,11 @@ export async function POST() {
         return Response.json(
           {
             message: "OK",
-            data: { result: event.result, detail: event.detail },
+            data: {
+              result: event.result,
+              detail: event.detail,
+              ...(event.a2ui ? { a2ui: event.a2ui } : {}),
+            },
           },
           { headers: CORS_HEADERS },
         );

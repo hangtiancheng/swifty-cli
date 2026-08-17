@@ -42,6 +42,7 @@ export const aiOpsResponseSchema = z.object({
     .object({
       result: z.string(),
       detail: z.array(z.string()).optional(),
+      a2ui: z.array(z.unknown()).optional(),
     })
     .optional(),
 });
