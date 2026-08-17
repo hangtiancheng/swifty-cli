@@ -7,7 +7,9 @@
     "build": "next build",
     "format": "oxfmt --write ./",
     "start": "next start",
-    "lint": "eslint",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "typecheck": "tsc --noEmit",
     "shadcn": "shadcn add --all --yes"
   },
   "dependencies": {
