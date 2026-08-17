@@ -23,6 +23,8 @@
 // Chat pipeline: RAG retrieval + system prompt + ReAct agent (streamText/generateText with tools + maxSteps).
 import { streamText, generateText, type Tool, type ModelMessage, isStepCount } from "ai";
 import { quickModel, providerOptions } from "../models";
+import { A2UI_CLOSE_TAG, A2UI_OPEN_TAG, A2UI_PROMPT_SECTION } from "../a2ui/prompt";
+import { createA2uiStreamFilter, extractA2ui, parseA2uiBlock } from "../a2ui/extract";
 import { builtinTools } from "../tools";
 import { getLogMcpTools } from "../tools/query-log";
 import { retrieve } from "@/lib/redis/retriever";
@@ -58,6 +60,7 @@ ${logTopicLine}
 ## Output requirements:
   • Readable and well-structured, with line breaks when needed
   • Output markdown only
+${A2UI_PROMPT_SECTION}
 ## Context information
 - Current date: {date}
 - Relevant documents: |-
@@ -78,52 +81,162 @@ async function buildChatTools(): Promise<Record<string, Tool>> {
   return { ...mcpTools, ...builtinTools };
 }
 
+// One corrective retry when the LLM produced an invalid A2UI block: replay
+// the conversation with the invalid output and the validation error, without
+// tools, asking for ONLY a corrected block. Returns undefined when the retry
+// is still invalid — callers must degrade honestly, never fabricate UI data.
+async function correctA2uiBlock(params: {
+  system: string;
+  history: ModelMessage[];
+  question: string;
+  rawAnswer: string;
+  error: string;
+}): Promise<unknown[] | undefined> {
+  console.warn(`[a2ui] invalid block (${params.error}), retrying once`);
+  const result = await generateText({
+    model: quickModel,
+    system: params.system,
+    messages: [
+      ...params.history,
+      { role: "user", content: params.question },
+      { role: "assistant", content: params.rawAnswer },
+      {
+        role: "user",
+        content:
+          `Your A2UI block was invalid: ${params.error}. ` +
+          `Reply with ONLY the corrected JSON array of A2UI v0.9 messages wrapped between ${A2UI_OPEN_TAG} and ${A2UI_CLOSE_TAG} — no other text.`,
+      },
+    ] satisfies ModelMessage[],
+    providerOptions,
+  });
+  const retried = extractA2ui(result.text);
+  if (retried.messages) return retried.messages;
+  console.error(`[a2ui] corrective retry still invalid: ${retried.error ?? "no A2UI block found"}`);
+  return undefined;
+}
+
+export interface ChatResult {
+  answer: string;
+  a2ui?: unknown[];
+}
+
 // Non-streaming chat.
-export async function chat(id: string, question: string): Promise<string> {
+export async function chat(id: string, question: string): Promise<ChatResult> {
   const mem = getSimpleMemory(id);
   const history = mem.getMessages();
   const docs = await retrieve(question);
   const documents = docs.map((d) => d.content).join("\n");
   const tools = await buildChatTools();
+  const system = buildSystemPrompt(documents);
 
   const result = await generateText({
     model: quickModel,
-    system: buildSystemPrompt(documents),
+    system,
     messages: [...history, { role: "user", content: question } satisfies ModelMessage],
     tools,
     stopWhen: isStepCount(25),
     providerOptions,
   });
 
-  const answer = result.text;
+  // Memory keeps the raw tagged text so follow-up UI actions have context.
+  const raw = result.text;
   mem.setMessages({ role: "user", content: question });
-  mem.setMessages({ role: "assistant", content: answer });
-  return answer;
+  mem.setMessages({ role: "assistant", content: raw });
+
+  const extracted = extractA2ui(raw);
+  let a2ui = extracted.messages;
+  if (!a2ui && extracted.error) {
+    a2ui = await correctA2uiBlock({
+      system,
+      history,
+      question,
+      rawAnswer: raw,
+      error: extracted.error,
+    });
+  }
+  return { answer: extracted.cleanText, a2ui };
 }
 
-// Streaming chat. Yields text chunks.
-// Memory is persisted after the stream completes.
-export async function* chatStream(id: string, question: string): AsyncGenerator<string> {
+export type ChatStreamEvent =
+  | { type: "text"; content: string }
+  | { type: "notice"; content: string }
+  | { type: "a2ui"; messages: unknown[] };
+
+// Streaming chat. Yields pass-through text chunks immediately; <a2ui-json>
+// blocks are buffered by the stream filter, validated, and yielded as a
+// single a2ui event (invalid blocks get one corrective retry, then degrade
+// to a notice). Memory is persisted after the stream completes.
+export async function* chatStream(id: string, question: string): AsyncGenerator<ChatStreamEvent> {
   const mem = getSimpleMemory(id);
   const history = mem.getMessages();
   const docs = await retrieve(question);
   const documents = docs.map((d) => d.content).join("\n");
   const tools = await buildChatTools();
+  const system = buildSystemPrompt(documents);
 
+  // streamText swallows errors into onError by default and just ends the
+  // text stream, which the client would see as an empty reply — capture and
+  // rethrow so the SSE route emits a real error event.
+  let streamError: unknown;
   const result = streamText({
     model: quickModel,
-    system: buildSystemPrompt(documents),
+    system,
     messages: [...history, { role: "user", content: question } satisfies ModelMessage],
     tools,
     stopWhen: isStepCount(25),
     providerOptions,
+    onError: ({ error }) => {
+      streamError = error;
+    },
   });
 
+  const filter = createA2uiStreamFilter();
   let full = "";
+
+  async function* handleBlock(block: string): AsyncGenerator<ChatStreamEvent> {
+    const parsed = parseA2uiBlock(block);
+    if (parsed.messages) {
+      yield { type: "a2ui", messages: parsed.messages };
+      return;
+    }
+    const corrected = await correctA2uiBlock({
+      system,
+      history,
+      question,
+      rawAnswer: full,
+      error: parsed.error ?? "unknown validation error",
+    });
+    if (corrected) {
+      yield { type: "a2ui", messages: corrected };
+    } else {
+      yield {
+        type: "notice",
+        content: "\n\n> Failed to render the interactive view for this reply.",
+      };
+    }
+  }
+
   try {
     for await (const chunk of result.textStream) {
       full += chunk;
-      yield chunk;
+      const out = filter.push(chunk);
+      if (out.text) {
+        yield { type: "text", content: out.text };
+      }
+      for (const block of out.blocks) {
+        yield* handleBlock(block);
+      }
+    }
+    const rest = filter.flush();
+    if (rest.startsWith(A2UI_OPEN_TAG)) {
+      // Unterminated block at stream end: treat as an invalid block instead
+      // of leaking raw JSON into the visible text.
+      yield* handleBlock(rest.slice(A2UI_OPEN_TAG.length));
+    } else if (rest) {
+      yield { type: "text", content: rest };
+    }
+    if (streamError !== undefined) {
+      throw streamError instanceof Error ? streamError : new Error(String(streamError));
     }
   } finally {
     if (full) {

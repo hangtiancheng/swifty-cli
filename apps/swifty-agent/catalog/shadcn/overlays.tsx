@@ -1,4 +1,4 @@
-import { createComponentImplementation } from "@a2ui/react/v0_9"
+import { createComponentImplementation } from "@a2ui/react/v0_9";
 
 import {
   AlertDialog as UIAlertDialog,
@@ -10,14 +10,14 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
   AlertDialogTrigger,
-} from "@/components/ui/alert-dialog"
+} from "@/components/ui/alert-dialog";
 import {
   ContextMenu as UIContextMenu,
   ContextMenuContent,
   ContextMenuGroup,
   ContextMenuItem,
   ContextMenuTrigger,
-} from "@/components/ui/context-menu"
+} from "@/components/ui/context-menu";
 import {
   Drawer as UIDrawer,
   DrawerContent,
@@ -25,24 +25,20 @@ import {
   DrawerHeader,
   DrawerTitle,
   DrawerTrigger,
-} from "@/components/ui/drawer"
+} from "@/components/ui/drawer";
 import {
   DropdownMenu as UIDropdownMenu,
   DropdownMenuContent,
   DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
+} from "@/components/ui/dropdown-menu";
 import {
   HoverCard as UIHoverCard,
   HoverCardContent,
   HoverCardTrigger,
-} from "@/components/ui/hover-card"
-import {
-  Popover as UIPopover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover"
+} from "@/components/ui/hover-card";
+import { Popover as UIPopover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Sheet as UISheet,
   SheetContent,
@@ -50,54 +46,34 @@ import {
   SheetHeader,
   SheetTitle,
   SheetTrigger,
-} from "@/components/ui/sheet"
-import {
-  Tooltip as UITooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip"
-import {
-  ActionSchema,
-  ComponentIdSchema,
-  DynamicStringSchema,
-  MENU_ENTRY,
-  WEIGHT,
-} from "./common"
-import { z } from 'zod/v3'
+} from "@/components/ui/sheet";
+import { Tooltip as UITooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { ActionSchema, ComponentIdSchema, DynamicStringSchema, MENU_ENTRY, WEIGHT } from "./common";
+import { z } from "zod/v3";
 
 type MenuEntryDef = {
-  label?: unknown
-  action?: unknown
-  variant?: unknown
-  disabled?: unknown
-}
+  label?: unknown;
+  action?: unknown;
+  variant?: unknown;
+  disabled?: unknown;
+};
 
-const TRIGGER = <span className="inline-block" />
+const TRIGGER = <span className="inline-block" />;
 
 export const AlertDialogApi = {
   name: "AlertDialog",
   schema: z
     .object({
       ...WEIGHT,
-      trigger: ComponentIdSchema.describe(
-        "The ID of the component that opens the dialog."
-      ),
+      trigger: ComponentIdSchema.describe("The ID of the component that opens the dialog."),
       title: DynamicStringSchema.describe("The dialog title."),
-      description: DynamicStringSchema.describe(
-        "The dialog description."
-      ).optional(),
-      cancelLabel: DynamicStringSchema.describe(
-        "The cancel button label."
-      ).optional(),
-      actionLabel: DynamicStringSchema.describe(
-        "The confirm button label."
-      ).optional(),
-      action: ActionSchema.describe(
-        "The action dispatched on confirm."
-      ).optional(),
+      description: DynamicStringSchema.describe("The dialog description.").optional(),
+      cancelLabel: DynamicStringSchema.describe("The cancel button label.").optional(),
+      actionLabel: DynamicStringSchema.describe("The confirm button label.").optional(),
+      action: ActionSchema.describe("The action dispatched on confirm.").optional(),
     })
     .strict(),
-}
+};
 
 export const AlertDialog = createComponentImplementation(
   AlertDialogApi,
@@ -121,8 +97,8 @@ export const AlertDialog = createComponentImplementation(
         </AlertDialogFooter>
       </AlertDialogContent>
     </UIAlertDialog>
-  )
-)
+  ),
+);
 
 export const ContextMenuApi = {
   name: "ContextMenu",
@@ -130,12 +106,12 @@ export const ContextMenuApi = {
     .object({
       ...WEIGHT,
       child: ComponentIdSchema.describe(
-        "The ID of the component that acts as the right-click area."
+        "The ID of the component that acts as the right-click area.",
       ),
       items: z.array(MENU_ENTRY).min(1).describe("The menu entries."),
     })
     .strict(),
-}
+};
 
 export const ContextMenu = createComponentImplementation(
   ContextMenuApi,
@@ -149,15 +125,9 @@ export const ContextMenu = createComponentImplementation(
           {((props.items ?? []) as MenuEntryDef[]).map((item, i) => (
             <ContextMenuItem
               key={i}
-              variant={
-                item.variant === "destructive" ? "destructive" : "default"
-              }
+              variant={item.variant === "destructive" ? "destructive" : "default"}
               disabled={!!item.disabled}
-              onClick={
-                typeof item.action === "function"
-                  ? (item.action as () => void)
-                  : undefined
-              }
+              onClick={typeof item.action === "function" ? (item.action as () => void) : undefined}
             >
               {String(item.label ?? "")}
             </ContextMenuItem>
@@ -165,62 +135,47 @@ export const ContextMenu = createComponentImplementation(
         </ContextMenuGroup>
       </ContextMenuContent>
     </UIContextMenu>
-  )
-)
+  ),
+);
 
 export const DrawerApi = {
   name: "Drawer",
   schema: z
     .object({
       ...WEIGHT,
-      trigger: ComponentIdSchema.describe(
-        "The ID of the component that opens the drawer."
-      ),
+      trigger: ComponentIdSchema.describe("The ID of the component that opens the drawer."),
       title: DynamicStringSchema.describe("The drawer title."),
-      description: DynamicStringSchema.describe(
-        "The drawer description."
-      ).optional(),
-      child: ComponentIdSchema.describe(
-        "The ID of the drawer content component."
-      ).optional(),
+      description: DynamicStringSchema.describe("The drawer description.").optional(),
+      child: ComponentIdSchema.describe("The ID of the drawer content component.").optional(),
     })
     .strict(),
-}
+};
 
-export const Drawer = createComponentImplementation(
-  DrawerApi,
-  ({ props, buildChild }) => (
-    <UIDrawer>
-      <DrawerTrigger render={TRIGGER} nativeButton={false}>
-        {props.trigger ? buildChild(props.trigger) : null}
-      </DrawerTrigger>
-      <DrawerContent>
-        <DrawerHeader>
-          <DrawerTitle>{props.title}</DrawerTitle>
-          {props.description && (
-            <DrawerDescription>{props.description}</DrawerDescription>
-          )}
-        </DrawerHeader>
-        {props.child && (
-          <div className="px-4 pb-4">{buildChild(props.child)}</div>
-        )}
-      </DrawerContent>
-    </UIDrawer>
-  )
-)
+export const Drawer = createComponentImplementation(DrawerApi, ({ props, buildChild }) => (
+  <UIDrawer>
+    <DrawerTrigger render={TRIGGER} nativeButton={false}>
+      {props.trigger ? buildChild(props.trigger) : null}
+    </DrawerTrigger>
+    <DrawerContent>
+      <DrawerHeader>
+        <DrawerTitle>{props.title}</DrawerTitle>
+        {props.description && <DrawerDescription>{props.description}</DrawerDescription>}
+      </DrawerHeader>
+      {props.child && <div className="px-4 pb-4">{buildChild(props.child)}</div>}
+    </DrawerContent>
+  </UIDrawer>
+));
 
 export const DropdownMenuApi = {
   name: "DropdownMenu",
   schema: z
     .object({
       ...WEIGHT,
-      trigger: ComponentIdSchema.describe(
-        "The ID of the component that opens the menu."
-      ),
+      trigger: ComponentIdSchema.describe("The ID of the component that opens the menu."),
       items: z.array(MENU_ENTRY).min(1).describe("The menu entries."),
     })
     .strict(),
-}
+};
 
 export const DropdownMenu = createComponentImplementation(
   DropdownMenuApi,
@@ -234,15 +189,9 @@ export const DropdownMenu = createComponentImplementation(
           {((props.items ?? []) as MenuEntryDef[]).map((item, i) => (
             <DropdownMenuItem
               key={i}
-              variant={
-                item.variant === "destructive" ? "destructive" : "default"
-              }
+              variant={item.variant === "destructive" ? "destructive" : "default"}
               disabled={!!item.disabled}
-              onClick={
-                typeof item.action === "function"
-                  ? (item.action as () => void)
-                  : undefined
-              }
+              onClick={typeof item.action === "function" ? (item.action as () => void) : undefined}
             >
               {String(item.label ?? "")}
             </DropdownMenuItem>
@@ -250,8 +199,8 @@ export const DropdownMenu = createComponentImplementation(
         </DropdownMenuGroup>
       </DropdownMenuContent>
     </UIDropdownMenu>
-  )
-)
+  ),
+);
 
 export const HoverCardApi = {
   name: "HoverCard",
@@ -259,124 +208,87 @@ export const HoverCardApi = {
     .object({
       ...WEIGHT,
       trigger: ComponentIdSchema.describe(
-        "The ID of the component that reveals the card on hover."
+        "The ID of the component that reveals the card on hover.",
       ),
-      child: ComponentIdSchema.describe(
-        "The ID of the card content component."
-      ),
+      child: ComponentIdSchema.describe("The ID of the card content component."),
     })
     .strict(),
-}
+};
 
-export const HoverCard = createComponentImplementation(
-  HoverCardApi,
-  ({ props, buildChild }) => (
-    <UIHoverCard>
-      <HoverCardTrigger render={TRIGGER}>
-        {props.trigger ? buildChild(props.trigger) : null}
-      </HoverCardTrigger>
-      <HoverCardContent>
-        {props.child ? buildChild(props.child) : null}
-      </HoverCardContent>
-    </UIHoverCard>
-  )
-)
+export const HoverCard = createComponentImplementation(HoverCardApi, ({ props, buildChild }) => (
+  <UIHoverCard>
+    <HoverCardTrigger render={TRIGGER}>
+      {props.trigger ? buildChild(props.trigger) : null}
+    </HoverCardTrigger>
+    <HoverCardContent>{props.child ? buildChild(props.child) : null}</HoverCardContent>
+  </UIHoverCard>
+));
 
 export const PopoverApi = {
   name: "Popover",
   schema: z
     .object({
       ...WEIGHT,
-      trigger: ComponentIdSchema.describe(
-        "The ID of the component that opens the popover."
-      ),
-      child: ComponentIdSchema.describe(
-        "The ID of the popover content component."
-      ),
+      trigger: ComponentIdSchema.describe("The ID of the component that opens the popover."),
+      child: ComponentIdSchema.describe("The ID of the popover content component."),
     })
     .strict(),
-}
+};
 
-export const Popover = createComponentImplementation(
-  PopoverApi,
-  ({ props, buildChild }) => (
-    <UIPopover>
-      <PopoverTrigger render={TRIGGER} nativeButton={false}>
-        {props.trigger ? buildChild(props.trigger) : null}
-      </PopoverTrigger>
-      <PopoverContent>
-        {props.child ? buildChild(props.child) : null}
-      </PopoverContent>
-    </UIPopover>
-  )
-)
+export const Popover = createComponentImplementation(PopoverApi, ({ props, buildChild }) => (
+  <UIPopover>
+    <PopoverTrigger render={TRIGGER} nativeButton={false}>
+      {props.trigger ? buildChild(props.trigger) : null}
+    </PopoverTrigger>
+    <PopoverContent>{props.child ? buildChild(props.child) : null}</PopoverContent>
+  </UIPopover>
+));
 
 export const SheetApi = {
   name: "Sheet",
   schema: z
     .object({
       ...WEIGHT,
-      trigger: ComponentIdSchema.describe(
-        "The ID of the component that opens the sheet."
-      ),
+      trigger: ComponentIdSchema.describe("The ID of the component that opens the sheet."),
       title: DynamicStringSchema.describe("The sheet title."),
-      description: DynamicStringSchema.describe(
-        "The sheet description."
-      ).optional(),
-      child: ComponentIdSchema.describe(
-        "The ID of the sheet content component."
-      ).optional(),
-      side: z
-        .enum(["top", "right", "bottom", "left"])
-        .default("right")
-        .optional(),
+      description: DynamicStringSchema.describe("The sheet description.").optional(),
+      child: ComponentIdSchema.describe("The ID of the sheet content component.").optional(),
+      side: z.enum(["top", "right", "bottom", "left"]).default("right").optional(),
     })
     .strict(),
-}
+};
 
-export const Sheet = createComponentImplementation(
-  SheetApi,
-  ({ props, buildChild }) => (
-    <UISheet>
-      <SheetTrigger render={TRIGGER} nativeButton={false}>
-        {props.trigger ? buildChild(props.trigger) : null}
-      </SheetTrigger>
-      <SheetContent side={props.side ?? "right"}>
-        <SheetHeader>
-          <SheetTitle>{props.title}</SheetTitle>
-          {props.description && (
-            <SheetDescription>{props.description}</SheetDescription>
-          )}
-        </SheetHeader>
-        {props.child && (
-          <div className="px-4 pb-4">{buildChild(props.child)}</div>
-        )}
-      </SheetContent>
-    </UISheet>
-  )
-)
+export const Sheet = createComponentImplementation(SheetApi, ({ props, buildChild }) => (
+  <UISheet>
+    <SheetTrigger render={TRIGGER} nativeButton={false}>
+      {props.trigger ? buildChild(props.trigger) : null}
+    </SheetTrigger>
+    <SheetContent side={props.side ?? "right"}>
+      <SheetHeader>
+        <SheetTitle>{props.title}</SheetTitle>
+        {props.description && <SheetDescription>{props.description}</SheetDescription>}
+      </SheetHeader>
+      {props.child && <div className="px-4 pb-4">{buildChild(props.child)}</div>}
+    </SheetContent>
+  </UISheet>
+));
 
 export const TooltipApi = {
   name: "Tooltip",
   schema: z
     .object({
       ...WEIGHT,
-      trigger: ComponentIdSchema.describe(
-        "The ID of the component the tooltip is attached to."
-      ),
+      trigger: ComponentIdSchema.describe("The ID of the component the tooltip is attached to."),
       text: DynamicStringSchema.describe("The tooltip text."),
     })
     .strict(),
-}
+};
 
-export const Tooltip = createComponentImplementation(
-  TooltipApi,
-  ({ props, buildChild }) => (
-    <UITooltip>
-      <TooltipTrigger render={TRIGGER}>
-        {props.trigger ? buildChild(props.trigger) : null}
-      </TooltipTrigger>
-      <TooltipContent>{props.text}</TooltipContent>
-    </UITooltip>
-  )
-)
+export const Tooltip = createComponentImplementation(TooltipApi, ({ props, buildChild }) => (
+  <UITooltip>
+    <TooltipTrigger render={TRIGGER}>
+      {props.trigger ? buildChild(props.trigger) : null}
+    </TooltipTrigger>
+    <TooltipContent>{props.text}</TooltipContent>
+  </UITooltip>
+));

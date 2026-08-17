@@ -23,15 +23,17 @@
 "use client";
 import { memo, useEffect, useRef } from "react";
 import type { ChatMessage } from "@/hooks/use-chat";
+import A2uiView from "./a2ui-view";
 import MdRender from "./md-render";
 import { LoaderCircle, Sparkles } from "lucide-react";
 
 interface MessageListProps {
   messages: ChatMessage[];
   isStreaming: boolean;
+  onAction: (query: string) => void;
 }
 
-export default function MessageList({ messages, isStreaming }: MessageListProps) {
+export default function MessageList({ messages, isStreaming, onAction }: MessageListProps) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (ref.current) ref.current.scrollTop = ref.current.scrollHeight;
@@ -44,6 +46,7 @@ export default function MessageList({ messages, isStreaming }: MessageListProps)
           key={i}
           message={m}
           streaming={isStreaming && i === messages.length - 1 && m.type === "assistant"}
+          onAction={onAction}
         />
       ))}
     </div>
@@ -55,9 +58,11 @@ export default function MessageList({ messages, isStreaming }: MessageListProps)
 const MessageItem = memo(function MessageItem({
   message,
   streaming,
+  onAction,
 }: {
   message: ChatMessage;
   streaming: boolean;
+  onAction: (query: string) => void;
 }) {
   if (message.type === "user") {
     return (
@@ -103,6 +108,9 @@ const MessageItem = memo(function MessageItem({
             </div>
           ) : (
             <MdRender content={message.content} streaming={streaming} />
+          )}
+          {message.a2ui && message.a2ui.length > 0 && (
+            <A2uiView messages={message.a2ui} onAction={onAction} />
           )}
         </div>
       </div>

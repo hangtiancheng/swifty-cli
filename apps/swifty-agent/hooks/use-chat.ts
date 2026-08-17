@@ -32,6 +32,8 @@ export interface ChatMessage {
   content: string;
   /** Optional step details for AI Ops results. */
   detail?: string[];
+  /** A2UI v0.9 protocol messages rendered as interactive surfaces. */
+  a2ui?: unknown[];
   /** Transient: reply not yet arrived — render a thinking placeholder. */
   pending?: boolean;
 }
@@ -66,6 +68,7 @@ const chatMessageSchema = z.object({
   type: z.enum(["user", "assistant"]),
   content: z.string(),
   detail: z.array(z.string()).optional(),
+  a2ui: z.array(z.unknown()).optional(),
 });
 
 const chatHistorySchema = z.object({
@@ -251,8 +254,16 @@ export function useChat() {
           const parsed = chatResponseSchema.safeParse(await resp.json());
           if (!parsed.success) throw new Error("invalid chat response");
           const answer = parsed.data.data?.answer;
+          const a2ui = parsed.data.data?.a2ui;
           if (parsed.data.message === "OK" && answer) {
-            currentMsgs = [...currentMsgs.slice(0, -1), { type: "assistant", content: answer }];
+            currentMsgs = [
+              ...currentMsgs.slice(0, -1),
+              {
+                type: "assistant",
+                content: answer,
+                ...(a2ui && a2ui.length > 0 ? { a2ui } : {}),
+              },
+            ];
             setMessages(currentMsgs);
           } else {
             throw new Error(parsed.data.message || "Unknown error");
@@ -289,11 +300,36 @@ export function useChat() {
             currentEvent = "";
             if (event === "message") {
               full += payload;
+              const last = currentMsgs.at(-1);
               currentMsgs = [
                 ...currentMsgs.slice(0, -1),
-                { type: "assistant" as const, content: full },
+                {
+                  type: "assistant" as const,
+                  content: full,
+                  ...(last?.a2ui ? { a2ui: last.a2ui } : {}),
+                },
               ];
               setMessages(currentMsgs);
+            } else if (event === "a2ui") {
+              // Payload is a JSON array of A2UI protocol messages; contents
+              // are validated per-message by the web_core schema at render
+              // time, so treat them as unknown[] here.
+              try {
+                const messages = z.array(z.unknown()).min(1).safeParse(JSON.parse(payload));
+                if (!messages.success) throw new Error("payload is not a non-empty array");
+                const last = currentMsgs.at(-1);
+                currentMsgs = [
+                  ...currentMsgs.slice(0, -1),
+                  {
+                    type: "assistant" as const,
+                    content: full,
+                    a2ui: [...(last?.a2ui ?? []), ...messages.data],
+                  },
+                ];
+                setMessages(currentMsgs);
+              } catch (err) {
+                console.error("invalid a2ui event payload:", err);
+              }
             } else if (event === "error") {
               // P1-3 fix: surface server-side error events instead of
               // silently ignoring them.

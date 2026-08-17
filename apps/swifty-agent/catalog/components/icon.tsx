@@ -59,10 +59,10 @@ import {
   Volume2,
   VolumeX,
   X,
-} from "lucide-react"
+} from "lucide-react";
 
-import { createComponentImplementation } from "@a2ui/react/v0_9"
-import { IconApi } from "@a2ui/web_core/v0_9/basic_catalog"
+import { createComponentImplementation } from "@a2ui/react/v0_9";
+import { IconApi } from "@a2ui/web_core/v0_9/basic_catalog";
 
 export const ICON_MAP: Record<string, LucideIcon> = {
   accountCircle: CircleUserRound,
@@ -124,10 +124,10 @@ export const ICON_MAP: Record<string, LucideIcon> = {
   volumeOff: VolumeX,
   volumeUp: Volume2,
   warning: TriangleAlert,
-}
+};
 
 export const Icon = createComponentImplementation(IconApi, ({ props }) => {
-  const name = props.name
+  const name = props.name;
 
   // The svgPath variant carries path data inside the protocol message itself.
   if (typeof name === "object" && name !== null && "svgPath" in name) {
@@ -135,22 +135,16 @@ export const Icon = createComponentImplementation(IconApi, ({ props }) => {
       <svg viewBox="0 0 24 24" className="size-6 shrink-0 fill-current">
         <path d={(name as { svgPath: string }).svgPath} />
       </svg>
-    )
+    );
   }
 
-  const LucideGlyph = (typeof name === "string" && ICON_MAP[name]) || CircleHelp
-  return <LucideGlyph className="size-6 shrink-0" />
-})
+  const LucideGlyph = (typeof name === "string" && ICON_MAP[name]) || CircleHelp;
+  return <LucideGlyph className="size-6 shrink-0" />;
+});
 
-export function CatalogIcon({
-  name,
-  className,
-}: {
-  name?: string
-  className?: string
-}) {
-  if (!name) return null
-  const LucideGlyph = ICON_MAP[name]
-  if (!LucideGlyph) return null
-  return <LucideGlyph className={className} />
+export function CatalogIcon({ name, className }: { name?: string; className?: string }) {
+  if (!name) return null;
+  const LucideGlyph = ICON_MAP[name];
+  if (!LucideGlyph) return null;
+  return <LucideGlyph className={className} />;
 }

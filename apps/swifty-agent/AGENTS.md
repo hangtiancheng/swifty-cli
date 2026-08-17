@@ -38,3 +38,15 @@ AI intelligent OnCall assistant.
 - API responses are wrapped as `{ message, data }`.
 - Configuration is read via `.env` + `lib/config.ts`; no yaml.
 - Strict typing: validate runtime-unknown data with zod (`safeParse`/`parse`); no unnecessary type assertions, no `@ts-ignore` / `eslint-disable`.
+
+## A2UI integration (v0.9)
+
+- The LLM optionally appends ONE `<a2ui-json>[...]</a2ui-json>` block (JSON array of A2UI v0.9 messages) after a markdown summary; prompt section + OnCall few-shot builders live in `lib/ai/a2ui/prompt.ts` (change UI examples there, the prompt updates itself).
+- `lib/ai/a2ui/extract.ts`: `createA2uiStreamFilter()` strips blocks from the text stream (holds back partial-tag tails across chunks); validation is `A2uiMessageListSchema.safeParse` from `@a2ui/web_core/v0_9` only — do not reintroduce hand-rolled checks.
+- **zod red line**: web_core bundles its own zod v3; never compose its schemas into app `zod/v4` combinators — app boundaries carry `unknown[]`, per-payload validation calls the web_core schema directly.
+- `chatStream()` yields `ChatStreamEvent` (`text` / `a2ui` / `notice`); SSE emits them as `message` / `a2ui` events. `chat()` returns `{ answer, a2ui? }` and `/api/chat` puts it in `data.a2ui`. Invalid blocks get exactly one no-tools corrective retry, then degrade to an honest notice — never fabricate UI data. Memory keeps the raw tagged text so follow-up actions have context.
+- Client: `ChatMessage.a2ui?: unknown[]` (persisted in localStorage histories); `components/a2ui-view.tsx` owns a per-message `MessageProcessor([shadcnCatalog])` (surfaceIds are isolated per message; cross-message deleteSurface unsupported), validates each message with `A2uiMessageSchema.safeParse`, renders `<A2uiSurface>` under `MarkdownContext.Provider`.
+- Surface actions are serialized as `[UI_ACTION] <name>\ncontext: <json>` and auto-sent through the normal chat send path.
+- `reactStrictMode` is off: the MessageProcessor is a stateful external store and StrictMode's dev double-effect replays surfaces on re-subscription.
+- Catalog (`catalog/`, 18 basic + 47 shadcn extension components) and `components/ui/` are ported from the a2ui repo — keep edits minimal.
+- Verification: `/gallery` renders every extension component backend-free; `npx tsx scripts/a2ui-smoke.ts` checks the prompt examples, stream filter chunk-splits, and validation semantics.

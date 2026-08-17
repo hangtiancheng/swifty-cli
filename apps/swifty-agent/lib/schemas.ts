@@ -28,7 +28,12 @@ import { z } from "zod/v4";
 
 export const chatResponseSchema = z.object({
   message: z.string(),
-  data: z.object({ answer: z.string() }).optional(),
+  data: z
+    .object({
+      answer: z.string(),
+      a2ui: z.array(z.unknown()).optional(),
+    })
+    .optional(),
 });
 
 export const aiOpsResponseSchema = z.object({

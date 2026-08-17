@@ -216,3 +216,4 @@ apps/swifty/.swifty/*
 apps/swiftx/.swiftx/*
 !apps/swiftx/.swiftx/config.yaml
 apps/swifty-agent/data
+.playwright-cli/

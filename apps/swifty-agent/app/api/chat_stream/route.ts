@@ -65,8 +65,14 @@ export async function POST(request: Request) {
       // Send a connected event first.
       send("connected", JSON.stringify({ status: "connected", client_id: id }));
       try {
-        for await (const chunk of chatStream(id, question)) {
-          send("message", chunk);
+        for await (const ev of chatStream(id, question)) {
+          if (ev.type === "a2ui") {
+            // JSON.stringify output is single-line, so it survives the
+            // line-splitting `send` framing as one data: line.
+            send("a2ui", JSON.stringify(ev.messages));
+          } else {
+            send("message", ev.content);
+          }
         }
         send("done", "Stream completed");
       } catch (e) {

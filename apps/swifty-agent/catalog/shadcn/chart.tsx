@@ -10,9 +10,9 @@ import {
   Pie,
   PieChart,
   XAxis,
-} from "recharts"
+} from "recharts";
 
-import { createComponentImplementation } from "@a2ui/react/v0_9"
+import { createComponentImplementation } from "@a2ui/react/v0_9";
 
 import {
   type ChartConfig,
@@ -21,49 +21,36 @@ import {
   ChartLegendContent,
   ChartTooltip,
   ChartTooltipContent,
-} from "@/components/ui/chart"
-import { weightStyle } from "../utils"
-import { DynamicValueSchema, WEIGHT } from "./common"
-import { z } from 'zod/v3'
+} from "@/components/ui/chart";
+import { weightStyle } from "../utils";
+import { DynamicValueSchema, WEIGHT } from "./common";
+import { z } from "zod/v3";
 
 export const ChartApi = {
   name: "Chart",
   schema: z
     .object({
       ...WEIGHT,
-      variant: z
-        .enum(["bar", "line", "area", "pie"])
-        .describe("The chart type."),
+      variant: z.enum(["bar", "line", "area", "pie"]).describe("The chart type."),
       data: DynamicValueSchema.describe(
-        "The chart rows: an array of objects, or a data model binding to one."
+        "The chart rows: an array of objects, or a data model binding to one.",
       ),
-      xKey: z
-        .string()
-        .describe("The row key used for the x axis (or pie slice name)."),
+      xKey: z.string().describe("The row key used for the x axis (or pie slice name)."),
       series: z
         .array(
           z.object({
             key: z.string().describe("The row key of this series' value."),
-            label: z
-              .string()
-              .describe("The display label of the series.")
-              .optional(),
-          })
+            label: z.string().describe("The display label of the series.").optional(),
+          }),
         )
         .min(1)
-        .describe(
-          "The value series to plot. Pie charts use only the first series."
-        ),
-      height: z
-        .number()
-        .describe("The chart height in pixels.")
-        .default(240)
-        .optional(),
+        .describe("The value series to plot. Pie charts use only the first series."),
+      height: z.number().describe("The chart height in pixels.").default(240).optional(),
     })
     .strict(),
-}
+};
 
-type SeriesDef = { key?: unknown; label?: unknown }
+type SeriesDef = { key?: unknown; label?: unknown };
 
 const PALETTE = [
   "var(--chart-2)",
@@ -71,33 +58,28 @@ const PALETTE = [
   "var(--chart-4)",
   "var(--chart-5)",
   "var(--chart-1)",
-]
+];
 
 export const Chart = createComponentImplementation(ChartApi, ({ props }) => {
-  const data = (Array.isArray(props.data) ? props.data : []) as Record<
-    string,
-    unknown
-  >[]
-  const series = (
-    Array.isArray(props.series) ? props.series : []
-  ) as SeriesDef[]
-  const xKey = String(props.xKey ?? "")
+  const data = (Array.isArray(props.data) ? props.data : []) as Record<string, unknown>[];
+  const series = (Array.isArray(props.series) ? props.series : []) as SeriesDef[];
+  const xKey = String(props.xKey ?? "");
 
   const config: ChartConfig = Object.fromEntries(
     series.map((s, i) => [
       String(s.key),
       { label: String(s.label ?? s.key), color: PALETTE[i % PALETTE.length] },
-    ])
-  )
+    ]),
+  );
 
   const containerProps = {
     config,
     className: "w-full",
     style: { ...weightStyle(props.weight), height: props.height ?? 240 },
-  }
+  };
 
   if (props.variant === "pie") {
-    const key = String(series[0]?.key ?? "value")
+    const key = String(series[0]?.key ?? "value");
     return (
       <ChartContainer {...containerProps}>
         <PieChart>
@@ -109,7 +91,7 @@ export const Chart = createComponentImplementation(ChartApi, ({ props }) => {
           </Pie>
         </PieChart>
       </ChartContainer>
-    )
+    );
   }
 
   if (props.variant === "line") {
@@ -117,12 +99,7 @@ export const Chart = createComponentImplementation(ChartApi, ({ props }) => {
       <ChartContainer {...containerProps}>
         <LineChart data={data}>
           <CartesianGrid vertical={false} />
-          <XAxis
-            dataKey={xKey}
-            tickLine={false}
-            axisLine={false}
-            tickMargin={8}
-          />
+          <XAxis dataKey={xKey} tickLine={false} axisLine={false} tickMargin={8} />
           <ChartTooltip content={<ChartTooltipContent />} />
           <ChartLegend content={<ChartLegendContent />} />
           {series.map((s, i) => (
@@ -136,7 +113,7 @@ export const Chart = createComponentImplementation(ChartApi, ({ props }) => {
           ))}
         </LineChart>
       </ChartContainer>
-    )
+    );
   }
 
   if (props.variant === "area") {
@@ -144,12 +121,7 @@ export const Chart = createComponentImplementation(ChartApi, ({ props }) => {
       <ChartContainer {...containerProps}>
         <AreaChart data={data}>
           <CartesianGrid vertical={false} />
-          <XAxis
-            dataKey={xKey}
-            tickLine={false}
-            axisLine={false}
-            tickMargin={8}
-          />
+          <XAxis dataKey={xKey} tickLine={false} axisLine={false} tickMargin={8} />
           <ChartTooltip content={<ChartTooltipContent />} />
           <ChartLegend content={<ChartLegendContent />} />
           {series.map((s, i) => (
@@ -163,30 +135,20 @@ export const Chart = createComponentImplementation(ChartApi, ({ props }) => {
           ))}
         </AreaChart>
       </ChartContainer>
-    )
+    );
   }
 
   return (
     <ChartContainer {...containerProps}>
       <BarChart data={data}>
         <CartesianGrid vertical={false} />
-        <XAxis
-          dataKey={xKey}
-          tickLine={false}
-          axisLine={false}
-          tickMargin={8}
-        />
+        <XAxis dataKey={xKey} tickLine={false} axisLine={false} tickMargin={8} />
         <ChartTooltip content={<ChartTooltipContent />} />
         <ChartLegend content={<ChartLegendContent />} />
         {series.map((s, i) => (
-          <Bar
-            key={i}
-            dataKey={String(s.key)}
-            fill={`var(--color-${String(s.key)})`}
-            radius={4}
-          />
+          <Bar key={i} dataKey={String(s.key)} fill={`var(--color-${String(s.key)})`} radius={4} />
         ))}
       </BarChart>
     </ChartContainer>
-  )
-})
+  );
+});

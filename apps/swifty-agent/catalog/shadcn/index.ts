@@ -1,14 +1,7 @@
-import type { ReactComponentImplementation } from "@a2ui/react/v0_9"
+import type { ReactComponentImplementation } from "@a2ui/react/v0_9";
 
-import { Chart } from "./chart"
-import {
-  Attachment,
-  Bubble,
-  Marker,
-  Message,
-  MessageScroller,
-  Questionnaire,
-} from "./chat"
+import { Chart } from "./chart";
+import { Attachment, Bubble, Marker, Message, MessageScroller, Questionnaire } from "./chat";
 import {
   Alert,
   AspectRatio,
@@ -22,7 +15,7 @@ import {
   ScrollArea,
   Skeleton,
   Spinner,
-} from "./display"
+} from "./display";
 import {
   Calendar,
   Combobox,
@@ -34,8 +27,8 @@ import {
   Select,
   Switch,
   Toggle,
-} from "./forms"
-import { Breadcrumb, Menubar, NavigationMenu, Pagination } from "./navigation"
+} from "./forms";
+import { Breadcrumb, Menubar, NavigationMenu, Pagination } from "./navigation";
 import {
   AlertDialog,
   ContextMenu,
@@ -45,15 +38,8 @@ import {
   Popover,
   Sheet,
   Tooltip,
-} from "./overlays"
-import {
-  Accordion,
-  ButtonGroup,
-  Carousel,
-  Collapsible,
-  Resizable,
-  Table,
-} from "./structure"
+} from "./overlays";
+import { Accordion, ButtonGroup, Carousel, Collapsible, Resizable, Table } from "./structure";
 
 // Extension components beyond the official basic-catalog contract: every
 // shadcn/ui family from src/components/ui that is surface-embeddable.
@@ -117,4 +103,4 @@ export const shadcnExtensionComponents: ReactComponentImplementation[] = [
   Questionnaire,
   // data
   Chart,
-]
+];

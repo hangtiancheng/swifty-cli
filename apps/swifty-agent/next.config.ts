@@ -28,6 +28,9 @@ const filename__ = fileURLToPath(import.meta.url);
 const dirname__ = dirname(filename__);
 
 const nextConfig: NextConfig = {
+  // The A2UI MessageProcessor is a stateful external store; StrictMode's dev
+  // double-effect replays already-created surfaces on re-subscription.
+  reactStrictMode: false,
   // Native/binary deps with dynamic requires should not be bundled by webpack.
   serverExternalPackages: ["redis", "mysql2", "knex"],
   turbopack: {

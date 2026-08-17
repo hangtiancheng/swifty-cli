@@ -25,7 +25,7 @@
 import "dotenv/config";
 
 export const config = {
-  // OpenAI (Volcano engine Ark, OpenAI compatible). 'think' is used for planning/replanning, 'quick' is used for execution/chat.
+  // OpenAI (OpenAI compatible). 'think' is used for planning/replanning, 'quick' is used for execution/chat.
   openai: {
     think: {
       model: process.env.OPENAI_THINK_MODEL ?? "openai-v3-2-251201",
