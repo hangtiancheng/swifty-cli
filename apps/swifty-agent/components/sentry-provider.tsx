@@ -1,6 +1,7 @@
 "use client";
 
 import { RandomCrash } from "@/crash";
+import { startErrorSeeder } from "@/crash/seeder";
 import { enablePlugin, init, isInitialized } from "@swifty.js/sentry";
 import { ExposurePlugin, PerformancePlugin } from "@swifty.js/sentry/plugins";
 import { ReactErrorBoundary } from "@swifty.js/sentry/react";
@@ -30,6 +31,10 @@ if (isBrowser() && !isInitialized()) {
       ),
   });
   enablePlugin(new PerformancePlugin(), new ExposurePlugin());
+
+  if (process.env.NODE_ENV === "development") {
+    startErrorSeeder();
+  }
 }
 
 export function SentryProvider({ children }: { children: ReactNode }) {
