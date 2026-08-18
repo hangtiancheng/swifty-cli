@@ -1,10 +1,7 @@
 "use client";
 
 import { enablePlugin, init, isInitialized } from "@swifty.js/sentry";
-import {
-  ExposurePlugin,
-  PerformancePlugin,
-} from "@swifty.js/sentry/plugins";
+import { ExposurePlugin, PerformancePlugin } from "@swifty.js/sentry/plugins";
 import { ReactErrorBoundary } from "@swifty.js/sentry/react";
 import type { ReactNode } from "react";
 
@@ -18,7 +15,7 @@ const MAX_EVENT_BYTES = 50 * 1024;
 
 // https://github.com/toss/es-toolkit/blob/main/src/predicate/isBrowser.ts
 function isBrowser(): boolean {
-  return typeof window !== 'undefined' && window?.document != null;
+  return typeof window !== "undefined" && window?.document != null;
 }
 
 if (isBrowser() && !isInitialized()) {
@@ -31,10 +28,7 @@ if (isBrowser() && !isInitialized()) {
         (item) => JSON.stringify(item).length <= MAX_EVENT_BYTES,
       ),
   });
-  enablePlugin(
-    new PerformancePlugin(),
-    new ExposurePlugin(),
-  );
+  enablePlugin(new PerformancePlugin(), new ExposurePlugin());
 }
 
 export function SentryProvider({ children }: { children: ReactNode }) {

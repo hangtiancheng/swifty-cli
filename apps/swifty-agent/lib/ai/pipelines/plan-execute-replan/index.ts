@@ -51,10 +51,15 @@ const AI_OPS_QUERY = `1. You are an intelligent service alert analysis assistant
 
 告警分析报告
 ---
+
 # 告警处理详情
+
 ## 活跃告警列表
+
 ## 告警归因 N (第 N 个告警)
+
 ## 处理流程 N (第 N 个告警)
+
 ## 结论
 `;
 
@@ -81,17 +86,19 @@ async function buildTools(): Promise<Record<string, Tool>> {
 // corrective retry, or the call fails — the report itself is never at risk.
 async function uiifyReport(result: string): Promise<unknown[] | undefined> {
   const system = `You render A2UI surfaces for an OnCall assistant.\n${A2UI_PROMPT_SECTION}`;
-  const question =
-    `Below is an alert operations analysis report. If it presents structured data worth visualizing ` +
-    `(alert lists, metric series, tabular results), reply with ONLY one A2UI block wrapped between ` +
-    `${A2UI_OPEN_TAG} and ${A2UI_CLOSE_TAG}.\n` +
-    `Rules:\n` +
-    `- The report is the ONLY source: visualize facts it states, copied verbatim — NEVER invent data.\n` +
-    `- Do not visualize intermediate execution chatter (e.g. current-time lookups) and never repeat the same data twice.\n` +
-    `- Never render empty tables or placeholder rows like "(none)" or "—".\n` +
-    `- Titles must be short noun phrases, not sentences; omit a Table caption when a heading already labels it.\n` +
-    `- If the report has nothing structured to render (e.g. zero active alerts, prose-only conclusions), reply with the single word NONE.\n\n` +
-    `Report:\n${result}`;
+  const question = `Below is an alert operations analysis report. If it presents structured data worth visualizing (alert lists, metric series, tabular results), reply with ONLY one A2UI block wrapped between ${A2UI_OPEN_TAG} and ${A2UI_CLOSE_TAG}.
+
+Rules:
+
+- The report is the ONLY source: visualize facts it states, copied verbatim — NEVER invent data.
+- Do not visualize intermediate execution chatter (e.g. current-time lookups) and never repeat the same data twice.
+- Never render empty tables or placeholder rows like "(none)" or "—".
+- Titles must be short noun phrases, not sentences; omit a Table caption when a heading already labels it.
+- If the report has nothing structured to render (e.g. zero active alerts, prose-only conclusions), reply with the single word NONE.
+
+Report:
+
+${result}`;
   try {
     const gen = await generateText({
       model: thinkModel,
@@ -152,11 +159,21 @@ export async function* runPlanExecuteReplan(
       const replanResult = await generateText({
         model: thinkModel,
         output: Output.object({ schema: replanSchema }),
-        prompt: `You are a replanning agent reviewing execution progress toward an objective. Analyze the completed steps and their outcomes to decide whether the objective is fully achieved or further action is required.\n\nTask:\n${query}\n\nOriginal Plan:\n${JSON.stringify({ steps: plan })}\n\nCompleted steps:\n${plan
-          .map((s, idx) => `${idx + 1}. ${s}`)
-          .join("\n")}\n\nResults so far:\n${detail.join(
-          "\n",
-        )}\n\nBased on the progress above, determine whether the task is complete. If it is, provide a comprehensive final report in the summary field. If more work is needed, list only the remaining steps.`,
+        prompt: `You are a replanning agent reviewing execution progress toward an objective. Analyze the completed steps and their outcomes to decide whether the objective is fully achieved or further action is required.
+
+Task:
+${query}
+
+Original Plan:
+${JSON.stringify({ steps: plan })}
+
+Completed steps:
+${plan.map((s, idx) => `${idx + 1}. ${s}`).join("\n")}
+
+Results so far:
+${detail.join("\n")}
+
+Based on the progress above, determine whether the task is complete. If it is, provide a comprehensive final report in the summary field. If more work is needed, list only the remaining steps.`,
         providerOptions,
       });
       const obj = replanResult.output;

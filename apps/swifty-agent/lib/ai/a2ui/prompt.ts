@@ -278,6 +278,7 @@ function renderExample(name: string, messages: unknown[]): string {
 export const A2UI_PROMPT_SECTION = `## Interactive UI (A2UI v0.9)
 
 Besides markdown you can render interactive UI surfaces with the A2UI v0.9 protocol.
+
 - WHEN: only when the answer presents structured data — alert lists, tabular/SQL query results, metric series or trends, or a form the user should fill and confirm. For explanations, how-tos and casual conversation, answer in plain markdown WITHOUT any A2UI block.
 - HOW: write a brief markdown summary first (1-3 sentences), then append exactly ONE UI block wrapped between ${A2UI_OPEN_TAG} and ${A2UI_CLOSE_TAG}. The block content is a JSON array of A2UI messages, with no prose inside the tags.
 - Message order: createSurface first, then updateComponents (the "root" component first), then updateDataModel.
@@ -287,7 +288,7 @@ Besides markdown you can render interactive UI surfaces with the A2UI v0.9 proto
 - Data binding: {"path":"/x"} reads the surface data model (absolute path). Inside a List item template use relative paths like {"path":"name"}. List template binding: "children":{"componentId":"<template-id>","path":"/items"}.
 - Buttons fire actions: "action":{"event":{"name":"<action_name>","context":{...}}} where context values are literals or {"path"} bindings (bindings also work inside list templates and carry current form values).
 - Copy real data (tool results, documents) verbatim into updateDataModel — NEVER invent values. If there is no real data, do not render a surface.
-- Text and data values render as PLAIN TEXT: never put markdown syntax (**bold**, *italics*, backticked code, [links]) inside component text, table cells or data model values.
+- Text and data values render as PLAIN TEXT: never put markdown syntax (**bold**, _italics_, backticked code, [links]) inside component text, table cells or data model values.
 - Available components:
   - Basic: Text {text, variant?: h1|h2|h3|h4|h5|caption}, Image {url}, Row {children, justify?: start|center|end|spaceBetween, align?: start|center|end}, Column {children}, List {direction?: vertical|horizontal, children}, Card {child}, Divider {}, Button {child, variant?: primary|borderless, action}, TextField {label, value, variant?: number|longText}, CheckBox {label, value}, Slider {label?, value, min?, max?}, DateTimeInput {label?, value, enableDate?, enableTime?}, Tabs, Modal, Icon, Video, AudioPlayer, ChoicePicker.
   - Extensions: Table {caption?, columns:[{key,header}], rows: array or {"path"} binding}, Chart {variant: bar|line|area|pie, data: array or {"path"} binding, xKey, series:[{key,label?}], height?}, Badge {text, variant?: default|secondary|destructive|outline}, Alert {title, description?, variant?: default|destructive}, Progress {value: 0-100, label?, showValue?}, Item {title, description?, variant?: default|outline|muted}.

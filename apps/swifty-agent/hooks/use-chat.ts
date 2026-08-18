@@ -36,7 +36,7 @@ export interface ChatMessage {
   content: string;
   /** Optional step details for AI Ops results. */
   detail?: string[];
-    /** A2UI protocol messages attached to an assistant reply (unknown[] at this boundary; validated per-message by the web_core schema at render time). */
+  /** A2UI protocol messages attached to an assistant reply (unknown[] at this boundary; validated per-message by the web_core schema at render time). */
   a2ui?: unknown[];
   /** Transient: reply not yet arrived — render a thinking placeholder. */
   pending?: boolean;
