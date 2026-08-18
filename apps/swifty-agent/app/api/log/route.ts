@@ -1,7 +1,11 @@
 // POST /api/log — swifty-sentry report endpoint (dsn).
 // The SDK posts a JSON array of IReportData via sendBeacon (text/plain) or
 // fetch (application/json); events are converted to Prometheus metrics.
-import { recordReportBatch, reportBatchSchema } from "@/lib/metrics";
+import {
+  recordInvalidReportBatch,
+  recordReportBatch,
+  reportBatchSchema,
+} from "@/lib/metrics";
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -18,6 +22,7 @@ export async function POST(request: Request) {
   try {
     body = JSON.parse(await request.text());
   } catch {
+    recordInvalidReportBatch();
     return Response.json(
       { message: "invalid JSON body", data: null },
       { status: 400, headers: CORS_HEADERS },
@@ -26,6 +31,7 @@ export async function POST(request: Request) {
 
   const parsed = reportBatchSchema.safeParse(body);
   if (!parsed.success) {
+    recordInvalidReportBatch();
     return Response.json(
       { message: "invalid report batch", data: null },
       { status: 400, headers: CORS_HEADERS },

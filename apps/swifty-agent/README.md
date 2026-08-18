@@ -39,7 +39,9 @@ Default port: `6379`. RedisInsight UI: `http://localhost:8001`.
 
 ### Prometheus & Grafana (monitoring, optional)
 
-**Option A: Docker**
+Scrape config and alert rules live in the repo as `prometheus.yml` and `prometheus.rules.yml`.
+
+**Option A: Docker** (both files are mounted into the container)
 
 ```bash
 docker compose up prometheus grafana -d
@@ -49,11 +51,16 @@ docker compose up prometheus grafana -d
 
 ```bash
 brew install prometheus grafana
+cp prometheus.rules.yml /opt/homebrew/etc/prometheus.rules.yml
 brew services start prometheus
 brew services start grafana
 ```
 
-Prometheus default port: `9090`. Grafana default port: `3000` (admin / pass).
+The Homebrew config at `/opt/homebrew/etc/prometheus.yml` matches the repo copy except that it targets `127.0.0.1` instead of `host.docker.internal` and points `rule_files` at `/opt/homebrew/etc/prometheus.rules.yml`.
+
+Prometheus runs without `--web.enable-lifecycle`, so `POST /-/reload` returns 403 — apply rule changes with `brew services restart prometheus`.
+
+Prometheus port: `9090`. Grafana port: `3001` under Docker (`3000` is the Next.js dev server), `3000` under Homebrew. Credentials: admin / pass.
 
 ---
 
@@ -63,6 +70,8 @@ Prometheus default port: `9090`. Grafana default port: `3000` (admin / pass).
 - `POST /api/chat_stream` — SSE streaming chat
 - `POST /api/upload` — upload a file (.txt/.md) to the knowledge base
 - `POST /api/ai_ops` — AI Ops plan-execute-replan
+- `POST /api/log` — swifty-sentry report endpoint (the SDK `dsn`)
+- `GET /api/metrics` — Prometheus exposition endpoint
 
 ## Notes
 
@@ -70,35 +79,22 @@ Prometheus default port: `9090`. Grafana default port: `3000` (admin / pass).
 - Embeddings are stored as native Float32 vectors with COSINE similarity (HNSW index) in Redis Stack, providing higher search fidelity than the previous BinaryVector + HAMMING approach.
 - Tool definitions follow a three-layer split: `schemas.ts` (zod) → `operations.ts` (pure functions) → `index.ts` (AI SDK `tool` wrapper).
 
-`/opt/homebrew/etc/prometheus.yml`
+## Monitoring
 
-```yml
-global:
-  scrape_interval: 15s
-  evaluation_interval: 15s
+Pipeline: swifty-sentry browser SDK → `POST /api/log` → `lib/metrics.ts` (prom-client) → `GET /api/metrics` → Prometheus.
 
-rule_files:
-  - /opt/homebrew/etc/prometheus.rules.yml
+`lib/metrics.ts` covers every SDK report type except ScreenRecord (errors and framework crashes, resource failures, HTTP, web vitals, navigation and resource timing, long tasks, browser memory, clicks, exposure, white screen, page views and dwell, custom events) plus Node/V8 runtime metrics that prom-client defaults omit — `heap_size_limit`, heap-used ratio, detached contexts, code and bytecode size, array buffers, event loop utilization, page faults and context switches.
 
-scrape_configs:
-  - job_name: "prometheus"
-    static_configs:
-      - targets: ["localhost:9090"]
-  - job_name: "swifty-agent"
-    metrics_path: /api/metrics
-    static_configs:
-      - targets: ["127.0.0.1:3000"]
-  - job_name: "swifty-agent-go"
-    metrics_path: /api/metrics
-    static_configs:
-      - targets: ["127.0.0.1:8123"]
+Browser-supplied label values are capped at 50 distinct values each, collapsing to `other`, so a bad deploy cannot explode the series count.
+
+Alert rules are in `prometheus.rules.yml`. Alert names are a contract: the AI Ops pipeline calls `query_prometheus_alerts` and then `query_internal_docs` with the alert name, so every rule needs a matching heading in `data/docs/alert-handling-guide.md`.
+
+```bash
+npx tsx scripts/metrics-smoke.ts        # assert every metric family is exposed
+promtool check rules prometheus.rules.yml
 ```
 
-`/opt/homebrew/etc/prometheus.rules.yml`
-
-```yml
-groups: []
-```
+`lib/metrics.ts` caches its registry on `globalThis`, so editing it requires a dev-server restart rather than relying on HMR.
 
 ## Prompts
 

@@ -16,11 +16,12 @@ AI intelligent OnCall assistant.
 
 - Next.js 16 App Router + React 19 + TypeScript
 - Vercel AI SDK v7 (`ai`): streamText / generateText (structured output via `output: Output.object({schema})`, result on `.output` — `generateObject` is deprecated) / tool / embed / embedMany
-- LLM: OpenAI-v3 (Volcengine Ark, OpenAI compatible) via `@ai-sdk/openai` createOpenAI
+- LLM: OpenAI (OpenAI compatible) via `@ai-sdk/openai` createOpenAI
 - Embedding: Alibaba DashScope text-embedding-v4 / Ollama nomic-embed-text via `@ai-sdk/openai-compatible`; selected by `EMBEDDING_PROVIDER` ("openai" | "ollama"); batch requests capped at 10 inputs
 - Vector DB: Redis Stack (`redis`, index=idx:biz, key prefix=biz:, VECTOR FLOAT32 + HNSW + COSINE); index dim is probed from the embedding provider at startup and the index is auto-recreated on dim mismatch
 - MySQL: `knex` + `mysql2` (mysql_crud tool uses knex.raw for dynamic SQL)
 - MCP: `@modelcontextprotocol/sdk` (SSE log tools)
+- Monitoring: `prom-client` registry in `lib/metrics.ts`, fed by `POST /api/log` and exposed at `GET /api/metrics`. Covers every swifty-sentry report type except ScreenRecord, plus the Node/V8 metrics prom-client defaults omit (heap limit, heap-used ratio, detached contexts, array buffers, event loop utilization, page faults). Browser-supplied label values are capped at 50 distinct values (overflow becomes `other`). The registry is cached on `globalThis`; when you change the metric set you MUST bump `METRICS_VERSION`, otherwise a long-lived dev server keeps serving a cache whose new fields are `undefined` (typed as present, so tsc cannot catch it) and every `.inc()` throws TypeError. Alert rules live in `prometheus.rules.yml`; every alert name MUST have a matching heading in `data/docs/alert-handling-guide.md`, because the AI Ops pipeline resolves runbooks by alert name. The Go backend (`swifty.go/swifty_agent/internal/app/sentry_metrics_handler.go`) exposes byte-identical `swifty_sentry_*` names so one Prometheus and one rule file serve both jobs — change both bridges together. Verify with `npx tsx scripts/metrics-smoke.ts`.
 - Startup: `instrumentation.ts` register() embeds every doc in `FILE_DIR` (./data/docs)
 - Frontend: Tailwind v4 atomic classes + streamdown (streaming markdown + Shiki code highlighting)
 

@@ -37,6 +37,7 @@
  *      (class-based boundaries keep their error state until remount) and the
  *      probe returns to its harmless state, ready for the next roll.
  */
+"use client";
 
 import { useEffect, useState } from "react";
 import { ReactErrorBoundary } from "@swifty.js/sentry/react";

@@ -45,7 +45,7 @@ export function SentryProvider({ children }: { children: ReactNode }) {
       }
     >
       {children}
-      <RandomCrash />
+      {process.env.NODE_ENV === "development" && <RandomCrash />}
     </ReactErrorBoundary>
   );
 }
