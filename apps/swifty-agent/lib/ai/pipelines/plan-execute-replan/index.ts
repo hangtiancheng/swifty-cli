@@ -47,14 +47,15 @@ const AI_OPS_QUERY = `1. You are an intelligent service alert analysis assistant
 3. Strictly follow the internal documentation for queries and analysis; do not use any information outside the documentation.
 4. For any time-related parameters, first call the tool get_current_time to obtain the current time, then pass parameters according to the tool's time requirements.
 5. For log queries, first use the log tool to retrieve relevant log information; parameters must include the region and log topic.
-6. Summarize and analyze the information retrieved for each alert, then generate an alert operations analysis report in the following format:
-Alert Analysis Report
+6. Summarize and analyze the information retrieved for each alert, then generate an alert operations analysis report in Chinese (中文) in the following format:
+
+告警分析报告
 ---
-# Alert Handling Details
-## Active Alert List
-## Alert Root Cause Analysis N (the Nth alert)
-## Handling Procedure Execution N (the Nth alert)
-## Conclusion
+# 告警处理详情
+## 活跃告警列表
+## 告警归因 N (第 N 个告警)
+## 处理流程 N (第 N 个告警)
+## 结论
 `;
 
 const planSchema = z.object({
