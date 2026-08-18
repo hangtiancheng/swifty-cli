@@ -23,7 +23,11 @@
 "use client";
 import { useState, useCallback, useEffect, useMemo } from "react";
 import { z } from "zod/v4";
-import { chatResponseSchema, aiOpsResponseSchema, uploadResponseSchema } from "@/lib/schemas";
+import {
+  chatResponseSchema,
+  aiOpsResponseSchema,
+  uploadResponseSchema,
+} from "@/lib/schemas";
 
 export type Mode = "quick" | "stream";
 
@@ -132,7 +136,8 @@ export function useChat() {
 
   // AbortController state — when set, the effect cleans it up on unmount or
   // when replaced (P1-1 fix).
-  const [streamController, setStreamController] = useState<AbortController | null>(null);
+  const [streamController, setStreamController] =
+    useState<AbortController | null>(null);
   useEffect(() => {
     if (!streamController) return;
     return () => streamController.abort();
@@ -156,9 +161,12 @@ export function useChat() {
     return () => clearTimeout(timer);
   }, [notification]);
 
-  const showNotification = useCallback((message: string, type: NotificationType = "info") => {
-    setNotification({ message, type });
-  }, []);
+  const showNotification = useCallback(
+    (message: string, type: NotificationType = "info") => {
+      setNotification({ message, type });
+    },
+    [],
+  );
 
   // Persist histories to localStorage whenever they change.
   useEffect(() => {
@@ -186,10 +194,10 @@ export function useChat() {
         };
         return updated;
       }
-      return [{ id: sid, title, messages: msgs, createdAt: now, updatedAt: now }, ...prev].slice(
-        0,
-        MAX_HISTORIES,
-      );
+      return [
+        { id: sid, title, messages: msgs, createdAt: now, updatedAt: now },
+        ...prev,
+      ].slice(0, MAX_HISTORIES);
     });
   }, []);
 
@@ -233,7 +241,10 @@ export function useChat() {
       // Track messages in a local variable so we can call upsertHistory in
       // the finally block WITHOUT placing a side effect inside a state
       // updater function (P1-2 fix).
-      let currentMsgs: ChatMessage[] = [...messages, { type: "user", content: text }];
+      let currentMsgs: ChatMessage[] = [
+        ...messages,
+        { type: "user", content: text },
+      ];
       setMessages(currentMsgs);
       setIsStreaming(true);
 
@@ -244,7 +255,10 @@ export function useChat() {
       try {
         if (mode === "quick") {
           // Show a thinking placeholder until the reply arrives.
-          currentMsgs = [...currentMsgs, { type: "assistant", content: "", pending: true }];
+          currentMsgs = [
+            ...currentMsgs,
+            { type: "assistant", content: "", pending: true },
+          ];
           setMessages(currentMsgs);
           const resp = await fetch("/api/chat", {
             method: "POST",
@@ -284,7 +298,10 @@ export function useChat() {
           let full = "";
           let currentEvent = "";
           let dataLines: string[] = [];
-          currentMsgs = [...currentMsgs, { type: "assistant", content: "", pending: true }];
+          currentMsgs = [
+            ...currentMsgs,
+            { type: "assistant", content: "", pending: true },
+          ];
           setMessages(currentMsgs);
 
           // Dispatch one complete SSE event: per spec, multiple `data:` lines
@@ -316,8 +333,12 @@ export function useChat() {
               // are validated per-message by the web_core schema at render
               // time, so treat them as unknown[] here.
               try {
-                const messages = z.array(z.unknown()).min(1).safeParse(JSON.parse(payload));
-                if (!messages.success) throw new Error("payload is not a non-empty array");
+                const messages = z
+                  .array(z.unknown())
+                  .min(1)
+                  .safeParse(JSON.parse(payload));
+                if (!messages.success)
+                  throw new Error("payload is not a non-empty array");
                 const last = currentMsgs.at(-1);
                 currentMsgs = [
                   ...currentMsgs.slice(0, -1),
@@ -350,7 +371,9 @@ export function useChat() {
             buffer = lines.pop() ?? "";
             for (const rawLine of lines) {
               // Strip trailing \r for SSE spec compliance (\r\n line endings).
-              const line = rawLine.endsWith("\r") ? rawLine.slice(0, -1) : rawLine;
+              const line = rawLine.endsWith("\r")
+                ? rawLine.slice(0, -1)
+                : rawLine;
               // Blank line terminates the current event.
               if (line === "") {
                 dispatchEvent();
@@ -373,7 +396,10 @@ export function useChat() {
         // AbortError: user navigated away — suppress the error message.
         if (e instanceof DOMException && e.name === "AbortError") return;
         const msg = e instanceof Error ? e.message : String(e);
-        const errorMsg: ChatMessage = { type: "assistant", content: "Error: " + msg };
+        const errorMsg: ChatMessage = {
+          type: "assistant",
+          content: "Error: " + msg,
+        };
         // Replace a trailing thinking placeholder instead of appending after it.
         currentMsgs = currentMsgs.at(-1)?.pending
           ? [...currentMsgs.slice(0, -1), errorMsg]
@@ -419,7 +445,10 @@ export function useChat() {
       }
       throw new Error(parsed.data.message || "Unknown error");
     } catch (e) {
-      showNotification("AI Ops failed: " + (e instanceof Error ? e.message : String(e)), "error");
+      showNotification(
+        "AI Ops failed: " + (e instanceof Error ? e.message : String(e)),
+        "error",
+      );
       return null;
     } finally {
       setIsStreaming(false);
@@ -432,7 +461,10 @@ export function useChat() {
       const allowed = [".txt", ".md", ".markdown"];
       const name = file.name.toLowerCase();
       if (!allowed.some((ext) => name.endsWith(ext))) {
-        showNotification("Only TXT or Markdown (.md) files are supported", "error");
+        showNotification(
+          "Only TXT or Markdown (.md) files are supported",
+          "error",
+        );
         return null;
       }
       if (file.size > 50 * 1024 * 1024) {
@@ -452,7 +484,10 @@ export function useChat() {
         }
         throw new Error(parsed.data.message || "Upload failed");
       } catch (e) {
-        showNotification("Upload failed: " + (e instanceof Error ? e.message : String(e)), "error");
+        showNotification(
+          "Upload failed: " + (e instanceof Error ? e.message : String(e)),
+          "error",
+        );
         return null;
       } finally {
         setIsStreaming(false);
@@ -463,7 +498,10 @@ export function useChat() {
   );
 
   // P1-6 fix: stabilize addMessage with useCallback so its reference is stable.
-  const addMessage = useCallback((msg: ChatMessage) => setMessages((prev) => [...prev, msg]), []);
+  const addMessage = useCallback(
+    (msg: ChatMessage) => setMessages((prev) => [...prev, msg]),
+    [],
+  );
 
   // P1-6 fix: wrap the return object in useMemo so callers that depend on
   // individual fields (via destructuring) get stable references and their

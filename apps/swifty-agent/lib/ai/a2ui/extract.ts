@@ -21,7 +21,9 @@ export function validateA2uiMessages(messages: unknown[]): A2uiParseResult {
   const result = A2uiMessageListSchema.safeParse(messages);
   if (!result.success) {
     return {
-      error: result.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; "),
+      error: result.error.issues
+        .map((i) => `${i.path.join(".")}: ${i.message}`)
+        .join("; "),
     };
   }
   return { messages };
@@ -33,7 +35,9 @@ export function parseA2uiBlock(raw: string): A2uiParseResult {
   try {
     parsed = JSON.parse(raw.trim());
   } catch (e) {
-    return { error: `invalid JSON: ${e instanceof Error ? e.message : String(e)}` };
+    return {
+      error: `invalid JSON: ${e instanceof Error ? e.message : String(e)}`,
+    };
   }
   return validateA2uiMessages(Array.isArray(parsed) ? parsed : [parsed]);
 }
@@ -52,7 +56,9 @@ export function extractA2ui(text: string): A2uiExtractResult {
       error: `output opened ${A2UI_OPEN_TAG} but never closed it with ${A2UI_CLOSE_TAG}`,
     };
   }
-  const cleanText = (text.slice(0, start) + text.slice(end + A2UI_CLOSE_TAG.length)).trim();
+  const cleanText = (
+    text.slice(0, start) + text.slice(end + A2UI_CLOSE_TAG.length)
+  ).trim();
   const result = parseA2uiBlock(text.slice(start + A2UI_OPEN_TAG.length, end));
   return { cleanText, ...result };
 }

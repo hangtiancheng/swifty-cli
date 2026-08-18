@@ -28,7 +28,11 @@ import { z } from "zod/v4";
 import { thinkModel, providerOptions } from "../../models";
 import { correctA2uiBlock } from "../../a2ui/correct";
 import { extractA2ui } from "../../a2ui/extract";
-import { A2UI_CLOSE_TAG, A2UI_OPEN_TAG, A2UI_PROMPT_SECTION } from "../../a2ui/prompt";
+import {
+  A2UI_CLOSE_TAG,
+  A2UI_OPEN_TAG,
+  A2UI_PROMPT_SECTION,
+} from "../../a2ui/prompt";
 import { builtinTools } from "../../tools";
 import { getLogMcpTools } from "../../tools/query-log";
 import { executeStep } from "./executor";
@@ -59,7 +63,9 @@ const planSchema = z.object({
 
 const replanSchema = z.object({
   done: z.boolean().describe("Whether the overall task is complete"),
-  remaining: z.array(z.string()).describe("Remaining steps if not done; empty when done"),
+  remaining: z
+    .array(z.string())
+    .describe("Remaining steps if not done; empty when done"),
   summary: z.string().describe("Final report / summary when done"),
 });
 
@@ -157,7 +163,12 @@ export async function* runPlanExecuteReplan(
 
       if (obj.done) {
         const a2ui = await uiifyReport(obj.summary);
-        yield { type: "done", result: obj.summary, detail, ...(a2ui ? { a2ui } : {}) };
+        yield {
+          type: "done",
+          result: obj.summary,
+          detail,
+          ...(a2ui ? { a2ui } : {}),
+        };
         return;
       }
       plan = obj.remaining;

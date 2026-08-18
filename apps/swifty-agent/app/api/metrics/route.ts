@@ -15,6 +15,9 @@ export async function OPTIONS() {
 export async function GET() {
   const body = await sentryMetrics.registry.metrics();
   return new Response(body, {
-    headers: { "Content-Type": sentryMetrics.registry.contentType, ...CORS_HEADERS },
+    headers: {
+      "Content-Type": sentryMetrics.registry.contentType,
+      ...CORS_HEADERS,
+    },
   });
 }

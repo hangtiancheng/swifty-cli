@@ -21,11 +21,21 @@
  */
 
 // Chat pipeline: RAG retrieval + system prompt + ReAct agent (streamText/generateText with tools + maxSteps).
-import { streamText, generateText, type Tool, type ModelMessage, isStepCount } from "ai";
+import {
+  streamText,
+  generateText,
+  type Tool,
+  type ModelMessage,
+  isStepCount,
+} from "ai";
 import { quickModel, providerOptions } from "../models";
 import { A2UI_OPEN_TAG, A2UI_PROMPT_SECTION } from "../a2ui/prompt";
 import { correctA2uiBlock } from "../a2ui/correct";
-import { createA2uiStreamFilter, extractA2ui, parseA2uiBlock } from "../a2ui/extract";
+import {
+  createA2uiStreamFilter,
+  extractA2ui,
+  parseA2uiBlock,
+} from "../a2ui/extract";
 import { builtinTools } from "../tools";
 import { getLogMcpTools } from "../tools/query-log";
 import { retrieve } from "@/lib/redis/retriever";
@@ -71,10 +81,10 @@ ${A2UI_PROMPT_SECTION}
 `;
 
 function buildSystemPrompt(documents: string): string {
-  return SYSTEM_PROMPT.replace("{date}", new Date().toLocaleString("en-US")).replace(
-    "{documents}",
-    documents,
-  );
+  return SYSTEM_PROMPT.replace(
+    "{date}",
+    new Date().toLocaleString("en-US"),
+  ).replace("{documents}", documents);
 }
 
 async function buildChatTools(): Promise<Record<string, Tool>> {
@@ -99,7 +109,10 @@ export async function chat(id: string, question: string): Promise<ChatResult> {
   const result = await generateText({
     model: quickModel,
     system,
-    messages: [...history, { role: "user", content: question } satisfies ModelMessage],
+    messages: [
+      ...history,
+      { role: "user", content: question } satisfies ModelMessage,
+    ],
     tools,
     stopWhen: isStepCount(25),
     providerOptions,
@@ -134,7 +147,10 @@ export type ChatStreamEvent =
 // blocks are buffered by the stream filter, validated, and yielded as a
 // single a2ui event (invalid blocks get one corrective retry, then degrade
 // to a notice). Memory is persisted after the stream completes.
-export async function* chatStream(id: string, question: string): AsyncGenerator<ChatStreamEvent> {
+export async function* chatStream(
+  id: string,
+  question: string,
+): AsyncGenerator<ChatStreamEvent> {
   const mem = getSimpleMemory(id);
   const history = mem.getMessages();
   const docs = await retrieve(question);
@@ -149,7 +165,10 @@ export async function* chatStream(id: string, question: string): AsyncGenerator<
   const result = streamText({
     model: quickModel,
     system,
-    messages: [...history, { role: "user", content: question } satisfies ModelMessage],
+    messages: [
+      ...history,
+      { role: "user", content: question } satisfies ModelMessage,
+    ],
     tools,
     stopWhen: isStepCount(25),
     providerOptions,
@@ -205,7 +224,9 @@ export async function* chatStream(id: string, question: string): AsyncGenerator<
       yield { type: "text", content: rest };
     }
     if (streamError !== undefined) {
-      throw streamError instanceof Error ? streamError : new Error(String(streamError));
+      throw streamError instanceof Error
+        ? streamError
+        : new Error(String(streamError));
     }
   } finally {
     if (full) {

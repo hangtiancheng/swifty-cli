@@ -33,7 +33,11 @@ interface MessageListProps {
   onAction: (query: string) => void;
 }
 
-export default function MessageList({ messages, isStreaming, onAction }: MessageListProps) {
+export default function MessageList({
+  messages,
+  isStreaming,
+  onAction,
+}: MessageListProps) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (ref.current) ref.current.scrollTop = ref.current.scrollHeight;
@@ -45,7 +49,9 @@ export default function MessageList({ messages, isStreaming, onAction }: Message
         <MessageItem
           key={i}
           message={m}
-          streaming={isStreaming && i === messages.length - 1 && m.type === "assistant"}
+          streaming={
+            isStreaming && i === messages.length - 1 && m.type === "assistant"
+          }
           onAction={onAction}
         />
       ))}
@@ -67,7 +73,7 @@ const MessageItem = memo(function MessageItem({
   if (message.type === "user") {
     return (
       <div className="mb-6 flex flex-col items-end">
-        <div className="max-w-[70%] whitespace-pre-wrap rounded-2xl rounded-br-sm bg-zinc-100 px-4 py-3 text-sm text-zinc-800">
+        <div className="max-w-[70%] rounded-2xl rounded-br-sm bg-zinc-100 px-4 py-3 text-sm whitespace-pre-wrap text-zinc-800">
           {message.content}
         </div>
       </div>
@@ -93,7 +99,7 @@ const MessageItem = memo(function MessageItem({
                   <strong className="text-sky-600">Step {idx + 1}:</strong>
                   <MdRender
                     content={d}
-                    className="max-w-none wrap-break-word text-xs leading-relaxed text-zinc-700"
+                    className="max-w-none text-xs leading-relaxed wrap-break-word text-zinc-700"
                   />
                 </div>
               ))}

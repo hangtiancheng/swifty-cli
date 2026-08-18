@@ -1,5 +1,6 @@
 const SURFACE_ID = "gallery-surface";
-const CATALOG_ID = "https://a2ui.org/specification/v0_9/catalogs/basic/catalog.json";
+const CATALOG_ID =
+  "https://a2ui.org/specification/v0_9/catalogs/basic/catalog.json";
 
 const heading = (id: string, text: string) => ({
   id,
@@ -299,7 +300,10 @@ export function createGalleryMessages(): unknown[] {
       id: "g-context-menu",
       component: "ContextMenu",
       child: "g-cm-area",
-      items: [{ label: "Refresh", action: { event: { name: "refresh" } } }, { label: "Rename" }],
+      items: [
+        { label: "Refresh", action: { event: { name: "refresh" } } },
+        { label: "Rename" },
+      ],
     },
     { id: "g-cm-area", component: "Card", child: "g-cm-area-t" },
     text("g-cm-area-t", "Right-click this card for a context menu."),

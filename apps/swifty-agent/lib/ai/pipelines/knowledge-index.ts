@@ -27,7 +27,11 @@ import path from "node:path";
 import { RecursiveCharacterTextSplitter } from "@langchain/textsplitters";
 import { loadFile } from "../loader";
 import { config } from "@/lib/config";
-import { indexChunks, deleteBySource, type IndexChunk } from "@/lib/redis/indexer";
+import {
+  indexChunks,
+  deleteBySource,
+  type IndexChunk,
+} from "@/lib/redis/indexer";
 
 interface MarkdownChunk {
   content: string;
@@ -109,7 +113,11 @@ export async function indexDataDir(): Promise<void> {
   }
 
   const files = entries
-    .filter((e) => e.isFile() && SUPPORTED_EXTENSIONS.has(path.extname(e.name).toLowerCase()))
+    .filter(
+      (e) =>
+        e.isFile() &&
+        SUPPORTED_EXTENSIONS.has(path.extname(e.name).toLowerCase()),
+    )
     .map((e) => e.name);
   console.log(`[knowledge-index] indexing ${files.length} file(s) from ${dir}`);
 

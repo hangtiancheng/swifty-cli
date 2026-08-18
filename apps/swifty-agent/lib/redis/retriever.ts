@@ -72,16 +72,23 @@ function distanceToScore(distance: unknown): number {
   return (2 - d) / 2;
 }
 
-export async function retrieve(query: string, topK = 1): Promise<RetrievedDoc[]> {
+export async function retrieve(
+  query: string,
+  topK = 1,
+): Promise<RetrievedDoc[]> {
   const client = await getRedisClient();
   const vec = float32ToBuffer(await embedText(query));
 
-  const raw = await client.ft.search(config.redis.indexName, `*=>[KNN ${topK} @vector $vec]`, {
-    PARAMS: { vec },
-    DIALECT: 2,
-    RETURN: ["content", "metadata", "__vector_score"],
-    LIMIT: { from: 0, size: topK },
-  });
+  const raw = await client.ft.search(
+    config.redis.indexName,
+    `*=>[KNN ${topK} @vector $vec]`,
+    {
+      PARAMS: { vec },
+      DIALECT: 2,
+      RETURN: ["content", "metadata", "__vector_score"],
+      LIMIT: { from: 0, size: topK },
+    },
+  );
 
   const result = searchResultSchema.parse(raw);
   const prefix = config.redis.keyPrefix;

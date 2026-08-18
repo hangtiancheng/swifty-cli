@@ -73,16 +73,22 @@ export async function deleteBySource(source: string): Promise<void> {
   // Acquire lock (30s TTL as a safety net against deadlocks from crashes).
   const acquired = await client.set(lockKey, "1", { NX: true, EX: 30 });
   if (!acquired) {
-    throw new Error(`Cannot acquire lock for source "${source}" — another deletion is in progress`);
+    throw new Error(
+      `Cannot acquire lock for source "${source}" — another deletion is in progress`,
+    );
   }
 
   try {
     const BATCH = 1000;
     while (true) {
-      const result = await client.ft.search(config.redis.indexName, `@_source:{${escaped}}`, {
-        RETURN: [],
-        LIMIT: { from: 0, size: BATCH },
-      });
+      const result = await client.ft.search(
+        config.redis.indexName,
+        `@_source:{${escaped}}`,
+        {
+          RETURN: [],
+          LIMIT: { from: 0, size: BATCH },
+        },
+      );
       if (result.total === 0 || result.documents.length === 0) return;
 
       const pipeline = client.multi();

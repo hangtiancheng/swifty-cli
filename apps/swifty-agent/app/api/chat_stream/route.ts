@@ -45,7 +45,10 @@ const streamRequestSchema = z.object({
 export async function POST(request: Request) {
   const parsed = streamRequestSchema.safeParse(await request.json());
   if (!parsed.success) {
-    return Response.json({ message: "missing id or question", data: null }, { status: 400 });
+    return Response.json(
+      { message: "missing id or question", data: null },
+      { status: 400 },
+    );
   }
   const { id, question } = parsed.data;
 
@@ -60,7 +63,11 @@ export async function POST(request: Request) {
           .split("\n")
           .map((line) => `data: ${line}`)
           .join("\n");
-        controller.enqueue(encoder.encode(`id: ${Date.now()}\nevent: ${event}\n${dataLines}\n\n`));
+        controller.enqueue(
+          encoder.encode(
+            `id: ${Date.now()}\nevent: ${event}\n${dataLines}\n\n`,
+          ),
+        );
       };
       // Send a connected event first.
       send("connected", JSON.stringify({ status: "connected", client_id: id }));

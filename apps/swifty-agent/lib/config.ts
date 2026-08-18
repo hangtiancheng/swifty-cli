@@ -30,34 +30,44 @@ export const config = {
     think: {
       model: process.env.OPENAI_THINK_MODEL ?? "openai-v3-2-251201",
       apiKey: process.env.OPENAI_THINK_API_KEY ?? "",
-      baseURL: process.env.OPENAI_THINK_BASE_URL ?? "https://ark.cn-beijing.volces.com/api/v3",
+      baseURL:
+        process.env.OPENAI_THINK_BASE_URL ??
+        "https://ark.cn-beijing.volces.com/api/v3",
     },
     quick: {
       model: process.env.OPENAI_QUICK_MODEL ?? "openai-v3-2-251201",
       apiKey: process.env.OPENAI_QUICK_API_KEY ?? "",
-      baseURL: process.env.OPENAI_QUICK_BASE_URL ?? "https://ark.cn-beijing.volces.com/api/v3",
+      baseURL:
+        process.env.OPENAI_QUICK_BASE_URL ??
+        "https://ark.cn-beijing.volces.com/api/v3",
     },
   },
   anthropic: {
     think: {
       model: process.env.ANTHROPIC_THINK_MODEL ?? "claude-sonnet-4-20250514",
       apiKey: process.env.ANTHROPIC_THINK_API_KEY ?? "",
-      baseURL: process.env.ANTHROPIC_THINK_BASE_URL ?? "https://api.anthropic.com",
+      baseURL:
+        process.env.ANTHROPIC_THINK_BASE_URL ?? "https://api.anthropic.com",
     },
     quick: {
       model: process.env.ANTHROPIC_QUICK_MODEL ?? "claude-sonnet-4-20250514",
       apiKey: process.env.ANTHROPIC_QUICK_API_KEY ?? "",
-      baseURL: process.env.ANTHROPIC_QUICK_BASE_URL ?? "https://api.anthropic.com",
+      baseURL:
+        process.env.ANTHROPIC_QUICK_BASE_URL ?? "https://api.anthropic.com",
     },
     thinking: process.env.ANTHROPIC_THINKING !== "false", // default enabled
-    maxOutputTokens: Number.parseInt(process.env.ANTHROPIC_MAX_OUTPUT_TOKENS ?? "8192", 10),
+    maxOutputTokens: Number.parseInt(
+      process.env.ANTHROPIC_MAX_OUTPUT_TOKENS ?? "8192",
+      10,
+    ),
   },
   // Alibaba Bailian OpenAI embedding (OpenAI compatible)
   openaiEmbedding: {
     model: process.env.OPENAI_EMBEDDING_MODEL ?? "text-embedding-v4",
     apiKey: process.env.OPENAI_EMBEDDING_API_KEY ?? "",
     baseURL:
-      process.env.OPENAI_EMBEDDING_BASE_URL ?? "https://openai.aliyuncs.com/compatible-mode/v1",
+      process.env.OPENAI_EMBEDDING_BASE_URL ??
+      "https://openai.aliyuncs.com/compatible-mode/v1",
   },
   // Ollama local embedding (OpenAI compatible endpoint, v0.1.24+)
   ollama: {
@@ -79,7 +89,8 @@ export const config = {
   // LLM provider selection: "openai" (default) | "anthropic"
   provider: (process.env.LLM_PROVIDER ?? "openai") as "openai" | "anthropic",
   // Embedding provider selection: "openai" (default) | "ollama"
-  embeddingProvider: (process.env.EMBEDDING_PROVIDER ?? "openai") as "openai" | "ollama",
+  embeddingProvider: (process.env.EMBEDDING_PROVIDER ?? "openai") as
+    "openai" | "ollama",
 } as const;
 
 // Conversation memory window size.

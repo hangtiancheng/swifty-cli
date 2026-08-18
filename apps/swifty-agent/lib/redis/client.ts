@@ -73,8 +73,12 @@ async function ensureIndex(client: RedisClientType): Promise<void> {
     const info = await client.ft.info(config.redis.indexName);
     indexExists = true;
 
-    const attrs = (info as { attributes?: Array<Record<string, unknown>> }).attributes ?? [];
-    const vectorAttr = attrs.find((a) => a.attribute === "vector" || a.identifier === "vector");
+    const attrs =
+      (info as { attributes?: Array<Record<string, unknown>> }).attributes ??
+      [];
+    const vectorAttr = attrs.find(
+      (a) => a.attribute === "vector" || a.identifier === "vector",
+    );
     if (vectorAttr) {
       const storedDim = Number(vectorAttr.DIM ?? vectorAttr.dim ?? 0);
       if (storedDim && storedDim !== dim) {

@@ -23,7 +23,11 @@
 "use client";
 
 import { useCallback } from "react";
-import { useChat, type ChatMessage, type NotificationType } from "@/hooks/use-chat";
+import {
+  useChat,
+  type ChatMessage,
+  type NotificationType,
+} from "@/hooks/use-chat";
 import Sidebar from "@/components/sidebar";
 import ChatContainer from "@/components/chat-container";
 import AIOpsBtn from "@/components/ai-ops-btn";
@@ -61,7 +65,10 @@ export default function Home() {
 
   const handleAIOps = useCallback(async () => {
     if (isStreaming) {
-      showNotification("Please wait for the current operation to finish", "warning");
+      showNotification(
+        "Please wait for the current operation to finish",
+        "warning",
+      );
       return;
     }
     newChat();
@@ -108,7 +115,7 @@ export default function Home() {
       <LoadingOverlay overlay={overlay} />
       {notification && (
         <div
-          className={`fixed right-5 top-5 z-10000 max-w-xs rounded-lg p-4 text-sm font-medium text-white shadow-lg ${
+          className={`fixed top-5 right-5 z-10000 max-w-xs rounded-lg p-4 text-sm font-medium text-white shadow-lg ${
             NOTIFY_COLORS[notification.type]
           }`}
         >

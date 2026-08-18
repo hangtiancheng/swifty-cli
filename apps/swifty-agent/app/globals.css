@@ -44,11 +44,11 @@
 
 @theme {
   --font-sans:
-    var(--font-swifty), Geist Mono, Menlo, Cascadia Code, Sarasa Gothic SC, PingFang SC,
-    Microsoft YaHei;
+    var(--font-swifty), Geist Mono, Menlo, Cascadia Code, Sarasa Gothic SC,
+    PingFang SC, Microsoft YaHei;
   --font-mono:
-    var(--font-swifty), Geist Mono, Menlo, Cascadia Code, Sarasa Gothic SC, PingFang SC,
-    Microsoft YaHei;
+    var(--font-swifty), Geist Mono, Menlo, Cascadia Code, Sarasa Gothic SC,
+    PingFang SC, Microsoft YaHei;
 }
 /*
  * ---break---

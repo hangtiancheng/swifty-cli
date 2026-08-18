@@ -38,7 +38,11 @@ function ButtonGroup({
   );
 }
 
-function ButtonGroupText({ className, render, ...props }: useRender.ComponentProps<"div">) {
+function ButtonGroupText({
+  className,
+  render,
+  ...props
+}: useRender.ComponentProps<"div">) {
   return useRender({
     defaultTagName: "div",
     props: mergeProps<"div">(
@@ -67,7 +71,7 @@ function ButtonGroupSeparator({
       data-slot="button-group-separator"
       orientation={orientation}
       className={cn(
-        "relative self-stretch bg-input data-horizontal:mx-px data-horizontal:w-auto data-vertical:my-px data-vertical:h-auto",
+        "bg-input relative self-stretch data-horizontal:mx-px data-horizontal:w-auto data-vertical:my-px data-vertical:h-auto",
         className,
       )}
       {...props}
@@ -75,4 +79,9 @@ function ButtonGroupSeparator({
   );
 }
 
-export { ButtonGroup, ButtonGroupSeparator, ButtonGroupText, buttonGroupVariants };
+export {
+  ButtonGroup,
+  ButtonGroupSeparator,
+  ButtonGroupText,
+  buttonGroupVariants,
+};

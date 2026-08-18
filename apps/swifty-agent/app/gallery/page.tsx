@@ -17,10 +17,12 @@ export default function GalleryPage() {
 
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-3xl flex-col gap-4 px-6 py-8">
-      <h1 className="text-2xl font-semibold tracking-tight">A2UI Catalog Gallery</h1>
+      <h1 className="text-2xl font-semibold tracking-tight">
+        A2UI Catalog Gallery
+      </h1>
       <p className="text-sm text-zinc-500">
-        Renders all shadcn extension components from a mock message set — no backend required.
-        Triggered actions are logged below and in the console.
+        Renders all shadcn extension components from a mock message set — no
+        backend required. Triggered actions are logged below and in the console.
       </p>
       {lastAction && (
         <pre className="overflow-x-auto rounded-lg bg-zinc-100 px-4 py-3 text-xs text-zinc-700">

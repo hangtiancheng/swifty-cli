@@ -1,6 +1,12 @@
 // Bridges swifty-sentry browser reports to Prometheus: POST /api/log feeds
 // these metrics, GET /api/metrics exposes them for scraping.
-import { collectDefaultMetrics, Counter, Gauge, Histogram, Registry } from "prom-client";
+import {
+  collectDefaultMetrics,
+  Counter,
+  Gauge,
+  Histogram,
+  Registry,
+} from "prom-client";
 import { z } from "zod";
 
 const reportItemSchema = z.looseObject({
@@ -67,7 +73,8 @@ declare global {
   var __swiftySentryMetrics: SentryMetrics | undefined;
 }
 
-export const sentryMetrics: SentryMetrics = (globalThis.__swiftySentryMetrics ??= createMetrics());
+export const sentryMetrics: SentryMetrics =
+  (globalThis.__swiftySentryMetrics ??= createMetrics());
 
 export function recordReportBatch(items: ReportItem[]): void {
   for (const item of items) {
@@ -95,7 +102,11 @@ export function recordReportBatch(items: ReportItem[]): void {
       const perf = performancePayloadSchema.safeParse(item.payload);
       if (perf.success && perf.data.value !== undefined) {
         sentryMetrics.webVitals.set(
-          { name: item.name, rating: perf.data.rating ?? "none", project_id: projectId },
+          {
+            name: item.name,
+            rating: perf.data.rating ?? "none",
+            project_id: projectId,
+          },
           perf.data.value,
         );
       }

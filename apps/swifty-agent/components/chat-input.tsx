@@ -61,7 +61,10 @@ export default function ChatInput({
   useEffect(() => {
     if (!showTools && !showMode) return;
     const handleClickOutside = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(e.target as Node)
+      ) {
         setShowTools(false);
         setShowMode(false);
       }
@@ -144,7 +147,7 @@ export default function ChatInput({
               <ChevronDown className="h-4 w-4" />
             </button>
             {showMode && (
-              <div className="absolute bottom-full right-0 mb-2 rounded-xl border border-zinc-200 bg-white p-1 shadow-lg">
+              <div className="absolute right-0 bottom-full mb-2 rounded-xl border border-zinc-200 bg-white p-1 shadow-lg">
                 {MODES.map((m) => (
                   <button
                     key={m}
@@ -153,7 +156,9 @@ export default function ChatInput({
                       setShowMode(false);
                     }}
                     className={`block w-40 rounded-lg px-3 py-2 text-left text-sm ${
-                      m === mode ? "bg-sky-50 text-sky-600" : "text-zinc-800 hover:bg-zinc-100"
+                      m === mode
+                        ? "bg-sky-50 text-sky-600"
+                        : "text-zinc-800 hover:bg-zinc-100"
                     }`}
                   >
                     {m === "quick" ? "Quick" : "Stream"}

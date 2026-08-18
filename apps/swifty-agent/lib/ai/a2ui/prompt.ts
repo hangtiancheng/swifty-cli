@@ -8,7 +8,8 @@ export const A2UI_CLOSE_TAG = "</a2ui-json>";
 
 // Protocol constant duplicated from catalog/index.ts on purpose: the catalog
 // module pulls in the whole React component tree and must stay client-only.
-export const A2UI_CATALOG_ID = "https://a2ui.org/specification/v0_9/catalogs/basic/catalog.json";
+export const A2UI_CATALOG_ID =
+  "https://a2ui.org/specification/v0_9/catalogs/basic/catalog.json";
 
 export const UI_ACTION_PREFIX = "[UI_ACTION]";
 
@@ -24,8 +25,17 @@ function buildAlertListExample(): unknown[] {
       updateComponents: {
         surfaceId,
         components: [
-          { id: "root", component: "Column", children: ["alerts-title", "alerts-list"] },
-          { id: "alerts-title", component: "Text", variant: "h3", text: { path: "/title" } },
+          {
+            id: "root",
+            component: "Column",
+            children: ["alerts-title", "alerts-list"],
+          },
+          {
+            id: "alerts-title",
+            component: "Text",
+            variant: "h3",
+            text: { path: "/title" },
+          },
           {
             id: "alerts-list",
             component: "List",
@@ -45,15 +55,29 @@ function buildAlertListExample(): unknown[] {
             align: "center",
             children: ["alert-name", "alert-severity"],
           },
-          { id: "alert-name", component: "Text", variant: "h4", text: { path: "name" } },
+          {
+            id: "alert-name",
+            component: "Text",
+            variant: "h4",
+            text: { path: "name" },
+          },
           {
             id: "alert-severity",
             component: "Badge",
             variant: "destructive",
             text: { path: "severity" },
           },
-          { id: "alert-desc", component: "Text", text: { path: "description" } },
-          { id: "alert-since", component: "Text", variant: "caption", text: { path: "startsAt" } },
+          {
+            id: "alert-desc",
+            component: "Text",
+            text: { path: "description" },
+          },
+          {
+            id: "alert-since",
+            component: "Text",
+            variant: "caption",
+            text: { path: "startsAt" },
+          },
           {
             id: "alert-ack",
             component: "Button",
@@ -62,7 +86,10 @@ function buildAlertListExample(): unknown[] {
             action: {
               event: {
                 name: "ack_alert",
-                context: { alertname: { path: "name" }, severity: { path: "severity" } },
+                context: {
+                  alertname: { path: "name" },
+                  severity: { path: "severity" },
+                },
               },
             },
           },
@@ -114,7 +141,12 @@ function buildMetricsReportExample(): unknown[] {
             component: "Column",
             children: ["report-title", "qps-chart", "qps-table"],
           },
-          { id: "report-title", component: "Text", variant: "h3", text: { path: "/title" } },
+          {
+            id: "report-title",
+            component: "Text",
+            variant: "h3",
+            text: { path: "/title" },
+          },
           {
             id: "qps-chart",
             component: "Chart",
@@ -183,7 +215,12 @@ function buildSilenceFormExample(): unknown[] {
               "submit-btn",
             ],
           },
-          { id: "form-title", component: "Text", variant: "h4", text: "Create alert silence" },
+          {
+            id: "form-title",
+            component: "Text",
+            variant: "h4",
+            text: "Create alert silence",
+          },
           {
             id: "alertname-field",
             component: "TextField",

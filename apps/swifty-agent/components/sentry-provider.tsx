@@ -1,7 +1,11 @@
 "use client";
 
 import { enablePlugin, init, isInitialized } from "@swifty.js/sentry";
-import { ExposurePlugin, PerformancePlugin, ScreenRecordPlugin } from "@swifty.js/sentry/plugins";
+import {
+  ExposurePlugin,
+  PerformancePlugin,
+  ScreenRecordPlugin,
+} from "@swifty.js/sentry/plugins";
 import { ReactErrorBoundary } from "@swifty.js/sentry/react";
 import type { ReactNode } from "react";
 
@@ -19,9 +23,15 @@ if (typeof window !== "undefined" && !isInitialized()) {
     projectId: "swifty-agent",
     debug: true,
     beforePushEventList: (eventList) =>
-      eventList.filter((item) => JSON.stringify(item).length <= MAX_EVENT_BYTES),
+      eventList.filter(
+        (item) => JSON.stringify(item).length <= MAX_EVENT_BYTES,
+      ),
   });
-  enablePlugin(new PerformancePlugin(), new ScreenRecordPlugin(), new ExposurePlugin());
+  enablePlugin(
+    new PerformancePlugin(),
+    new ScreenRecordPlugin(),
+    new ExposurePlugin(),
+  );
 }
 
 export function SentryProvider({ children }: { children: ReactNode }) {
@@ -30,7 +40,7 @@ export function SentryProvider({ children }: { children: ReactNode }) {
       fallback={
         <div className="flex min-h-screen flex-col items-center justify-center gap-2">
           <p className="text-lg font-medium">Something went wrong</p>
-          <p className="text-sm text-muted-foreground">
+          <p className="text-muted-foreground text-sm">
             The error has been reported. Please refresh the page.
           </p>
         </div>

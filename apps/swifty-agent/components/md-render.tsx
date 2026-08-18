@@ -34,7 +34,11 @@ interface MdRenderProps {
 // Markdown renderer built on Streamdown (streaming-native react-markdown
 // replacement): repairs unterminated markdown mid-stream, memoizes settled
 // blocks, and syntax-highlights code with Shiki.
-export default function MdRender({ content, className, streaming = false }: MdRenderProps) {
+export default function MdRender({
+  content,
+  className,
+  streaming = false,
+}: MdRenderProps) {
   return (
     <Streamdown
       mode={streaming ? "streaming" : "static"}
@@ -42,7 +46,10 @@ export default function MdRender({ content, className, streaming = false }: MdRe
       caret="block"
       plugins={{ code }}
       shikiTheme={["github-light", "github-light"]}
-      className={className ?? "max-w-none wrap-break-word text-sm leading-relaxed text-zinc-800"}
+      className={
+        className ??
+        "max-w-none text-sm leading-relaxed wrap-break-word text-zinc-800"
+      }
     >
       {content}
     </Streamdown>
