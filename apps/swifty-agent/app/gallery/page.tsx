@@ -1,8 +1,9 @@
 "use client";
+
 // Backend-free A2UI verification page: renders every shadcn extension
 // component from a canned message set through the real catalog pipeline.
 import { useCallback, useMemo, useState } from "react";
-import A2uiView from "@/components/a2ui-view";
+import { A2uiView } from "@swifty.js/a2ui-shadcn";
 import { createGalleryMessages } from "./gallery-messages";
 
 export default function GalleryPage() {

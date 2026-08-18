@@ -23,7 +23,7 @@
 "use client";
 import { memo, useEffect, useRef } from "react";
 import type { ChatMessage } from "@/hooks/use-chat";
-import A2uiView from "./a2ui-view";
+import { A2uiView } from "@swifty.js/a2ui-shadcn";
 import MdRender from "./md-render";
 import { LoaderCircle, Sparkles } from "lucide-react";
 

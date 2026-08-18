@@ -23,7 +23,8 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
-/*---break---
+/*
+ * ---break---
  */
 @custom-variant dark (&:is(.dark *));
 
@@ -49,7 +50,8 @@
     var(--font-swifty), Geist Mono, Menlo, Cascadia Code, Sarasa Gothic SC, PingFang SC,
     Microsoft YaHei;
 }
-/*---break---
+/*
+ * ---break---
  */
 @theme inline {
   --font-heading: var(--font-sans);
@@ -93,7 +95,8 @@
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
 }
-/*---break---
+/*
+ * ---break---
  */
 :root {
   --background: oklch(1 0 0);
@@ -129,7 +132,8 @@
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
 }
-/*---break---
+/*
+ * ---break---
  */
 .dark {
   --background: oklch(0.145 0 0);
@@ -164,7 +168,8 @@
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.556 0 0);
 }
-/*---break---
+/*
+ * ---break---
  */
 @layer base {
   * {
