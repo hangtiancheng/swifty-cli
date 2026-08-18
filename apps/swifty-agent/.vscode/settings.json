@@ -3,10 +3,12 @@
     "alertname",
     "combinators",
     "deepseek",
+    "eventloop",
     "hangtiancheng",
     "rrweb",
     "shadcn",
     "swifty",
+    "TTFB",
     "undraggable",
     "xlink"
   ]
