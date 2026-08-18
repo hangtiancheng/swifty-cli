@@ -30,6 +30,7 @@ import { LoaderCircle, Sparkles } from "lucide-react";
 interface MessageListProps {
   messages: ChatMessage[];
   isStreaming: boolean;
+  /** Receives serialized A2UI surface actions to auto-send as chat messages. */
   onAction: (query: string) => void;
 }
 

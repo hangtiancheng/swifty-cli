@@ -24,6 +24,7 @@ import { defineConfig, globalIgnores } from "eslint/config";
 import nextVitals from "eslint-config-next/core-web-vitals";
 import nextTs from "eslint-config-next/typescript";
 import globals from "globals";
+import { includes } from "zod";
 
 const eslintConfig = defineConfig([
   ...nextVitals,
@@ -39,6 +40,7 @@ const eslintConfig = defineConfig([
     "postcss.config.mjs",
   ]),
   {
+    files: ["**/*.{ts,tsx}"],
     languageOptions: {
       ecmaVersion: 2022,
       globals: globals.node,

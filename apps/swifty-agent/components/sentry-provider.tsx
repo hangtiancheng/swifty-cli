@@ -4,7 +4,6 @@ import { enablePlugin, init, isInitialized } from "@swifty.js/sentry";
 import {
   ExposurePlugin,
   PerformancePlugin,
-  ScreenRecordPlugin,
 } from "@swifty.js/sentry/plugins";
 import { ReactErrorBoundary } from "@swifty.js/sentry/react";
 import type { ReactNode } from "react";
@@ -17,7 +16,12 @@ import type { ReactNode } from "react";
 // fetch-keepalive body limit, permanently wedging every retry — drop them.
 const MAX_EVENT_BYTES = 50 * 1024;
 
-if (typeof window !== "undefined" && !isInitialized()) {
+// https://github.com/toss/es-toolkit/blob/main/src/predicate/isBrowser.ts
+function isBrowser(): boolean {
+  return typeof window !== 'undefined' && window?.document != null;
+}
+
+if (!isBrowser() && !isInitialized()) {
   init({
     dsn: "/api/log",
     projectId: "swifty-agent",
@@ -29,7 +33,6 @@ if (typeof window !== "undefined" && !isInitialized()) {
   });
   enablePlugin(
     new PerformancePlugin(),
-    new ScreenRecordPlugin(),
     new ExposurePlugin(),
   );
 }
