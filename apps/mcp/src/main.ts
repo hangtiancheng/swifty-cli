@@ -19,7 +19,7 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  * SOFTWARE.
  */
-
+import "dotenv/config"
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 
 import { startHttpServer } from "./http.js";
