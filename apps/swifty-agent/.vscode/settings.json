@@ -1,6 +1,8 @@
 {
   "cSpell.words": [
     "alertname",
+    "backticked",
+    "borderless",
     "combinators",
     "deepseek",
     "eventloop",
@@ -9,6 +11,7 @@
     "modelcontextprotocol",
     "nomic",
     "ollama",
+    "promtool",
     "replanner",
     "rrweb",
     "shadcn",

@@ -90,7 +90,6 @@ Browser-supplied label values are capped at 50 distinct values each, collapsing 
 Alert rules are in `prometheus.rules.yml`. Alert names are a contract: the AI Ops pipeline calls `query_prometheus_alerts` and then `query_internal_docs` with the alert name, so every rule needs a matching heading in `data/docs/alert-handling-guide.md`.
 
 ```bash
-npx tsx scripts/metrics-smoke.ts        # assert every metric family is exposed
 promtool check rules prometheus.rules.yml
 ```
 
