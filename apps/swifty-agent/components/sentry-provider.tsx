@@ -21,7 +21,7 @@ function isBrowser(): boolean {
   return typeof window !== 'undefined' && window?.document != null;
 }
 
-if (!isBrowser() && !isInitialized()) {
+if (isBrowser() && !isInitialized()) {
   init({
     dsn: "/api/log",
     projectId: "swifty-agent",
