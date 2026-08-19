@@ -23,7 +23,9 @@
 "use client";
 import { useState, useCallback, useEffect, useMemo } from "react";
 import { z } from "zod/v4";
+import type { A2uiClientAction } from "@a2ui/web_core/v0_9";
 import {
+  a2uiActionResponseSchema,
   chatResponseSchema,
   aiOpsResponseSchema,
   uploadResponseSchema,
@@ -456,6 +458,61 @@ export function useChat() {
     }
   }, [showNotification]);
 
+  // In-place surface action: POST the action + the owning message's current
+  // a2ui array; the reply is a batch of updateComponents/updateDataModel
+  // messages for the same surface, appended to that message so the A2uiView
+  // applies them in place (no user chat message involved).
+  const sendA2uiAction = useCallback(
+    async (messageIndex: number, action: A2uiClientAction) => {
+      if (isStreaming) {
+        showNotification(
+          "Please wait for the current operation to finish",
+          "warning",
+        );
+        return;
+      }
+      const target = messages[messageIndex];
+      if (!target?.a2ui || target.a2ui.length === 0) return;
+      setIsStreaming(true);
+      try {
+        const resp = await fetch("/api/a2ui_action", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: {
+              name: action.name,
+              surfaceId: action.surfaceId,
+              sourceComponentId: action.sourceComponentId,
+              context: action.context,
+            },
+            a2ui: target.a2ui,
+          }),
+        });
+        const parsed = a2uiActionResponseSchema.safeParse(await resp.json());
+        if (!parsed.success) throw new Error("invalid a2ui action response");
+        const patch = parsed.data.data?.a2ui;
+        if (parsed.data.message !== "OK" || !patch) {
+          throw new Error(parsed.data.message || "Unknown error");
+        }
+        const nextMsgs = messages.map((m, i) =>
+          i === messageIndex
+            ? { ...m, a2ui: [...(m.a2ui ?? []), ...patch] }
+            : m,
+        );
+        setMessages(nextMsgs);
+        upsertHistory(sessionId, nextMsgs);
+      } catch (e) {
+        showNotification(
+          "Action failed: " + (e instanceof Error ? e.message : String(e)),
+          "error",
+        );
+      } finally {
+        setIsStreaming(false);
+      }
+    },
+    [isStreaming, messages, sessionId, showNotification, upsertHistory],
+  );
+
   const uploadFile = useCallback(
     async (file: File): Promise<string | null> => {
       const allowed = [".txt", ".md", ".markdown"];
@@ -522,6 +579,7 @@ export function useChat() {
       loadChatHistory,
       deleteChatHistory,
       sendMessage,
+      sendA2uiAction,
       triggerAIOps,
       uploadFile,
     }),
@@ -539,6 +597,7 @@ export function useChat() {
       loadChatHistory,
       deleteChatHistory,
       sendMessage,
+      sendA2uiAction,
       triggerAIOps,
       uploadFile,
     ],

@@ -22,6 +22,7 @@
 
 "use client";
 import type { ChatMessage, Mode } from "@/hooks/use-chat";
+import type { A2uiClientAction } from "@a2ui/web_core/v0_9";
 import MessageList from "./msg-list";
 import ChatInput from "./chat-input";
 
@@ -31,6 +32,7 @@ interface ChatContainerProps {
   mode: Mode;
   onModeChange: (m: Mode) => void;
   onSend: (text: string) => void;
+  onA2uiAction: (messageIndex: number, action: A2uiClientAction) => void;
   onUpload: (file: File) => void;
 }
 
@@ -40,6 +42,7 @@ export default function ChatContainer({
   mode,
   onModeChange,
   onSend,
+  onA2uiAction,
   onUpload,
 }: ChatContainerProps) {
   const centered = messages.length === 0;
@@ -64,7 +67,7 @@ export default function ChatContainer({
         <MessageList
           messages={messages}
           isStreaming={isStreaming}
-          onAction={onSend}
+          onA2uiAction={onA2uiAction}
         />
       )}
       <div className="w-full px-6 pb-5">

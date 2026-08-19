@@ -49,6 +49,17 @@ export const aiOpsResponseSchema = z.object({
     .optional(),
 });
 
+export const a2uiActionResponseSchema = z.object({
+  message: z.string(),
+  // nullish: error responses carry data: null and should still parse so the
+  // real error message can be surfaced.
+  data: z
+    .object({
+      a2ui: z.array(z.unknown()).min(1),
+    })
+    .nullish(),
+});
+
 export const uploadResponseSchema = z.object({
   message: z.string(),
   data: z.unknown().optional(),

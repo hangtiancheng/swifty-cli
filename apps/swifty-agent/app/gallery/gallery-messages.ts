@@ -1,6 +1,8 @@
+import type { A2uiMessage } from "@a2ui/web_core/v0_9";
+import { SHADCN_CATALOG_ID } from "@swifty.js/a2ui-shadcn";
+
 const SURFACE_ID = "gallery-surface";
-const CATALOG_ID =
-  "https://a2ui.org/specification/v0_9/catalogs/basic/catalog.json";
+const CATALOG_ID = SHADCN_CATALOG_ID;
 
 const heading = (id: string, text: string) => ({
   id,
@@ -22,7 +24,7 @@ const button = (id: string, child: string, variant?: string) => ({
 });
 
 // One surface referencing every shadcn extension component at least once.
-export function createGalleryMessages(): unknown[] {
+export function createGalleryMessages(): A2uiMessage[] {
   const components = [
     {
       id: "root",
@@ -135,7 +137,7 @@ export function createGalleryMessages(): unknown[] {
     {
       id: "g-scroll",
       component: "ScrollArea",
-      maxHeight: 96,
+      height: 96,
       child: "g-scroll-text",
     },
     text(

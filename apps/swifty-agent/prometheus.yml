@@ -37,7 +37,3 @@ scrape_configs:
     metrics_path: /api/metrics
     static_configs:
       - targets: ["host.docker.internal:3000"]
-  - job_name: "swifty-agent-go"
-    metrics_path: /api/metrics
-    static_configs:
-      - targets: ["host.docker.internal:8123"]

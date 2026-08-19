@@ -8,7 +8,9 @@
     "eventloop",
     "hangtiancheng",
     "HNSW",
+    "Mapo",
     "modelcontextprotocol",
+    "navmenu",
     "nomic",
     "ollama",
     "promtool",
@@ -18,6 +20,7 @@
     "swifty",
     "TTFB",
     "undraggable",
+    "upserts",
     "xlink"
   ]
 }

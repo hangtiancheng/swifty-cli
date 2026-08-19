@@ -23,6 +23,7 @@
 "use client";
 import { memo, useEffect, useRef } from "react";
 import type { ChatMessage } from "@/hooks/use-chat";
+import type { A2uiClientAction } from "@a2ui/web_core/v0_9";
 import { A2uiView } from "@swifty.js/a2ui-shadcn";
 import MdRender from "./md-render";
 import { LoaderCircle, Sparkles } from "lucide-react";
@@ -30,14 +31,14 @@ import { LoaderCircle, Sparkles } from "lucide-react";
 interface MessageListProps {
   messages: ChatMessage[];
   isStreaming: boolean;
-  /** Receives serialized A2UI surface actions to auto-send as chat messages. */
-  onAction: (query: string) => void;
+  /** Receives raw A2UI surface actions to resolve into in-place surface updates. */
+  onA2uiAction: (messageIndex: number, action: A2uiClientAction) => void;
 }
 
 export default function MessageList({
   messages,
   isStreaming,
-  onAction,
+  onA2uiAction,
 }: MessageListProps) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -50,10 +51,11 @@ export default function MessageList({
         <MessageItem
           key={i}
           message={m}
+          index={i}
           streaming={
             isStreaming && i === messages.length - 1 && m.type === "assistant"
           }
-          onAction={onAction}
+          onA2uiAction={onA2uiAction}
         />
       ))}
     </div>
@@ -64,12 +66,14 @@ export default function MessageList({
 // the last message) don't re-render every message in the list.
 const MessageItem = memo(function MessageItem({
   message,
+  index,
   streaming,
-  onAction,
+  onA2uiAction,
 }: {
   message: ChatMessage;
+  index: number;
   streaming: boolean;
-  onAction: (query: string) => void;
+  onA2uiAction: (messageIndex: number, action: A2uiClientAction) => void;
 }) {
   if (message.type === "user") {
     return (
@@ -117,7 +121,10 @@ const MessageItem = memo(function MessageItem({
             <MdRender content={message.content} streaming={streaming} />
           )}
           {message.a2ui && message.a2ui.length > 0 && (
-            <A2uiView messages={message.a2ui} onAction={onAction} />
+            <A2uiView
+              messages={message.a2ui}
+              onRawAction={(action) => onA2uiAction(index, action)}
+            />
           )}
         </div>
       </div>

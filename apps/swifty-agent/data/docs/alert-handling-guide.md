@@ -16,7 +16,6 @@ Known targets and their scrape endpoints:
 
 - prometheus: http://localhost:9090/metrics (job=prometheus)
 - swifty-agent (Next.js): http://127.0.0.1:3000/api/metrics (job=swifty-agent)
-- swifty-agent-go: http://127.0.0.1:8123/api/metrics (job=swifty-agent-go)
 
 # NodeHeapNearLimit
 
@@ -116,90 +115,6 @@ Resolution:
 3. Check host memory pressure outside Prometheus (`vm_stat` on macOS, `free -m` on Linux).
 4. If the process itself is the cause, treat it as a memory problem and follow NodeHeapNearLimit.
 5. Expect elevated `nodejs_eventloop_lag_p99_seconds` while faulting, because every fault stalls the thread.
-
-# GoGoroutineLeak
-
-Alert Explanation: `go_goroutines > 500 and deriv(go_goroutines[30m]) > 0` for 15 minutes on the Go backend (job `swifty-agent-go`). Goroutine count is high and still climbing, which is the Go equivalent of a memory leak. Labels: `severity=warning`, `service`.
-
-Resolution:
-
-1. Confirm the trend rather than a spike: graph `go_goroutines{job="swifty-agent-go"}` over 6 hours. A healthy service returns to a baseline between load peaks.
-2. Break down what they are doing: `go_sched_goroutines_waiting_goroutines` versus `_running_` and `_runnable_`. A growing waiting count means goroutines blocked forever on a channel, mutex, or network read with no deadline.
-3. Compare with creation rate: `rate(go_sched_goroutines_created_goroutines_total[5m])`. Creation without a matching decline means something spawns per request and never returns.
-4. Leaked goroutines retain their stacks, so check `go_memory_classes_heap_stacks_bytes` climbing alongside.
-5. Usual causes here: a request context that is never cancelled, an unbuffered channel with no reader, or an eino pipeline whose stream is never drained to completion.
-
-# GoSchedulerLatencyHigh
-
-Alert Explanation: p99 of `go_sched_latencies_seconds` exceeds 50ms for 5 minutes. This is the Go analogue of event loop lag: goroutines are runnable but not getting CPU. Labels: `severity=warning`, `service`.
-
-Resolution:
-
-1. Confirm the percentile: `histogram_quantile(0.99, sum by (le) (rate(go_sched_latencies_seconds_bucket[5m])))`, and compare with p50 to see whether it is a tail or the whole distribution.
-2. Check CPU supply against demand: `rate(process_cpu_seconds_total{job="swifty-agent-go"}[5m])` against `go_sched_gomaxprocs_threads`. A rate approaching GOMAXPROCS means the process is genuinely out of CPU.
-3. Rule out GC as the consumer with `GoGcCpuPressure`'s expression.
-4. Check `go_sched_goroutines_runnable_goroutines`: a large runnable queue with idle CPU points at host-level contention instead, visible as `go_cpu_classes_idle_cpu_seconds_total` staying flat.
-5. Look for CPU-bound work on the request path: embedding batches, markdown splitting during indexing, or large JSON encodes.
-
-# GoStopTheWorldHigh
-
-Alert Explanation: p99 of `go_sched_pauses_total_gc_seconds` exceeds 50ms for 5 minutes. Garbage collection halts every goroutine for that long, so all request latency inherits the pause. Labels: `severity=warning`, `service`.
-
-Resolution:
-
-1. Separate the phases: `go_sched_pauses_stopping_gc_seconds` measures how long it took to bring goroutines to a stop, `go_sched_pauses_total_gc_seconds` the whole pause. A large stopping component means goroutines were slow to reach a preemption point, typically a tight non-preemptible loop.
-2. Check the live set: `go_gc_heap_live_bytes` and `go_gc_heap_objects_objects`. Pause cost scales with pointer-dense structures more than raw bytes.
-3. Check scan volume: `go_gc_scan_heap_bytes` versus `go_gc_scan_stack_bytes` and `go_gc_scan_globals_bytes`.
-4. Check cycle frequency: `rate(go_gc_cycles_total_gc_cycles_total[5m])`, and `rate(go_gc_cycles_forced_gc_cycles_total[5m])` for explicit `runtime.GC()` calls that should not be in a hot path.
-5. Large caches of pointer-heavy values (conversation memory, retrieved document chunks) are the usual driver; storing them as flat byte slices removes them from the scan set.
-
-# GoGcCpuPressure
-
-Alert Explanation: `rate(go_cpu_classes_gc_total_cpu_seconds_total[5m]) / rate(go_cpu_classes_total_cpu_seconds_total[5m]) > 0.25` for 10 minutes. More than a quarter of CPU time goes to garbage collection. Labels: `severity=warning`, `service`.
-
-Resolution:
-
-1. Split the GC cost: `go_cpu_classes_gc_mark_assist_cpu_seconds_total` is the damning one, because assist time is charged to the goroutine doing the allocating, meaning allocation is outrunning the collector.
-2. Check allocation churn: `rate(go_gc_heap_allocs_bytes_total[5m])` and `rate(go_gc_heap_allocs_objects_total[5m])`.
-3. Check the heap goal: `go_gc_heap_goal_bytes` against `go_gc_heap_live_bytes`. A goal barely above the live set means GOGC or GOMEMLIMIT is forcing continuous collection.
-4. Check whether the limiter engaged: `go_gc_limiter_last_enabled_gc_cycle` advancing means the runtime is actively throttling GC to avoid starving the program.
-5. Typical fixes: reuse buffers with `sync.Pool`, preallocate slices with a known capacity, and avoid per-request JSON round-trips.
-
-# GoHeapNearLimit
-
-Alert Explanation: `swifty_go_heap_used_ratio > 0.9` for 5 minutes, that is the live heap sitting above 90% of GOMEMLIMIT. The collector will thrash and then the process is OOM-killed. Labels: `severity=critical`, `service`.
-
-Resolution:
-
-1. This metric reads 0 when GOMEMLIMIT is unset, so a firing alert means a limit is configured. Read it with `swifty_go_memory_limit_bytes`.
-2. Compare `go_gc_heap_live_bytes` with `go_memory_classes_total_bytes`. The latter includes stacks, metadata and OS-held memory, and it is what the limit actually governs.
-3. Check what is not heap objects: `go_memory_classes_heap_stacks_bytes` (goroutine leak), `go_memory_classes_metadata_other_bytes`, and `go_memory_classes_os_stacks_bytes`.
-4. Check whether memory is being returned: `go_memory_classes_heap_released_bytes` and `rate(go_cpu_classes_scavenge_total_cpu_seconds_total[5m])`.
-5. Either reduce retention (bound the conversation memory LRU, cap retrieved chunk sizes) or raise GOMEMLIMIT. Raising GOGC will not help once the limit dominates.
-
-# GoMutexContention
-
-Alert Explanation: `rate(go_sync_mutex_wait_total_seconds_total[5m]) > 1` for 10 minutes. Goroutines lose more than one second per wall-clock second waiting for mutex handoff, so a shared lock is serialising the service. Labels: `severity=warning`, `service`.
-
-Resolution:
-
-1. A rate above 1 means multiple goroutines are blocked simultaneously; compare against `go_goroutines` to gauge how much of the service is stalled.
-2. Correlate with `go_sched_latencies_seconds` p99, since lock convoys show up there too.
-3. Audit the shared locks on the request path. In this service the candidates are the conversation memory mutex in `internal/utility/mem` (one process-wide `sync.Mutex` guards the session map and its LRU list) and the `boundedLabel` mutex in the metrics bridge.
-4. A global lock held across an I/O call is the classic cause; move Redis, MySQL and model calls outside the critical section.
-5. Sharding the map or switching to per-session locks removes the convoy without changing semantics.
-
-# GoThreadGrowth
-
-Alert Explanation: `go_threads > 100` for 15 minutes. The Go runtime only creates OS threads when goroutines block in syscalls or cgo, so a high count means blocking work is escaping the scheduler. Labels: `severity=warning`, `service`.
-
-Resolution:
-
-1. Compare with `go_sched_gomaxprocs_threads`. A thread count many multiples of GOMAXPROCS means threads are parked in syscalls, not running Go code.
-2. Check `go_sched_goroutines_not_in_go_goroutines`, which counts goroutines currently outside Go code, i.e. in a syscall or cgo call.
-3. Check cgo traffic: `rate(go_cgo_go_to_c_calls_calls_total[5m])`. A cgo call that blocks pins its thread for the whole duration.
-4. Check filesystem work, since document loading and indexing use blocking reads: correlate with knowledge-index activity.
-5. Threads are never reclaimed once created, so the count is a high-water mark; a flat elevated line after a burst is expected and only sustained growth is a problem.
 
 # SentryReportPipelineRejecting
 
@@ -382,7 +297,6 @@ One Prometheus instance scrapes both agents. Homebrew config: `/opt/homebrew/etc
 Two bridges, one metric contract:
 
 - Next.js: `lib/metrics.ts`, job `swifty-agent`, `http://127.0.0.1:3000/api/metrics`.
-- Go: `internal/app/sentry_metrics_handler.go`, job `swifty-agent-go`, `http://127.0.0.1:8123/api/metrics`.
 
 Both deliberately expose the same `swifty_sentry_*` metric names, labels and buckets, so a single rule file covers both jobs. Runtime metrics differ by necessity: the Node service exposes `swifty_node_*` plus `nodejs_*`, the Go service `swifty_go_*` plus `go_*`. Alerts named `Node*` are scoped to the Node job where the underlying metric is shared.
 
@@ -452,26 +366,6 @@ Defined in `lib/metrics.ts` alongside prom-client default metrics, and collected
 - `swifty_node_max_rss_bytes`, `swifty_node_page_faults` (minor, major), `swifty_node_context_switches` (voluntary, involuntary), `swifty_node_fs_operations` (read, write) from `process.resourceUsage()`.
 
 Provided by prom-client defaults and not duplicated: `process_cpu_seconds_total`, `process_cpu_user_seconds_total`, `process_cpu_system_seconds_total`, `process_resident_memory_bytes`, `process_start_time_seconds`, `nodejs_eventloop_lag_seconds` with min/max/mean/stddev/p50/p90/p99 variants, `nodejs_gc_duration_seconds`, `nodejs_heap_size_total_bytes`, `nodejs_heap_size_used_bytes`, `nodejs_heap_space_size_total_bytes`, `nodejs_heap_space_size_used_bytes`, `nodejs_heap_space_size_available_bytes`, `nodejs_external_memory_bytes`, `nodejs_active_handles`, `nodejs_active_requests`, `nodejs_active_resources`, `nodejs_version_info`.
-
-# Metric Reference: Go Runtime
-
-Defined in `internal/app/sentry_metrics_handler.go` for the Go backend (job `swifty-agent-go`). The bridge opts the GoCollector into `runtime/metrics` for the GC, memory, scheduler, CPU-class, sync and cgo families; `/godebug/*` is excluded as 50-odd always-zero series.
-
-Derived gauges the collectors do not provide:
-
-- `swifty_go_memory_limit_bytes`: GOMEMLIMIT, or 0 when no limit is configured.
-- `swifty_go_heap_used_ratio`: live heap divided by GOMEMLIMIT, or 0 when unset. The Go counterpart of `swifty_node_v8_heap_used_ratio`.
-
-Key runtime families:
-
-- Scheduler: `go_sched_latencies_seconds` (histogram; the counterpart of `nodejs_eventloop_lag_seconds`), `go_sched_pauses_total_gc_seconds` and `go_sched_pauses_stopping_gc_seconds`, `go_sched_goroutines_goroutines` with `_running_`/`_runnable_`/`_waiting_`/`_not_in_go_` variants, `go_sched_goroutines_created_goroutines_total`, `go_sched_gomaxprocs_threads`, `go_sched_threads_total_threads`.
-- GC: `go_gc_pauses_seconds`, `go_gc_heap_live_bytes`, `go_gc_heap_goal_bytes`, `go_gc_heap_objects_objects`, `go_gc_heap_allocs_bytes_total`, `go_gc_heap_frees_bytes_total`, `go_gc_cycles_total_gc_cycles_total`, `go_gc_cycles_forced_gc_cycles_total`, `go_gc_scan_heap_bytes`, `go_gc_scan_stack_bytes`, `go_gc_limiter_last_enabled_gc_cycle`, `go_gc_gogc_percent`, `go_gc_gomemlimit_bytes`.
-- Memory classes: `go_memory_classes_total_bytes`, `go_memory_classes_heap_objects_bytes`, `_heap_free_`, `_heap_released_`, `_heap_unused_`, `_heap_stacks_`, `_os_stacks_`, `_metadata_mspan_inuse_`, `_metadata_mcache_inuse_`, `_metadata_other_`, `_profiling_buckets_`, `_other_`.
-- CPU classes: `go_cpu_classes_total_cpu_seconds_total`, `_gc_total_`, `_gc_mark_assist_`, `_gc_mark_dedicated_`, `_gc_pause_`, `_scavenge_total_`, `_idle_`, `_user_`. The GC share of CPU is the counterpart of `rate(nodejs_gc_duration_seconds_sum[5m])`.
-- Contention and cgo: `go_sync_mutex_wait_total_seconds_total`, `go_cgo_go_to_c_calls_calls_total`.
-- Also present from the standard collectors: `go_goroutines`, `go_threads`, `go_gc_duration_seconds`, the `go_memstats_*` family, and the `process_*` family.
-
-There is no Go counterpart to `swifty_node_v8_contexts{kind="detached"}`; in Go a leak shows up as `go_goroutines` plus `go_memory_classes_heap_stacks_bytes` growing together.
 
 # Useful PromQL Queries for Triage
 

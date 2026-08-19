@@ -58,6 +58,7 @@ export default function Home() {
     loadChatHistory,
     deleteChatHistory,
     sendMessage,
+    sendA2uiAction,
     triggerAIOps,
     uploadFile,
     addMessage,
@@ -109,6 +110,7 @@ export default function Home() {
           mode={mode}
           onModeChange={setMode}
           onSend={sendMessage}
+          onA2uiAction={sendA2uiAction}
           onUpload={handleUpload}
         />
       </main>

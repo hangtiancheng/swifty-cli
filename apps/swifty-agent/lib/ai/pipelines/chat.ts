@@ -126,7 +126,8 @@ export async function chat(id: string, question: string): Promise<ChatResult> {
     providerOptions,
   });
 
-  // Memory keeps the raw tagged text so follow-up UI actions have context.
+  // Memory keeps the raw tagged text so the conversation retains what was
+  // rendered (surface actions are handled out of band by /api/a2ui_action).
   const raw = result.text;
   mem.setMessages({ role: "user", content: question });
   mem.setMessages({ role: "assistant", content: raw });
