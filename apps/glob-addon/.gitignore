@@ -1,7 +1,0 @@
-*.node
-build/
-dist/
-node_modules/
-prebuilds/
-target/
-a.o
