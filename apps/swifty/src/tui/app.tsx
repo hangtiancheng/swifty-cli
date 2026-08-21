@@ -143,6 +143,9 @@ interface Props {
   forkDisabled?: boolean;
 }
 
+// Maximum number of recent tool names (deduplicated) passed to the memory recall selector
+const MAX_RECENT_TOOLS = 10;
+
 function createToolRegistry(workDir: string, taskList: TaskList): ToolRegistry {
   const registry = new ToolRegistry();
   // new InstallSkillTool
@@ -265,6 +268,13 @@ export function App({
   const [planApprovalActive, setPlanApprovalActive] = useState(false);
   const [prePlanMode, setPrePlanMode] = useState<PermissionMode>("default");
   // Tracks whether plan mode has been exited
+  // Recently invoked tool names, deduplicated and kept in call order. Passed to the
+  // memory recall selector so it skips usage-guide memories for these tools, while
+  // still surfacing pitfall and warning memories
+  const recentToolsRef = useRef<string[]>([]);
+  // Memory paths already injected this session; pre-filtered before recall to avoid
+  // the same memory occupying a slot every turn
+  const surfacedMemoriesRef = useRef<Set<string>>(new Set());
   const hasExitedPlanModeRef = useRef(false);
   const permModeRef = useRef(permMode);
   useEffect(() => {
@@ -1391,10 +1401,16 @@ export function App({
                   .pop()?.content ?? "",
               ),
               clientRef.current,
+              [...recentToolsRef.current],
+              new Set(surfacedMemoriesRef.current),
             )
             .then((memories) => {
               if (memories.length === 0) {
                 return "";
+              }
+              // Record which memories were injected this turn so they are excluded on the next recall
+              for (const mem of memories) {
+                surfacedMemoriesRef.current.add(mem.path);
               }
               const lines = memories
                 .map((m) => {
@@ -1563,6 +1579,16 @@ export function App({
         }
 
         case "tool_result": {
+          // Track the just-completed tool name; move duplicates to the end so the list reflects recency
+          const recent = recentToolsRef.current;
+          const dup = recent.indexOf(event.toolName);
+          if (dup >= 0) {
+            recent.splice(dup, 1);
+          }
+          recent.push(event.toolName);
+          if (recent.length > MAX_RECENT_TOOLS) {
+            recent.shift();
+          }
           // Look up the argsSummary we saved during tool_use.
           const argsSummary = pendingToolArgs.get(`${event.toolName}:${event.toolId}`) ?? "";
           const outputText = contentToText(event.output);
