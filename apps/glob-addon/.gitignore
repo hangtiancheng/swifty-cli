@@ -1,15 +1,7 @@
 *.node
-*.ninja*
-build-*/
 build/
-build_cmake/
-**/node-headers/
-CMakeCache.txt
-CMakeFiles/
-cmake_install.cmake
-compile_commands.json
 dist/
-Makefile
 node_modules/
 prebuilds/
+target/
 a.o

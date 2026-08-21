@@ -1,41 +1,35 @@
 # @swifty.js/glob-addon
 
-High-performance glob matching and scanning for Node.js, powered by C++.
+High-performance glob matching and scanning for Node.js, powered by Rust.
 
 ## Supported Targets
 
-| Platform | Architecture | Zig Target |
-|----------|-------------|------------|
-| macOS    | arm64       | `aarch64-macos` |
-| macOS    | x86_64      | `x86_64-macos` |
-| Linux    | aarch64     | `aarch64-linux-gnu` |
-| Linux    | x86_64      | `x86_64-linux-gnu` |
-| Windows  | arm64       | `aarch64-windows-gnu` |
-| Windows  | x86_64      | `x86_64-windows-gnu` |
+| Platform | Architecture | Rust Target |
+|----------|-------------|-------------|
+| macOS    | arm64       | `aarch64-apple-darwin` |
+| macOS    | x86_64      | `x86_64-apple-darwin` |
+| Linux    | aarch64     | `aarch64-unknown-linux-gnu` |
+| Linux    | x86_64      | `x86_64-unknown-linux-gnu` |
+| Windows  | arm64       | `aarch64-pc-windows-gnullvm` |
+| Windows  | x86_64      | `x86_64-pc-windows-gnu` |
 
 ## Prerequisites
 
-All cross-compilation uses [Zig](https://ziglang.org/) as a universal C/C++ cross-compiler:
+Install Rust with rustup. If Rust was installed in the current terminal session, reload Cargo's environment first:
 
 ```bash
-brew install zig
+. "$HOME/.cargo/env"
 ```
-
-No other toolchains are needed.
 
 ## Building
 
-### Native build (node-gyp)
+### Native build
 
 ```bash
 pnpm build
 ```
 
-### Native build (CMake)
-
-```bash
-pnpm cmake
-```
+This builds the Rust addon in release mode, copies it to `build/Release/glob_addon.node`, and compiles the TypeScript wrapper.
 
 ### Cross-compilation
 
@@ -56,24 +50,9 @@ Build all targets:
 pnpm cross
 ```
 
-Node.js headers (and `node.lib` for Windows) are downloaded automatically and cached under `cmake/node-headers/`.
+The build script installs the requested Rust target with `rustup target add` and writes outputs to `prebuilds/<platform>-<arch>/glob_addon.node`.
 
-Outputs are placed in `prebuilds/<platform>-<arch>/addon.node`.
-
-### Manual cross-build
-
-```bash
-# 1. Download headers (once)
-cmake -DNODE_VERSION=v24.16.0 -DTARGET_PLATFORM=linux -DTARGET_ARCH=arm64 \
-  -P cmake/download-node-headers.cmake
-
-# 2. Configure & build
-cmake -S . -B build-linux-arm64 -G Ninja \
-  -DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/linux-arm64.cmake \
-  -DNODE_HEADERS_DIR=cmake/node-headers/v24.16.0/linux-arm64/node-v24.16.0/include/node \
-  -DCMAKE_BUILD_TYPE=Release
-cmake --build build-linux-arm64
-```
+Some cross targets may require platform linkers or SDKs provided by the host environment.
 
 ## Testing
 

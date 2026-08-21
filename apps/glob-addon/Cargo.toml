@@ -1,0 +1,15 @@
+[package]
+name = "glob-addon"
+version = "0.0.1"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+name = "glob_addon"
+
+[dependencies]
+napi = { version = "2.16.17", default-features = false, features = ["napi4"] }
+napi-derive = "2.16.13"
+
+[build-dependencies]
+napi-build = "2.2.3"
