@@ -69,7 +69,7 @@ Tool invocation strategy:
 - Use Glob to search for files
 - Use Grep to search for content
 - Use ReadFile to read files at specified paths
-- Only execute read-only Bash commands
+- Only execute read-only Bash/PowerShell commands
 - Invoke multiple tools in parallel whenever possible to maximize efficiency
 `,
     disallowedTools: ["EditFile", "WriteFile"],

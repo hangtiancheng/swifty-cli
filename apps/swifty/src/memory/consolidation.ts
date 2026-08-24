@@ -40,6 +40,7 @@ import { PermissionChecker } from "../permissions/checker.js";
 import { listSessions } from "../session/session.js";
 import { BashTool } from "../tools/bash.js";
 import { EditFileTool } from "../tools/edit-file.js";
+import { PowerShellTool } from "../tools/powershell.js";
 import { ReadFileTool } from "../tools/read-file.js";
 import { ToolRegistry } from "../tools/registry.js";
 import { GlobTool } from "../tools/wasm/glob.js";
@@ -140,6 +141,7 @@ export class MemoryConsolidator {
     subRegistry.register(new GlobTool());
     subRegistry.register(new GrepTool());
     subRegistry.register(new BashTool());
+    subRegistry.register(new PowerShellTool());
 
     const subChecker = new PermissionChecker(this.workDir, "bypassPermissions");
     // The user-level memory dir lives outside the project root; consolidation writes there, so allow it explicitly.
@@ -321,7 +323,7 @@ function buildConsolidationPrompt(
     ``,
     `---`,
     ``,
-    `**Tool constraints for this run:** Bash is restricted to read-only commands (\`ls\`, \`find\`, \`grep\`, \`cat\`, \`stat\`, \`wc\`, \`head\`, \`tail\`, and similar). Anything that writes, redirects to a file, or modifies state will be denied.`,
+    `**Tool constraints for this run:** Bash/PowerShell are restricted to read-only commands (\`ls\`, \`find\`, \`grep\`, \`cat\`, \`stat\`, \`wc\`, \`head\`, \`tail\`, and similar). Anything that writes, redirects to a file, or modifies state will be denied.`,
     ``,
   ];
 

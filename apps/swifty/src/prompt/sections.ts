@@ -103,6 +103,7 @@ export function usingToolsSection(): Section {
   - Find files with Glob, not find or ls
   - Search file contents with Grep, not grep or rg
   - Use Bash only for system commands and operations that require shell execution
+  - On Windows, prefer the PowerShell tool over Bash for shell commands
 - When a task involves 3 or more steps, use TaskCreate to plan and track progress. Mark each step as completed immediately after finishing it; do not batch updates.
 - You may invoke multiple tools in a single response. Independent tools should be called in parallel for maximum efficiency. Call tools sequentially only when one depends on the result of another.
 - When running multiple independent Bash commands, issue them as parallel tool calls rather than chaining them with &&.

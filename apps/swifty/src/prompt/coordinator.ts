@@ -72,7 +72,7 @@ from={worker name}: {what the worker reported}
 
 When calling Agent, use subagent_type \`general-purpose\` or a specific agent definition. Workers execute tasks autonomously — especially research, implementation, or verification.
 
-Workers have access to standard tools: ReadFile, EditFile, WriteFile, Bash, Grep, Glob, plus the team coordination tools (TaskCreate, TaskGet, TaskList, TaskUpdate, SendMessage). Anything you cannot do yourself, a worker can do for you.
+Workers have access to standard tools: ReadFile, EditFile, WriteFile, Bash, PowerShell, Grep, Glob, plus the team coordination tools (TaskCreate, TaskGet, TaskList, TaskUpdate, SendMessage). Anything you cannot do yourself, a worker can do for you.
 
 Because workers have Bash, git work belongs to them too. Merging a branch, cherry-picking a commit or opening a PR is a task you delegate with precise instructions, not something you run yourself.
 

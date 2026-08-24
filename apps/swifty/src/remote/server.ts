@@ -91,6 +91,7 @@ import { ExitPlanModeTool } from "../tools/exit-plan-mode.js";
 import { ExitWorktreeTool } from "../tools/exit-worktree.js";
 import { FileStateCache } from "../tools/file-state-cache.js";
 import { McpCallTool } from "../tools/mcp-call.js";
+import { PowerShellTool } from "../tools/powershell.js";
 import { ReadFileTool } from "../tools/read-file.js";
 import { ToolRegistry } from "../tools/registry.js";
 import { SyntheticOutputTool } from "../tools/synthetic-output.js";
@@ -660,7 +661,7 @@ export async function createRemoteAgent(
 
 // -- Helper functions for agent initialization ---------------------------------
 
-/** Creates the tool registry and registers all 14 built-in tools. */
+/** Creates the tool registry and registers all 15 built-in tools. */
 function buildToolRegistry(workDir: string, sessionId: string): ToolRegistry {
   const store = new TaskStore(workDir, sessionId);
   const taskList = new TaskList(store);
@@ -668,6 +669,7 @@ function buildToolRegistry(workDir: string, sessionId: string): ToolRegistry {
   const registry = new ToolRegistry();
   registry.register(new ReadFileTool());
   registry.register(new BashTool());
+  registry.register(new PowerShellTool());
   registry.register(new GlobTool());
   registry.register(new GrepTool());
   registry.register(new WriteFileTool());

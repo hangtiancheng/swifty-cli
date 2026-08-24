@@ -96,7 +96,8 @@ function describeToolActivity(toolName: string, input: Record<string, unknown>):
       return `Editing ${strArg(input, "file_path", "file")}`;
     case "WriteFile":
       return `Writing ${strArg(input, "file_path", "file")}`;
-    case "Bash": {
+    case "Bash":
+    case "PowerShell": {
       const cmd = strArg(input, "command", "");
       return `Running ${cmd.length > 40 ? cmd.slice(0, 40) + "..." : cmd}`;
     }

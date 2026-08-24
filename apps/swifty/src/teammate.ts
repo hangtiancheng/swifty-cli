@@ -54,6 +54,7 @@ import { EnterWorktreeTool } from "./tools/enter-worktree.js";
 import { ExitWorktreeTool } from "./tools/exit-worktree.js";
 import { FileStateCache } from "./tools/file-state-cache.js";
 import { McpCallTool } from "./tools/mcp-call.js";
+import { PowerShellTool } from "./tools/powershell.js";
 import { ReadFileTool } from "./tools/read-file.js";
 import { ToolRegistry } from "./tools/registry.js";
 import { SyntheticOutputTool } from "./tools/synthetic-output.js";
@@ -156,6 +157,7 @@ export async function buildTeammateRegistry(opts: {
   const registry = new ToolRegistry();
   registry.register(new ReadFileTool());
   registry.register(new BashTool());
+  registry.register(new PowerShellTool());
   registry.register(new GlobTool());
   registry.register(new GrepTool());
   registry.register(new WriteFileTool());

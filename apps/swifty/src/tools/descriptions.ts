@@ -23,6 +23,8 @@
 export const BASH_DESCRIPTION = `
 Execute a shell command and return stdout and stderr.
 
+On Windows, prefer the PowerShell tool over Bash for shell commands.
+
 IMPORTANT: Avoid using this tool to run cat, head, tail, sed, awk or echo commands. Instead use the dedicated ReadFile, EditFile, or WriteFile tools which provide a better experience.
 
 Usage Notes
@@ -43,6 +45,33 @@ Git Safety Protocol
 
 Avoiding unnecessary sleep commands. Do NOT retry failing commands in a sleep loop -- diagnose the root cause instead.
 When using find, search from "." or a specific path, not "/" -- scanning the full filesystem is too expensive.
+`;
+
+export const POWERSHELL_DESCRIPTION = `
+Execute a PowerShell command and return stdout and stderr.
+
+This is the RECOMMENDED shell tool on Windows -- prefer it over Bash there. It runs powershell.exe on Windows and pwsh (PowerShell Core) on other platforms.
+
+IMPORTANT: Avoid using this tool to run Get-Content, Select-String, or Write-Output/echo commands. Instead use the dedicated ReadFile, EditFile, or WriteFile tools which provide a better experience.
+
+Usage Notes
+
+- The working directory persists between commands, but shell state does not.
+- Always quote file paths containing spaces with double quotes.
+- Try to maintain your current working directory using absolute paths, avoid Set-Location/cd unless the user explicitly requests it.
+- Optional timeout in seconds (max 600s). Default 120s.
+- When issuing multiple independent commands, make separate tool calls instead of chaining with ;.
+- Use ; to chain sequential dependent commands (&& also works on PowerShell 7+).
+
+Git Safety Protocol
+
+- NEVER run destructive git commands (push --force, reset --hard, checkout ., clean -f, branch -D) unless the user explicitly requests it.
+- NEVER skip hooks (--no-verify) unless the user explicitly requests it.
+- Prefer creating a new commit rather than amending an existing one.
+- Commit identity: when committing as Swifty, pass the identity explicitly per commit (--author="Swifty <usr161043261@outlook.com>" plus GIT_COMMITTER_NAME/GIT_COMMITTER_EMAIL); NEVER rewrite the repo-level git config. If a push is rejected because the remote disallows Swifty's email, amend that commit to keep Swifty's name but use the repo-configured user's email, then push again.
+
+Avoiding unnecessary Start-Sleep commands. Do NOT retry failing commands in a sleep loop -- diagnose the root cause instead.
+When using Get-ChildItem -Recurse, search from "." or a specific path, not the drive root -- scanning the full filesystem is too expensive.
 `;
 
 export const READ_FILE_DESCRIPTION = `

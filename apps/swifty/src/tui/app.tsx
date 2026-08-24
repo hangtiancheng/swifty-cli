@@ -100,6 +100,7 @@ import { ExitPlanModeTool } from "../tools/exit-plan-mode.js";
 import { ExitWorktreeTool } from "../tools/exit-worktree.js";
 import { FileStateCache } from "../tools/file-state-cache.js";
 import { McpCallTool } from "../tools/mcp-call.js";
+import { PowerShellTool } from "../tools/powershell.js";
 import { ReadFileTool } from "../tools/read-file.js";
 import { ToolRegistry } from "../tools/registry.js";
 import { SyntheticOutputTool } from "../tools/synthetic-output.js";
@@ -166,6 +167,7 @@ function createToolRegistry(workDir: string, taskList: TaskList): ToolRegistry {
 
   // new AskUserQuestionTool
   registry.register(new BashTool());
+  registry.register(new PowerShellTool());
   registry.register(new EditFileTool());
   registry.register(new EnterWorktreeTool());
   registry.register(new ExitPlanModeTool());
