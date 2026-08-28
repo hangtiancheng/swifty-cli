@@ -104,6 +104,14 @@ export interface Tool {
    */
   deferred?: boolean;
 
+  /**
+   * 这一次调用能不能跟别的并发跑，按实际参数判断而不是只看类别。
+   *
+   * 不实现就按类别走：只读的可以并发，写和命令类不行。实现它的目前只有 Bash：
+   * 一条命令是不是只读要看命令本身，ls 和 rm 都是 Bash，并发安全性完全不同。
+   */
+  isConcurrencySafe?(args: Record<string, unknown>): boolean;
+
   schema(): ToolSchema;
   execute(ctx: ToolContext, args: Record<string, unknown>): Promise<ToolResult>;
 }

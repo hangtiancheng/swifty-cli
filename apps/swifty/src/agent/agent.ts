@@ -31,6 +31,7 @@ import type { FileHistory } from "../file-history/file-history.js";
 import type { HookEngine, EventName } from "../hooks/hooks.js";
 import type { LLMClient } from "../llm/client.js";
 import { ContextTooLongError, RateLimitError } from "../llm/errors.js";
+import type { RecallResult } from "../memory/manager.js";
 import type { PermissionChecker, Decision } from "../permissions/checker.js";
 import { getOrCreatePlanPath, planExists } from "../plan-file/plan-file.js";
 import { coordinatorReminder } from "../prompt/coordinator.js";
@@ -97,7 +98,12 @@ export interface AgentConfig {
   /** Returns newly discovered skills since the last call; previously notified ones are excluded */
   skillDeltaFn?: () => string;
   // Non-blocking memory recall: prefetch promise runs in parallel with the main LLM call, injected after tool execution
-  memoryRecallPromise?: Promise<string>;
+  memoryRecallPromise?: Promise<RecallResult>;
+  /**
+   * 召回结果真正写进对话时回调，参数是这次注入的记忆路径。Agent 每轮新建，
+   * 已注入集合由调用方跨轮保管，所以由它来记账。
+   */
+  onMemoriesSurfaced?: (paths: string[]) => void;
   onPermissionRequest?: (
     toolName: string,
     args: Record<string, unknown>,
@@ -137,8 +143,12 @@ export class Agent {
   private memoryContent: string;
   private skillSection: string;
   private skillDeltaFn?: () => string;
-  private memoryRecallPromise?: Promise<string>;
+  private memoryRecallPromise?: Promise<RecallResult>;
   private memoryRecallConsumed = false;
+  /** prefetch 是否已经跑完，以及跑出来的结果。主循环靠它做零等待的就绪判断。 */
+  private memoryRecallSettled = false;
+  private memoryRecallValue?: RecallResult;
+  private onMemoriesSurfaced?: (paths: string[]) => void;
 
   constructor(config: AgentConfig) {
     this.client = config.client;
@@ -169,6 +179,17 @@ export class Agent {
     this.skillSection = config.skillSection ?? "";
     this.skillDeltaFn = config.skillDeltaFn;
     this.memoryRecallPromise = config.memoryRecallPromise;
+    this.onMemoriesSurfaced = config.onMemoriesSurfaced;
+    // prefetch 一完成就把结果收起来并置位，主循环读标志即可，不用 await
+    void this.memoryRecallPromise?.then(
+      (r) => {
+        this.memoryRecallValue = r;
+        this.memoryRecallSettled = true;
+      },
+      () => {
+        this.memoryRecallSettled = true;
+      },
+    );
   }
 
   async *run(): AsyncGenerator<AgentEvent> {
@@ -543,26 +564,26 @@ export class Agent {
           this.conversation.addToolResultsMessage(toolResults);
           this.persistLastMessage();
 
-          // Non-blocking memory recall: check if prefetch is ready after tool execution
-          if (this.memoryRecallPromise && !this.memoryRecallConsumed) {
-            try {
-              // Promise.race with an immediately-resolved marker to avoid blocking
-              const settled = await Promise.race([
-                this.memoryRecallPromise.then((r) => ({
-                  done: true,
-                  value: r,
-                })),
-                Promise.resolve({ done: false, value: "" }),
-              ]);
-              if (settled.done) {
-                if (settled.value) {
-                  this.conversation.addSystemReminder(settled.value);
-                }
-                this.memoryRecallConsumed = true;
-              }
-            } catch {
-              this.memoryRecallConsumed = true;
+          // The user interrupted while tools were running: results are already
+          // recorded, so end the loop here instead of burning an LLM call that
+          // would immediately abort.
+          if (this.abortSignal?.aborted) {
+            yield { type: "turn_complete" };
+            yield { type: "loop_complete", stopReason: "interrupted" };
+            return;
+          }
+
+          // 非阻塞 memory recall：工具执行完后检查 prefetch 是否就绪。
+          // 就绪状态由 prefetch 自己回填，这里只读标志，不 await，没好就下轮再看。
+          if (this.memoryRecallPromise && !this.memoryRecallConsumed && this.memoryRecallSettled) {
+            const recall = this.memoryRecallValue;
+            if (recall?.reminder) {
+              this.conversation.addSystemReminder(recall.reminder);
+              // 真正进了对话才算「已注入」。这一轮没消费掉的召回结果不留痕，
+              // 下一轮召回时这些记忆还能参选。
+              this.onMemoriesSurfaced?.(recall.paths);
             }
+            this.memoryRecallConsumed = true;
           }
 
           if (exitPlanCalled) {
@@ -653,7 +674,11 @@ export class Agent {
     const batches: { concurrent: boolean; blocks: ToolUseBlock[] }[] = [];
     for (const tu of toolUses) {
       const tool = this.registry.get(tu.toolName);
-      const safe = (tool?.category ?? "command") === "read";
+      // 安不安全按这一次调用的实际参数算，不是只看工具类别。ls 和 rm 都是 Bash，
+      // 前者可以跟 ReadFile 一起并发，后者必须独占。
+      const safe = tool
+        ? (tool.isConcurrencySafe?.(tu.arguments ?? {}) ?? tool.category === "read")
+        : false;
 
       if (safe && batches.length > 0 && batches[batches.length - 1].concurrent) {
         batches[batches.length - 1].blocks.push(tu);
@@ -671,11 +696,26 @@ export class Agent {
     const events: AgentEvent[] = [];
     const executor = new StreamingExecutor(this.registry, {
       workDir: this.workDir,
+      abortSignal: this.abortSignal,
       fileHistory: this.fileHistory,
       fileStateCache: this.fileStateCache,
     });
 
     for (const tu of toolUses) {
+      // Once the user interrupts, don't launch the remaining calls; report
+      // them as interrupted so every tool_use keeps a paired tool_result.
+      if (this.abortSignal?.aborted) {
+        events.push({
+          type: "tool_result",
+          toolName: tu.toolName,
+          toolId: tu.toolUseId,
+          output: "Error: command interrupted",
+          isError: true,
+          elapsed: 0,
+        });
+        continue;
+      }
+
       // Fire pre-tool hooks
       if (this.hookEngine) {
         const hookResult = await this.hookEngine.firePreToolHooks(tu.toolName, tu.arguments);

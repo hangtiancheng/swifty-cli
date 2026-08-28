@@ -111,6 +111,16 @@ export interface MemoryHeader {
 }
 
 /** One memory selected for surfacing into the main conversation. */
+
+/**
+ * 一次召回的产出：渲染好的 system-reminder 正文，以及选中的记忆文件路径。
+ * 路径要等正文真正注入对话时才记为已注入。
+ */
+export interface RecallResult {
+  reminder: string;
+  paths: string[];
+}
+
 export interface RelevantMemory {
   path: string;
   mtimeMs: number;

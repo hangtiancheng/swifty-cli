@@ -20,8 +20,9 @@
  * SOFTWARE.
  */
 
-import { execFile } from "node:child_process";
+import { spawn } from "node:child_process";
 
+import { isSafeCommand } from "../permissions/checker.js";
 import { intArg, strArg } from "../utils/index.js";
 
 import { BASH_DESCRIPTION } from "./descriptions.js";
@@ -36,6 +37,8 @@ import {
 import type { Sandbox, SandboxConfig } from "@/sandbox/index.js";
 
 const MAX_TIMEOUT = 600;
+// Grace period between SIGTERM and the SIGKILL escalation when terminating a command.
+const KILL_GRACE_MS = 3000;
 
 /**
  * Extract the base command name from a command string.
@@ -104,6 +107,18 @@ export class BashTool implements Tool {
     networkEnabled: true,
   };
 
+  /**
+   * 只读命令可以跟别的只读工具并发，会改东西的命令必须独占。
+   *
+   * ls、cat、git status 这类跟 ReadFile 一样不动外部状态，没有互相干扰的余地；
+   * rm、mv、npm install 一旦跟别人并发，执行顺序就不再是模型给出的那个顺序。
+   * 判定复用权限层那份安全命令白名单，重定向、管道、命令串联和命令替换都已排除。
+   */
+  isConcurrencySafe(args: Record<string, unknown>): boolean {
+    const command = args.command;
+    return typeof command === "string" && isSafeCommand(command);
+  }
+
   schema(): ToolSchema {
     const inputSchema = {
       type: "object" as const,
@@ -149,68 +164,170 @@ export class BashTool implements Tool {
       actualCommand = this.sandbox.wrap(command, this.sandboxConfig);
     }
 
+    if (ctx.abortSignal?.aborted) {
+      return Promise.resolve({ output: "Error: command interrupted", isError: true });
+    }
+
     // Async execution keeps the Node event loop free: with spawnSync the TUI
     // froze (spinner animation, elapsed timers, keyboard input) for the whole
-    // command duration. Semantics preserved: SIGTERM on timeout, 10MB
-    // maxBuffer (child killed, truncated output still returned), merged
-    // stdout+stderr. ctx.abortSignal additionally lets Esc kill the child.
+    // command duration.
+    //
+    // Timeout and abort are handled manually instead of via execFile's
+    // timeout/signal options: those only SIGTERM the direct child, so a
+    // command that spawns children (dev servers, npm scripts) or traps
+    // SIGTERM keeps running and the callback never fires, wedging the agent
+    // loop and making Esc appear dead. `detached` puts the child in its own
+    // process group so the whole tree can be killed, with SIGKILL escalation
+    // for processes that ignore SIGTERM.
     return new Promise<ToolResult>((resolve) => {
-      execFile(
-        "bash",
-        ["-c", actualCommand],
-        {
-          cwd: ctx.workDir,
-          timeout: timeout * 1000,
-          killSignal: "SIGTERM",
-          encoding: "utf-8",
-          maxBuffer: 10 * 1024 * 1024,
-          ...(ctx.abortSignal ? { signal: ctx.abortSignal } : {}),
-        },
-        (error, stdout, stderr) => {
-          if (error?.name === "AbortError") {
-            resolve({ output: "Error: command interrupted", isError: true });
-            return;
-          }
+      let timedOut = false;
+      let aborted = false;
+      let terminating = false;
+      let escalateTimer: NodeJS.Timeout | null = null;
 
-          // Node kills the child with killSignal when the timeout elapses.
-          if (error && error.killed && error.signal === "SIGTERM") {
-            resolve({
-              output: `Error: command timed out after ${String(timeout)}s`,
-              isError: true,
-            });
-            return;
-          }
+      const child = spawn("bash", ["-c", actualCommand], {
+        cwd: ctx.workDir,
+        detached: true,
+        stdio: ["ignore", "pipe", "pipe"],
+      });
 
-          // Spawn-level failure (e.g. ENOENT): string code, no output produced.
-          if (error && typeof error.code !== "number" && !stdout && !stderr) {
-            resolve({
-              output: `Error executing command: ${error.message}`,
-              isError: true,
-            });
-            return;
-          }
+      // Same 10MB cap as execFile's maxBuffer: on overflow the child is
+      // killed and the truncated output is still returned.
+      const maxBuffer = 10 * 1024 * 1024;
+      let stdout = "";
+      let stderr = "";
+      let total = 0;
 
-          // Non-zero exits surface as an error whose numeric code is the exit code.
-          const exitCode = error && typeof error.code === "number" ? error.code : 0;
-          let output = `$ ${command}\n`;
-          // Merge stdout and stderr, no prefix added
-          if (stdout) {
-            output += stdout;
-          }
-          if (stderr) {
-            output += stderr;
-          }
+      const alreadyExited = () => child.exitCode !== null || child.signalCode !== null;
 
-          if (exitCode !== 0) {
-            const hint = exitCodeHint(command, exitCode);
-            output += hint
-              ? `\nExit code ${String(exitCode)} (${hint})`
-              : `\nExit code ${String(exitCode)}`;
+      // Kill the child's whole process group; fall back to the direct child
+      // when the group is already gone (or group kill is unsupported).
+      const killTree = (signal: NodeJS.Signals) => {
+        if (typeof child.pid !== "number") {
+          return;
+        }
+        try {
+          process.kill(-child.pid, signal);
+        } catch {
+          try {
+            child.kill(signal);
+          } catch {
+            /* already dead */
           }
+        }
+      };
 
-          resolve({ output, isError: false });
-        },
-      );
+      const terminate = () => {
+        if (terminating) {
+          return;
+        }
+        terminating = true;
+        killTree("SIGTERM");
+        escalateTimer = setTimeout(() => {
+          killTree("SIGKILL");
+          // A daemonized grandchild can inherit the pipes and hold `close`
+          // hostage; dropping our ends lets the callback fire once the
+          // direct child is gone.
+          child.stdout.destroy();
+          child.stderr.destroy();
+        }, KILL_GRACE_MS);
+        escalateTimer.unref();
+      };
+
+      const appendChunk = (chunk: string, target: "stdout" | "stderr") => {
+        let piece = chunk;
+        if (total + piece.length > maxBuffer) {
+          piece = piece.slice(0, maxBuffer - total);
+          terminate();
+        }
+        total += piece.length;
+        if (target === "stdout") {
+          stdout += piece;
+        } else {
+          stderr += piece;
+        }
+      };
+
+      child.stdout.setEncoding("utf-8");
+      child.stdout.on("data", (chunk: string) => {
+        appendChunk(chunk, "stdout");
+      });
+      child.stderr.setEncoding("utf-8");
+      child.stderr.on("data", (chunk: string) => {
+        appendChunk(chunk, "stderr");
+      });
+
+      const onAbort = () => {
+        if (alreadyExited()) {
+          return;
+        }
+        aborted = true;
+        terminate();
+      };
+
+      const timeoutTimer = setTimeout(() => {
+        if (alreadyExited()) {
+          return;
+        }
+        timedOut = true;
+        terminate();
+      }, timeout * 1000);
+      timeoutTimer.unref();
+
+      ctx.abortSignal?.addEventListener("abort", onAbort, { once: true });
+
+      const cleanup = () => {
+        clearTimeout(timeoutTimer);
+        if (escalateTimer) {
+          clearTimeout(escalateTimer);
+        }
+        ctx.abortSignal?.removeEventListener("abort", onAbort);
+      };
+
+      // Spawn-level failure (e.g. bash not found): no close event guaranteed.
+      child.on("error", (err) => {
+        cleanup();
+        resolve({
+          output: `Error executing command: ${err.message}`,
+          isError: true,
+        });
+      });
+
+      child.on("close", (code) => {
+        cleanup();
+
+        if (aborted) {
+          resolve({ output: "Error: command interrupted", isError: true });
+          return;
+        }
+
+        if (timedOut) {
+          resolve({
+            output: `Error: command timed out after ${String(timeout)}s`,
+            isError: true,
+          });
+          return;
+        }
+
+        const exitCode = code ?? 0;
+        let output = `$ ${command}\n`;
+        // Merge stdout and stderr, no prefix added
+        if (stdout) {
+          output += stdout;
+        }
+        if (stderr) {
+          output += stderr;
+        }
+
+        if (exitCode !== 0) {
+          const hint = exitCodeHint(command, exitCode);
+          output += hint
+            ? `\nExit code ${String(exitCode)} (${hint})`
+            : `\nExit code ${String(exitCode)}`;
+        }
+
+        resolve({ output, isError: false });
+      });
     });
   }
 }

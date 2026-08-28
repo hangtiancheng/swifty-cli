@@ -79,7 +79,7 @@ const echoTool: Tool = {
 
 async function runAgent(
   client: LLMClient,
-  opts: { tool?: Tool; hookEngine?: HookEngine } = {},
+  opts: { tool?: Tool; hookEngine?: HookEngine; abortSignal?: AbortSignal } = {},
 ): Promise<{ events: AgentEvent[]; conversation: ConversationManager }> {
   const conversation = new ConversationManager();
   conversation.addUserMessage("hi");
@@ -94,6 +94,7 @@ async function runAgent(
     conversation: conversation,
     workDir: process.cwd(),
     hookEngine: opts.hookEngine,
+    abortSignal: opts.abortSignal,
   });
   const events: AgentEvent[] = [];
   for await (const e of agent.run()) {
@@ -190,6 +191,56 @@ describe("Agent loop", () => {
     const usage = events.find((e) => e.type === "usage");
     expect(usage?.type === "usage" && usage.usage.cacheReadInputTokens).toBe(1000);
     expect(usage?.type === "usage" && usage.usage.cacheCreationInputTokens).toBe(200);
+  });
+
+  it("aborting during a tool call interrupts it and ends the loop without another LLM call", async () => {
+    const controller = new AbortController();
+    // Resolves only when the abort signal reaches the tool context — proves
+    // executeBatch wires abortSignal through to tool execution.
+    const interruptibleTool: Tool = {
+      name: "Echo",
+      description: "echo",
+      category: "read",
+      schema: () => ({
+        name: "Echo",
+        description: "echo",
+        input_schema: { type: "object", properties: {} },
+      }),
+      execute: (ctx) =>
+        new Promise((resolve) => {
+          ctx.abortSignal?.addEventListener("abort", () => {
+            resolve({ output: "Error: command interrupted", isError: true });
+          });
+        }),
+    };
+    const client = new MockClient([
+      [
+        {
+          type: "tool_call_complete",
+          toolId: "t1",
+          toolName: "Echo",
+          arguments: {},
+        },
+        end("tool_use"),
+      ],
+      [{ type: "text_delta", text: "should never stream" }, end()],
+    ]);
+    setTimeout(() => {
+      controller.abort();
+    }, 20);
+    const { events, conversation } = await runAgent(client, {
+      tool: interruptibleTool,
+      abortSignal: controller.signal,
+    });
+
+    const tr = events.find((e) => e.type === "tool_result");
+    expect(tr?.type === "tool_result" && tr.isError).toBe(true);
+    const lc = events.find((e) => e.type === "loop_complete");
+    expect(lc?.type === "loop_complete" && lc.stopReason).toBe("interrupted");
+    // No second LLM call after the interrupted tool batch.
+    expect(client.calls).toBe(1);
+    // The interrupted result is still recorded so tool_use stays paired.
+    expect(conversation.getMessages().at(-1)?.toolResults?.length).toBe(1);
   });
 
   it("surfaces lifecycle-hook output as a system reminder on the next turn", async () => {

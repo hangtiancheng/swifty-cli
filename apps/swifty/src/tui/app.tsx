@@ -57,7 +57,7 @@ import { decideAndApply } from "../mcp/strategy.js";
 import { MCPToolWrapper } from "../mcp/tool-wrapper.js";
 import { MemoryExtractor } from "../memory/extractor.js";
 import { loadInstructions } from "../memory/instructions.js";
-import { MemoryManager } from "../memory/manager.js";
+import { MemoryManager, type RecallResult } from "../memory/manager.js";
 import { PermissionChecker, type PermissionMode } from "../permissions/checker.js";
 import {
   getOrCreatePlanPath,
@@ -1406,30 +1406,12 @@ export function App({
               [...recentToolsRef.current],
               new Set(surfacedMemoriesRef.current),
             )
-            .then((memories) => {
-              if (memories.length === 0) {
-                return "";
-              }
-              // Record which memories were injected this turn so they are excluded on the next recall
-              for (const mem of memories) {
-                surfacedMemoriesRef.current.add(mem.path);
-              }
-              const lines = memories
-                .map((m) => {
-                  try {
-                    return readFileSync(m.path, "utf-8");
-                  } catch {
-                    return "";
-                  }
-                })
-                .filter(Boolean);
-              return lines.length > 0
-                ? "<system-reminder>\n# Recalled Memories\n\n" +
-                    lines.join("\n\n") +
-                    "\n</system-reminder>"
-                : "";
+            .then((memories): RecallResult => {
+              // 这里只选和渲染，选中的路径随结果一起交给 agent，注入时再记为已注入
+              const reminder = memManagerRef.current?.renderReminder(memories) ?? "";
+              return { reminder, paths: memories.map((m) => m.path) };
             })
-            .catch(() => "")
+            .catch((): RecallResult => ({ reminder: "", paths: [] }))
         : undefined;
 
     if (!clientRef.current) {

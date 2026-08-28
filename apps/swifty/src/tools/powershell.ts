@@ -1,6 +1,6 @@
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 
-import { intArg, strArg } from "../utils/index.js";
+import { asRecord, intArg, strArg } from "../utils/index.js";
 
 import { POWERSHELL_DESCRIPTION } from "./descriptions.js";
 import {
@@ -12,6 +12,8 @@ import {
 } from "./types.js";
 
 const MAX_TIMEOUT = 600;
+// Grace period between the graceful kill and the forced-kill escalation.
+const KILL_GRACE_MS = 3000;
 
 /**
  * Extract the base command name from a command string.
@@ -106,71 +108,192 @@ export class PowerShellTool implements Tool {
     // OS sandbox support anyway.
     const shell = process.platform === "win32" ? "powershell.exe" : "pwsh";
 
+    if (ctx.abortSignal?.aborted) {
+      return Promise.resolve({ output: "Error: command interrupted", isError: true });
+    }
+
     // Async execution keeps the Node event loop free (see BashTool for details).
-    // Semantics preserved: SIGTERM on timeout, 10MB maxBuffer (child killed,
-    // truncated output still returned), merged stdout+stderr.
-    // ctx.abortSignal additionally lets Esc kill the child.
+    //
+    // Timeout and abort are handled manually instead of via execFile's
+    // timeout/signal options: those only signal the direct child, so a
+    // command that spawns children or ignores the signal keeps running and
+    // the callback never fires, wedging the agent loop and making Esc appear
+    // dead. On POSIX `detached` puts the child in its own process group so
+    // the whole tree can be killed (SIGTERM, then SIGKILL escalation); on
+    // Windows the tree is killed via `taskkill /T`, forced after the grace
+    // period.
     return new Promise<ToolResult>((resolve) => {
-      execFile(
-        shell,
-        ["-NoProfile", "-NonInteractive", "-Command", command],
-        {
-          cwd: ctx.workDir,
-          timeout: timeout * 1000,
-          killSignal: "SIGTERM",
-          encoding: "utf-8",
-          maxBuffer: 10 * 1024 * 1024,
-          ...(ctx.abortSignal ? { signal: ctx.abortSignal } : {}),
-        },
-        (error, stdout, stderr) => {
-          if (error?.name === "AbortError") {
-            resolve({ output: "Error: command interrupted", isError: true });
-            return;
-          }
+      let timedOut = false;
+      let aborted = false;
+      let terminating = false;
+      let escalateTimer: NodeJS.Timeout | null = null;
 
-          // Node kills the child with killSignal when the timeout elapses.
-          if (error && error.killed && error.signal === "SIGTERM") {
-            resolve({
-              output: `Error: command timed out after ${String(timeout)}s`,
-              isError: true,
-            });
-            return;
-          }
+      const child = spawn(shell, ["-NoProfile", "-NonInteractive", "-Command", command], {
+        cwd: ctx.workDir,
+        // Only POSIX needs its own process group for kill(-pid); the Windows
+        // tree kill goes through taskkill and needs no new group.
+        detached: process.platform !== "win32",
+        stdio: ["ignore", "pipe", "pipe"],
+      });
 
-          // Spawn-level failure (e.g. ENOENT): string code, no output produced.
-          if (error && typeof error.code !== "number" && !stdout && !stderr) {
-            const hint =
-              error.code === "ENOENT" && process.platform !== "win32"
-                ? " (pwsh is required on macOS/Linux — install PowerShell Core)"
-                : "";
-            resolve({
-              output: `Error executing command: ${error.message}${hint}`,
-              isError: true,
-            });
-            return;
-          }
+      // Same 10MB cap as execFile's maxBuffer: on overflow the child is
+      // killed and the truncated output is still returned.
+      const maxBuffer = 10 * 1024 * 1024;
+      let stdout = "";
+      let stderr = "";
+      let total = 0;
 
-          // Non-zero exits surface as an error whose numeric code is the exit code.
-          const exitCode = error && typeof error.code === "number" ? error.code : 0;
-          let output = `PS> ${command}\n`;
-          // Merge stdout and stderr, no prefix added
-          if (stdout) {
-            output += stdout;
-          }
-          if (stderr) {
-            output += stderr;
-          }
+      const alreadyExited = () => child.exitCode !== null || child.signalCode !== null;
 
-          if (exitCode !== 0) {
-            const hint = exitCodeHint(command, exitCode);
-            output += hint
-              ? `\nExit code ${String(exitCode)} (${hint})`
-              : `\nExit code ${String(exitCode)}`;
+      // Kill the child's whole process tree; fall back to the direct child
+      // when the group is already gone or the tree kill fails.
+      const killTree = (signal: NodeJS.Signals) => {
+        if (typeof child.pid !== "number") {
+          return;
+        }
+        if (process.platform === "win32") {
+          // taskkill /T terminates the whole tree; /F is the forced variant.
+          const flags = ["/pid", String(child.pid), "/T"];
+          if (signal === "SIGKILL") {
+            flags.push("/F");
           }
+          execFile("taskkill", flags, (err) => {
+            if (err && !alreadyExited()) {
+              try {
+                child.kill(signal);
+              } catch {
+                /* already dead */
+              }
+            }
+          });
+          return;
+        }
+        try {
+          process.kill(-child.pid, signal);
+        } catch {
+          try {
+            child.kill(signal);
+          } catch {
+            /* already dead */
+          }
+        }
+      };
 
-          resolve({ output, isError: false });
-        },
-      );
+      const terminate = () => {
+        if (terminating) {
+          return;
+        }
+        terminating = true;
+        killTree("SIGTERM");
+        escalateTimer = setTimeout(() => {
+          killTree("SIGKILL");
+          // A daemonized grandchild can inherit the pipes and hold `close`
+          // hostage; dropping our ends lets the callback fire once the
+          // direct child is gone.
+          child.stdout.destroy();
+          child.stderr.destroy();
+        }, KILL_GRACE_MS);
+        escalateTimer.unref();
+      };
+
+      const appendChunk = (chunk: string, target: "stdout" | "stderr") => {
+        let piece = chunk;
+        if (total + piece.length > maxBuffer) {
+          piece = piece.slice(0, maxBuffer - total);
+          terminate();
+        }
+        total += piece.length;
+        if (target === "stdout") {
+          stdout += piece;
+        } else {
+          stderr += piece;
+        }
+      };
+
+      child.stdout.setEncoding("utf-8");
+      child.stdout.on("data", (chunk: string) => {
+        appendChunk(chunk, "stdout");
+      });
+      child.stderr.setEncoding("utf-8");
+      child.stderr.on("data", (chunk: string) => {
+        appendChunk(chunk, "stderr");
+      });
+
+      const onAbort = () => {
+        if (alreadyExited()) {
+          return;
+        }
+        aborted = true;
+        terminate();
+      };
+
+      const timeoutTimer = setTimeout(() => {
+        if (alreadyExited()) {
+          return;
+        }
+        timedOut = true;
+        terminate();
+      }, timeout * 1000);
+      timeoutTimer.unref();
+
+      ctx.abortSignal?.addEventListener("abort", onAbort, { once: true });
+
+      const cleanup = () => {
+        clearTimeout(timeoutTimer);
+        if (escalateTimer) {
+          clearTimeout(escalateTimer);
+        }
+        ctx.abortSignal?.removeEventListener("abort", onAbort);
+      };
+
+      // Spawn-level failure (e.g. pwsh not installed): no close event guaranteed.
+      child.on("error", (err) => {
+        cleanup();
+        const hint =
+          strArg(asRecord(err), "code") === "ENOENT" && process.platform !== "win32"
+            ? " (pwsh is required on macOS/Linux — install PowerShell Core)"
+            : "";
+        resolve({
+          output: `Error executing command: ${err.message}${hint}`,
+          isError: true,
+        });
+      });
+
+      child.on("close", (code) => {
+        cleanup();
+
+        if (aborted) {
+          resolve({ output: "Error: command interrupted", isError: true });
+          return;
+        }
+
+        if (timedOut) {
+          resolve({
+            output: `Error: command timed out after ${String(timeout)}s`,
+            isError: true,
+          });
+          return;
+        }
+
+        const exitCode = code ?? 0;
+        let output = `PS> ${command}\n`;
+        // Merge stdout and stderr, no prefix added
+        if (stdout) {
+          output += stdout;
+        }
+        if (stderr) {
+          output += stderr;
+        }
+
+        if (exitCode !== 0) {
+          const hint = exitCodeHint(command, exitCode);
+          output += hint
+            ? `\nExit code ${String(exitCode)} (${hint})`
+            : `\nExit code ${String(exitCode)}`;
+        }
+
+        resolve({ output, isError: false });
+      });
     });
   }
 }
