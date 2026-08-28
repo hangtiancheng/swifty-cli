@@ -97,7 +97,7 @@ describe("ConversationManager", () => {
     mgr.injectLongTermMemory("rules", "mems", "- /pdf: fill forms");
 
     const injected = mgr.getMessages()[0].content;
-    expect(injected).toContain("availableSkills");
+    expect(injected).toContain("Available Skills");
     expect(injected).toContain("- /pdf: fill forms");
     // All three sections share one message at fixed positions to keep the cache prefix stable
     expect(injected).toContain("rules");

@@ -200,8 +200,8 @@ export interface RemoteAgentHandle {
   forkDisabled: boolean;
   memoryManager: MemoryManager;
   contextWindow: number;
-  ltmInstructions: string;
-  ltmMemoryContent: string;
+  longTermMemoryInstructions: string;
+  longTermMemoryMemoryContent: string;
   mcpInstructions: string;
   provider: ProviderConfig;
   workDir: string;
@@ -234,8 +234,8 @@ class AgentHandleImpl implements RemoteAgentHandle {
   forkDisabled: boolean;
   memoryManager: MemoryManager;
   contextWindow: number;
-  ltmInstructions: string;
-  ltmMemoryContent: string;
+  longTermMemoryInstructions: string;
+  longTermMemoryMemoryContent: string;
   mcpInstructions: string;
   provider: ProviderConfig;
   workDir: string;
@@ -261,8 +261,8 @@ class AgentHandleImpl implements RemoteAgentHandle {
     this.forkDisabled = agentHandleImpl.forkDisabled;
     this.memoryManager = agentHandleImpl.memoryManager;
     this.contextWindow = agentHandleImpl.contextWindow;
-    this.ltmInstructions = agentHandleImpl.ltmInstructions;
-    this.ltmMemoryContent = agentHandleImpl.ltmMemoryContent;
+    this.longTermMemoryInstructions = agentHandleImpl.longTermMemoryInstructions;
+    this.longTermMemoryMemoryContent = agentHandleImpl.longTermMemoryMemoryContent;
     this.mcpInstructions = agentHandleImpl.mcpInstructions;
     this.provider = agentHandleImpl.provider;
     this.workDir = agentHandleImpl.workDir;
@@ -307,8 +307,8 @@ class AgentHandleImpl implements RemoteAgentHandle {
           return this.toolFilter ? this.toolFilter(name) : true;
         },
         coordinatorActiveFn: () => coordinatorActive(this.enableCoordinatorMode),
-        instructions: this.ltmInstructions,
-        memoryContent: this.ltmMemoryContent,
+        instructions: this.longTermMemoryInstructions,
+        memoryContent: this.longTermMemoryMemoryContent,
         notificationFn: () => this.teamManager.drainLeads(),
         onPermissionRequest: callbacks.onPermissionRequest,
         onLoopComplete: (conv) => {
@@ -651,8 +651,8 @@ export async function createRemoteAgent(
     enableCoordinatorMode,
     memoryManager,
     contextWindow,
-    ltmInstructions: instructions,
-    ltmMemoryContent: memReminder,
+    longTermMemoryInstructions: instructions,
+    longTermMemoryMemoryContent: memReminder,
     mcpInstructions,
     provider,
     workDir,

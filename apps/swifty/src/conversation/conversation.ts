@@ -137,8 +137,10 @@ export class ConversationManager {
     const sections: string[] = [];
     if (instructions) {
       sections.push(
-        "# SWIFTY.md\nCodebase and user instructions are shown below. Be sure to adhere to these instructions. IMPORTANT: These instructions OVERRIDE any default behavior and you MUST follow them exactly as written.\n\n" +
-          instructions,
+        `# SWIFTY.md
+Codebase and user instructions are shown below. Be sure to adhere to these instructions. IMPORTANT: These instructions OVERRIDE any default behavior and you MUST follow them exactly as written.
+
+${instructions}}`,
       );
     }
     if (memories) {
@@ -148,13 +150,14 @@ export class ConversationManager {
     // each project its own copy and break cross-project caching, so it lives in this
     // message alongside instructions and memories
     if (skills) {
-      sections.push("# availableSkills\n" + skills);
+      sections.push("# Available Skills\n" + skills);
     }
     if (sections.length === 0) {
       return;
     }
     const today = new Date().toISOString().split("T")[0];
-    sections.push("# Current Date\nToday's date is " + today + ".");
+    sections.push(`# Current Date\n
+Today's date is ${today}.`);
     const body = sections.join("\n\n");
     const wrapped = `
 <system-reminder>
