@@ -100,8 +100,9 @@ export interface AgentConfig {
   // Non-blocking memory recall: prefetch promise runs in parallel with the main LLM call, injected after tool execution
   memoryRecallPromise?: Promise<RecallResult>;
   /**
-   * 召回结果真正写进对话时回调，参数是这次注入的记忆路径。Agent 每轮新建，
-   * 已注入集合由调用方跨轮保管，所以由它来记账。
+   * Called when recall results are actually injected into the conversation.
+   * Receives the memory paths surfaced this turn. Since the Agent is recreated
+   * each turn, the caller maintains the injected set across turns.
    */
   onMemoriesSurfaced?: (paths: string[]) => void;
   onPermissionRequest?: (
@@ -145,7 +146,7 @@ export class Agent {
   private skillDeltaFn?: () => string;
   private memoryRecallPromise?: Promise<RecallResult>;
   private memoryRecallConsumed = false;
-  /** prefetch 是否已经跑完，以及跑出来的结果。主循环靠它做零等待的就绪判断。 */
+  /** Whether the prefetch has settled, and its result. The main loop checks this flag without awaiting. */
   private memoryRecallSettled = false;
   private memoryRecallValue?: RecallResult;
   private onMemoriesSurfaced?: (paths: string[]) => void;
@@ -180,7 +181,7 @@ export class Agent {
     this.skillDeltaFn = config.skillDeltaFn;
     this.memoryRecallPromise = config.memoryRecallPromise;
     this.onMemoriesSurfaced = config.onMemoriesSurfaced;
-    // prefetch 一完成就把结果收起来并置位，主循环读标志即可，不用 await
+    // Stash the prefetch result and set the flag as soon as it resolves, so the main loop can poll without awaiting
     void this.memoryRecallPromise?.then(
       (r) => {
         this.memoryRecallValue = r;
@@ -573,14 +574,14 @@ export class Agent {
             return;
           }
 
-          // 非阻塞 memory recall：工具执行完后检查 prefetch 是否就绪。
-          // 就绪状态由 prefetch 自己回填，这里只读标志，不 await，没好就下轮再看。
+          // Non-blocking memory recall: after tool execution, check whether the prefetch has settled.
+          // The settled state is populated by the prefetch itself; here we only read the flag without awaiting.
           if (this.memoryRecallPromise && !this.memoryRecallConsumed && this.memoryRecallSettled) {
             const recall = this.memoryRecallValue;
             if (recall?.reminder) {
               this.conversation.addSystemReminder(recall.reminder);
-              // 真正进了对话才算「已注入」。这一轮没消费掉的召回结果不留痕，
-              // 下一轮召回时这些记忆还能参选。
+              // Only mark as "surfaced" once the reminder is actually injected. Unconsumed recall
+              // results leave no trace, so those memories remain eligible for the next recall.
               this.onMemoriesSurfaced?.(recall.paths);
             }
             this.memoryRecallConsumed = true;
@@ -674,8 +675,8 @@ export class Agent {
     const batches: { concurrent: boolean; blocks: ToolUseBlock[] }[] = [];
     for (const tu of toolUses) {
       const tool = this.registry.get(tu.toolName);
-      // 安不安全按这一次调用的实际参数算，不是只看工具类别。ls 和 rm 都是 Bash，
-      // 前者可以跟 ReadFile 一起并发，后者必须独占。
+      // Safety is determined by the actual arguments of this call, not just the tool category.
+      // ls and rm are both Bash — the former can run concurrently with ReadFile, the latter must be exclusive.
       const safe = tool
         ? (tool.isConcurrencySafe?.(tu.arguments ?? {}) ?? tool.category === "read")
         : false;

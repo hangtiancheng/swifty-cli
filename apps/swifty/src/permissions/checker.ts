@@ -78,38 +78,38 @@ const DANGEROUS_PATTERNS: DangerousPattern[] = [];
 //   { re: /git\s+branch\s+-D/, reason: "force delete branch" },
 // ];
 
-// const SAFE_PREFIXES = [
-//   "ls",
-//   "pwd",
-//   "echo",
-//   "cat",
-//   "head",
-//   "tail",
-//   "wc",
-//   "date",
-//   "whoami",
-//   "uname",
-//   "hostname",
-//   "which",
-//   "type",
-//   "file",
-//   "git status",
-//   "git log",
-//   "git diff",
-//   "git branch",
-//   "git show",
-//   "git rev-parse",
-//   "git remote",
-//   "bun test",
-//   "bun run",
-//   "npm test",
-//   "npm run",
-//   "go test",
-//   "go build",
-//   "go vet",
-//   "python -c",
-//   "node -e",
-// ];
+const SAFE_PREFIXES = [
+  "ls",
+  "pwd",
+  "echo",
+  "cat",
+  "head",
+  "tail",
+  "wc",
+  "date",
+  "whoami",
+  "uname",
+  "hostname",
+  "which",
+  "type",
+  "file",
+  "git status",
+  "git log",
+  "git diff",
+  "git branch",
+  "git show",
+  "git rev-parse",
+  "git remote",
+  "bun test",
+  "bun run",
+  "npm test",
+  "npm run",
+  "go test",
+  "go build",
+  "go vet",
+  "python -c",
+  "node -e",
+];
 
 // Per-tool argument field treated as the "content" for safe/dangerous checks and rule matching
 const CONTENT_FIELDS: Record<string, string> = {
@@ -391,11 +391,10 @@ export function isSafeCommand(command: string): boolean {
   ) {
     return false;
   }
-  // return SAFE_PREFIXES.some(
-  //   (prefix) =>
-  //     trimmed === prefix || trimmed.startsWith(prefix + " ") || trimmed.startsWith(prefix + "\t"),
-  // );
-  return true;
+  return SAFE_PREFIXES.some(
+    (prefix) =>
+      trimmed === prefix || trimmed.startsWith(prefix + " ") || trimmed.startsWith(prefix + "\t"),
+  );
 }
 
 function modeDecide(mode: PermissionMode, category: "read" | "write" | "command"): DecisionEffect {

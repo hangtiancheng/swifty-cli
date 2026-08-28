@@ -1,8 +1,3 @@
-// 来源：公众号@小林coding
-// 后端八股网站：xiaolincoding.com
-// Agent网站：xiaolinnote.com
-// 简历模版：jianli.xiaolinnote.com
-
 import { describe, it, expect } from "vitest";
 
 import { Agent } from "../src/agent/agent.js";
@@ -58,7 +53,7 @@ const echoTool: Tool = {
   execute: () => Promise.resolve({ output: "echoed", isError: false }),
 };
 
-/** 造一个已经完成的召回 promise，模拟 prefetch 在主调用期间已经跑完。 */
+/** Creates an already-settled recall promise, simulating a prefetch that completed during the main LLM call. */
 function settledRecall(): Promise<RecallResult> {
   return Promise.resolve({ reminder: REMINDER, paths: ["/mem/a.md"] });
 }
@@ -84,12 +79,14 @@ async function run(scripts: StreamEvent[][], withTool: boolean) {
   for await (const _ of agent.run()) {
     // drain
   }
-  const injected = conv.getMessages().some((m) => m.content.includes(REMINDER));
+  const injected = conv
+    .getMessages()
+    .some((m) => typeof m.content === "string" && m.content.includes(REMINDER));
   return { injected, surfaced };
 }
 
 describe("memory recall wiring", () => {
-  it("有工具调用的一轮：召回结果在工具结果之后注入，同时记为已注入", async () => {
+  it("turn with tool calls: recall result is injected after tool results and marked as surfaced", async () => {
     const { injected, surfaced } = await run(
       [
         [
@@ -104,7 +101,7 @@ describe("memory recall wiring", () => {
     expect(surfaced).toEqual(["/mem/a.md"]);
   });
 
-  it("没有工具调用的一轮：召回结果没被消费，对应记忆不能记为已注入", async () => {
+  it("turn without tool calls: recall result is not consumed and memories are not marked as surfaced", async () => {
     const { injected, surfaced } = await run(
       [[{ type: "text_delta", text: "plain" }, end()]],
       false,

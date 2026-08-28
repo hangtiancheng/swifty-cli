@@ -1407,7 +1407,8 @@ export function App({
               new Set(surfacedMemoriesRef.current),
             )
             .then((memories): RecallResult => {
-              // 这里只选和渲染，选中的路径随结果一起交给 agent，注入时再记为已注入
+              // Only select and render here; the selected paths travel with the result
+              // to the agent, which records them as surfaced upon actual injection
               const reminder = memManagerRef.current?.renderReminder(memories) ?? "";
               return { reminder, paths: memories.map((m) => m.path) };
             })

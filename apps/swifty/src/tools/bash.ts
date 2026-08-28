@@ -108,11 +108,14 @@ export class BashTool implements Tool {
   };
 
   /**
-   * 只读命令可以跟别的只读工具并发，会改东西的命令必须独占。
+   * Read-only commands can run concurrently with other read-only tools;
+   * mutating commands must run exclusively.
    *
-   * ls、cat、git status 这类跟 ReadFile 一样不动外部状态，没有互相干扰的余地；
-   * rm、mv、npm install 一旦跟别人并发，执行顺序就不再是模型给出的那个顺序。
-   * 判定复用权限层那份安全命令白名单，重定向、管道、命令串联和命令替换都已排除。
+   * Commands like ls, cat, git status don't mutate external state — same as
+   * ReadFile — so there's no risk of interference. But rm, mv, npm install
+   * would break the model's intended execution order if run concurrently.
+   * The check reuses the permission layer's safe-command allowlist; redirects,
+   * pipes, command chaining, and command substitution are already excluded.
    */
   isConcurrencySafe(args: Record<string, unknown>): boolean {
     const command = args.command;

@@ -1,27 +1,24 @@
-// 来源：公众号@小林coding
-// 后端八股网站：xiaolincoding.com
-// Agent网站：xiaolinnote.com
-// 简历模版：jianli.xiaolinnote.com
-
-// 并发安全按这一次调用的实际参数算，不是只看工具类别。
+// Concurrency safety is determined by the actual arguments of each call,
+// not just the tool category.
 //
-// ls 和 rm 都是 Bash，前者跟 ReadFile 一样不动外部状态、可以一起并发，后者一旦跟
-// 别人并发，执行顺序就不再是模型给出的那个顺序。
+// ls and rm are both Bash — the former doesn't mutate external state (like
+// ReadFile) and can run concurrently, while the latter would break the
+// model's intended execution order if run in parallel.
 import { describe, it, expect } from "vitest";
 
 import { isSafeCommand } from "../src/permissions/checker.js";
 import { BashTool } from "../src/tools/bash.js";
 
-describe("Bash 的并发安全按命令判定", () => {
+describe("Bash concurrency safety is determined per command", () => {
   const bash = new BashTool();
 
-  it("只读命令算安全", () => {
+  it("read-only commands are considered safe", () => {
     for (const command of ["ls", "ls -la", "cat a.txt", "git status", "wc -l f", "pwd"]) {
       expect(bash.isConcurrencySafe({ command })).toBe(true);
     }
   });
 
-  it("会改东西的命令不算安全", () => {
+  it("mutating commands are not considered safe", () => {
     const unsafe = [
       "rm -rf build",
       "mv a b",
@@ -39,14 +36,15 @@ describe("Bash 的并发安全按命令判定", () => {
     }
   });
 
-  it("参数缺失或类型不对时按不安全处理", () => {
+  it("missing or invalid arguments are treated as unsafe", () => {
     expect(bash.isConcurrencySafe({})).toBe(false);
     expect(bash.isConcurrencySafe({ command: null })).toBe(false);
     expect(bash.isConcurrencySafe({ command: 123 })).toBe(false);
   });
 
-  it("判定跟权限层用的是同一份白名单", () => {
-    // 两边口径必须一致，否则会出现「权限放行但被当成不安全串行」这种自相矛盾
+  it("uses the same allowlist as the permission layer", () => {
+    // Both sides must agree, otherwise a command could be permitted by permissions
+    // yet serialized as unsafe — a contradiction.
     for (const command of ["ls", "rm -rf x", "cat f", "ls | wc"]) {
       expect(bash.isConcurrencySafe({ command })).toBe(isSafeCommand(command));
     }
