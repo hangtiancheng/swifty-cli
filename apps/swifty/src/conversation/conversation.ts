@@ -183,6 +183,17 @@ export class ConversationManager {
     this.history = this.history.slice(0, index);
   }
 
+  // Empties the conversation in place. Replacing the manager would strand every
+  // component that captured the old instance — AgentTool holds one for its fork
+  // path — so a reset has to happen behind the same object. Clearing
+  // longTermMemoryInjected lets instructions, memories and skills be re-injected,
+  // exactly as they are for a brand-new conversation.
+  reset(): void {
+    this.history = [];
+    this.longTermMemoryInjected = false;
+    this.clearUsageAnchor();
+  }
+
   getMessages(): Message[] {
     return [...this.history];
   }

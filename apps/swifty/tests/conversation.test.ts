@@ -120,6 +120,34 @@ describe("ConversationManager", () => {
     expect(mgr.len()).toBe(0);
   });
 
+  // /clear resets behind the same object: AgentTool captures the manager for its
+  // fork path, so swapping the instance would strand it on the old history.
+  it("empties history and the usage anchor in place on reset", () => {
+    const mgr = new ConversationManager();
+    mgr.addUserMessage("hello");
+    mgr.addAssistantMessage("hi there");
+    mgr.recordUsageAnchor(100, 50, 0, 0);
+    expect(mgr.usageAnchorState()).not.toBeNull();
+
+    mgr.reset();
+
+    expect(mgr.len()).toBe(0);
+    expect(mgr.getMessages()).toEqual([]);
+    expect(mgr.usageAnchorState()).toBeNull();
+  });
+
+  it("allows long-term memory to be re-injected after a reset", () => {
+    const mgr = new ConversationManager();
+    mgr.injectLongTermMemory("rules", "mems");
+    expect(mgr.len()).toBe(1);
+
+    mgr.reset();
+    mgr.injectLongTermMemory("rules", "mems");
+
+    expect(mgr.len()).toBe(1);
+    expect(mgr.getMessages()[0].content).toContain("rules");
+  });
+
   describe("buildAnthropicMessages", () => {
     it("serializes tool use messages", () => {
       const mgr = new ConversationManager();

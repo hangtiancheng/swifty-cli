@@ -53,8 +53,8 @@ import type { LLMClient } from "../llm/client.js";
 import { createClient } from "../llm/client.js";
 import { createChildLogger } from "../logger/logger.js";
 import { MCPManager } from "../mcp/manager.js";
-import { decideAndApply } from "../mcp/strategy.js";
-import { MCPToolWrapper } from "../mcp/tool-wrapper.js";
+import { applyMode, decideAndApply } from "../mcp/strategy.js";
+import { MCP_TOOL_PREFIX, MCPToolWrapper } from "../mcp/tool-wrapper.js";
 import { MemoryExtractor } from "../memory/extractor.js";
 import { loadInstructions } from "../memory/instructions.js";
 import { MemoryManager, type RecallResult } from "../memory/manager.js";
@@ -146,6 +146,10 @@ interface Props {
 
 // Maximum number of recent tool names (deduplicated) passed to the memory recall selector
 const MAX_RECENT_TOOLS = 10;
+
+function countMcpTools(registry: ToolRegistry): number {
+  return registry.listTools().filter((t) => t.name.startsWith(MCP_TOOL_PREFIX)).length;
+}
 
 function createToolRegistry(workDir: string, taskList: TaskList): ToolRegistry {
   const registry = new ToolRegistry();
@@ -316,6 +320,9 @@ export function App({
   const cmdRegistryRef = useRef(createCommandRegistry());
   const usageTrackerRef = useRef(new CommandUsageTracker(workDir));
   const mcpManagerRef = useRef<MCPManager | null>(null);
+  // The MCP load mode is decided once per session; a later retry pass must
+  // reapply that decision rather than recompute it.
+  const mcpModeDecidedRef = useRef(false);
   const hookEngineRef = useRef<HookEngine | null>(null);
   const skillCatalogRef = useRef<SkillCatalog | null>(null);
   // Skills already announced to the model. The first system-reminder of the
@@ -514,6 +521,53 @@ export function App({
     { isActive: !teamsDialogOpen },
   );
 
+  // Connects every configured MCP server that has no live connection yet and
+  // registers the tools it reports. Safe to call repeatedly: connectAll skips
+  // servers that are already up, so /mcp retries only the ones that failed.
+  const connectMcpServers = useCallback(
+    async (mgr: MCPManager, provider: ProviderConfig) => {
+      const result = await mgr.connectAll(mcpServers);
+      for (const { serverName, tool } of result.tools) {
+        const client = mgr.getClient(serverName);
+        if (client) {
+          registryRef.current.register(new MCPToolWrapper(client, serverName, tool));
+        }
+      }
+      if (result.errors.length > 0) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: "system",
+            content: `MCP errors: ${result.errors.map((e) => `${e.serverName}: ${e.error}`).join("; ")}`,
+          },
+        ]);
+      }
+      setMcpInfo({
+        servers: mgr.connectedServers(),
+        toolCount: countMcpTools(registryRef.current),
+      });
+      if (result.tools.length > 0) {
+        if (mcpModeDecidedRef.current) {
+          // The mode is fixed for the session — re-deciding it now could flip
+          // tools[] mid-flight and break the cache prefix. Reapply the standing
+          // mode so the tools this pass added inherit its defer flag.
+          applyMode(registryRef.current, registryRef.current.mcpLoadingMode);
+        } else {
+          // Only decide the load mode after all tools are registered: it compares total schema size against the context window
+          decideAndApply(registryRef.current, provider.base_url, getContextWindow(provider));
+          mcpModeDecidedRef.current = true;
+        }
+      }
+      // Inject each server's instructions into the conversation so the
+      // model knows how to use that server's tools.
+      for (const { serverName, text } of result.instructions) {
+        convRef.current.addSystemReminder(`# MCP Server: ${serverName}\n${text}`);
+      }
+      return result;
+    },
+    [mcpServers],
+  );
+
   const initClient = useCallback(
     async (provider: ProviderConfig) => {
       try {
@@ -686,44 +740,13 @@ export function App({
         if (mcpServers.length > 0) {
           const mgr = new MCPManager();
           mcpManagerRef.current = mgr;
-          void mgr.connectAll(mcpServers).then((result) => {
-            for (const { serverName, tool } of result.tools) {
-              const client = mgr.getClient(serverName);
-              if (client) {
-                registryRef.current.register(new MCPToolWrapper(client, serverName, tool));
-              }
-            }
-            if (result.errors.length > 0) {
-              setMessages((prev) => [
-                ...prev,
-                {
-                  role: "system",
-                  content: `MCP errors: ${result.errors.map((e) => `${e.serverName}: ${e.error}`).join("; ")}`,
-                },
-              ]);
-            }
-            if (result.servers.length > 0) {
-              setMcpInfo({
-                servers: result.servers,
-                toolCount: result.tools.length,
-              });
-            }
-            // Only decide the load mode after all tools are registered: it compares total schema size against the context window
-            if (result.tools.length > 0) {
-              decideAndApply(registryRef.current, provider.base_url, getContextWindow(provider));
-            }
-            // Inject each server's instructions into the conversation so the
-            // model knows how to use that server's tools.
-            for (const { serverName, text } of result.instructions) {
-              convRef.current.addSystemReminder(`# MCP Server: ${serverName}\n${text}`);
-            }
-          });
+          void connectMcpServers(mgr, provider);
         }
       } catch (err) {
         setError(`Failed to init LLM client: ${asErrorString(err)}`);
       }
     },
-    [workDir, mcpServers],
+    [workDir, mcpServers, connectMcpServers],
   );
 
   // Terminal width used to re-key the <Static> transcript. Ink erases the
@@ -783,19 +806,36 @@ export function App({
       return false;
     }
 
-    // /mcp — show MCP server status
+    // /mcp — show MCP server status, first retrying any server still not connected
     if (parsed.name === "mcp") {
-      if (!mcpInfo || mcpInfo.servers.length === 0) {
-        setMessages((prev) => [...prev, { role: "system", content: "No MCP servers connected." }]);
-      } else {
-        const lines = [
-          `MCP servers (${String(mcpInfo.servers.length)}):`,
-          ...mcpInfo.servers.map((s) => `  · ${s}`),
-          `Tools: ${String(mcpInfo.toolCount)} total`,
-        ];
-        setMessages((prev) => [...prev, { role: "system", content: lines.join("\n") }]);
-      }
       usageTrackerRef.current.record("mcp");
+      const mgr = mcpManagerRef.current;
+      if (!mgr) {
+        setMessages((prev) => [...prev, { role: "system", content: "No MCP servers configured." }]);
+        return true;
+      }
+      const down = mgr.missingServers(mcpServers);
+      if (down.length > 0) {
+        setMessages((prev) => [
+          ...prev,
+          { role: "system", content: `Connecting MCP server(s): ${down.join(", ")}` },
+        ]);
+        await connectMcpServers(mgr, selectedProvider);
+      }
+      const connected = mgr.connectedServers();
+      const stillDown = mgr.missingServers(mcpServers);
+      const lines =
+        connected.length === 0
+          ? ["No MCP servers connected."]
+          : [
+              `MCP servers (${String(connected.length)}):`,
+              ...connected.map((s) => `  · ${s}`),
+              `Tools: ${String(countMcpTools(registryRef.current))} total`,
+            ];
+      if (stillDown.length > 0) {
+        lines.push(`Not connected: ${stillDown.join(", ")}`);
+      }
+      setMessages((prev) => [...prev, { role: "system", content: lines.join("\n") }]);
       return true;
     }
 
@@ -868,9 +908,15 @@ export function App({
       const action = cmd.handler({ workDir, args: parsed.args });
       switch (action) {
         case "clear": {
-          // Clear messages and start a fresh conversation
+          // Clear messages and start a fresh conversation. Reset in place —
+          // AgentTool captures the manager for its fork path, so swapping the
+          // instance would leave it pointing at the discarded history.
           setMessages([]);
-          convRef.current = new ConversationManager();
+          convRef.current.reset();
+          convRef.current.injectLongTermMemory(
+            loadInstructions(workDir),
+            memManagerRef.current?.buildSystemReminder() ?? "",
+          );
           // Reset the session ID and the stores derived from it
           sessionIdRef.current = sessionMod.newSessionId();
           taskListRef.current.useStore(new TaskStore(workDir, sessionIdRef.current));

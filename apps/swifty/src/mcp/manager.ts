@@ -39,6 +39,13 @@ export interface ConnectResult {
 
 export class MCPManager {
   private clients = new Map<string, MCPClient>();
+
+  /**
+   * Brings up every configured server that has no live connection yet and reports what
+   * this pass added. Servers already connected are left untouched, so calling it again
+   * retries only the ones that failed — a server that was down earlier can join later
+   * without disturbing the working ones.
+   */
   async connectAll(configs: MCPServerConfig[]): Promise<ConnectResult> {
     const result: ConnectResult = {
       tools: [],
@@ -48,13 +55,19 @@ export class MCPManager {
     };
 
     for (const cfg of configs) {
+      if (this.clients.has(cfg.name)) {
+        continue;
+      }
       const client = new MCPClient(cfg);
       try {
         await client.connect();
+        const tools = await client.listTools();
+
+        // Recorded only once the tool list is in hand: a server that cannot be
+        // listed is of no use, and keeping it here would make it look connected
+        // on the next pass.
         this.clients.set(cfg.name, client);
         result.servers.push(cfg.name);
-
-        const tools = await client.listTools();
         for (const tool of tools) {
           result.tools.push({ serverName: cfg.name, tool });
         }
@@ -72,6 +85,7 @@ export class MCPManager {
           serverName: cfg.name,
           error: asErrorString(err),
         });
+        await client.disconnect();
       }
     }
 
@@ -80,6 +94,16 @@ export class MCPManager {
 
   getClient(name: string): MCPClient | undefined {
     return this.clients.get(name);
+  }
+
+  /** Every server with a live connection, across all connect passes. */
+  connectedServers(): string[] {
+    return [...this.clients.keys()];
+  }
+
+  /** The configured servers that are still not connected. */
+  missingServers(configs: MCPServerConfig[]): string[] {
+    return configs.filter((cfg) => !this.clients.has(cfg.name)).map((cfg) => cfg.name);
   }
 
   async disconnectAll(): Promise<void> {
