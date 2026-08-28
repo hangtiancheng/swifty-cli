@@ -369,6 +369,10 @@ export function App({
     sandboxAutoAllowRef.current = sandboxAutoAllow;
   }, [sandboxAutoAllow]);
   const abortControllerRef = useRef<AbortController | null>(null);
+  // Checker of the in-flight agent loop: a fresh checker is created per loop,
+  // so mid-loop permission-mode changes (Shift+Tab) must be applied to this
+  // live instance to take effect before the loop ends.
+  const checkerRef = useRef<PermissionChecker | null>(null);
   const permissionResolveRef = useRef<((v: "allow" | "deny" | "allowAlways") => void) | null>(null);
   const [rewindDialogActive, setRewindDialogActive] = useState(false);
   const [rewindSnapshots, setRewindSnapshots] = useState<Snapshot[]>([]);
@@ -1370,6 +1374,7 @@ export function App({
     // modeOverride avoids a stale-closure read of permMode right after a
     // setPermMode call (e.g. plan approval switching out of plan mode in the same tick).
     const checker = new PermissionChecker(workDir, modeOverride ?? permMode);
+    checkerRef.current = checker;
     // Propagate the current sandbox settings to the permission checker
     checker.sandboxEnabled = sandboxEnabledRef.current;
     checker.sandboxAutoAllow = sandboxAutoAllowRef.current;
@@ -2104,6 +2109,12 @@ export function App({
         permMode={permMode}
         onModeChange={(mode) => {
           setPermMode(mode);
+          // A fresh checker is created per agent loop with the mode captured
+          // at loop start; mutate the live one so the change applies to the
+          // current loop instead of only the next.
+          if (checkerRef.current) {
+            checkerRef.current.mode = mode;
+          }
         }}
         workDir={workDir}
         sessionId={sessionIdRef.current}
