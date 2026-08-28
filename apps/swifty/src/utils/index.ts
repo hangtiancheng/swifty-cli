@@ -20,6 +20,8 @@
  * SOFTWARE.
  */
 
+import type { ImageBlockParam, TextBlock } from "@anthropic-ai/sdk/resources";
+
 import { createChildLogger } from "../logger/logger.js";
 
 const log = createChildLogger({ module: "utils" });
@@ -37,12 +39,14 @@ export function contentToText(content: string | Record<string, unknown>[]): stri
   }
   const parts: string[] = [];
   for (const block of content) {
-    if (block.type === "text") {
-      parts.push(strArg(block, "text"));
+    if (block.type === "text" && typeof block.text === "string") {
+      // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+      const b = block as unknown as TextBlock;
+      parts.push(b.text);
     } else if (block.type === "image" && typeof block.source === "object") {
-      const source = asRecord(block.source);
-      const mediaType =
-        strArg(source, "type") === "base64" ? strArg(source, "media_type") : "image";
+      // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+      const b = block as unknown as ImageBlockParam;
+      const mediaType = b.source.type === "base64" ? b.source.media_type : "image";
       parts.push(`[Image: ${mediaType}]`);
     }
   }
