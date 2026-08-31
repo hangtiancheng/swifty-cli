@@ -215,8 +215,5 @@ apps/swifty/.swifty/*
 !apps/swiftx/.swiftx/
 apps/swiftx/.swiftx/*
 !apps/swiftx/.swiftx/config.yaml
-apps/swifty-agent/data/*
-!apps/swifty-agent/data/docs/
-apps/swifty-agent/data/docs/*
-!apps/swifty-agent/data/docs/alert-handling-guide.md
+
 .playwright-cli/

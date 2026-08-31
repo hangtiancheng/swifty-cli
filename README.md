@@ -1,4 +1,4 @@
-Swifty/Swiftx/Larky
+[Swifty](./apps/swifty/README.md)
 
 > Download Claude Code VSCode Plugin
 
