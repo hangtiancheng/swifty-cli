@@ -38,8 +38,8 @@ import { asImageMediaType, maybeResizeAndDownsampleImage } from "../images/image
 import { createChildLogger } from "../logger/logger.js";
 
 import type { ToolSchema } from "@/tools/types.js";
-import { version } from "@/tui/version.js";
 import { isRecord } from "@/utils/index.js";
+import { version } from "@/version.js";
 
 const log = createChildLogger({ module: "mcp" });
 type MCPTransport =

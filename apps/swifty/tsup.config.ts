@@ -20,19 +20,88 @@
  * SOFTWARE.
  */
 
-import { copyFileSync, cpSync, readFileSync } from "node:fs";
+import { copyFileSync, readFileSync } from "node:fs";
 import { builtinModules } from "node:module";
-import { join, dirname } from "node:path";
+import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "tsup";
+import type { Options } from "tsup";
+
+// tsup does not re-export the esbuild Plugin type used by `esbuildPlugins`;
+// recover it from the Options type so standalone plugin consts stay typed.
+type EsbuildPlugin = NonNullable<Options["esbuildPlugins"]>[number];
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const pkg = JSON.parse(readFileSync(new URL("./package.json", import.meta.url), "utf-8")) as {
   version: string;
+  dependencies?: Record<string, string>;
 };
 
-export default defineConfig({
+// CLI build bundles everything (noExternal), so CJS deps (e.g. signal-exit)
+// use bare require("assert") which esbuild can't shim in ESM output —
+// externalize all Node.js built-ins instead.
+const externalizeNodeBuiltinsPlugin: EsbuildPlugin = {
+  name: "externalize-node-builtins",
+  setup(build) {
+    const re = new RegExp(`^(${builtinModules.join("|")})(/.*)?$`);
+    build.onResolve({ filter: re }, (args) => ({
+      path: args.path,
+      external: true,
+    }));
+    build.onResolve({ filter: /^react-devtools-core$/ }, () => ({
+      path: "react-devtools-core",
+      external: true,
+    }));
+    // sharp is a native module (prebuilt binaries) — esbuild cannot
+    // bundle it, so keep it external and resolved from node_modules.
+    build.onResolve({ filter: /^sharp$/ }, () => ({
+      path: "sharp",
+      external: true,
+    }));
+  },
+};
+
+const tuiDir = join(__dirname, "src", "tui") + sep;
+
+// Library-build guard: the barrel entry (src/index.ts) must never reach the
+// ink/react TUI layer, neither via bare specifiers nor via any path resolving
+// into src/tui. Failing the build is the point — an accidental TUI import must
+// not ship to library consumers.
+const banTuiAndInkPlugin: EsbuildPlugin = {
+  name: "ban-tui-and-ink",
+  setup(build) {
+    const ban = (importer: string, path: string): never => {
+      throw new Error(
+        `[library-build] TUI dependency "${path}" (imported by ${importer || "entry"}) must not be reachable from src/index.ts`,
+      );
+    };
+    build.onResolve({ filter: /^(ink|react|@\/tui)/ }, (args) => ban(args.importer, args.path));
+    build.onResolve({ filter: /^\.\.?\// }, (args) => {
+      const resolved = resolve(dirname(args.importer), args.path);
+      if (resolved.startsWith(tuiDir)) {
+        ban(args.importer, args.path);
+      }
+      return undefined;
+    });
+  },
+};
+
+function copyGlobWasm(destDir: string): void {
+  // Runtime assets are built by `prebuild` (see the root package.json) before
+  // tsup runs. If a file is missing, copyFileSync throws ENOENT — run
+  // `pnpm build:swifty` from the repo root instead of calling tsup directly.
+
+  // glob.wasm — WebAssembly module backing the Glob/Grep tools; the bundled
+  // wrapper loads it from next to the bundle entry at runtime (the wrapper
+  // also embeds the module as base64, but the file keeps the bundle small and
+  // debuggable). Unlike the old native addon this is fully cross-platform.
+  copyFileSync(join(__dirname, "../glob-wasm/build/release.wasm"), join(destDir, "glob.wasm"));
+}
+
+// CLI entry: fully bundled, minified single-graph output with a shebang so the
+// `swifty` bin is self-contained.
+const cliConfig: Options = {
   entry: ["src/main.tsx"],
   format: ["esm"],
   platform: "node",
@@ -53,50 +122,38 @@ export default defineConfig({
   noExternal: [/.*/],
   define: { __SWIFTY_VERSION__: JSON.stringify(pkg.version) },
   tsconfig: "tsconfig.json",
-  esbuildPlugins: [
-    {
-      name: "externalize-node-builtins",
-      setup(build) {
-        // CJS deps (e.g. signal-exit) use bare require("assert") which esbuild
-        // can't shim in ESM output — externalize all Node.js built-ins
-        const re = new RegExp(`^(${builtinModules.join("|")})(/.*)?$`);
-        build.onResolve({ filter: re }, (args) => ({
-          path: args.path,
-          external: true,
-        }));
-        build.onResolve({ filter: /^react-devtools-core$/ }, () => ({
-          path: "react-devtools-core",
-          external: true,
-        }));
-        // sharp is a native module (prebuilt binaries) — esbuild cannot
-        // bundle it, so keep it external and resolved from node_modules.
-        build.onResolve({ filter: /^sharp$/ }, () => ({
-          path: "sharp",
-          external: true,
-        }));
-        // @swifty.js/glob-wasm's JS wrapper is bundled; the compiled wasm
-        // binary (glob.wasm) is loaded at runtime from next to the bundle
-        // entry (copied into dist/ in onSuccess below). The wrapper also
-        // carries a base64 embedding of the module as a fallback.
-      },
-    },
-  ],
+  esbuildPlugins: [externalizeNodeBuiltinsPlugin],
   onSuccess: async () => {
-    // Runtime assets are built by `prebuild` (see package.json) before tsup
-    // runs. Copy them into dist/ so the bundle is self-contained. If a file
-    // is missing, copyFileSync throws ENOENT — run `pnpm build` (which
-    // triggers prebuild) instead of calling `tsup` directly.
-
-    // 1. glob.wasm — WebAssembly module backing the Glob/Grep tools; the
-    //    bundled wrapper loads it from next to the bundle entry at runtime
-    //    (the wrapper also embeds the module as base64, but the file keeps
-    //    the bundle small and debuggable). Unlike the old native addon this
-    //    is fully cross-platform.
-    copyFileSync(
-      join(__dirname, "../glob-wasm/build/release.wasm"),
-      join(__dirname, "dist/glob.wasm"),
-    );
-
-    console.log("copied builtin/, glob.wasm -> dist/");
+    copyGlobWasm(join(__dirname, "dist"));
+    console.log("copied glob.wasm -> dist/");
   },
-});
+};
+
+// Library entry: keeps dependencies external (consumers resolve them from
+// their own node_modules), emits bundled d.ts, and must never reach src/tui.
+// outDir is nested under dist/ (cleaned by the CLI build that runs first) so
+// the two builds' chunk graphs never overwrite each other.
+const libConfig: Options = {
+  entry: ["src/index.ts"],
+  format: ["esm"],
+  platform: "node",
+  target: "node20",
+  outDir: "dist/lib",
+  clean: true,
+  minify: false,
+  splitting: true,
+  dts: true,
+  tsconfig: "tsconfig.build.json",
+  define: { __SWIFTY_VERSION__: JSON.stringify(pkg.version) },
+  // TUI-only deps (ink, ink-spinner, ink-text-input, react, react-dom) are
+  // deliberately NOT external: if the library graph ever reaches them, the
+  // ban-tui-and-ink plugin fails the build instead of silently externalizing.
+  external: [...Object.keys(pkg.dependencies ?? {})].filter((dep) => !/^(ink|react)/.test(dep)),
+  esbuildPlugins: [externalizeNodeBuiltinsPlugin, banTuiAndInkPlugin],
+  onSuccess: async () => {
+    copyGlobWasm(join(__dirname, "dist", "lib"));
+    console.log("copied glob.wasm -> dist/lib/");
+  },
+};
+
+export default defineConfig([cliConfig, libConfig]);

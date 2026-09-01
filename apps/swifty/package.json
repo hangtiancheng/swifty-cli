@@ -1,6 +1,6 @@
 {
   "name": "@swifty.js/swifty",
-  "version": "0.0.21",
+  "version": "0.0.22",
   "description": "Swifty — CLI coding agent",
   "keywords": [
     "ai",
@@ -29,7 +29,16 @@
     "README.md"
   ],
   "type": "module",
-  "main": "dist/main.js",
+  "main": "./dist/lib/index.js",
+  "types": "./dist/lib/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/lib/index.d.ts",
+      "import": "./dist/lib/index.js",
+      "default": "./dist/lib/index.js"
+    },
+    "./package.json": "./package.json"
+  },
   "publishConfig": {
     "access": "public"
   },
@@ -103,6 +112,9 @@
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.65.0",
     "vitest": "^4.1.10"
+  },
+  "engines": {
+    "node": ">=20"
   },
   "packageManager": "pnpm@10.33.1"
 }

@@ -27,9 +27,9 @@ import { marked } from "marked";
 import React, { useRef } from "react";
 
 import { createChildLogger } from "../logger/logger.js";
+import { isDiffTool } from "../tools/is-diff-tool.js";
 
 import { DiffLines } from "./diff-render.js";
-import { isDiffTool } from "./is-diff-tool.js";
 import { COLORS, ICONS } from "./styles.js";
 
 const log = createChildLogger({ module: "tui" });

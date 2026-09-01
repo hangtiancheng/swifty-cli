@@ -21,8 +21,8 @@
  */
 
 // Read version from package.json at runtime so it stays in sync with releases.
-// In dev (src/tui/): ../package.json resolves correctly.
-// In dist (dist/): tsup injects __SWIFTY_VERSION__ at build time.
+// In dev (src/): ../package.json resolves correctly.
+// In dist (dist/lib/): tsup injects __SWIFTY_VERSION__ at build time.
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";

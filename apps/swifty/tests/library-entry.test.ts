@@ -1,0 +1,72 @@
+import { execFileSync } from "node:child_process";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+
+import { describe, expect, it } from "vitest";
+import { z } from "zod";
+
+const pkgRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
+const libDir = join(pkgRoot, "dist", "lib");
+const libEntry = join(libDir, "index.js");
+const cliEntry = join(pkgRoot, "dist", "main.js");
+
+describe("cli entry (dist/main.js)", () => {
+  it("keeps the shebang for the bin target", () => {
+    expect(existsSync(cliEntry)).toBe(true);
+    expect(readFileSync(cliEntry, "utf-8").startsWith("#!/usr/bin/env node")).toBe(true);
+  });
+});
+
+describe.skipIf(!existsSync(libEntry))("library entry (dist/lib)", () => {
+  it("contains no ink/react/tui imports in any emitted module", () => {
+    const banned = /(from|import)\s*\(?\s*["'][^"']*(\bink\b|\breact\b|\btui\/)/;
+    const atAlias = /["']@\/[^"']*["']/;
+    for (const file of readdirSync(libDir)) {
+      if (!file.endsWith(".js") && !file.endsWith(".d.ts")) {
+        continue;
+      }
+      const text = readFileSync(join(libDir, file), "utf-8");
+      expect(banned.exec(text), `${file} must not reference TUI modules`).toBeNull();
+      if (file.endsWith(".d.ts")) {
+        expect(atAlias.exec(text), `${file} must not leak unresolved @/ type imports`).toBeNull();
+      }
+    }
+  });
+
+  it("loads in plain node and exposes the agent API", () => {
+    const script = `
+      const m = await import(process.env.SWIFTY_LIB_ENTRY);
+      const symbols = [
+        "Agent", "ToolRegistry", "MCPManager", "PermissionChecker",
+        "loadConfig", "createClient", "buildSystemPrompt", "TeamManager",
+        "TaskCreateTool", "TeamTaskCreateTool", "TaskStopTool", "TaskStore",
+        "recover", "runPrintMode", "RemoteServer",
+      ];
+      console.log(JSON.stringify({
+        totalExports: Object.keys(m).length,
+        version: m.version,
+        symbols: Object.fromEntries(symbols.map((k) => [k, typeof m[k]])),
+      }));
+    `;
+    const stdout = execFileSync(process.execPath, ["--input-type=module", "-e", script], {
+      env: { ...process.env, SWIFTY_LIB_ENTRY: pathToFileURL(libEntry).href },
+      encoding: "utf-8",
+    });
+
+    const LoadedSchema = z.object({
+      totalExports: z.number().int().positive(),
+      version: z.string().regex(/^\d+\.\d+/),
+      symbols: z.record(z.string(), z.string()),
+    });
+    const parsed = LoadedSchema.safeParse(JSON.parse(stdout));
+    expect(parsed.success, stdout).toBe(true);
+    if (!parsed.success) {
+      return;
+    }
+    expect(parsed.data.totalExports).toBeGreaterThan(100);
+    for (const [name, type] of Object.entries(parsed.data.symbols)) {
+      expect(type, name).toBe("function");
+    }
+  });
+});

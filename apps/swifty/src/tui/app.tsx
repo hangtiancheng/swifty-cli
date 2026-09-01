@@ -44,6 +44,7 @@ import type {
   SandboxYamlConfig,
 } from "../config/config.js";
 import { getContextWindow, getContextWindowAsync, getMaxOutputTokens } from "../config/config.js";
+import { expandAtRefsWithImages } from "../conversation/at-expand.js";
 import { ConversationManager } from "../conversation/conversation.js";
 import { FileHistory } from "../file-history/file-history.js";
 import type { Snapshot } from "../file-history/file-history.js";
@@ -108,10 +109,11 @@ import { ToolSearchTool } from "../tools/tool-search.js";
 import { GlobTool } from "../tools/wasm/glob.js";
 import { GrepTool } from "../tools/wasm/grep.js";
 import { WriteFileTool } from "../tools/write-file.js";
+import { randomCompletionVerb } from "../utils/verbs.js";
+import { version } from "../version.js";
 import { connectToIde, type IdeConnection } from "../vscode/ide-client.js";
 
 import { AskUserDialog } from "./ask-user-dialog.js";
-import { expandAtRefsWithImages } from "./at-expand.js";
 import { ChatView, CommittedMessage, type ChatMessage, type ToolSummaryItem } from "./chat.js";
 import { InputBox } from "./input.js";
 import { PermissionDialog, type PermissionAction } from "./permission-dialog.js";
@@ -124,8 +126,6 @@ import { TeamStatus } from "./team-status.js";
 import { TeammateSpinnerTree } from "./teammate-spinner-tree.js";
 import { TeamsDialog } from "./teams-dialog.js";
 import { ToolBlock, ToolDisplay, type ToolBlockInfo } from "./tool-display.js";
-import { randomCompletionVerb } from "./verbs.js";
-import { version } from "./version.js";
 
 import type { ToolSchema } from "@/tools/types.js";
 import { asErrorString, asRecord, contentToText, strArg } from "@/utils/index.js";

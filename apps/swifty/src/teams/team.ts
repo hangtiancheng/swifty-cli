@@ -27,7 +27,7 @@ import type { ConversationManager } from "../conversation/conversation.js";
 import { createChildLogger } from "../logger/logger.js";
 import type { PermissionChecker } from "../permissions/checker.js";
 import { getOrCreatePlanPath } from "../plan-file/plan-file.js";
-import { randomVerb } from "../tui/verbs.js";
+import { randomVerb } from "../utils/verbs.js";
 
 import { detectBackend, spawnTeammate as spawnTeammateProcess } from "./backend.js";
 import type { SpawnConfig } from "./backend.js";

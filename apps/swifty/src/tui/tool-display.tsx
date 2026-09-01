@@ -22,8 +22,9 @@
 
 import { Box, Text } from "ink";
 
+import { isDiffTool } from "../tools/is-diff-tool.js";
+
 import { DiffLines } from "./diff-render.js";
-import { isDiffTool } from "./is-diff-tool.js";
 import { COLORS, ICONS } from "./styles.js";
 
 import { strArg } from "@/utils/index.js";

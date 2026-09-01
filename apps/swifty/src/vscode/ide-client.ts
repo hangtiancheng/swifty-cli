@@ -33,7 +33,7 @@ import { createChildLogger } from "../logger/logger.js";
 import { detectIde } from "./lockfile.js";
 import { WebSocketTransport } from "./ws-transport.js";
 
-import { version } from "@/tui/version.js";
+import { version } from "@/version.js";
 
 const log = createChildLogger({ module: "vscode" });
 

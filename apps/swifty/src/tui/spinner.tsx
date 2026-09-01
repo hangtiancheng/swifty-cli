@@ -25,7 +25,7 @@ import InkSpinner from "ink-spinner";
 import { useEffect, useRef, useState } from "react";
 import React from "react";
 
-import { randomVerb } from "./verbs.js";
+import { randomVerb } from "../utils/verbs.js";
 
 function formatTokens(n: number): string {
   if (n >= 1000000) {
