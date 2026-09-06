@@ -104,6 +104,9 @@ function copyGlobWasm(destDir: string): void {
 const cliConfig: Options = {
   entry: ["src/main.tsx"],
   format: ["esm"],
+  env: {
+    NODE_ENV: "production",
+  },
   platform: "node",
   target: "node20",
   outDir: "dist",
@@ -138,6 +141,9 @@ const libConfig: Options = {
   format: ["esm"],
   platform: "node",
   target: "node20",
+  env: {
+    NODE_ENV: "production",
+  },
   outDir: "dist/lib",
   clean: true,
   minify: false,

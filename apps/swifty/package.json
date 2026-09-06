@@ -44,10 +44,10 @@
   },
   "scripts": {
     "fe:dev": "cd src/remote/fe && tsup --watch",
-    "fe:build": "cd src/remote/fe && tsup",
+    "fe:build": "cd src/remote/fe && rm -rf ./dist && tsup",
     "fe:preview": "pnpm dlx serve src/remote/fe/dist",
     "dev": "tsx ./src/main.tsx",
-    "build": "tsup",
+    "build": "rm -rf ./dist && tsup",
     "lint": "eslint ./src ./tests",
     "lint:fix": "eslint --fix ./src ./tests",
     "test": "vitest run",
