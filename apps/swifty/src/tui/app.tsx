@@ -23,7 +23,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 
-import { Box, Static, Text, useApp, useInput, useStdout } from "ink";
+import { Box, renderToString, Text, useApp, useInput, useStdout } from "ink";
 import { useState, useEffect, useRef, useCallback } from "react";
 
 import { Agent } from "../agent/agent.js";
@@ -93,6 +93,7 @@ import {
 import { TaskStore } from "../todo/store.js";
 import { TaskList } from "../todo/todo.js";
 import { TaskCreateTool, TaskGetTool, TaskListTool, TaskUpdateTool } from "../todo/tools.js";
+import { toDisplayPreview } from "../tool-result/budget.js";
 import { AskUserQuestionTool, type Question } from "../tools/ask-user.js";
 import { BashTool } from "../tools/bash.js";
 import { EditFileTool } from "../tools/edit-file.js";
@@ -126,6 +127,7 @@ import { TeamStatus } from "./team-status.js";
 import { TeammateSpinnerTree } from "./teammate-spinner-tree.js";
 import { TeamsDialog } from "./teams-dialog.js";
 import { ToolBlock, ToolDisplay, type ToolBlockInfo } from "./tool-display.js";
+import { TranscriptBuffer } from "./transcript-buffer.js";
 
 import type { ToolSchema } from "@/tools/types.js";
 import { asErrorString, asRecord, contentToText, strArg } from "@/utils/index.js";
@@ -146,6 +148,35 @@ interface Props {
 
 // Maximum number of recent tool names (deduplicated) passed to the memory recall selector
 const MAX_RECENT_TOOLS = 10;
+
+type MessageUpdate = ChatMessage[] | ((previous: ChatMessage[]) => ChatMessage[]);
+
+function renderCommittedMessage(message: ChatMessage, expanded: boolean, columns: number): string {
+  const output = renderToString(<CommittedMessage message={message} expanded={expanded} />, {
+    columns,
+  });
+  return output ? output + "\n" : "";
+}
+
+function Brand({ model, workDir }: { model: string; workDir: string }) {
+  return (
+    <Box flexDirection="column">
+      <Text>
+        <Text color={BORDER_COLORS.focused}>{" /\\_/\\  "}</Text>
+        <Text dimColor>Swifty v{version}</Text>
+      </Text>
+      <Text>
+        <Text color={BORDER_COLORS.focused}>{"( o o ) "}</Text>
+        <Text dimColor>{model}</Text>
+      </Text>
+      <Text>
+        <Text color={BORDER_COLORS.focused}>{" >   <  "}</Text>
+        <Text dimColor>{workDir}</Text>
+      </Text>
+      <Text> </Text>
+    </Box>
+  );
+}
 
 function countMcpTools(registry: ToolRegistry): number {
   return registry.listTools().filter((t) => t.name.startsWith(MCP_TOOL_PREFIX)).length;
@@ -244,11 +275,13 @@ export function App({
   forkDisabled,
 }: Props) {
   const { exit } = useApp();
+  const { stdout, write: writeStdout } = useStdout();
+  const termWidthRef = useRef(stdout.columns || 80);
+  const [, setTermWidth] = useState(termWidthRef.current);
   const [appState, setAppState] = useState<AppState>(
     providers.length === 1 ? "chat" : "providerSelect",
   );
   const [selectedProvider, setSelectedProvider] = useState<ProviderConfig>(providers[0]);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [streamingText, setStreamingText] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const [isCompacting, setIsCompacting] = useState(false);
@@ -393,16 +426,91 @@ export function App({
   const [teammateStates, setTeammateStates] = useState<TeammateUIState[]>([]);
   const [teamsDialogOpen, setTeamsDialogOpen] = useState(false);
   const [toolsExpanded, setToolsExpanded] = useState(false);
+  const toolsExpandedRef = useRef(toolsExpanded);
+  const transcriptBufferRef = useRef(new TranscriptBuffer());
+  const messagesRef = useRef<ChatMessage[]>([]);
   const [subagents, setSubagents] = useState<
     { id: number; label: string; turn: number; lastTool?: string }[]
   >([]);
   const subagentIdRef = useRef(0);
 
-  // Poll teammate states from TeamManager every 500ms for live progress.
+  useEffect(() => {
+    toolsExpandedRef.current = toolsExpanded;
+  }, [toolsExpanded]);
+
+  const writeMessages = useCallback(
+    (messages: ChatMessage[], expanded = toolsExpandedRef.current) => {
+      for (const message of messages) {
+        const output = renderCommittedMessage(message, expanded, termWidthRef.current);
+        if (output) {
+          writeStdout(output);
+        }
+      }
+    },
+    [writeStdout],
+  );
+
+  const setMessages = useCallback(
+    (update: MessageUpdate) => {
+      const previous = messagesRef.current;
+      const next = typeof update === "function" ? update(previous) : update;
+      if (next.length === 0) {
+        transcriptBufferRef.current.clear();
+        messagesRef.current = [];
+        return;
+      }
+
+      const appended =
+        previous.length <= next.length &&
+        previous.every((message, index) => next[index] === message);
+      const output = appended ? next.slice(previous.length) : next;
+      if (appended) {
+        transcriptBufferRef.current.append(output);
+      } else {
+        transcriptBufferRef.current.replace(next);
+      }
+      messagesRef.current = transcriptBufferRef.current.snapshot();
+      writeMessages(output);
+    },
+    [writeMessages],
+  );
+
+  const replayTranscript = useCallback(
+    (expanded: boolean) => {
+      process.stdout.write("\x1b[2J\x1b[H");
+      writeMessages(transcriptBufferRef.current.snapshot(), expanded);
+    },
+    [writeMessages],
+  );
+
+  const writeBrand = useCallback(() => {
+    const output = renderToString(
+      <Brand model={selectedProvider.model || selectedProvider.name} workDir={workDir} />,
+      { columns: termWidthRef.current },
+    );
+    if (output) {
+      writeStdout(output + "\n");
+    }
+  }, [selectedProvider.model, selectedProvider.name, workDir, writeStdout]);
+
+  const brandWrittenRef = useRef(false);
+  useEffect(() => {
+    if (appState !== "chat" || brandWrittenRef.current) {
+      return;
+    }
+    brandWrittenRef.current = true;
+    writeBrand();
+  }, [appState, writeBrand]);
+
+  const teammateStateSignatureRef = useRef("");
   useEffect(() => {
     const timer = setInterval(() => {
       const states = teamManagerRef.current.getAllTeammateStates();
-      setTeammateStates(states);
+      const signature = JSON.stringify(states);
+      if (signature !== teammateStateSignatureRef.current) {
+        teammateStateSignatureRef.current = signature;
+        setTeammateStates(states);
+      }
     }, 500);
     return () => {
       clearInterval(timer);
@@ -499,15 +607,13 @@ export function App({
     }
   });
 
-  // ctrl+o toggles full vs. truncated tool output in the transcript.
-  // <Static> never repaints items it has already printed, so toggling the
-  // flag alone would only affect future commits: erase the visible viewport
-  // (scrollback kept, same trick as the width-change handler) and remount
-  // <Static> via its key so the whole transcript reprints in the new state.
+  // ctrl+o toggles expanded output for the bounded replay tail.
   useInput((input, key) => {
     if (key.ctrl && input === "o") {
-      process.stdout.write("\x1b[2J\x1b[H");
-      setToolsExpanded((e) => !e);
+      const expanded = !toolsExpandedRef.current;
+      toolsExpandedRef.current = expanded;
+      setToolsExpanded(expanded);
+      replayTranscript(expanded);
     }
   });
 
@@ -749,35 +855,22 @@ export function App({
     [workDir, mcpServers, connectMcpServers],
   );
 
-  // Terminal width used to re-key the <Static> transcript. Ink erases the
-  // previous dynamic frame by its logical line count; after a width change the
-  // already-printed rows re-wrap (full-width rows like the input-box borders
-  // double), so that erase under-counts and stale spinner/input rows leak into
-  // scrollback on every subsequent repaint. On a (debounced) width change we
-  // erase the visible viewport ourselves (\x1b[2J\x1b[H — scrollback is kept,
-  // unlike /clear's \x1b[3J) and remount <Static> via the key so the whole
-  // transcript reprints cleanly at the new width.
-  const { stdout } = useStdout();
-  const termWidthRef = useRef(stdout.columns || 80);
-  const [termWidth, setTermWidth] = useState(termWidthRef.current);
-
+  // Reflow only the bounded replay tail after a width change; older output remains in native scrollback.
   useEffect(() => {
     let timer: NodeJS.Timeout | null = null;
     const onResize = () => {
       if (timer) {
         clearTimeout(timer);
       }
-      // Debounce: a drag-resize fires dozens of events; repaint once at the end.
       timer = setTimeout(() => {
         timer = null;
         const width = stdout.columns || 80;
-        // Height-only changes don't re-wrap rows; nothing leaks, skip.
         if (width === termWidthRef.current) {
           return;
         }
         termWidthRef.current = width;
-        stdout.write("\x1b[2J\x1b[H");
         setTermWidth(width);
+        replayTranscript(toolsExpandedRef.current);
       }, 150);
     };
     stdout.on("resize", onResize);
@@ -787,7 +880,7 @@ export function App({
       }
       stdout.off("resize", onResize);
     };
-  }, [stdout]);
+  }, [replayTranscript, stdout]);
 
   useEffect(() => {
     if (appState === "chat" && !clientRef.current) {
@@ -924,12 +1017,15 @@ export function App({
           // Reset token counters
           setInputTokens(0);
           setOutputTokens(0);
-          // Reset memory extraction state
+          // Reset memory extraction and recall state
           memCursorRef.current = 0;
           memExtractingRef.current = false;
-          // Clear both the visible screen and terminal scrollback. Changing the
-          // session ID remounts the static brand block on the next render.
+          recentToolsRef.current = [];
+          surfacedMemoriesRef.current.clear();
+          recoveryStateRef.current = new RecoveryState();
+          // Clear both the visible screen and terminal scrollback, then restore the brand.
           process.stdout.write("\x1b[2J\x1b[3J\x1b[H");
+          writeBrand();
           break;
         }
         case "quit":
@@ -1092,7 +1188,8 @@ export function App({
                 m.toolResults.map((tr) => ({
                   toolUseId: tr.toolUseId,
                   content: tr.content,
-                  isError: tr.isError ?? false,
+                  ...(tr.contentBlocks?.length ? { contentBlocks: tr.contentBlocks } : {}),
+                  isError: tr.isError,
                 })),
               );
             } else if (m.role === "user") {
@@ -1103,6 +1200,9 @@ export function App({
           }
           convRef.current = conv;
           sessionIdRef.current = arg;
+          recentToolsRef.current = [];
+          surfacedMemoriesRef.current.clear();
+          recoveryStateRef.current = new RecoveryState();
           // Reload the task list for the resumed session.
           taskListRef.current.useStore(new TaskStore(workDir, arg));
           // Re-key file history to the resumed session. The previous instance's
@@ -1132,8 +1232,8 @@ export function App({
                 return {
                   toolName: use?.toolName ?? "tool",
                   argsSummary: use?.argsSummary ?? "",
-                  output: contentToText(tr.content),
-                  isError: tr.isError ?? false,
+                  output: toDisplayPreview(tr.content),
+                  isError: tr.isError,
                   // No timing data in the session log; 0 hides the suffix.
                   elapsed: 0,
                 };
@@ -1490,6 +1590,11 @@ export function App({
       skillSection: skillDelta(),
       skillDeltaFn: skillDelta,
       memoryRecallPromise: recallPromise,
+      onMemoriesSurfaced: (paths) => {
+        for (const path of paths) {
+          surfacedMemoriesRef.current.add(path);
+        }
+      },
       toolFilter: buildComposedToolFilter(
         coordinatorToolFilter(enableCoordinatorMode ?? false),
         toolFilterRef.current,
@@ -1627,7 +1732,7 @@ export function App({
           }
           // Look up the argsSummary we saved during tool_use.
           const argsSummary = pendingToolArgs.get(`${event.toolName}:${event.toolId}`) ?? "";
-          const outputText = contentToText(event.output);
+          const outputText = toDisplayPreview(event.output);
           // Update active tools spinner.
           setActiveTools((prev) =>
             prev.map((t) =>
@@ -1876,8 +1981,7 @@ export function App({
     refreshSkillsIfNeeded();
 
     // Save to prompt history
-    historyMod.append(historyDir, text);
-    setPromptHistory((prev) => [...prev, text]);
+    setPromptHistory(historyMod.append(historyDir, text));
 
     // Handle slash commands
     if (text.startsWith("/")) {
@@ -1958,48 +2062,6 @@ export function App({
   return (
     <Box flexDirection="column" width="100%">
       <Box flexDirection="column" paddingTop={0} flexGrow={1}>
-        {/* Finalized messages are written once into the terminal's native
-            scrollback. This keeps the complete transcript selectable and
-            copyable while only the active turn is re-rendered by Ink. */}
-        <Static
-          key={`transcript-${sessionIdRef.current}-${String(termWidth)}-${String(toolsExpanded)}`}
-          items={[
-            {
-              type: "brand" as const,
-              _key: "brand",
-              model: selectedProvider.model || selectedProvider.name,
-              workDir,
-            },
-            ...messages.map((message, index) => ({
-              type: "message" as const,
-              _key: `message-${String(index)}`,
-              message,
-            })),
-          ]}
-        >
-          {(item) =>
-            item.type === "brand" ? (
-              <Box key={item._key} flexDirection="column">
-                <Text>
-                  <Text color={BORDER_COLORS.focused}>{" /\\_/\\  "}</Text>
-                  <Text dimColor>Swifty v{version}</Text>
-                </Text>
-                <Text>
-                  <Text color={BORDER_COLORS.focused}>{"( o o ) "}</Text>
-                  <Text dimColor>{item.model}</Text>
-                </Text>
-                <Text>
-                  <Text color={BORDER_COLORS.focused}>{" >   <  "}</Text>
-                  <Text dimColor>{item.workDir}</Text>
-                </Text>
-                <Text> </Text>
-              </Box>
-            ) : (
-              <CommittedMessage key={item._key} message={item.message} expanded={toolsExpanded} />
-            )
-          }
-        </Static>
-
         <ChatView
           messages={[]}
           streamingText={isStreaming ? streamingText : undefined}

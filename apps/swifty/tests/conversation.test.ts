@@ -223,14 +223,10 @@ describe("ConversationManager", () => {
 
     it("embeds tool_result image blocks as a content block array", () => {
       const mgr = new ConversationManager();
-      mgr.addToolResultMessage(
-        "tu-1",
-        [
-          { type: "text", text: "[Image: shot.png]" },
-          { type: "image", source: { type: "base64", media_type: "image/png", data: "QUJD" } },
-        ],
-        false,
-      );
+      mgr.addToolResultMessage("tu-1", "[Image: shot.png]", false, [
+        { type: "text", text: "[Image: shot.png]" },
+        { type: "image", source: { type: "base64", media_type: "image/png", data: "QUJD" } },
+      ]);
       const result = buildAnthropicMessages(mgr.getMessages());
       const block = asRecord(result[0].content[0]);
       expect(strArg(block, "type")).toBe("tool_result");
@@ -239,6 +235,20 @@ describe("ConversationManager", () => {
         "text",
         "image",
       ]);
+    });
+
+    it("passes native tool references through without duplicating the fallback", () => {
+      const mgr = new ConversationManager();
+      mgr.addToolResultMessage("tu-search", "Loaded mcp__linear__create_issue", false, [
+        { type: "tool_reference", tool_name: "mcp__linear__create_issue" },
+      ]);
+
+      const result = buildAnthropicMessages(mgr.getMessages());
+      const block = asRecord(result[0].content[0]);
+      expect(block.content).toEqual([
+        { type: "tool_reference", tool_name: "mcp__linear__create_issue" },
+      ]);
+      expect(JSON.stringify(block.content)).not.toContain("Loaded mcp__linear__create_issue");
     });
 
     it("marks the last non-image block for caching, not the trailing image", () => {

@@ -22,6 +22,7 @@
 
 import type { UsageInfo } from "../llm/events.js";
 import type { CompactBoundaryPayload } from "../session/session.js";
+import type { ToolResultContentBlock } from "../tools/types.js";
 
 export type AgentEvent =
   | { type: "stream_text"; text: string }
@@ -37,9 +38,8 @@ export type AgentEvent =
       type: "tool_result";
       toolName: string;
       toolId: string;
-      /** Tool output: plain text, or structured content blocks (e.g. images).
-       * Display-only consumers flatten arrays via contentToText. */
-      output: string | Record<string, unknown>[];
+      output: string;
+      contentBlocks?: ToolResultContentBlock[];
       isError: boolean;
       elapsed: number;
     }

@@ -37,7 +37,7 @@ import type { MCPServerConfig } from "../config/config.js";
 import { asImageMediaType, maybeResizeAndDownsampleImage } from "../images/image.js";
 import { createChildLogger } from "../logger/logger.js";
 
-import type { ToolSchema } from "@/tools/types.js";
+import type { ToolResult, ToolResultContentBlock, ToolSchema } from "@/tools/types.js";
 import { isRecord } from "@/utils/index.js";
 import { version } from "@/version.js";
 
@@ -79,18 +79,16 @@ function asDict(obj: Record<string, string | undefined>): Record<string, string>
 
 // MCP image content uses {type:"image", data, mimeType}; providers use
 // {type:"image", source:{type:"base64", media_type, data}}. Unsupported mime
-// types stay in the text form (JSON.stringify) as before.
+// types stay in the text fallback as before.
 const MCP_IMAGE_MEDIA_TYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
 
-/** Convert an MCP tool-call content array into a ToolResult output: plain
- *  text when there is no image, otherwise provider-style content blocks
- *  (leading text block + image blocks). Oversized images are resized and
- *  recompressed through the shared image pipeline. */
 export async function mcpContentToToolOutput(
   content: unknown[],
-): Promise<string | Record<string, unknown>[]> {
+): Promise<Pick<ToolResult, "output" | "contentBlocks">> {
   const textParts: string[] = [];
-  const imageBlocks: Record<string, unknown>[] = [];
+  const contentBlocks: ToolResultContentBlock[] = [];
+  let hasImage = false;
+
   for (const raw of content) {
     const c = isRecord(raw) ? raw : {};
     if (
@@ -104,7 +102,7 @@ export async function mcpContentToToolOutput(
           Buffer.from(c.data, "base64"),
           asImageMediaType(c.mimeType),
         );
-        imageBlocks.push({
+        contentBlocks.push({
           type: "image",
           source: {
             type: "base64",
@@ -112,21 +110,39 @@ export async function mcpContentToToolOutput(
             data: resized.data,
           },
         });
+        textParts.push(`[Image: ${resized.mediaType}]`);
+        hasImage = true;
         continue;
       } catch (err) {
         log.warn({ err }, "mcp image dropped (too large to fit the API limit)");
-        textParts.push("[note: an image returned by the tool was too large and was dropped]");
+        const note = "[note: an image returned by the tool was too large and was dropped]";
+        textParts.push(note);
+        contentBlocks.push({ type: "text", text: note });
         continue;
       }
     }
-    textParts.push(c.type === "text" && typeof c.text === "string" ? c.text : JSON.stringify(raw));
+
+    if (c.type === "image") {
+      const mimeType = typeof c.mimeType === "string" ? c.mimeType : "unknown";
+      const note = `[Unsupported image: ${mimeType}]`;
+      textParts.push(note);
+      contentBlocks.push({ type: "text", text: note });
+      continue;
+    }
+
+    const serialized = JSON.stringify(raw);
+    const text =
+      c.type === "text" && typeof c.text === "string"
+        ? c.text
+        : typeof serialized === "string"
+          ? serialized
+          : String(raw);
+    textParts.push(text);
+    contentBlocks.push({ type: "text", text });
   }
 
-  const text = textParts.join("\n");
-  if (imageBlocks.length === 0) {
-    return text;
-  }
-  return [...(text ? [{ type: "text", text }] : []), ...imageBlocks];
+  const output = textParts.join("\n");
+  return hasImage ? { output, contentBlocks } : { output };
 }
 
 export class MCPClient {
@@ -205,26 +221,17 @@ export class MCPClient {
     );
   }
 
-  /** Calls a tool and returns { output, isError }. isError mirrors the MCP
-   *  protocol's isError flag so the model knows when a tool failed.
-   *  Image content blocks pass through as provider-style blocks instead of
-   *  being flattened to JSON text. */
-  async callTool(
-    name: string,
-    args: Record<string, unknown>,
-  ): Promise<{ output: string | Record<string, unknown>[]; isError: boolean }> {
+  /** Calls a tool and preserves both its text fallback and provider-native rich content. */
+  async callTool(name: string, args: Record<string, unknown>): Promise<ToolResult> {
     if (!this.client) {
       throw new Error("Not connected");
     }
     const result = await this.client.callTool({ name, arguments: args });
-    let output: string | Record<string, unknown>[];
-    if (result.content && Array.isArray(result.content)) {
-      output = await mcpContentToToolOutput(result.content);
-    } else {
-      output = JSON.stringify(result);
-    }
-    // result.isError is set by the MCP server when the tool execution failed.
-    return { output, isError: result.isError === true };
+    const converted =
+      result.content && Array.isArray(result.content)
+        ? await mcpContentToToolOutput(result.content)
+        : { output: JSON.stringify(result) };
+    return { ...converted, isError: result.isError === true };
   }
 
   async disconnect(): Promise<void> {

@@ -20,8 +20,6 @@
  * SOFTWARE.
  */
 
-import { readFile } from "node:fs/promises";
-
 import { manageContext, forceCompact, AutoCompactTrackingState } from "../compact/compact.js";
 import { RecoveryState } from "../compact/recovery.js";
 import type { ConversationManager } from "../conversation/conversation.js";
@@ -38,11 +36,16 @@ import { coordinatorReminder } from "../prompt/coordinator.js";
 import { buildPlanModeReminder } from "../prompt/plan-mode.js";
 import { saveMessage, toolUsesToRecords, toolResultsToRecords } from "../session/session.js";
 import { getSessionFilePath } from "../session/session.js";
-import { applyBudget, isSpillReadback, persistLargeResult } from "../tool-result/budget.js";
+import {
+  applyBudget,
+  isSpillReadback,
+  persistLargeResult,
+  replaceToolResultContent,
+} from "../tool-result/budget.js";
 import type { FileStateCache } from "../tools/file-state-cache.js";
 import type { ToolRegistry } from "../tools/registry.js";
-import type { ToolSchema } from "../tools/types.js";
-import { asRecord, contentToText, strArg } from "../utils/index.js";
+import type { ToolResult, ToolSchema } from "../tools/types.js";
+import { asRecord, strArg } from "../utils/index.js";
 
 import type { AgentEvent } from "./events.js";
 import { StreamingExecutor } from "./streaming-executor.js";
@@ -535,25 +538,27 @@ export class Agent {
           const toolResults: ToolResultBlock[] = [];
           for (const r of results) {
             if (r.type === "tool_result") {
-              let content: ToolResultBlock["content"] = r.output;
-              // Image content blocks are never spilled — they must be sent as-is to the API.
-              if (
-                typeof content === "string" &&
-                content.length > MAX_OUTPUT_CHARS &&
-                !exemptIds.has(r.toolId)
-              ) {
-                // Single result exceeds the limit: write to disk and replace with
-                // a preview. If the write fails the content is kept as-is; either
-                // way the aggregate budget need not retry, so both outcomes are
-                // marked exempt.
-                content = persistLargeResult(this.workDir, this.sessionId, r.toolId, content);
+              const toolResult: ToolResultBlock = {
+                toolUseId: r.toolId,
+                content: r.output,
+                ...(r.contentBlocks?.length ? { contentBlocks: r.contentBlocks } : {}),
+                isError: r.isError,
+              };
+              if (toolResult.content.length > MAX_OUTPUT_CHARS && !exemptIds.has(r.toolId)) {
+                // Single result exceeds the limit: write to disk and replace its
+                // text fallback and rich text blocks with the same preview.
+                const replacement = persistLargeResult(
+                  this.workDir,
+                  this.sessionId,
+                  r.toolId,
+                  toolResult.content,
+                );
+                if (replacement !== toolResult.content) {
+                  replaceToolResultContent(toolResult, replacement);
+                }
                 exemptIds.add(r.toolId);
               }
-              toolResults.push({
-                toolUseId: r.toolId,
-                content,
-                isError: r.isError,
-              });
+              toolResults.push(toolResult);
             }
           }
           // Aggregate budget: results from a parallel tool batch land in a single
@@ -796,27 +801,18 @@ export class Agent {
     r: {
       toolId: string;
       toolName: string;
-      result: {
-        output: string | Record<string, unknown>[];
-        isError: boolean;
-      };
+      result: ToolResult;
       elapsed: number;
     },
     toolUses: ToolUseBlock[],
     events: AgentEvent[],
   ): Promise<void> {
-    // Snapshot ReadFile content into recovery state so a later auto-compact
-    // can replay it after the transcript collapses into a summary.
-    // Image results (array output) are skipped: reading a binary as utf-8 would poison the snapshot.
-    if (!r.result.isError && r.toolName === "ReadFile" && typeof r.result.output === "string") {
+    // Snapshot exactly what text ReadFile returned so recovery stays aligned with what the model saw.
+    if (!r.result.isError && r.toolName === "ReadFile" && !r.result.contentBlocks?.length) {
       const tu = toolUses.find((t) => t.toolUseId === r.toolId);
       const p = strArg(tu?.arguments ?? {}, "file_path");
       if (p) {
-        try {
-          this.recoveryState.recordFileRead(p, await readFile(p, "utf-8"));
-        } catch {
-          /* best-effort; recovery snapshots are optional */
-        }
+        this.recoveryState.recordFileRead(p, r.result.output);
       }
     }
 
@@ -825,6 +821,7 @@ export class Agent {
       toolName: r.toolName,
       toolId: r.toolId,
       output: r.result.output,
+      ...(r.result.contentBlocks?.length ? { contentBlocks: r.result.contentBlocks } : {}),
       isError: r.result.isError,
       elapsed: r.elapsed,
     });
@@ -834,7 +831,7 @@ export class Agent {
       const hookResults = await this.hookEngine.fire("post_tool_use", {
         event: "post_tool_use",
         toolName: r.toolName,
-        message: contentToText(r.result.output),
+        message: r.result.output,
       });
       for (const hr of hookResults) {
         if (hr.output) {

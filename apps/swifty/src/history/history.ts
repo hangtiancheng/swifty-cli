@@ -29,7 +29,7 @@ import { createChildLogger } from "../logger/logger.js";
 
 const log = createChildLogger({ module: "history" });
 
-const MAX_ENTRIES = 200;
+export const MAX_HISTORY_ENTRIES = 200;
 const FILENAME = "prompt_history.jsonl";
 
 const JSONLSchema = z.looseObject({ text: z.string() });
@@ -54,28 +54,26 @@ export function load(dir: string): string[] {
           log.error({ err }, "parse history line failed");
           return "";
         }
-      });
+      })
+      .filter(Boolean)
+      .slice(-MAX_HISTORY_ENTRIES);
   } catch (err2) {
     log.error({ err: err2 }, "load history failed");
     return [];
   }
 }
 
-export function append(dir: string, text: string): void {
+export function append(dir: string, text: string): string[] {
   const filePath = join(dir, FILENAME);
   mkdirSync(dir, { recursive: true });
 
   const entries = load(dir);
 
-  if (entries.length > 0 && entries[entries.length - 1] === text) {
-    return;
+  if (entries.length === 0 || entries[entries.length - 1] !== text) {
+    entries.push(text);
   }
-
-  entries.push(text);
-  while (entries.length > MAX_ENTRIES) {
-    entries.shift();
-  }
-
-  const lines = entries.map((t) => JSON.stringify({ text: t })).join("\n") + "\n";
+  const retained = entries.slice(-MAX_HISTORY_ENTRIES);
+  const lines = retained.map((entry) => JSON.stringify({ text: entry })).join("\n") + "\n";
   writeFileSync(filePath, lines, "utf-8");
+  return retained;
 }

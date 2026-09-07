@@ -83,9 +83,27 @@ describe("MemoryExtractor", () => {
     const memDir = join(workDir, ".swifty", "memory");
     expect(existsSync(join(memDir, "build-cmd.md"))).toBe(true);
     const file = readFileSync(join(memDir, "build-cmd.md"), "utf-8");
-    expect(file).toContain("name: build-cmd");
-    expect(file).toContain("type: project");
+    expect(file).toContain('name: "build-cmd"');
+    expect(file).toContain('type: "project"');
     expect(file).toContain("Run bun run build.");
+  });
+
+  it("round-trips descriptions containing YAML special characters", async () => {
+    const description = 'blocked: package --- #1 says "wait"';
+    const response = [
+      "MEMORY_NAME: yaml-safe",
+      "MEMORY_TYPE: project",
+      `MEMORY_DESC: ${description}`,
+      "MEMORY_BODY: body",
+    ].join("\n");
+    const workDir = mkdtempSync(join(tmpdir(), "swifty-mem-"));
+
+    await new MemoryExtractor(new MockClient(response), workDir).extract("conversation");
+
+    const memory = new MemoryManager(workDir)
+      .loadAll()
+      .find((entry) => entry.path === join(workDir, ".swifty", "memory", "yaml-safe.md"));
+    expect(memory?.description).toBe(description);
   });
 
   it("returns nothing when the model says NONE", async () => {
@@ -94,6 +112,27 @@ describe("MemoryExtractor", () => {
       "conversation",
     );
     expect(saved).toEqual([]);
+  });
+});
+
+describe("MemoryManager malformed files", () => {
+  it("skips malformed frontmatter from load, index, and recall", async () => {
+    const workDir = mkdtempSync(join(tmpdir(), "swifty-malformed-"));
+    const dir = join(workDir, ".swifty", "memory");
+    mkdirSync(dir, { recursive: true });
+    const badPath = join(dir, "bad.md");
+    writeFileSync(
+      badPath,
+      "---\nname: bad\ndescription: package: cannot publish\ntype: project\n---\n\nbody\n",
+      "utf-8",
+    );
+    const manager = new MemoryManager(workDir);
+
+    expect(manager.loadAll().some((memory) => memory.path === badPath)).toBe(false);
+    expect(readFileSync(join(dir, "MEMORY.md"), "utf-8")).not.toContain("bad.md");
+    await expect(
+      manager.findRelevantMemories("query", new MockClient('{"selected_memories":["bad.md"]}')),
+    ).resolves.toEqual([]);
   });
 });
 

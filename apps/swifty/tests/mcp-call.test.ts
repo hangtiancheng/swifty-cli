@@ -457,6 +457,20 @@ describe("per-mode tool selection", () => {
     expect(names("native")).toEqual(["ToolSearch", "mcp__linear__create_issue"]);
   });
 
+  test("native ToolSearch returns Anthropic tool references", async () => {
+    const registry = new ToolRegistry();
+    const tool = new FakeMcpTool("linear", "create_issue", inputSchema);
+    registry.register(tool);
+    applyMode(registry, "native");
+
+    const result = await new ToolSearchTool(registry).execute(toolContext, {
+      query: `select:${tool.name}`,
+    });
+
+    expect(result.output).toContain(tool.name);
+    expect(result.contentBlocks).toEqual([{ type: "tool_reference", tool_name: tool.name }]);
+  });
+
   test("dispatch: both are sent, MCP tools are not", () => {
     expect(names("dispatch")).toEqual(["McpCall", "ToolSearch"]);
   });

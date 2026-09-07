@@ -30,6 +30,7 @@ import {
   forceCompact,
   type UsageAnchor,
 } from "../src/compact/compact.js";
+import { RecoveryState } from "../src/compact/recovery.js";
 import { ConversationManager, type Message } from "../src/conversation/conversation.js";
 import type { LLMClient } from "../src/llm/client.js";
 import type { StreamEvent } from "../src/llm/events.js";
@@ -125,12 +126,18 @@ describe("currentContextTokens (real-usage anchoring)", () => {
       { role: "user" as const, content: "", toolResults: content },
     ];
     const textOnly = result([
-      { toolUseId: "t1", content: [{ type: "text", text: "x".repeat(7) }], isError: false },
+      {
+        toolUseId: "t1",
+        content: "x".repeat(7),
+        contentBlocks: [{ type: "text", text: "x".repeat(7) }],
+        isError: false,
+      },
     ]);
     const withImage = result([
       {
         toolUseId: "t1",
-        content: [
+        content: "x".repeat(7),
+        contentBlocks: [
           { type: "text", text: "x".repeat(7) },
           { type: "image", source: { type: "base64", media_type: "image/png", data: "AA" } },
         ],
@@ -138,6 +145,18 @@ describe("currentContextTokens (real-usage anchoring)", () => {
       },
     ]);
     expect(estimateMessages(textOnly)).toBe(estChars(7));
+    expect(
+      estimateMessages(
+        result([
+          {
+            toolUseId: "t2",
+            content: "x",
+            contentBlocks: [{ type: "text", text: "y".repeat(70) }],
+            isError: false,
+          },
+        ]),
+      ),
+    ).toBe(estChars(70));
     // IMAGE_CHAR_EQUIV = 7000 chars → estimated at chars/3.5, not zero.
     expect(estimateMessages(withImage)).toBe(estChars(7 + 7000));
   });
@@ -297,5 +316,37 @@ describe("doCompact via forceCompact (keep recent verbatim)", () => {
     const joined = after.map((m) => contentToText(m.content)).join("\n");
     expect(joined).toContain("only-q marker");
     expect(joined).not.toContain("This session continues from a previous conversation");
+  });
+});
+
+describe("RecoveryState retention", () => {
+  it("keeps only the five most recent bounded file snapshots", () => {
+    const recovery = new RecoveryState();
+
+    for (let index = 0; index < 10; index++) {
+      recovery.recordFileRead(`/tmp/file-${String(index)}.txt`, "x".repeat(30_000));
+    }
+
+    const files = recovery.snapshotFiles(100);
+    expect(files).toHaveLength(5);
+    expect(files.map((file) => file.path).sort()).toEqual(
+      [5, 6, 7, 8, 9].map((index) => `/tmp/file-${String(index)}.txt`),
+    );
+    expect(files.every((file) => file.content.length <= 17_500)).toBe(true);
+  });
+
+  it("refreshes an existing path without growing retention", () => {
+    const recovery = new RecoveryState();
+    for (let index = 0; index < 5; index++) {
+      recovery.recordFileRead(`/tmp/file-${String(index)}.txt`, `old-${String(index)}`);
+    }
+
+    recovery.recordFileRead("/tmp/file-0.txt", "new-content");
+    recovery.recordFileRead("/tmp/file-5.txt", "latest");
+
+    const files = recovery.snapshotFiles(100);
+    expect(files).toHaveLength(5);
+    expect(files.some((file) => file.path === "/tmp/file-1.txt")).toBe(false);
+    expect(files.find((file) => file.path === "/tmp/file-0.txt")?.content).toBe("new-content");
   });
 });

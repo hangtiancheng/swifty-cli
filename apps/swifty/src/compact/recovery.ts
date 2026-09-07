@@ -48,7 +48,11 @@ function truncateByTokens(s: string, tokenBudget: number): string {
   if (maxChars <= 0 || maxChars >= s.length) {
     return s;
   }
-  return s.slice(0, maxChars) + "\n… (content truncated)";
+  const suffix = "\n… (content truncated)";
+  if (maxChars <= suffix.length) {
+    return suffix.slice(0, maxChars);
+  }
+  return s.slice(0, maxChars - suffix.length) + suffix;
 }
 
 // function firstLine(s: string): string {
@@ -76,7 +80,19 @@ export class RecoveryState {
   private skills = new Map<string, SkillInvocationRecord>();
 
   recordFileRead(path: string, content: string): void {
-    this.files.set(path, { path, content, timestamp: Date.now() });
+    this.files.delete(path);
+    this.files.set(path, {
+      path,
+      content: truncateByTokens(content, RECOVERY_TOKENS_PER_FILE),
+      timestamp: Date.now(),
+    });
+    while (this.files.size > RECOVERY_FILE_LIMIT) {
+      const oldestPath = this.files.keys().next().value;
+      if (typeof oldestPath !== "string") {
+        break;
+      }
+      this.files.delete(oldestPath);
+    }
   }
 
   recordSkillInvocation(name: string, body: string): void {

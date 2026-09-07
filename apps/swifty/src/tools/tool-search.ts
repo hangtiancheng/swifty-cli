@@ -30,6 +30,7 @@ import {
   type ToolCategory,
   type ToolContext,
   type ToolResult,
+  type ToolResultContentBlock,
   type ToolSchema,
 } from "./types.js";
 
@@ -112,10 +113,13 @@ export class ToolSearchTool implements Tool {
             `Loaded ${String(mcpNames.length)} tool(s): ${mcpNames.join(", ")}. ` +
             "You can call them directly now.",
           isError: false,
-          contentBlocks: mcpNames.map((name) => ({
-            type: "tool_reference",
-            tool_name: name,
-          })),
+          contentBlocks: mcpNames.map(
+            (name) =>
+              ({
+                type: "tool_reference",
+                tool_name: name,
+              }) satisfies ToolResultContentBlock,
+          ),
         });
       }
 

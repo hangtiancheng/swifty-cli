@@ -31,45 +31,43 @@ const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 const DATA = Buffer.concat([PNG_MAGIC, Buffer.from("mcp-image")]).toString("base64");
 
 describe("mcpContentToToolOutput", () => {
-  it("keeps text-only content as a plain string", async () => {
-    const out = await mcpContentToToolOutput([
+  it("keeps text-only content as a plain string fallback", async () => {
+    const result = await mcpContentToToolOutput([
       { type: "text", text: "hello" },
       { type: "text", text: "world" },
     ]);
-    expect(out).toBe("hello\nworld");
+    expect(result).toEqual({ output: "hello\nworld" });
   });
 
-  it("passes image content through as provider-style blocks", async () => {
-    const out = await mcpContentToToolOutput([
+  it("preserves text and image order in Anthropic content blocks", async () => {
+    const result = await mcpContentToToolOutput([
       { type: "text", text: "screenshot below" },
       { type: "image", data: DATA, mimeType: "image/png" },
     ]);
-    if (typeof out === "string") {
-      throw new Error("expected content blocks");
-    }
-    expect(out[0]).toEqual({ type: "text", text: "screenshot below" });
-    expect(out[1].type).toBe("image");
-    const source = out[1].source;
+    expect(result.output).toBe("screenshot below\n[Image: image/png]");
+    expect(result.output).not.toContain(DATA);
+    expect(result.contentBlocks?.[0]).toEqual({ type: "text", text: "screenshot below" });
+    expect(result.contentBlocks?.[1]?.type).toBe("image");
+    const source = isRecord(result.contentBlocks?.[1]) ? result.contentBlocks[1].source : null;
     expect(isRecord(source) ? source.media_type : null).toBe("image/png");
     expect(isRecord(source) ? source.data : null).toBe(DATA);
   });
 
-  it("omits the text block when the content is image-only", async () => {
-    const out = await mcpContentToToolOutput([
+  it("keeps an image-only fallback separate from its rich block", async () => {
+    const result = await mcpContentToToolOutput([
       { type: "image", data: DATA, mimeType: "image/png" },
     ]);
-    if (typeof out === "string") {
-      throw new Error("expected content blocks");
-    }
-    expect(out).toHaveLength(1);
-    expect(out[0].type).toBe("image");
+    expect(result.output).toBe("[Image: image/png]");
+    expect(result.contentBlocks).toHaveLength(1);
+    expect(result.contentBlocks?.[0]?.type).toBe("image");
   });
 
-  it("keeps unsupported mime types in the JSON text form", async () => {
-    const out = await mcpContentToToolOutput([
+  it("keeps unsupported mime types in the JSON text fallback", async () => {
+    const result = await mcpContentToToolOutput([
       { type: "image", data: DATA, mimeType: "image/tiff" },
     ]);
-    expect(typeof out).toBe("string");
-    expect(out).toContain("image/tiff");
+    expect(result.contentBlocks).toBeUndefined();
+    expect(result.output).toBe("[Unsupported image: image/tiff]");
+    expect(result.output).not.toContain(DATA);
   });
 });

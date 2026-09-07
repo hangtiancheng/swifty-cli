@@ -20,14 +20,158 @@
  * SOFTWARE.
  */
 
+import type Anthropic from "@anthropic-ai/sdk";
+
 import type { FileStateCache } from "./file-state-cache.js";
 
 import type { FileHistory } from "@/file-history/file-history.js";
 
 export type ToolCategory = "read" | "write" | "command";
 
+type AnthropicToolResultContent = NonNullable<Anthropic.ToolResultBlockParam["content"]>;
+export type ToolResultContentBlock = Exclude<AnthropicToolResultContent, string>[number];
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+type TextToolResultBlock = Extract<ToolResultContentBlock, { type: "text" }>;
+type ImageToolResultBlock = Extract<ToolResultContentBlock, { type: "image" }>;
+type DocumentToolResultBlock = Extract<ToolResultContentBlock, { type: "document" }>;
+type ImageMediaType = Extract<ImageToolResultBlock["source"], { type: "base64" }>["media_type"];
+
+const IMAGE_MEDIA_TYPES: ReadonlySet<string> = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/gif",
+  "image/webp",
+]);
+
+function isImageMediaType(value: string): value is ImageMediaType {
+  return IMAGE_MEDIA_TYPES.has(value);
+}
+
+function normalizeTextBlock(value: unknown): TextToolResultBlock | null {
+  return isRecord(value) && value.type === "text" && typeof value.text === "string"
+    ? { type: "text", text: value.text }
+    : null;
+}
+
+function normalizeImageBlock(value: unknown): ImageToolResultBlock | null {
+  if (!isRecord(value) || value.type !== "image" || !isRecord(value.source)) {
+    return null;
+  }
+  if (value.source.type === "url" && typeof value.source.url === "string") {
+    return { type: "image", source: { type: "url", url: value.source.url } };
+  }
+  if (
+    value.source.type === "base64" &&
+    typeof value.source.media_type === "string" &&
+    isImageMediaType(value.source.media_type) &&
+    typeof value.source.data === "string"
+  ) {
+    return {
+      type: "image",
+      source: {
+        type: "base64",
+        media_type: value.source.media_type,
+        data: value.source.data,
+      },
+    };
+  }
+  return null;
+}
+
+function normalizeDocumentBlock(value: Record<string, unknown>): DocumentToolResultBlock | null {
+  if (value.type !== "document" || !isRecord(value.source)) {
+    return null;
+  }
+
+  let source: DocumentToolResultBlock["source"] | null = null;
+  if (value.source.type === "url" && typeof value.source.url === "string") {
+    source = { type: "url", url: value.source.url };
+  } else if (
+    value.source.type === "base64" &&
+    value.source.media_type === "application/pdf" &&
+    typeof value.source.data === "string"
+  ) {
+    source = { type: "base64", media_type: "application/pdf", data: value.source.data };
+  } else if (
+    value.source.type === "text" &&
+    value.source.media_type === "text/plain" &&
+    typeof value.source.data === "string"
+  ) {
+    source = { type: "text", media_type: "text/plain", data: value.source.data };
+  } else if (value.source.type === "content") {
+    if (typeof value.source.content === "string") {
+      source = { type: "content", content: value.source.content };
+    } else if (Array.isArray(value.source.content)) {
+      const content: (TextToolResultBlock | ImageToolResultBlock)[] = [];
+      for (const raw of value.source.content) {
+        const block = normalizeTextBlock(raw) ?? normalizeImageBlock(raw);
+        if (!block) {
+          return null;
+        }
+        content.push(block);
+      }
+      source = { type: "content", content };
+    }
+  }
+  if (!source) {
+    return null;
+  }
+
+  return {
+    type: "document",
+    source,
+    ...(typeof value.title === "string" || value.title === null ? { title: value.title } : {}),
+    ...(typeof value.context === "string" || value.context === null
+      ? { context: value.context }
+      : {}),
+  };
+}
+
+export function normalizeToolResultContentBlock(value: unknown): ToolResultContentBlock | null {
+  const text = normalizeTextBlock(value);
+  if (text) {
+    return text;
+  }
+  const image = normalizeImageBlock(value);
+  if (image) {
+    return image;
+  }
+  if (!isRecord(value)) {
+    return null;
+  }
+  if (value.type === "tool_reference" && typeof value.tool_name === "string") {
+    return { type: "tool_reference", tool_name: value.tool_name };
+  }
+  if (
+    value.type === "search_result" &&
+    typeof value.source === "string" &&
+    typeof value.title === "string" &&
+    Array.isArray(value.content)
+  ) {
+    const content: TextToolResultBlock[] = [];
+    for (const raw of value.content) {
+      const block = normalizeTextBlock(raw);
+      if (!block) {
+        return null;
+      }
+      content.push(block);
+    }
+    return { type: "search_result", source: value.source, title: value.title, content };
+  }
+  return normalizeDocumentBlock(value);
+}
+
+export function isToolResultContentBlock(value: unknown): value is ToolResultContentBlock {
+  return normalizeToolResultContentBlock(value) !== null;
+}
+
 export interface ToolResult {
-  output: string | Record<string, unknown>[];
+  output: string;
+  contentBlocks?: ToolResultContentBlock[];
   isError: boolean;
 }
 

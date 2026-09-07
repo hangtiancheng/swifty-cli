@@ -140,40 +140,67 @@ Respond with valid JSON only, no markdown, in this exact shape: {"selected_memor
 export class MemoryManager {
   private userDir: string;
   private projectDir: string;
+  private malformedFingerprints = new Map<string, string>();
 
   constructor(workDir: string) {
     this.userDir = join(homedir(), ".swifty", "memory");
     this.projectDir = join(workDir, ".swifty", "memory");
   }
 
-  loadAll(): MemoryFile[] {
+  private readMemory(fullPath: string): { memory: MemoryFile; mtimeMs: number } | null {
+    let fingerprint = "unknown";
+    try {
+      const stat = statSync(fullPath);
+      fingerprint = `${String(stat.mtimeMs)}:${String(stat.size)}`;
+      const parsed = parseFrontmatter(readFileSync(fullPath, "utf-8"));
+      this.malformedFingerprints.delete(fullPath);
+      return {
+        memory: {
+          path: fullPath,
+          name: parsed.name ?? basename(fullPath, ".md"),
+          description: parsed.description ?? "",
+          type: parsed.type ?? "reference",
+          content: parsed.body,
+        },
+        mtimeMs: stat.mtimeMs,
+      };
+    } catch (err) {
+      if (this.malformedFingerprints.get(fullPath) !== fingerprint) {
+        this.malformedFingerprints.set(fullPath, fingerprint);
+        log.error({ err, path: fullPath }, "memory operation failed");
+      }
+      return null;
+    }
+  }
+
+  private scanAllMemories(): MemoryFile[] {
     const memories: MemoryFile[] = [];
     for (const dir of [this.userDir, this.projectDir]) {
       if (!existsSync(dir)) {
         continue;
       }
-      const files = readdirSync(dir).filter((f) => f.endsWith(".md") && f !== MEMORY_INDEX_NAME);
+      let files: string[];
+      try {
+        files = readdirSync(dir).filter(
+          (file) => file.endsWith(".md") && file !== MEMORY_INDEX_NAME,
+        );
+      } catch (err) {
+        log.error({ err, path: dir }, "memory operation failed");
+        continue;
+      }
       for (const file of files) {
-        const fullPath = join(dir, file);
-        try {
-          const raw = readFileSync(fullPath, "utf-8");
-          const parsed = parseFrontmatter(raw);
-          if (parsed) {
-            memories.push({
-              path: fullPath,
-              name: parsed.name ?? file.replace(".md", ""),
-              description: parsed.description ?? "",
-              type: parsed.type ?? "reference",
-              content: parsed.body,
-            });
-          }
-        } catch (err) {
-          log.error({ err }, "memory operation failed");
-          continue;
+        const loaded = this.readMemory(join(dir, file));
+        if (loaded) {
+          memories.push(loaded.memory);
         }
       }
     }
-    this.rebuildIndex();
+    return memories;
+  }
+
+  loadAll(): MemoryFile[] {
+    const memories = this.scanAllMemories();
+    this.writeIndex(memories);
     return memories;
   }
 
@@ -254,63 +281,37 @@ export class MemoryManager {
    * alphabetically by name, truncated at MAX_ENTRYPOINT_LINES / MAX_ENTRYPOINT_BYTES.
    */
   rebuildIndex(): void {
-    interface Entry {
-      name: string;
-      relPath: string;
-      description: string;
-    }
-    const entries: Entry[] = [];
+    this.writeIndex(this.scanAllMemories());
+  }
 
-    for (const dir of [this.userDir, this.projectDir]) {
-      if (!existsSync(dir)) {
-        continue;
-      }
-      const files = readdirSync(dir).filter((f) => f.endsWith(".md") && f !== MEMORY_INDEX_NAME);
-      try {
-        for (const file of files) {
-          const fullPath = join(dir, file);
-          try {
-            const raw = readFileSync(fullPath, "utf-8");
-            const parsed = parseFrontmatter(raw);
-            if (!parsed) {
-              continue;
-            }
+  private writeIndex(memories: MemoryFile[]): void {
+    const entries = memories
+      .map((memory) => ({
+        name: memory.name,
+        relPath: relative(this.projectDir, memory.path) || basename(memory.path),
+        description: memory.description,
+      }))
+      .toSorted((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
 
-            const name = parsed.name ?? file.replace(".md", "");
-            const description = parsed.description ?? "";
-            // Relative path from projectDir so the link works from MEMORY.md
-            const relativePath = relative(this.projectDir, fullPath) || file;
+    const lines = entries.map((entry) =>
+      entry.description
+        ? `- [${entry.name}](${entry.relPath}) — ${entry.description}`
+        : `- [${entry.name}](${entry.relPath})`,
+    );
+    const content = capEntrypoint(lines.slice(0, MAX_ENTRYPOINT_LINES).join("\n")) + "\n";
+    const indexPath = join(this.projectDir, MEMORY_INDEX_NAME);
 
-            entries.push({ name, relPath: relativePath, description });
-          } catch (err) {
-            log.error({ err }, "memory operation failed");
-            continue;
-          }
-        }
-      } catch (err2) {
-        log.error({ err: err2 }, "memory operation failed");
-        continue;
-      }
-    }
-
-    // Sort alphabetically by name (case-insensitive)
-    entries.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
-
-    // Build index lines
-    const lines: string[] = [];
-    for (const e of entries) {
-      if (e.description) {
-        lines.push(`- [${e.name}](${e.relPath}) — ${e.description}`);
-      } else {
-        lines.push(`- [${e.name}](${e.relPath})`);
-      }
-    }
-
-    const content = capEntrypoint(lines.slice(0, MAX_ENTRYPOINT_LINES).join("\n"));
-
-    // Write MEMORY.md into projectDir, ensuring the dir exists
     mkdirSync(this.projectDir, { recursive: true });
-    writeFileSync(join(this.projectDir, MEMORY_INDEX_NAME), content + "\n", "utf-8");
+    if (existsSync(indexPath)) {
+      try {
+        if (readFileSync(indexPath, "utf-8") === content) {
+          return;
+        }
+      } catch {
+        // Rewrite an unreadable index from the successfully scanned memories.
+      }
+    }
+    writeFileSync(indexPath, content, "utf-8");
   }
 
   // ── Feature 2: findRelevantMemories ────────────────────────────────
@@ -332,7 +333,7 @@ export class MemoryManager {
       [this.userDir, "user"],
       [this.projectDir, "project"],
     ] as const) {
-      const headers = scanMemoryHeaders(dir, scope);
+      const headers = this.scanMemoryHeaders(dir, scope);
       allHeaders.push(...headers);
     }
 
@@ -407,6 +408,39 @@ export class MemoryManager {
     return selected;
   }
 
+  private scanMemoryHeaders(dir: string, scope: string): MemoryHeader[] {
+    if (!existsSync(dir)) {
+      return [];
+    }
+
+    let files: string[];
+    try {
+      files = readdirSync(dir).filter((file) => file.endsWith(".md") && file !== MEMORY_INDEX_NAME);
+    } catch (err) {
+      log.error({ err, path: dir }, "memory operation failed");
+      return [];
+    }
+
+    const headers: MemoryHeader[] = [];
+    for (const file of files) {
+      const loaded = this.readMemory(join(dir, file));
+      if (!loaded) {
+        continue;
+      }
+      headers.push({
+        filename: file,
+        filePath: loaded.memory.path,
+        scope,
+        mtimeMs: loaded.mtimeMs,
+        description: loaded.memory.description,
+        type: loaded.memory.type,
+      });
+    }
+
+    headers.sort((a, b) => b.mtimeMs - a.mtimeMs);
+    return headers.slice(0, MAX_ENTRYPOINT_LINES);
+  }
+
   renderReminder(memories: RelevantMemory[]): string {
     if (memories.length === 0) {
       return "";
@@ -432,61 +466,6 @@ export class MemoryManager {
     }
     return parts.join("\n");
   }
-}
-
-/**
- * Scans a memory directory for .md files (excluding MEMORY.md), reads
- * their frontmatter, and returns headers sorted newest-first (capped at
- * MAX_ENTRYPOINT_LINES files).
- */
-function scanMemoryHeaders(dir: string, scope: string): MemoryHeader[] {
-  if (!existsSync(dir)) {
-    return [];
-  }
-
-  let files: string[];
-  try {
-    files = readdirSync(dir).filter((f) => f.endsWith(".md") && f !== MEMORY_INDEX_NAME);
-  } catch (err) {
-    log.error({ err }, "memory operation failed");
-    return [];
-  }
-
-  const headers: MemoryHeader[] = [];
-  for (const file of files) {
-    const fullPath = join(dir, file);
-    try {
-      const stat = statSync(fullPath);
-      if (!stat.isFile()) {
-        continue;
-      }
-
-      const raw = readFileSync(fullPath, "utf-8");
-      const parsed = parseFrontmatter(raw);
-      if (!parsed) {
-        continue;
-      }
-
-      headers.push({
-        filename: file,
-        filePath: fullPath,
-        scope,
-        mtimeMs: stat.mtimeMs,
-        description: parsed.description ?? "",
-        type: parsed.type ?? "",
-      });
-    } catch (err) {
-      log.error({ err }, "memory operation failed");
-      continue;
-    }
-  }
-
-  // Sort newest-first
-  headers.sort((a, b) => b.mtimeMs - a.mtimeMs);
-  if (headers.length > MAX_ENTRYPOINT_LINES) {
-    headers.length = MAX_ENTRYPOINT_LINES;
-  }
-  return headers;
 }
 
 /**
@@ -560,33 +539,26 @@ interface ParsedFrontmatter {
  * Parses frontmatter and extracts name/description/type.
  * The type field is read from the top level first; the nested metadata.type form is also accepted.
  */
-function parseFrontmatter(content: string): ParsedFrontmatter | null {
+function parseFrontmatter(content: string): ParsedFrontmatter {
   if (!content.startsWith("---")) {
     return { body: content };
   }
 
-  const endIdx = content.indexOf("---", 3);
-  if (endIdx === -1) {
-    return { body: content };
+  const match = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(content);
+  if (!match) {
+    throw new Error("Memory frontmatter is missing its closing delimiter");
   }
 
-  const frontmatter = content.slice(3, endIdx).trim();
-  const body = content.slice(endIdx + 3).trim();
-
-  try {
-    const raw: unknown = yaml.load(frontmatter);
-    const parsed = parse(FrontmatterSchema, raw);
-    // Prefer top-level type, falling back to metadata.type (legacy TS format)
-    const topType = parsed.type;
-    const nestedType = parsed.metadata?.type;
-    return {
-      name: parsed.name,
-      description: parsed.description,
-      type: topType ?? nestedType,
-      body,
-    };
-  } catch (err) {
-    log.error({ err }, "memory operation failed");
-    return { body: content };
-  }
+  const frontmatter = match[1];
+  const body = content.slice(match[0].length).trim();
+  const raw: unknown = yaml.load(frontmatter);
+  const parsed = parse(FrontmatterSchema, raw);
+  const topType = parsed.type;
+  const nestedType = parsed.metadata?.type;
+  return {
+    name: parsed.name,
+    description: parsed.description,
+    type: topType ?? nestedType,
+    body,
+  };
 }

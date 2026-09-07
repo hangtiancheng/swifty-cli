@@ -20,6 +20,8 @@
  * SOFTWARE.
  */
 
+import type { ToolResultContentBlock } from "../tools/types.js";
+
 import { contentToText } from "@/utils";
 
 export interface ToolUseBlock {
@@ -30,7 +32,8 @@ export interface ToolUseBlock {
 
 export interface ToolResultBlock {
   toolUseId: string;
-  content: string | Record<string, unknown>[];
+  content: string;
+  contentBlocks?: ToolResultContentBlock[];
   isError: boolean;
 }
 
@@ -94,13 +97,21 @@ export class ConversationManager {
 
   addToolResultMessage(
     toolUseId: string,
-    content: string | Record<string, unknown>[],
+    content: string,
     isError: boolean,
+    contentBlocks?: ToolResultContentBlock[],
   ): void {
     this.history.push({
       role: "user",
       content: "",
-      toolResults: [{ toolUseId, content, isError }],
+      toolResults: [
+        {
+          toolUseId,
+          content,
+          ...(contentBlocks?.length ? { contentBlocks } : {}),
+          isError,
+        },
+      ],
     });
   }
 

@@ -222,8 +222,7 @@ export function buildAnthropicMessages(messages: Message[]): Anthropic.MessagePa
           type: "tool_result", // tool result
           tool_use_id: tr.toolUseId,
           is_error: tr.isError,
-          // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
-          content: tr.content as Anthropic.ToolResultBlockParam["content"],
+          content: tr.contentBlocks?.length ? tr.contentBlocks : tr.content,
         });
       }
 

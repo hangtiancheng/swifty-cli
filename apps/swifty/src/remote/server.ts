@@ -1055,7 +1055,7 @@ export class RemoteServer {
           data: {
             toolId: ev.toolId,
             toolName: ev.toolName,
-            output: contentToText(ev.output),
+            output: ev.output,
             isError: ev.isError,
             elapsed: ev.elapsed,
           },
@@ -1524,7 +1524,8 @@ export class RemoteServer {
           msg.toolResults.map((tr) => ({
             toolUseId: tr.toolUseId,
             content: tr.content,
-            isError: tr.isError ?? false,
+            ...(tr.contentBlocks?.length ? { contentBlocks: tr.contentBlocks } : {}),
+            isError: tr.isError,
           })),
         );
       } else if (msg.role === "user") {

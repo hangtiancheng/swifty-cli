@@ -33,6 +33,7 @@ import {
   newSessionId,
   saveCompactBoundary,
   rebuildFromSession,
+  toolResultsToRecords,
   COMPACT_BOUNDARY,
 } from "../src/session/session.js";
 import { asString, contentToText } from "../src/utils/index.js";
@@ -114,6 +115,71 @@ describe("session save/load round-trip", () => {
       type: "image",
       source: { type: "base64", media_type: "image/png", data },
     });
+  });
+
+  it("round-trips split tool-result text and rich blocks", () => {
+    const workDir = mkdtempSync(join(tmpdir(), "swifty-sess-"));
+    const id = newSessionId();
+    const data = Buffer.from("tool-image").toString("base64");
+
+    saveMessage(workDir, id, {
+      role: "user",
+      content: "",
+      timestamp: t0,
+      tool_results: toolResultsToRecords([
+        {
+          toolUseId: "tool-1",
+          content: "screenshot\n[Image: image/png]",
+          contentBlocks: [
+            { type: "text", text: "screenshot" },
+            { type: "image", source: { type: "base64", media_type: "image/png", data } },
+          ],
+          isError: false,
+        },
+      ]),
+    });
+
+    const raw = readFileSync(join(workDir, ".swifty", "sessions", `${id}.jsonl`), "utf-8");
+    expect(raw).toContain('"content_blocks"');
+    const restored = rebuildFromSession(loadSession(workDir, id));
+    expect(restored[0]?.toolResults?.[0]).toEqual({
+      toolUseId: "tool-1",
+      content: "screenshot\n[Image: image/png]",
+      contentBlocks: [
+        { type: "text", text: "screenshot" },
+        { type: "image", source: { type: "base64", media_type: "image/png", data } },
+      ],
+      isError: false,
+    });
+  });
+
+  it("migrates legacy array tool-result content while loading", () => {
+    const workDir = mkdtempSync(join(tmpdir(), "swifty-sess-"));
+    const id = "legacy-tool-blocks";
+    const dir = join(workDir, ".swifty", "sessions");
+    mkdirSync(dir, { recursive: true });
+    const blocks = [
+      { type: "text", text: "legacy screenshot" },
+      { type: "image", source: { type: "base64", media_type: "image/png", data: "QUJD" } },
+      { type: "tool_reference", tool_name: "mcp__legacy__tool" },
+      { type: "thinking", thinking: "must not enter tool_result content" },
+    ];
+    writeFileSync(
+      join(dir, `${id}.jsonl`),
+      JSON.stringify({
+        role: "user",
+        content: "",
+        timestamp: t0,
+        tool_results: [{ tool_use_id: "legacy-1", content: blocks }],
+      }) + "\n",
+      "utf-8",
+    );
+
+    const restored = rebuildFromSession(loadSession(workDir, id));
+    expect(restored[0]?.toolResults?.[0]?.content).toBe(
+      "legacy screenshot\n[Image: image/png]\n[Tool reference: mcp__legacy__tool]",
+    );
+    expect(restored[0]?.toolResults?.[0]?.contentBlocks).toEqual(blocks.slice(0, 3));
   });
 
   it("labels a session by its first user message", () => {
@@ -200,6 +266,41 @@ describe("rebuildFromSession (compacted-state resume)", () => {
     expect(joined).not.toContain("must-not-replay");
     // Exactly: summary + 2 kept + 2 post-boundary.
     expect(rebuilt).toHaveLength(5);
+  });
+
+  it("preserves rich tool results inside compact boundaries", () => {
+    const workDir = mkdtempSync(join(tmpdir(), "swifty-sess-"));
+    const id = newSessionId();
+    saveCompactBoundary(workDir, id, {
+      summary: "summary",
+      keep: [
+        {
+          role: "user",
+          content: "",
+          tool_results: toolResultsToRecords([
+            {
+              toolUseId: "tool-image",
+              content: "[Image: image/png]",
+              contentBlocks: [
+                {
+                  type: "image",
+                  source: { type: "base64", media_type: "image/png", data: "QUJD" },
+                },
+              ],
+              isError: false,
+            },
+          ]),
+        },
+      ],
+    });
+
+    const rebuilt = rebuildFromSession(loadSession(workDir, id));
+    expect(rebuilt[1]?.toolResults?.[0]?.contentBlocks).toEqual([
+      {
+        type: "image",
+        source: { type: "base64", media_type: "image/png", data: "QUJD" },
+      },
+    ]);
   });
 
   it("uses only the LAST boundary when a session was compacted twice (chaining)", () => {

@@ -103,7 +103,8 @@ describe("image tool results over OpenAI endpoints", () => {
       toolResults: [
         {
           toolUseId: "c1",
-          content: [
+          content: "[Image: a.png]",
+          contentBlocks: [
             { type: "text", text: "[Image: a.png]" },
             { type: "image", source: { type: "base64", media_type: "image/png", data: DATA } },
           ],
@@ -130,20 +131,16 @@ describe("image tool results over OpenAI endpoints", () => {
     );
     const parts = parse(PartsSchema, synthetic?.content);
     expect(parts[0].type).toBe("text");
-    expect(parts[0].text).toBe("[Image(s) returned by tool call c1]");
+    expect(parts[0].text).toBe("[Rich content returned by tool call c1]");
     expect(parts[1].type).toBe("image_url");
     expect(parts[1].image_url?.url).toBe(`data:image/png;base64,${DATA}`);
   });
 
-  it("responses API: emits function_call_output text plus a synthetic user message with input_image", () => {
+  it("responses API: converts rich tool output inside function_call_output", () => {
     const items = buildOpenAIInput(history);
-    const fco = items.find((i) => "type" in i && i.type === "function_call_output");
-    expect(fco && "output" in fco ? fco.output : "").toContain("[Image: a.png]");
-
-    const synthetic = items.find(
-      (i) => "role" in i && i.role === "user" && Array.isArray(i.content),
-    );
-    expect(synthetic).toBeDefined();
+    const fco = items.find((item) => "type" in item && item.type === "function_call_output");
+    const output = fco && "output" in fco ? fco.output : null;
+    expect(Array.isArray(output)).toBe(true);
     const PartsSchema = z.array(
       z.looseObject({
         type: z.string(),
@@ -151,29 +148,81 @@ describe("image tool results over OpenAI endpoints", () => {
         image_url: z.string().optional(),
       }),
     );
-    const parts = parse(PartsSchema, synthetic && "content" in synthetic ? synthetic.content : []);
+    const parts = parse(PartsSchema, output);
     expect(parts[0].type).toBe("input_text");
-    expect(parts[0].text).toBe("[Image(s) returned by tool call c1]");
+    expect(parts[0].text).toBe("[Image: a.png]");
     expect(parts[1].type).toBe("input_image");
     expect(parts[1].image_url).toBe(`data:image/png;base64,${DATA}`);
+    expect(items).toHaveLength(2);
   });
 
-  it("does not emit a dangling image header for text-only block arrays", () => {
+  it("converts URL images and PDF documents for both OpenAI protocols", () => {
+    const rich: Message[] = [
+      {
+        role: "user",
+        content: "",
+        toolResults: [
+          {
+            toolUseId: "c-rich",
+            content: "image and document",
+            contentBlocks: [
+              { type: "image", source: { type: "url", url: "https://example.com/image.png" } },
+              {
+                type: "document",
+                title: "report",
+                source: { type: "base64", media_type: "application/pdf", data: "QUJD" },
+              },
+            ],
+            isError: false,
+          },
+        ],
+      },
+    ];
+
+    const responses = buildOpenAIInput(rich);
+    const responseOutput =
+      "output" in responses[0] && Array.isArray(responses[0].output) ? responses[0].output : [];
+    expect(responseOutput).toEqual([
+      { type: "input_text", text: "image and document" },
+      { type: "input_image", image_url: "https://example.com/image.png", detail: "auto" },
+      { type: "input_file", file_data: "QUJD", filename: "report.pdf" },
+    ]);
+
+    const chat = buildChatCompletionMessages(rich);
+    const synthetic = chat.find(
+      (message) => message.role === "user" && Array.isArray(message.content),
+    );
+    expect(synthetic && Array.isArray(synthetic.content) ? synthetic.content : []).toEqual([
+      { type: "text", text: "[Rich content returned by tool call c-rich]" },
+      { type: "image_url", image_url: { url: "https://example.com/image.png" } },
+      { type: "file", file: { file_data: "QUJD", filename: "report.pdf" } },
+    ]);
+  });
+
+  it("does not emit extra rich parts for text-only Anthropic blocks", () => {
     const textOnly: Message[] = [
       {
         role: "user",
         content: "",
         toolResults: [
-          { toolUseId: "c2", content: [{ type: "text", text: "plain" }], isError: false },
+          {
+            toolUseId: "c2",
+            content: "plain",
+            contentBlocks: [{ type: "text", text: "plain" }],
+            isError: false,
+          },
         ],
       },
     ];
     const chat = buildChatCompletionMessages(textOnly);
-    expect(chat.some((m) => m.role === "user" && Array.isArray(m.content))).toBe(false);
+    expect(chat.some((message) => message.role === "user" && Array.isArray(message.content))).toBe(
+      false,
+    );
     const responses = buildOpenAIInput(textOnly);
-    expect(
-      responses.some((i) => "role" in i && i.role === "user" && Array.isArray(i.content)),
-    ).toBe(false);
+    const fco = responses.find((item) => "type" in item && item.type === "function_call_output");
+    expect(fco && "output" in fco ? fco.output : null).toEqual([
+      { type: "input_text", text: "plain" },
+    ]);
   });
 
   it("converts user messages with image blocks into multimodal parts", () => {

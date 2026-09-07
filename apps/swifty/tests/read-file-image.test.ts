@@ -20,10 +20,9 @@
  * SOFTWARE.
  */
 
-// ReadFileTool image behavior, mirroring the pre-refactor read-file-image
-// suite on the content-block pipeline: images come back as [label text block,
-// image block], magic bytes beat the extension, reads are recorded in the
-// fileStateCache, and non-image bytes behind an image extension error out.
+// ReadFileTool image behavior: images return a text fallback plus a rich image
+// block, magic bytes beat the extension, reads enter the fileStateCache, and
+// non-image bytes behind an image extension error out.
 
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -33,7 +32,7 @@ import { describe, it, expect } from "vitest";
 
 import { FileStateCache } from "../src/tools/file-state-cache.js";
 import { ReadFileTool } from "../src/tools/read-file.js";
-import type { ToolContext } from "../src/tools/types.js";
+import type { ToolContext, ToolResultContentBlock } from "../src/tools/types.js";
 import { isRecord } from "../src/utils/index.js";
 
 const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
@@ -46,11 +45,11 @@ function ctx(): ToolContext {
   };
 }
 
-function blocksOf(output: string | Record<string, unknown>[]) {
-  if (typeof output === "string") {
-    throw new Error("expected content blocks, got string: " + output);
+function blocksOf(blocks: ToolResultContentBlock[] | undefined) {
+  if (!blocks) {
+    throw new Error("expected content blocks");
   }
-  return output;
+  return blocks;
 }
 
 describe("ReadFileTool images", () => {
@@ -62,9 +61,11 @@ describe("ReadFileTool images", () => {
 
     const result = await new ReadFileTool().execute(c, { file_path: p });
     expect(result.isError).toBe(false);
-    const blocks = blocksOf(result.output);
-    const source = blocks[0].source;
-    expect(blocks[0].type).toBe("image");
+    expect(result.output).toBe("[Image: image/png]");
+    const blocks = blocksOf(result.contentBlocks);
+    const block = blocks[0];
+    const source = isRecord(block) ? block.source : null;
+    expect(isRecord(block) ? block.type : null).toBe("image");
     expect(isRecord(source) ? source.media_type : null).toBe("image/png");
     expect(isRecord(source) ? source.data : null).toBe(buf.toString("base64"));
   });
@@ -77,7 +78,9 @@ describe("ReadFileTool images", () => {
 
     const result = await new ReadFileTool().execute(c, { file_path: p });
     expect(result.isError).toBe(false);
-    const source = blocksOf(result.output)[0].source;
+    expect(result.output).toBe("[Image: image/jpeg]");
+    const block = blocksOf(result.contentBlocks)[0];
+    const source = isRecord(block) ? block.source : null;
     expect(isRecord(source) ? source.media_type : null).toBe("image/jpeg");
   });
 

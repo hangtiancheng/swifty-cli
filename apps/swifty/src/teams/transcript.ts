@@ -76,7 +76,7 @@ function serializeConversation(conversation: ConversationManager): TranscriptEnt
     if (msg.toolResults && msg.toolResults.length > 0) {
       entry.tool_results = msg.toolResults.map((tr) => ({
         tool_use_id: tr.toolUseId,
-        content: contentToText(tr.content),
+        content: tr.content,
         is_error: tr.isError || undefined,
       }));
     }

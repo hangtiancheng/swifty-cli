@@ -32,7 +32,7 @@ import {
 
 import type { RecoveryState } from "./recovery.js";
 
-import type { ToolSchema } from "@/tools/types.js";
+import type { ToolResultContentBlock, ToolSchema } from "@/tools/types.js";
 import { asErrorString, contentToText, strArg } from "@/utils/index.js";
 
 // Structured outcome of a compaction. When `compacted` is true, `boundary`
@@ -127,6 +127,39 @@ function contentChars(content: string | Record<string, unknown>[]): number {
   return chars;
 }
 
+function toolResultBlocksChars(blocks: ToolResultContentBlock[]): {
+  textChars: number;
+  richChars: number;
+} {
+  let textChars = 0;
+  let richChars = 0;
+  for (const block of blocks) {
+    if (block.type === "text") {
+      textChars += block.text.length;
+    } else if (block.type === "image") {
+      richChars += IMAGE_CHAR_EQUIV;
+    } else if (block.type === "tool_reference") {
+      richChars += block.tool_name.length;
+    } else if (block.type === "search_result") {
+      richChars += block.source.length + block.title.length;
+      richChars += block.content.reduce((sum, content) => sum + content.text.length, 0);
+    } else if (block.source.type === "base64") {
+      richChars += IMAGE_CHAR_EQUIV;
+    } else if (block.source.type === "url") {
+      richChars += block.source.url.length;
+    } else if (block.source.type === "text") {
+      richChars += block.source.data.length;
+    } else if (typeof block.source.content === "string") {
+      richChars += block.source.content.length;
+    } else {
+      for (const content of block.source.content) {
+        richChars += content.type === "text" ? content.text.length : IMAGE_CHAR_EQUIV;
+      }
+    }
+  }
+  return { textChars, richChars };
+}
+
 // Rough character-based token estimate over an explicit message slice. Used both
 // for the cold-start whole-transcript fallback and the post-anchor increment.
 export function estimateMessages(messages: Message[]): number {
@@ -138,7 +171,12 @@ export function estimateMessages(messages: Message[]): number {
     }
     if (msg.toolResults) {
       for (const tr of msg.toolResults) {
-        totalChars += contentChars(tr.content);
+        if (tr.contentBlocks?.length) {
+          const blockChars = toolResultBlocksChars(tr.contentBlocks);
+          totalChars += Math.max(tr.content.length, blockChars.textChars) + blockChars.richChars;
+        } else {
+          totalChars += tr.content.length;
+        }
       }
     }
     if (msg.thinkingBlocks) {
@@ -458,6 +496,9 @@ function serializePrefixText(messages: Message[]): string {
       let text = `[${m.role}]: ${contentToText(m.content)}`;
       if (m.toolUses) {
         text += `\n[tools: ${m.toolUses.map((t) => t.toolName).join(", ")}]`;
+      }
+      if (m.toolResults) {
+        text += `\n[tool results]\n${m.toolResults.map((result) => result.content).join("\n")}`;
       }
       return text;
     })

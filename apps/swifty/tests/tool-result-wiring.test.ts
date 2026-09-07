@@ -20,7 +20,7 @@
  * SOFTWARE.
  */
 
-import { mkdtempSync, existsSync, readFileSync } from "node:fs";
+import { mkdtempSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -28,13 +28,14 @@ import { describe, it, expect } from "vitest";
 
 import { Agent } from "../src/agent/agent.js";
 import type { AgentEvent } from "../src/agent/events.js";
+import { RecoveryState } from "../src/compact/recovery.js";
 import { ConversationManager } from "../src/conversation/conversation.js";
 import type { LLMClient } from "../src/llm/client.js";
 import type { StreamEvent, UsageInfo } from "../src/llm/events.js";
 import { PermissionChecker } from "../src/permissions/checker.js";
 import { loadSession, rebuildFromSession } from "../src/session/session.js";
 import { ToolRegistry } from "../src/tools/registry.js";
-import type { Tool } from "../src/tools/types.js";
+import type { Tool, ToolResultContentBlock } from "../src/tools/types.js";
 
 import { asString, isRecord } from "@/utils/index.js";
 
@@ -86,7 +87,12 @@ function fixedTool(name: string, output: string): Tool {
   };
 }
 
-async function runAgent(client: LLMClient, workDir: string, tools: Tool[]) {
+async function runAgent(
+  client: LLMClient,
+  workDir: string,
+  tools: Tool[],
+  recoveryState?: RecoveryState,
+) {
   const conv = new ConversationManager();
   conv.addUserMessage("go");
   const registry = new ToolRegistry();
@@ -100,6 +106,7 @@ async function runAgent(client: LLMClient, workDir: string, tools: Tool[]) {
     conversation: conv,
     workDir,
     sessionId: "wiring",
+    recoveryState,
   });
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   for await (const _ of agent.run()) {
@@ -167,6 +174,31 @@ describe("tool result budget wiring", () => {
     expect(existsSync(join(spillDirOf(workDir), "t_rb.txt"))).toBe(false);
   });
 
+  it("records the bounded ReadFile result instead of rereading the entire file", async () => {
+    const workDir = mkdtempSync(join(tmpdir(), "swifty-wire-"));
+    const filePath = join(workDir, "large.txt");
+    writeFileSync(filePath, "disk-content".repeat(20_000), "utf-8");
+    const client = new MockClient([
+      [
+        {
+          type: "tool_call_complete",
+          toolId: "t_read",
+          toolName: "ReadFile",
+          arguments: { file_path: filePath },
+        },
+        end("tool_use"),
+      ],
+      [{ type: "text_delta", text: "done" }, end()],
+    ]);
+    const recovery = new RecoveryState();
+
+    await runAgent(client, workDir, [fixedTool("ReadFile", "returned-lines")], recovery);
+
+    expect(recovery.snapshotFiles()).toEqual([
+      expect.objectContaining({ path: filePath, content: "returned-lines" }),
+    ]);
+  });
+
   it("spills only the largest result when the aggregate exceeds the budget", async () => {
     const workDir = mkdtempSync(join(tmpdir(), "swifty-wire-"));
     const sizes: Record<string, number> = {
@@ -202,13 +234,12 @@ describe("tool result budget wiring", () => {
   });
 });
 
-// End-to-end wiring for image tool results: the structured blocks must reach
-// the conversation intact (the event output is flattened only at display
-// sites), while the session JSONL stores the base64 payload inline and
-// resume restores the inline image block.
+// End-to-end wiring for image tool results: the text fallback and structured
+// blocks must both reach the conversation, while session JSONL stores the
+// base64 payload inline and resume restores it.
 describe("image tool result wiring", () => {
   const PNG_DATA = Buffer.from("not-a-real-png-but-that-is-fine").toString("base64");
-  const imageBlocks: Record<string, unknown>[] = [
+  const imageBlocks: ToolResultContentBlock[] = [
     {
       type: "image",
       source: { type: "base64", media_type: "image/png", data: PNG_DATA },
@@ -225,13 +256,18 @@ describe("image tool result wiring", () => {
         description: "img",
         input_schema: { type: "object", properties: {} },
       }),
-      execute: () => Promise.resolve({ output: imageBlocks, isError: false }),
+      execute: () =>
+        Promise.resolve({
+          output: "[Image: image/png]",
+          contentBlocks: imageBlocks,
+          isError: false,
+        }),
     };
   }
 
-  function blocksOf(content: string | Record<string, unknown>[] | undefined) {
-    if (!Array.isArray(content)) {
-      throw new Error("expected tool result content to be a block array");
+  function blocksOf(content: ToolResultContentBlock[] | undefined) {
+    if (!content) {
+      throw new Error("expected tool result content blocks");
     }
     return content;
   }
@@ -263,29 +299,34 @@ describe("image tool result wiring", () => {
       events.push(ev);
     }
 
-    // The tool_result event carries the structured blocks (union output).
-    const resultEvent = events.find((e) => e.type === "tool_result");
+    const resultEvent = events.find((event) => event.type === "tool_result");
     expect(resultEvent?.type).toBe("tool_result");
-    expect(Array.isArray(resultEvent?.type === "tool_result" ? resultEvent.output : "")).toBe(true);
+    expect(resultEvent?.type === "tool_result" ? resultEvent.output : "").toBe(
+      "[Image: image/png]",
+    );
+    const eventBlocks = resultEvent?.type === "tool_result" ? resultEvent.contentBlocks : undefined;
+    expect(blocksOf(eventBlocks)[0]?.type).toBe("image");
 
-    // History holds the blocks, not flattened text.
     const tr = toolResultsMsg(conv)?.toolResults?.[0];
-    const historyImage = blocksOf(tr?.content).find((b) => b.type === "image");
+    expect(tr?.content).toBe("[Image: image/png]");
+    const historyImage = blocksOf(tr?.contentBlocks).find((block) => block.type === "image");
     expect(historyImage).toBeDefined();
-    const historySource = historyImage?.source;
+    const historySource = historyImage && "source" in historyImage ? historyImage.source : null;
     expect(isRecord(historySource) ? historySource.data : null).toBe(PNG_DATA);
 
-    // The JSONL stores the base64 payload inline.
     const jsonl = readFileSync(join(workDir, ".swifty", "sessions", "wiring.jsonl"), "utf-8");
+    expect(jsonl).toContain('"content_blocks"');
     expect(jsonl).toContain(PNG_DATA);
 
-    // Resume restores the inline image block byte-identically.
     const saved = loadSession(workDir, "wiring");
     const restored = rebuildFromSession(saved);
-    const restoredTr = restored.find((m) => m.toolResults?.length)?.toolResults?.[0];
-    const restoredImage = blocksOf(restoredTr?.content).find((b) => b.type === "image");
+    const restoredTr = restored.find((message) => message.toolResults?.length)?.toolResults?.[0];
+    expect(restoredTr?.content).toBe("[Image: image/png]");
+    const restoredImage = blocksOf(restoredTr?.contentBlocks).find(
+      (block) => block.type === "image",
+    );
     expect(restoredImage).toBeDefined();
-    const restoredSource = restoredImage?.source;
+    const restoredSource = restoredImage && "source" in restoredImage ? restoredImage.source : null;
     expect(isRecord(restoredSource) ? restoredSource.data : null).toBe(PNG_DATA);
   });
 });

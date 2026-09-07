@@ -28,8 +28,6 @@ import { describe, it, expect } from "vitest";
 
 import type { ToolResultBlock } from "../src/conversation/conversation.js";
 import { applyBudget, isSpillReadback, persistLargeResult } from "../src/tool-result/budget.js";
-
-import { asString } from "@/utils/index.js";
 function batch(...sizes: number[]): ToolResultBlock[] {
   return sizes.map((n, i) => ({
     toolUseId: `t${String(i + 1)}`,
@@ -61,7 +59,7 @@ describe("tool result budget", () => {
     applyBudget(rs, workDir, "s");
 
     expect(totalLen(rs)).toBeLessThanOrEqual(200000);
-    const replaced = rs.filter((r) => asString(r.content).includes("<persisted-output>"));
+    const replaced = rs.filter((result) => result.content.includes("<persisted-output>"));
     expect(replaced.length).toBe(1);
     expect(rs[2].content).toContain("<persisted-output>");
     // The spill file stores the complete content
@@ -114,6 +112,28 @@ describe("tool result budget", () => {
     applyBudget(rs, workDir, "s");
 
     expect(rs.map((r) => r.content)).toEqual(snapshot);
+  });
+
+  it("spills rich text while preserving non-text blocks", () => {
+    const workDir = mkdtempSync(join(tmpdir(), "swifty-tr-"));
+    const result: ToolResultBlock = {
+      toolUseId: "rich",
+      content: "x".repeat(250_000),
+      contentBlocks: [
+        { type: "text", text: "x".repeat(250_000) },
+        { type: "image", source: { type: "base64", media_type: "image/png", data: "QUJD" } },
+      ],
+      isError: false,
+    };
+
+    applyBudget([result], workDir, "s");
+
+    expect(result.content).toContain("<persisted-output>");
+    expect(result.contentBlocks?.[0]).toEqual({ type: "text", text: result.content });
+    expect(result.contentBlocks?.[1]?.type).toBe("image");
+    expect(
+      readFileSync(join(workDir, ".swifty", "sessions", "s", "tool-results", "rich.txt"), "utf-8"),
+    ).toHaveLength(250_000);
   });
 
   it("detects spill readbacks", () => {

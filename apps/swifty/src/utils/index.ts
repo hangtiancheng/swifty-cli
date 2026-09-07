@@ -20,19 +20,13 @@
  * SOFTWARE.
  */
 
-import type { ImageBlockParam, TextBlock } from "@anthropic-ai/sdk/resources";
-
 import { createChildLogger } from "../logger/logger.js";
 
 const log = createChildLogger({ module: "utils" });
 
 export const DANGEROUSLY_JSON = "dangerouslyJson";
 
-/**
- * Convert a ToolResultBlock content value (string or ContentBlockParam[]) to a
- * plain text string. Used by consumers that cannot handle structured blocks
- * (session persistence, TUI display, OpenAI Responses API, etc.).
- */
+/** Convert message or legacy-session blocks to a base64-free text fallback. */
 export function contentToText(content: string | Record<string, unknown>[]): string {
   if (typeof content === "string") {
     return content;
@@ -40,14 +34,25 @@ export function contentToText(content: string | Record<string, unknown>[]): stri
   const parts: string[] = [];
   for (const block of content) {
     if (block.type === "text" && typeof block.text === "string") {
-      // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
-      const b = block as unknown as TextBlock;
-      parts.push(b.text);
-    } else if (block.type === "image" && typeof block.source === "object") {
-      // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
-      const b = block as unknown as ImageBlockParam;
-      const mediaType = b.source.type === "base64" ? b.source.media_type : "image";
+      parts.push(block.text);
+    } else if (block.type === "image" && isRecord(block.source)) {
+      const mediaType =
+        block.source.type === "base64" && typeof block.source.media_type === "string"
+          ? block.source.media_type
+          : "image";
       parts.push(`[Image: ${mediaType}]`);
+    } else if (block.type === "tool_reference" && typeof block.tool_name === "string") {
+      parts.push(`[Tool reference: ${block.tool_name}]`);
+    } else if (block.type === "search_result") {
+      const title = typeof block.title === "string" ? block.title : "search result";
+      const source = typeof block.source === "string" ? ` (${block.source})` : "";
+      const nested = Array.isArray(block.content)
+        ? contentToText(block.content.filter(isRecord))
+        : "";
+      parts.push(`${title}${source}${nested ? `\n${nested}` : ""}`);
+    } else if (block.type === "document") {
+      const title = typeof block.title === "string" ? block.title : "document";
+      parts.push(`[Document: ${title}]`);
     }
   }
   return parts.join("\n");

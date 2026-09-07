@@ -112,8 +112,7 @@ export class MCPToolWrapper implements MCPToolLike {
 
   async execute(_ctx: ToolContext, args: Record<string, unknown>): Promise<ToolResult> {
     try {
-      const { output, isError } = await this.client.callTool(this.originalName, args);
-      return { output, isError };
+      return await this.client.callTool(this.originalName, args);
     } catch (err) {
       log.error({ err }, "mcp operation failed");
       return {

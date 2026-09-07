@@ -63,10 +63,7 @@ export function ToolBlock(props: ToolBlockProps) {
   const icon = tool.isError ? COLORS.error(ICONS.error) : COLORS.success(ICONS.success);
   const timeStr = tool.elapsed !== undefined ? `(${tool.elapsed.toFixed(1)}s)` : "";
 
-  // Keep the live (dynamic) region short: if it grows taller than the
-  // terminal, Ink can no longer repaint it correctly and the spinner
-  // overwrites earlier output. The full output lands in the Static
-  // turn_summary when the turn completes.
+  // Keep the live region short so Ink can repaint it without overwriting earlier output.
   const clamped = tool.output ? clampLines(tool.output, 8) : "";
 
   return (

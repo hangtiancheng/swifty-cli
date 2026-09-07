@@ -24,6 +24,8 @@ import { readdirSync, readFileSync, existsSync, mkdirSync, writeFileSync } from 
 import { homedir } from "node:os";
 import { join, basename } from "node:path";
 
+import yaml from "js-yaml";
+
 import { Agent } from "../agent/agent.js";
 import { ConversationManager } from "../conversation/conversation.js";
 import type { LLMClient } from "../llm/client.js";
@@ -187,10 +189,10 @@ export class MemoryExtractor {
       ``,
       "```markdown",
       `---`,
-      `name: {{short-kebab-case-slug}}`,
-      `description: {{one-line summary}}`,
+      `name: "{{short-kebab-case-slug}}"`,
+      `description: "{{one-line summary with YAML special characters escaped}}"`,
       `metadata:`,
-      `  type: {{user, feedback, project, reference}}`,
+      `  type: "{{user, feedback, project, reference}}"`,
       `---`,
       ``,
       `{{memory content}}`,
@@ -389,15 +391,10 @@ export class MemoryExtractor {
 
   /** Format a memory file: frontmatter (name/description/type) + body */
   private formatMemoryFile(mem: ParsedTextMemory): string {
-    return [
-      "---",
-      `name: ${mem.name}`,
-      `description: ${mem.description}`,
-      `type: ${mem.type}`,
-      "---",
-      "",
-      mem.body,
-      "",
-    ].join("\n");
+    const frontmatter = yaml.dump(
+      { name: mem.name, description: mem.description, type: mem.type },
+      { forceQuotes: true, lineWidth: -1, noRefs: true, quotingType: '"' },
+    );
+    return `---\n${frontmatter}---\n\n${mem.body}\n`;
   }
 }

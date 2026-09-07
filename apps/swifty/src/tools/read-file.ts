@@ -34,6 +34,7 @@ import {
   type ToolCategory,
   type ToolContext,
   type ToolResult,
+  type ToolResultContentBlock,
   type ToolSchema,
 } from "./types.js";
 
@@ -138,15 +139,19 @@ export class ReadFileTool implements Tool {
     try {
       const attachment = await loadImageAttachment(filePath);
       ctx.fileStateCache?.record(filePath, mtimeMs);
-      const imageBlock: Record<string, unknown> = {
+      const imageBlock = {
         type: "image",
         source: {
           type: "base64",
           media_type: attachment.mediaType,
           data: attachment.data,
         },
+      } satisfies ToolResultContentBlock;
+      return {
+        output: `[Image: ${attachment.mediaType}]`,
+        contentBlocks: [imageBlock],
+        isError: false,
       };
-      return { output: [imageBlock], isError: false };
     } catch (err) {
       log.error({ err }, "image read failed");
       return {

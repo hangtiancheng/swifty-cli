@@ -27,7 +27,6 @@
 // usage, permission requests) are intentionally not logged.
 
 import type { AgentEvent } from "../agent/events.js";
-import { contentToText } from "../utils/index.js";
 
 /** Minimal pino Logger shape (warn/error) to keep this module generic. */
 export interface EventLogger {
@@ -60,7 +59,7 @@ export class AgentEventLogger {
         if (!ev.isError) {
           return;
         }
-        const output = contentToText(ev.output);
+        const output = ev.output;
         this.log.warn({
           event: "tool_result",
           tool: ev.toolName,

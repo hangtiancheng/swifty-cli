@@ -272,77 +272,117 @@ export type OpenAIMessageParam =
   | OpenAI.Responses.ResponseInputItem.FunctionCallOutput
   | OpenAI.Responses.ResponseReasoningItem;
 
-// Extract a data URL from an image content block (Record form). Returns null
-// for non-image blocks or malformed sources.
-function imageDataUrl(block: Record<string, unknown>): string | null {
-  if (block.type !== "image") {
+function imageDataUrl(block: unknown): string | null {
+  if (!isRecord(block) || block.type !== "image" || !isRecord(block.source)) {
     return null;
   }
-  const source = block.source;
-  if (!isRecord(source) || source.type !== "base64") {
+  if (block.source.type === "url") {
+    return strArg(block.source, "url") || null;
+  }
+  if (block.source.type !== "base64") {
     return null;
   }
-  const mediaType = strArg(source, "media_type");
-  const data = strArg(source, "data");
-  if (!mediaType || !data) {
-    return null;
-  }
-  return `data:${mediaType};base64,${data}`;
+  const mediaType = strArg(block.source, "media_type");
+  const data = strArg(block.source, "data");
+  return mediaType && data ? `data:${mediaType};base64,${data}` : null;
 }
 
-function collectImageContents(tr: ToolResultBlock): OpenAI.Responses.ResponseInputContent[] {
-  const { toolUseId, content } = tr;
-  if (typeof content === "string") {
-    return [];
+function documentForResponses(block: unknown): OpenAI.Responses.ResponseInputFile | null {
+  if (!isRecord(block) || block.type !== "document" || !isRecord(block.source)) {
+    return null;
   }
-  const images: OpenAI.Responses.ResponseInputContent[] = [];
-  for (const block of content) {
-    const url = imageDataUrl(block);
-    if (url) {
-      images.push({
-        type: "input_image",
-        image_url: url,
-        detail: "auto",
-      });
-    }
+  const title = typeof block.title === "string" && block.title ? block.title : "tool-result";
+  if (block.source.type === "url") {
+    const fileUrl = strArg(block.source, "url");
+    return fileUrl ? { type: "input_file", file_url: fileUrl } : null;
   }
-  if (images.length === 0) {
-    return [];
+  if (block.source.type === "base64") {
+    const data = strArg(block.source, "data");
+    return data ? { type: "input_file", file_data: data, filename: `${title}.pdf` } : null;
   }
-  return [
-    {
-      type: "input_text",
-      text: `[Image(s) returned by tool call ${toolUseId}]`,
-    },
-    ...images,
-  ];
+  if (block.source.type === "text") {
+    const data = strArg(block.source, "data");
+    return data
+      ? {
+          type: "input_file",
+          file_data: Buffer.from(data, "utf-8").toString("base64"),
+          filename: `${title}.txt`,
+        }
+      : null;
+  }
+  return null;
 }
 
-function collectImageParts(tr: ToolResultBlock): OpenAI.ChatCompletionContentPart[] {
-  const { toolUseId, content } = tr;
-  if (typeof content === "string") {
-    return [];
+function documentForChat(block: unknown): OpenAI.ChatCompletionContentPart.File | null {
+  if (!isRecord(block) || block.type !== "document" || !isRecord(block.source)) {
+    return null;
   }
-  const images: OpenAI.ChatCompletionContentPart[] = [];
-  for (const block of content) {
-    const url = imageDataUrl(block);
-    if (url) {
-      images.push({
-        type: "image_url",
-        image_url: { url },
-      });
+  const title = typeof block.title === "string" && block.title ? block.title : "tool-result";
+  if (block.source.type === "base64") {
+    const data = strArg(block.source, "data");
+    return data ? { type: "file", file: { file_data: data, filename: `${title}.pdf` } } : null;
+  }
+  if (block.source.type === "text") {
+    const data = strArg(block.source, "data");
+    return data
+      ? {
+          type: "file",
+          file: {
+            file_data: Buffer.from(data, "utf-8").toString("base64"),
+            filename: `${title}.txt`,
+          },
+        }
+      : null;
+  }
+  return null;
+}
+
+function toolOutputForResponses(
+  tr: ToolResultBlock,
+): OpenAI.Responses.ResponseInputItem.FunctionCallOutput["output"] {
+  if (!tr.contentBlocks?.length) {
+    return tr.content;
+  }
+
+  const rich: OpenAI.Responses.ResponseFunctionCallOutputItemList = [];
+  if (tr.content) {
+    rich.push({ type: "input_text", text: tr.content });
+  }
+  for (const block of tr.contentBlocks) {
+    const imageUrl = imageDataUrl(block);
+    if (imageUrl) {
+      rich.push({ type: "input_image", image_url: imageUrl, detail: "auto" });
+      continue;
+    }
+    const file = documentForResponses(block);
+    if (file) {
+      rich.push(file);
     }
   }
-  if (images.length === 0) {
+  return rich.length > 0 ? rich : tr.content;
+}
+
+function collectRichParts(tr: ToolResultBlock): OpenAI.ChatCompletionContentPart[] {
+  if (!tr.contentBlocks?.length) {
     return [];
   }
-  return [
-    {
-      type: "text",
-      text: `[Image(s) returned by tool call ${toolUseId}]`,
-    },
-    ...images,
-  ];
+
+  const rich: OpenAI.ChatCompletionContentPart[] = [];
+  for (const block of tr.contentBlocks) {
+    const imageUrl = imageDataUrl(block);
+    if (imageUrl) {
+      rich.push({ type: "image_url", image_url: { url: imageUrl } });
+      continue;
+    }
+    const file = documentForChat(block);
+    if (file) {
+      rich.push(file);
+    }
+  }
+  if (rich.length === 0) {
+    return [];
+  }
+  return [{ type: "text", text: `[Rich content returned by tool call ${tr.toolUseId}]` }, ...rich];
 }
 
 // User message content → Responses API parts. Text blocks become input_text,
@@ -422,19 +462,11 @@ export function buildOpenAIInput(messages: Message[]): OpenAIMessageParam[] {
       }
     } // end if (m.toolUses && m.toolUses.length > 0)
     else if (m.toolResults && m.toolResults.length > 0) {
-      const pendingImageContents: OpenAI.Responses.ResponseInputContent[] = [];
       for (const tr of m.toolResults) {
         result.push({
           type: "function_call_output",
           call_id: tr.toolUseId,
-          output: contentToText(tr.content),
-        });
-        pendingImageContents.push(...collectImageContents(tr));
-      }
-      if (pendingImageContents.length > 0) {
-        result.push({
-          role: "user",
-          content: pendingImageContents,
+          output: toolOutputForResponses(tr),
         });
       }
     } // end if (m.toolResults && m.toolResults.length > 0)
@@ -731,19 +763,19 @@ export function buildChatCompletionMessages(
       });
     } // end if (m.toolUses && m.toolUses.length > 0)
     else if (m.toolResults && m.toolResults.length > 0) {
-      const pendingImageParts: OpenAI.ChatCompletionContentPart[] = [];
+      const pendingRichParts: OpenAI.ChatCompletionContentPart[] = [];
       for (const tr of m.toolResults) {
         params.push({
           role: "tool",
           tool_call_id: tr.toolUseId,
-          content: contentToText(tr.content),
+          content: tr.content,
         });
-        pendingImageParts.push(...collectImageParts(tr));
+        pendingRichParts.push(...collectRichParts(tr));
       }
-      if (pendingImageParts.length > 0) {
+      if (pendingRichParts.length > 0) {
         params.push({
           role: "user",
-          content: pendingImageParts,
+          content: pendingRichParts,
         });
       }
     } // end if (m.toolResults && m.toolResults.length > 0)

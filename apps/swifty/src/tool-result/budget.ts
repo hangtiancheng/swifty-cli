@@ -25,7 +25,7 @@ import { join, resolve } from "node:path";
 
 import type { ToolResultBlock } from "../conversation/conversation.js";
 import { createChildLogger } from "../logger/logger.js";
-import { asString, isObject } from "../utils/index.js";
+import { isObject } from "../utils/index.js";
 
 // Aggregate cap across all tool results within a single message. The size of
 // an individual result is gated by MAX_OUTPUT_CHARS in the agent; what we
@@ -35,6 +35,7 @@ import { asString, isObject } from "../utils/index.js";
 // catch.
 const log = createChildLogger({ module: "tool-result" });
 const MESSAGE_AGGREGATE_LIMIT = 200000;
+export const TOOL_RESULT_PREVIEW_CHARS = 2000;
 
 function spillDir(workDir: string, sessionId: string): string {
   const id = sessionId || "default";
@@ -63,15 +64,34 @@ function writeSpill(
   }
   return path;
 }
-const PREVIEW_CHARS = 2000;
+
+export function toDisplayPreview(content: string): string {
+  if (content.length <= TOOL_RESULT_PREVIEW_CHARS) {
+    return content;
+  }
+  return (
+    content.slice(0, TOOL_RESULT_PREVIEW_CHARS) +
+    `\n… ${String(content.length - TOOL_RESULT_PREVIEW_CHARS)} chars omitted from transcript`
+  );
+}
+
+export function replaceToolResultContent(result: ToolResultBlock, content: string): void {
+  result.content = content;
+  if (result.contentBlocks?.length) {
+    result.contentBlocks = [
+      { type: "text", text: content },
+      ...result.contentBlocks.filter((block) => block.type !== "text"),
+    ];
+  }
+}
 
 // Build the on-disk replacement text, including a 2KB preview. Identical
 // input yields a byte-for-byte identical string; once the replacement enters
 // the conversation history it is never modified again.
 function buildSpillPreview(content: string, spillPath: string): string {
   const sizeKB = Math.floor(content.length / 1024);
-  const preview = content.slice(0, PREVIEW_CHARS);
-  const hasMore = content.length > PREVIEW_CHARS;
+  const preview = content.slice(0, TOOL_RESULT_PREVIEW_CHARS);
+  const hasMore = content.length > TOOL_RESULT_PREVIEW_CHARS;
   let msg = `<persisted-output>\n`;
   msg += `Output too large (${String(sizeKB)}KB). Full content saved to:\n${spillPath}\n\n`;
   msg += `Preview (first 2KB):\n${preview}`;
@@ -124,21 +144,14 @@ export function applyBudget(
   sessionId: string,
   exemptIds?: Set<string>,
 ): void {
-  // Image content blocks are never spilled — they must be sent as-is to the API.
-  const spillable = toolResults.filter((r) => typeof r.content === "string");
-  let total = spillable.reduce(
-    (sum, r) => sum + (typeof r.content === "string" ? r.content.length : 0),
-    0,
-  );
+  let total = toolResults.reduce((sum, result) => sum + result.content.length, 0);
   if (total <= MESSAGE_AGGREGATE_LIMIT) {
     return;
   }
 
   // Select in descending order of content length: spilling the largest first
   // minimizes the number of entries we need to touch to get back under the limit.
-  const sorted = spillable.toSorted(
-    (a, b) => asString(b.content).length - asString(a.content).length,
-  );
+  const sorted = toolResults.toSorted((a, b) => b.content.length - a.content.length);
   for (const r of sorted) {
     if (total <= MESSAGE_AGGREGATE_LIMIT) {
       break;
@@ -146,8 +159,8 @@ export function applyBudget(
     if (exemptIds?.has(r.toolUseId)) {
       continue;
     }
-    const content = asString(r.content);
-    if (content.length <= PREVIEW_CHARS) {
+    const content = r.content;
+    if (content.length <= TOOL_RESULT_PREVIEW_CHARS) {
       // A result shorter than the preview gains no space from spilling
       continue;
     }
@@ -161,7 +174,7 @@ export function applyBudget(
     }
     const replacement = buildSpillPreview(content, spillPath);
     total -= content.length - replacement.length;
-    r.content = replacement;
+    replaceToolResultContent(r, replacement);
   }
 }
 

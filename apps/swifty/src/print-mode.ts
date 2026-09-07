@@ -52,7 +52,6 @@ import { ToolSearchTool } from "./tools/tool-search.js";
 import { GlobTool } from "./tools/wasm/glob.js";
 import { GrepTool } from "./tools/wasm/grep.js";
 import { WriteFileTool } from "./tools/write-file.js";
-import { contentToText } from "./utils/index.js";
 
 /** Supported output formats for -p (print) mode. */
 type OutputFormat = "text" | "stream-json";
@@ -316,7 +315,7 @@ function emitStreamJson(event: AgentEvent): void {
         JSON.stringify({
           type: "tool_result",
           tool_name: event.toolName,
-          output: contentToText(event.output),
+          output: event.output,
           is_error: event.isError,
           elapsed: event.elapsed,
         }),

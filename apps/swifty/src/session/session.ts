@@ -35,7 +35,9 @@ import { join } from "node:path";
 
 import z, { parse, safeParse } from "zod";
 
+import type { ToolResultBlock } from "../conversation/conversation.js";
 import { createChildLogger } from "../logger/logger.js";
+import { normalizeToolResultContentBlock, type ToolResultContentBlock } from "../tools/types.js";
 import { contentToText } from "../utils/index.js";
 
 // Persistent session lines. Ordinary messages have an empty `type`, while compaction boundary records
@@ -71,6 +73,7 @@ const ContentSchema = z.union([z.string(), z.array(z.record(z.string(), z.unknow
 const ToolResultRecordSchema = z.object({
   tool_use_id: z.string(),
   content: ContentSchema,
+  content_blocks: z.array(z.unknown()).optional(),
   is_error: z.boolean().optional(),
 });
 
@@ -113,16 +116,11 @@ export function toolUsesToRecords(
   }));
 }
 
-export function toolResultsToRecords(
-  toolResults?: {
-    toolUseId: string;
-    content: string | Record<string, unknown>[];
-    isError?: boolean;
-  }[],
-): ToolResultRecord[] {
+export function toolResultsToRecords(toolResults?: ToolResultBlock[]): ToolResultRecord[] {
   return (toolResults ?? []).map((tr) => ({
     tool_use_id: tr.toolUseId,
     content: tr.content,
+    ...(tr.contentBlocks?.length ? { content_blocks: tr.contentBlocks } : {}),
     ...(tr.isError ? { is_error: true } : {}),
   }));
 }
@@ -232,11 +230,7 @@ export interface RestoredMessage {
     toolName: string;
     arguments?: Record<string, unknown>;
   }[];
-  toolResults?: {
-    toolUseId: string;
-    content: string | Record<string, unknown>[];
-    isError?: boolean;
-  }[];
+  toolResults?: ToolResultBlock[];
 }
 
 /** Persisted records (snake_case) → in-memory tool blocks (camelCase), used to restore the call chain on session resume. */
@@ -248,12 +242,31 @@ function recordsToCamelUses(recs?: ToolUseRecord[]) {
   }));
 }
 
-function recordsToCamelResults(recs?: ToolResultRecord[]) {
-  return recs?.map((tr) => ({
-    toolUseId: tr.tool_use_id,
-    content: tr.content,
-    isError: tr.is_error,
-  }));
+function validContentBlocks(value?: unknown[]): ToolResultContentBlock[] | undefined {
+  if (!value) {
+    return undefined;
+  }
+  const blocks: ToolResultContentBlock[] = [];
+  for (const raw of value) {
+    const block = normalizeToolResultContentBlock(raw);
+    if (block) {
+      blocks.push(block);
+    }
+  }
+  return blocks.length > 0 ? blocks : undefined;
+}
+
+function recordsToCamelResults(recs?: ToolResultRecord[]): ToolResultBlock[] | undefined {
+  return recs?.map((tr) => {
+    const legacyBlocks = Array.isArray(tr.content) ? validContentBlocks(tr.content) : undefined;
+    const contentBlocks = validContentBlocks(tr.content_blocks) ?? legacyBlocks;
+    return {
+      toolUseId: tr.tool_use_id,
+      content: typeof tr.content === "string" ? tr.content : contentToText(tr.content),
+      ...(contentBlocks ? { contentBlocks } : {}),
+      isError: tr.is_error ?? false,
+    };
+  });
 }
 
 // Rebuild the conversation to replay on resume, honoring compaction boundaries.
