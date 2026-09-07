@@ -30,8 +30,6 @@ import { Agent } from "../agent/agent.js";
 import {
   parse as parseCommand,
   createDefaultRegistry as createCommandRegistry,
-  type CommandRegistry,
-  type Command,
 } from "../commands/commands.js";
 import { loadUserCommands } from "../commands/loader.js";
 import { CommandUsageTracker } from "../commands/usage-tracker.js";
@@ -55,7 +53,7 @@ import { createClient } from "../llm/client.js";
 import { createChildLogger } from "../logger/logger.js";
 import { MCPManager } from "../mcp/manager.js";
 import { applyMode, decideAndApply } from "../mcp/strategy.js";
-import { MCP_TOOL_PREFIX, MCPToolWrapper } from "../mcp/tool-wrapper.js";
+import { MCPToolWrapper } from "../mcp/tool-wrapper.js";
 import { MemoryExtractor } from "../memory/extractor.js";
 import { loadInstructions } from "../memory/instructions.js";
 import { MemoryManager, type RecallResult } from "../memory/manager.js";
@@ -71,7 +69,7 @@ import { buildPlanModeExitReminder, buildPlanModeReentryReminder } from "../prom
 import { createSandbox, type Sandbox } from "../sandbox/index.js";
 import * as sessionMod from "../session/session.js";
 import { SkillCatalog } from "../skills/catalog.js";
-import { runInline as runSkillInline, runFork as runSkillFork } from "../skills/executor.js";
+import { runFork as runSkillFork } from "../skills/executor.js";
 import { InstallSkillTool } from "../skills/install-tool.js";
 import { LoadSkillTool } from "../skills/load-skill-tool.js";
 import type { SkillHost, SkillForkHost } from "../skills/skill.js";
@@ -92,27 +90,23 @@ import {
 } from "../teams/tools.js";
 import { TaskStore } from "../todo/store.js";
 import { TaskList } from "../todo/todo.js";
-import { TaskCreateTool, TaskGetTool, TaskListTool, TaskUpdateTool } from "../todo/tools.js";
 import { toDisplayPreview } from "../tool-result/budget.js";
 import { AskUserQuestionTool, type Question } from "../tools/ask-user.js";
-import { BashTool } from "../tools/bash.js";
-import { EditFileTool } from "../tools/edit-file.js";
-import { EnterWorktreeTool } from "../tools/enter-worktree.js";
-import { ExitPlanModeTool } from "../tools/exit-plan-mode.js";
-import { ExitWorktreeTool } from "../tools/exit-worktree.js";
+import type { BashTool } from "../tools/bash.js";
+import type { ExitPlanModeTool } from "../tools/exit-plan-mode.js";
 import { FileStateCache } from "../tools/file-state-cache.js";
-import { McpCallTool } from "../tools/mcp-call.js";
-import { PowerShellTool } from "../tools/powershell.js";
-import { ReadFileTool } from "../tools/read-file.js";
-import { ToolRegistry } from "../tools/registry.js";
+import type { ToolRegistry } from "../tools/registry.js";
 import { SyntheticOutputTool } from "../tools/synthetic-output.js";
-import { ToolSearchTool } from "../tools/tool-search.js";
-import { GlobTool } from "../tools/wasm/glob.js";
-import { GrepTool } from "../tools/wasm/grep.js";
-import { WriteFileTool } from "../tools/write-file.js";
 import { randomCompletionVerb } from "../utils/verbs.js";
 import { connectToIde, type IdeConnection } from "../vscode/ide-client.js";
 
+import {
+  countMcpTools,
+  createToolRegistry,
+  wireSkillsToRegistry,
+  buildComposedToolFilter,
+  formatToolArgs,
+} from "./app/utils.js";
 import { AskUserDialog } from "./ask-user-dialog.js";
 import { ChatView, type ChatMessage, type ToolSummaryItem } from "./chat.js";
 import { InputBox } from "./input.js";
@@ -150,93 +144,6 @@ interface Props {
 const MAX_RECENT_TOOLS = 10;
 
 type MessageUpdate = ChatMessage[] | ((previous: ChatMessage[]) => ChatMessage[]);
-
-function countMcpTools(registry: ToolRegistry): number {
-  return registry.listTools().filter((t) => t.name.startsWith(MCP_TOOL_PREFIX)).length;
-}
-
-function createToolRegistry(workDir: string, taskList: TaskList): ToolRegistry {
-  const registry = new ToolRegistry();
-  // new InstallSkillTool
-  // new LoadSkillTool
-  // new AgentTool
-  // new TaskStopTool
-  registry.register(new TaskCreateTool(taskList)); // todo.TaskCreateTool
-  registry.register(new TaskGetTool(taskList)); // todo.TaskGetTool
-  registry.register(new TaskListTool(taskList)); // todo.TaskListTool
-
-  registry.register(new TaskUpdateTool(taskList)); // todo.TaskUpdateTool
-  // new TeamCreateTool
-  // new SpawnTeammateTool
-  // new SendMessageTool
-  // new ListTeamsTool
-  // new TeamDeleteTool
-  // new SyntheticOutputTool
-
-  // new AskUserQuestionTool
-  registry.register(new BashTool());
-  registry.register(new PowerShellTool());
-  registry.register(new EditFileTool());
-  registry.register(new EnterWorktreeTool());
-  registry.register(new ExitPlanModeTool());
-  registry.register(new ExitWorktreeTool());
-  registry.register(new ReadFileTool());
-  registry.register(new ToolSearchTool(registry));
-
-  // McpCall must be registered before connecting to MCP. Registering it after
-  // connecting based on the load mode is itself a mid-flight mutation of
-  // tools[], which breaks the cache prefix just the same.
-  registry.register(new McpCallTool(registry));
-
-  registry.register(new WriteFileTool());
-  registry.register(new GlobTool());
-  registry.register(new GrepTool());
-  return registry;
-}
-
-/**
- * wireSkillsToRegistry registers every loaded skill as a slash command in the
- * CommandRegistry. Inline skills become
- * "prompt" commands whose handler renders the skill body; fork-mode skills
- * become "skill_fork" commands (dispatched separately in executeCommand).
- *
- * Idempotent: silently skips a name that's already taken (e.g. a built-in or
- * user command registered earlier).
- */
-function wireSkillsToRegistry(
-  catalog: SkillCatalog,
-  cmdRegistry: CommandRegistry,
-  skillHost: SkillHost,
-): void {
-  for (const meta of catalog.list()) {
-    // Don't shadow existing built-in or user commands.
-    if (cmdRegistry.find(meta.name)) {
-      continue;
-    }
-
-    const skill = catalog.get(meta.name);
-    if (!skill) {
-      continue;
-    }
-
-    const isFork = skill.meta.mode === "fork";
-
-    const cmd: Command = {
-      name: meta.name,
-      aliases: [],
-      type: isFork ? "skill_fork" : "prompt",
-      description: `${meta.description} [skill]`,
-      handler: isFork
-        ? () => "" // fork dispatch handled in executeCommand before handler
-        : (ctx) => runSkillInline(skill, ctx.args, skillHost),
-    };
-    try {
-      cmdRegistry.register(cmd);
-    } catch {
-      // name clash → keep the existing command
-    }
-  }
-}
 
 export function App({
   providers,
@@ -1485,21 +1392,6 @@ export function App({
     return false;
   };
 
-  const formatToolArgs = (args: Record<string, unknown>): string => {
-    if (args.command) {
-      return truncate(strArg(args, "command"), 80);
-    }
-    if (args.file_path) {
-      return truncate(strArg(args, "file_path"), 80);
-    }
-    if (args.pattern) {
-      return truncate(strArg(args, "pattern"), 80);
-    }
-    return "";
-  };
-
-  const truncate = (s: string, max: number): string => (s.length > max ? s.slice(0, max) + "…" : s);
-
   const runAgentLoop = async (modeOverride?: PermissionMode) => {
     const controller = new AbortController();
     abortControllerRef.current = controller;
@@ -2223,17 +2115,4 @@ export function App({
       />
     </Box>
   );
-}
-
-// Compose the coordinator filter (active when teams exist) with an optional
-// skill-based filter. Both must agree for a tool to be included. When no
-// skill filter is set, only the coordinator filter is consulted.
-function buildComposedToolFilter(
-  coordinator: (name: string) => boolean,
-  skillFilter: ((name: string) => boolean) | null,
-): (name: string) => boolean {
-  if (!skillFilter) {
-    return coordinator;
-  }
-  return (name: string) => coordinator(name) && skillFilter(name);
 }
