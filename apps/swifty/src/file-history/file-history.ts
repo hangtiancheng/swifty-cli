@@ -175,6 +175,22 @@ export class FileHistory {
       }
     }
 
+    // target 之后才第一次被追踪的文件，target.backups 里没有它们的记录，
+    // 上面这段循环碰不到：在 target 那个时间点它们还不存在，回滚到那个点
+    // 就该删掉，不能留在磁盘上。
+    const createdAfterTarget = [...this.trackedFiles.keys()].filter((p) => !(p in target.backups));
+    for (const filePath of createdAfterTarget) {
+      if (existsSync(filePath)) {
+        try {
+          unlinkSync(filePath);
+          changed.push(filePath);
+        } catch {
+          // skip
+        }
+      }
+      this.trackedFiles.delete(filePath);
+    }
+
     // Truncate snapshot history -- can't redo forward
     this.snapshots = this.snapshots.slice(0, snapshotIndex + 1);
 

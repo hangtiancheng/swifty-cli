@@ -23,6 +23,7 @@
 import { ConversationManager } from "../conversation/conversation.js";
 import type { Message } from "../conversation/conversation.js";
 import type { LLMClient } from "../llm/client.js";
+import { ContextTooLongError } from "../llm/errors.js";
 import {
   type CompactBoundaryPayload,
   toolUsesToRecords,
@@ -463,6 +464,55 @@ function serializePrefixText(messages: Message[]): string {
     .join("\n\n");
 }
 
+// 从模型的两阶段回复中提取 <summary> 块内容。<analysis> 是草稿区，
+// 只保留 <summary> 部分作为最终摘要。模型不遵守格式时回退到原始文本。
+function formatCompactSummary(raw: string): string {
+  const summaryMatch = /<summary>([\s\S]*?)<\/summary>/.exec(raw);
+  if (summaryMatch) {
+    return summaryMatch[1].trim();
+  }
+  // 没有 <summary> 标签，去掉 <analysis> 块后返回剩余内容
+  const analysisMatch = /<analysis>[\s\S]*?<\/analysis>/.exec(raw);
+  if (analysisMatch) {
+    return raw.replace(analysisMatch[0], "").trim();
+  }
+  return raw.trim();
+}
+
+// Cache-sharing 摘要：保留原始消息列表不做序列化，在末尾追加摘要指令作为
+// 一条 user message 发给 LLM。消息前缀和主对话上一次 API 调用一致，能命中
+// Prompt Cache（Anthropic 90% 折扣、OpenAI 50% 折扣、DeepSeek ~90% 折扣）。
+async function callSummaryWithCacheSharing(
+  client: LLMClient,
+  messages: Message[],
+  toolSchemas: ToolSchema[],
+): Promise<string> {
+  // 找到最后一条 assistant 消息，确保追加 user message 后消息序列合法
+  let lastAssistant = -1;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].role === "assistant") {
+      lastAssistant = i;
+      break;
+    }
+  }
+  if (lastAssistant < 0) {
+    throw new Error("no assistant message found for cache-sharing compact");
+  }
+
+  const summaryConv = new ConversationManager();
+  summaryConv.appendMessages(messages.slice(0, lastAssistant + 1));
+  summaryConv.addUserMessage(SUMMARY_SYSTEM_PROMPT);
+
+  let summaryText = "";
+  const stream = client.stream(summaryConv, toolSchemas);
+  for await (const event of stream) {
+    if (event.type === "text_delta") {
+      summaryText += event.text;
+    }
+  }
+  return formatCompactSummary(summaryText);
+}
+
 /** Summary generation with PTL retry */
 async function requestSummaryWithPTLRetry(
   client: LLMClient,
@@ -483,8 +533,7 @@ async function requestSummaryWithPTLRetry(
           summaryText += event.text;
         }
       }
-      const match = /<summary>([\s\S]*?)<\/summary>/.exec(summaryText);
-      return match ? match[1].trim() : summaryText;
+      return formatCompactSummary(summaryText);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message.toLowerCase() : "";
       const isPTL =
@@ -536,9 +585,18 @@ async function doCompact(
   const toSummarize = estimationMessages.slice(0, keepStart);
   const toKeep = estimationMessages.slice(keepStart);
 
-  // Summary generation with PTL retry: when the summary request itself exceeds the
-  // context window, drop the oldest API rounds and retry up to MAX_PTL_RETRIES times.
-  const summary = await requestSummaryWithPTLRetry(client, toSummarize, toolSchemas);
+  // Cache-sharing 摘要：保留原始消息不动，在末尾追加摘要指令。
+  // API 调用的消息前缀和主对话上一次调用一致，命中 Prompt Cache，
+  // 只有末尾那条摘要指令按全价处理。PTL 时降级到文本序列化 + 截断重试。
+  let summary: string;
+  try {
+    summary = await callSummaryWithCacheSharing(client, estimationMessages, toolSchemas);
+  } catch (err) {
+    if (!(err instanceof ContextTooLongError)) {
+      throw err;
+    }
+    summary = await requestSummaryWithPTLRetry(client, toSummarize, toolSchemas);
+  }
 
   const recoveryAttachment = recoveryState
     ? recoveryState.buildRecoveryAttachment(toolSchemaNames)

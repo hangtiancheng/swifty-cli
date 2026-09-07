@@ -170,6 +170,10 @@ Today's date is ${today}.`);
     this.longTermMemoryInjected = true;
   }
 
+  appendMessages(msgs: Message[]): void {
+    this.history.push(...msgs);
+  }
+
   len(): number {
     return this.history.length;
   }
