@@ -23,7 +23,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 
-import { Box, renderToString, Text, useApp, useInput, useStdout } from "ink";
+import { Box, Text, useApp, useInput, useStdout } from "ink";
 import { useState, useEffect, useRef, useCallback } from "react";
 
 import { Agent } from "../agent/agent.js";
@@ -111,23 +111,23 @@ import { GlobTool } from "../tools/wasm/glob.js";
 import { GrepTool } from "../tools/wasm/grep.js";
 import { WriteFileTool } from "../tools/write-file.js";
 import { randomCompletionVerb } from "../utils/verbs.js";
-import { version } from "../version.js";
 import { connectToIde, type IdeConnection } from "../vscode/ide-client.js";
 
 import { AskUserDialog } from "./ask-user-dialog.js";
-import { ChatView, CommittedMessage, type ChatMessage, type ToolSummaryItem } from "./chat.js";
+import { ChatView, type ChatMessage, type ToolSummaryItem } from "./chat.js";
 import { InputBox } from "./input.js";
 import { PermissionDialog, type PermissionAction } from "./permission-dialog.js";
 import { PlanApprovalDialog, type PlanChoice } from "./plan-approval.js";
 import { ProviderSelect } from "./provider-select.js";
 import RewindDialog, { type RewindAction } from "./rewind-dialog.js";
 import Spinner from "./spinner.js";
-import { BORDER_COLORS, ICONS } from "./styles.js";
+import { ICONS } from "./styles.js";
 import { TeamStatus } from "./team-status.js";
 import { TeammateSpinnerTree } from "./teammate-spinner-tree.js";
 import { TeamsDialog } from "./teams-dialog.js";
 import { ToolBlock, ToolDisplay, type ToolBlockInfo } from "./tool-display.js";
 import { TranscriptBuffer } from "./transcript-buffer.js";
+import { TranscriptQueue } from "./transcript-writer.js";
 
 import type { ToolSchema } from "@/tools/types.js";
 import { asErrorString, asRecord, contentToText, strArg } from "@/utils/index.js";
@@ -150,33 +150,6 @@ interface Props {
 const MAX_RECENT_TOOLS = 10;
 
 type MessageUpdate = ChatMessage[] | ((previous: ChatMessage[]) => ChatMessage[]);
-
-function renderCommittedMessage(message: ChatMessage, expanded: boolean, columns: number): string {
-  const output = renderToString(<CommittedMessage message={message} expanded={expanded} />, {
-    columns,
-  });
-  return output ? output + "\n" : "";
-}
-
-function Brand({ model, workDir }: { model: string; workDir: string }) {
-  return (
-    <Box flexDirection="column">
-      <Text>
-        <Text color={BORDER_COLORS.focused}>{" /\\_/\\  "}</Text>
-        <Text dimColor>Swifty v{version}</Text>
-      </Text>
-      <Text>
-        <Text color={BORDER_COLORS.focused}>{"( o o ) "}</Text>
-        <Text dimColor>{model}</Text>
-      </Text>
-      <Text>
-        <Text color={BORDER_COLORS.focused}>{" >   <  "}</Text>
-        <Text dimColor>{workDir}</Text>
-      </Text>
-      <Text> </Text>
-    </Box>
-  );
-}
 
 function countMcpTools(registry: ToolRegistry): number {
   return registry.listTools().filter((t) => t.name.startsWith(MCP_TOOL_PREFIX)).length;
@@ -438,16 +411,37 @@ export function App({
     toolsExpandedRef.current = toolsExpanded;
   }, [toolsExpanded]);
 
+  const writeStdoutRef = useRef(writeStdout);
+  useEffect(() => {
+    writeStdoutRef.current = writeStdout;
+  }, [writeStdout]);
+
+  const transcriptQueueRef = useRef(
+    new TranscriptQueue({
+      write: (data) => {
+        writeStdoutRef.current(data);
+      },
+      columns: () => termWidthRef.current,
+      onError: (err) => {
+        log.error({ err }, "transcript write failed");
+      },
+    }),
+  );
+
+  // Pending output is dropped on unmount: flushing here would render inside the
+  // React commit that is tearing the tree down, which is the crash we avoid.
+  useEffect(() => {
+    const queue = transcriptQueueRef.current;
+    return () => {
+      queue.cancel();
+    };
+  }, []);
+
   const writeMessages = useCallback(
     (messages: ChatMessage[], expanded = toolsExpandedRef.current) => {
-      for (const message of messages) {
-        const output = renderCommittedMessage(message, expanded, termWidthRef.current);
-        if (output) {
-          writeStdout(output);
-        }
-      }
+      transcriptQueueRef.current.enqueueMessages(messages, expanded);
     },
-    [writeStdout],
+    [],
   );
 
   const setMessages = useCallback(
@@ -475,23 +469,16 @@ export function App({
     [writeMessages],
   );
 
-  const replayTranscript = useCallback(
-    (expanded: boolean) => {
-      process.stdout.write("\x1b[2J\x1b[H");
-      writeMessages(transcriptBufferRef.current.snapshot(), expanded);
-    },
-    [writeMessages],
-  );
+  const replayTranscript = useCallback((expanded: boolean) => {
+    transcriptQueueRef.current.enqueueReplay(transcriptBufferRef.current.snapshot(), expanded);
+  }, []);
 
   const writeBrand = useCallback(() => {
-    const output = renderToString(
-      <Brand model={selectedProvider.model || selectedProvider.name} workDir={workDir} />,
-      { columns: termWidthRef.current },
+    transcriptQueueRef.current.enqueueBrand(
+      selectedProvider.model || selectedProvider.name,
+      workDir,
     );
-    if (output) {
-      writeStdout(output + "\n");
-    }
-  }, [selectedProvider.model, selectedProvider.name, workDir, writeStdout]);
+  }, [selectedProvider.model, selectedProvider.name, workDir]);
 
   const brandWrittenRef = useRef(false);
   useEffect(() => {
@@ -1024,7 +1011,7 @@ export function App({
           surfacedMemoriesRef.current.clear();
           recoveryStateRef.current = new RecoveryState();
           // Clear both the visible screen and terminal scrollback, then restore the brand.
-          process.stdout.write("\x1b[2J\x1b[3J\x1b[H");
+          transcriptQueueRef.current.enqueueClear({ scrollback: true });
           writeBrand();
           break;
         }
