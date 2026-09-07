@@ -30,14 +30,7 @@ import type {
 } from "../conversation/conversation.js";
 import { ensureToolPairing } from "../conversation/pairing.js";
 import { createChildLogger } from "../logger/logger.js";
-import {
-  asRecord,
-  asString,
-  contentToText,
-  DANGEROUSLY_JSON,
-  isRecord,
-  strArg,
-} from "../utils/index.js";
+import { asRecord, asString, contentToText, isRecord, strArg } from "../utils/index.js";
 
 import type { LLMClient } from "./client.js";
 import {
@@ -185,12 +178,10 @@ export class OpenAIClient implements LLMClient {
             if (jsonAccumulate) {
               try {
                 const parsed: unknown = JSON.parse(jsonAccumulate);
-                args = isRecord(parsed) ? asRecord(parsed) : { [DANGEROUSLY_JSON]: jsonAccumulate };
+                args = isRecord(parsed) ? asRecord(parsed) : {};
               } catch (err) {
                 log.error({ err }, "llm operation failed");
-                args = {
-                  [DANGEROUSLY_JSON]: jsonAccumulate,
-                };
+                args = {};
               }
             }
 
@@ -660,12 +651,10 @@ export class OpenAICompatClient implements LLMClient {
             if (jsonArgs) {
               try {
                 const parsed: unknown = JSON.parse(jsonArgs);
-                args = isRecord(parsed) ? asRecord(parsed) : { [DANGEROUSLY_JSON]: jsonArgs };
+                args = isRecord(parsed) ? asRecord(parsed) : {};
               } catch (err) {
                 log.error({ err }, "llm operation failed");
-                args = {
-                  [DANGEROUSLY_JSON]: jsonArgs,
-                };
+                args = {};
               }
               yield {
                 type: "tool_call_complete",

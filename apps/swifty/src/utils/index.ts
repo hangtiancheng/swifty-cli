@@ -24,8 +24,6 @@ import { createChildLogger } from "../logger/logger.js";
 
 const log = createChildLogger({ module: "utils" });
 
-export const DANGEROUSLY_JSON = "dangerouslyJson";
-
 /** Convert message or legacy-session blocks to a base64-free text fallback. */
 export function contentToText(content: string | Record<string, unknown>[]): string {
   if (typeof content === "string") {

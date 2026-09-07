@@ -33,14 +33,7 @@ import type { ConversationManager, Message } from "../conversation/conversation.
 import { ensureToolPairing } from "../conversation/pairing.js";
 import { createChildLogger } from "../logger/logger.js";
 import { NATIVE_TOOL_USE_BETA } from "../mcp/strategy.js";
-import {
-  asErrorString,
-  asRecord,
-  asString,
-  contentToText,
-  DANGEROUSLY_JSON,
-  isRecord,
-} from "../utils/index.js";
+import { asErrorString, asRecord, asString, contentToText, isRecord } from "../utils/index.js";
 
 import type { LLMClient } from "./client.js";
 import {
@@ -481,14 +474,10 @@ export class AnthropicClient implements LLMClient {
               if (jsonAccumulate) {
                 try {
                   const parsed: unknown = JSON.parse(jsonAccumulate);
-                  args = isRecord(parsed)
-                    ? asRecord(parsed)
-                    : { [DANGEROUSLY_JSON]: jsonAccumulate };
+                  args = isRecord(parsed) ? asRecord(parsed) : {};
                 } catch (err) {
                   log.error({ err }, "llm operation failed");
-                  args = {
-                    [DANGEROUSLY_JSON]: jsonAccumulate,
-                  };
+                  args = {};
                 }
               } // end if (jsonAccumulate)
 
