@@ -19,11 +19,11 @@
   ],
   "type": "module",
   "scripts": {
-    "dev": "tsx ./src/main.ts",
+    "dev": "pnpm build:ui && tsx ./src/main.ts",
     "build": "tsup && vite build",
     "build:ui": "vite build",
-    "test": "vitest run",
-    "test:watch": "vitest",
+    "test": "pnpm build:ui && vitest run",
+    "test:watch": "pnpm build:ui && vitest",
     "format": "oxfmt --write ./",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },

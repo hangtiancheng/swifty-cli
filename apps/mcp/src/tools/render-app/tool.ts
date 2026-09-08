@@ -45,37 +45,26 @@ const InputSchema = {
     .string()
     .min(1)
     .max(120)
-    .default("Interactive App")
+    .default("Agentic App")
     .describe("Short human-readable label shown above the app."),
 };
 
 const NO_UI_FALLBACK_NOTE =
-  "Interactive app delivered via the render_app UI; hosts without MCP Apps support " +
+  "Agentic app delivered via the render_app UI; hosts without MCP Apps support " +
   "cannot display it.";
 
-// Served when the single-file shell has not been built yet (e.g. running from
-// source without `pnpm build`), so resources/read never fails.
-const UNBUILT_SHELL_HTML =
-  '<!doctype html><html><body style="font-family:system-ui;padding:24px">' +
-  "<p>render_app UI shell is not built yet. Run <code>pnpm build</code> in " +
-  "apps/mcp to generate dist/mcp-app.html.</p></body></html>";
-
 async function readAppHtml(): Promise<string> {
-  // Bundled binary resolves dist/main.js's sibling; tsx from src/ resolves the
-  // package-level dist directory three levels up.
-  const candidates = [
-    new URL("./mcp-app.html", import.meta.url),
-    new URL("../../../dist/mcp-app.html", import.meta.url),
-  ];
-  for (const candidate of candidates) {
-    try {
-      return await readFile(candidate, "utf-8");
-    } catch {
-      // Try the next candidate path.
-    }
+  const sibling = new URL("./mcp-app.html", import.meta.url);
+  const appHtmlUrl = sibling.pathname.endsWith("/dist/mcp-app.html")
+    ? sibling
+    : new URL("../../../dist/mcp-app.html", import.meta.url);
+
+  try {
+    return await readFile(appHtmlUrl, "utf-8");
+  } catch (err) {
+    logger.error({ err, path: appHtmlUrl.pathname }, "render_app UI shell is unavailable");
+    throw new Error("render_app UI shell is unavailable; run pnpm build:ui", { cause: err });
   }
-  logger.warn("render_app UI shell not found (run pnpm build); serving placeholder");
-  return UNBUILT_SHELL_HTML;
 }
 
 export const renderAppModule: ToolModule = {
@@ -99,7 +88,7 @@ export const renderAppModule: ToolModule = {
           readOnlyHint: true,
           destructiveHint: false,
           idempotentHint: true,
-          openWorldHint: false,
+          openWorldHint: true,
         },
         _meta: { ui: { resourceUri: RENDER_APP_RESOURCE_URI } },
       },
@@ -109,7 +98,8 @@ export const renderAppModule: ToolModule = {
           content: [
             { type: "text", text: `Rendered interactive app "${title}". ${NO_UI_FALLBACK_NOTE}` },
           ],
-          structuredContent: { html, title },
+          structuredContent: { title },
+          _meta: { html, title },
         };
       },
     );

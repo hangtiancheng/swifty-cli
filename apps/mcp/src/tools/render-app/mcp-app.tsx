@@ -18,7 +18,7 @@ type RenderState =
   | { phase: "ready"; html: string; title: string }
   | { phase: "failed"; message: string };
 
-const FALLBACK_TITLE = "@swifty.js/mcp#render-app";
+const FALLBACK_TITLE = "Agentic App";
 
 function readStringField(
   record: Record<string, unknown> | undefined,
@@ -107,8 +107,10 @@ function Shell(): ReactElement {
         setState({ phase: "failed", message: "The render_app tool call failed." });
         return;
       }
-      const html = readStringField(result.structuredContent, "html");
-      const title = readStringField(result.structuredContent, "title");
+      const html = readStringField(result._meta, "html");
+      const title =
+        readStringField(result._meta, "title") ??
+        readStringField(result.structuredContent, "title");
       if (html !== undefined) {
         setState({ phase: "ready", html, title: title ?? FALLBACK_TITLE });
       } else {

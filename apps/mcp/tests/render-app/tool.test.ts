@@ -1,3 +1,7 @@
+import { rename } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
+
+import { RESOURCE_MIME_TYPE } from "@modelcontextprotocol/ext-apps/server";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -5,12 +9,12 @@ import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
 import { RENDER_APP_RESOURCE_URI, renderAppModule } from "@/tools/render-app/tool.js";
-import { RESOURCE_MIME_TYPE } from "@modelcontextprotocol/ext-apps/server";
 
 // The SDK types these results loosely (index signatures, text/blob unions), so
 // narrow them with zod before asserting on specific fields.
 const ToolSchema = z.looseObject({
   name: z.string(),
+  annotations: z.looseObject({ openWorldHint: z.boolean() }),
   _meta: z.looseObject({
     ui: z.looseObject({ resourceUri: z.string() }),
   }),
@@ -25,6 +29,7 @@ const TextResourceContentsSchema = z.looseObject({
 const CallToolResultSchema = z.looseObject({
   isError: z.boolean().optional(),
   structuredContent: z.record(z.string(), z.unknown()).optional(),
+  _meta: z.record(z.string(), z.unknown()).optional(),
   content: z
     .array(
       z.looseObject({
@@ -34,6 +39,9 @@ const CallToolResultSchema = z.looseObject({
     )
     .optional(),
 });
+
+const builtAppPath = fileURLToPath(new URL("../../dist/mcp-app.html", import.meta.url));
+const hiddenAppPath = `${builtAppPath}.test-hidden`;
 
 async function connect(): Promise<Client> {
   const server = new McpServer({ name: "test-server", version: "0.0.0" });
@@ -54,17 +62,29 @@ describe("render_app", () => {
     const parsed = ToolSchema.parse(tool);
     // registerAppTool also mirrors the URI under the flat "ui/resourceUri" key.
     expect(parsed._meta.ui.resourceUri).toBe(RENDER_APP_RESOURCE_URI);
+    expect(parsed.annotations.openWorldHint).toBe(true);
   });
 
-  it("serves the UI shell resource with the MCP Apps mime type", async () => {
+  it("serves the bundled UI shell resource with the MCP Apps mime type", async () => {
     const client = await connect();
     const result = await client.readResource({ uri: RENDER_APP_RESOURCE_URI });
     const content = TextResourceContentsSchema.parse(result.contents[0]);
     expect(content.mimeType).toBe(RESOURCE_MIME_TYPE);
-    expect(content.text.length > 0).toBe(true);
+    expect(content.text).toContain('id="root"');
+    expect(content.text).not.toContain("mcp-app.tsx");
   });
 
-  it("returns the app payload as structured content with a text fallback", async () => {
+  it("fails when the bundled UI shell is missing", async () => {
+    await rename(builtAppPath, hiddenAppPath);
+    try {
+      const client = await connect();
+      await expect(client.readResource({ uri: RENDER_APP_RESOURCE_URI })).rejects.toThrow();
+    } finally {
+      await rename(hiddenAppPath, builtAppPath);
+    }
+  });
+
+  it("keeps HTML in app-only metadata with a text fallback", async () => {
     const client = await connect();
     const result = CallToolResultSchema.parse(
       await client.callTool({
@@ -73,7 +93,8 @@ describe("render_app", () => {
       }),
     );
     expect(result.isError).toBeUndefined();
-    expect(result.structuredContent).toEqual({ html: "<p>hello</p>", title: "Greeting" });
+    expect(result.structuredContent).toEqual({ title: "Greeting" });
+    expect(result._meta).toEqual({ html: "<p>hello</p>", title: "Greeting" });
     const text = result.content?.[0];
     expect(text?.type).toBe("text");
     expect(text?.text).toContain("Greeting");
@@ -87,7 +108,7 @@ describe("render_app", () => {
         arguments: { html: "<p>hello</p>" },
       }),
     );
-    expect(result.structuredContent).toMatchObject({ title: "Interactive App" });
+    expect(result.structuredContent).toMatchObject({ title: "Agentic App" });
   });
 
   it("rejects oversized html documents", async () => {
