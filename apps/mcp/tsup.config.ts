@@ -37,7 +37,15 @@ export default defineConfig({
   target: "node20",
   outDir: "dist",
   clean: true,
-  banner: { js: "#!/usr/bin/env node" },
+  banner: {
+    js: [
+      "#!/usr/bin/env node",
+      // Bundled CJS deps (dotenv) call require() dynamically; provide it in
+      // the ESM bundle or Node throws "Dynamic require of ... is not supported".
+      'import { createRequire } from "node:module";',
+      "const require = createRequire(import.meta.url);",
+    ].join("\n"),
+  },
   define: { __SWIFTY_MCP_VERSION__: JSON.stringify(version) },
   tsconfig: "tsconfig.json",
 });
