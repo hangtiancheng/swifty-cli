@@ -134,26 +134,50 @@ function toolResultBlocksChars(blocks: ToolResultContentBlock[]): {
   let textChars = 0;
   let richChars = 0;
   for (const block of blocks) {
-    if (block.type === "text") {
-      textChars += block.text.length;
-    } else if (block.type === "image") {
-      richChars += IMAGE_CHAR_EQUIV;
-    } else if (block.type === "tool_reference") {
-      richChars += block.tool_name.length;
-    } else if (block.type === "search_result") {
-      richChars += block.source.length + block.title.length;
-      richChars += block.content.reduce((sum, content) => sum + content.text.length, 0);
-    } else if (block.source.type === "base64") {
-      richChars += IMAGE_CHAR_EQUIV;
-    } else if (block.source.type === "url") {
-      richChars += block.source.url.length;
-    } else if (block.source.type === "text") {
-      richChars += block.source.data.length;
-    } else if (typeof block.source.content === "string") {
-      richChars += block.source.content.length;
-    } else {
-      for (const content of block.source.content) {
-        richChars += content.type === "text" ? content.text.length : IMAGE_CHAR_EQUIV;
+    switch (block.type) {
+      case "text": {
+        textChars += block.text.length;
+        break;
+      }
+      case "image": {
+        richChars += IMAGE_CHAR_EQUIV;
+        break;
+      }
+      case "tool_reference": {
+        richChars += block.tool_name.length;
+        break;
+      }
+      case "search_result": {
+        richChars += block.source.length + block.title.length;
+        richChars += block.content.reduce((sum, content) => sum + content.text.length, 0);
+        break;
+      }
+      case "document": {
+        switch (block.source.type) {
+          case "base64": {
+            richChars += IMAGE_CHAR_EQUIV;
+            break;
+          }
+          case "url": {
+            richChars += block.source.url.length;
+            break;
+          }
+          case "text": {
+            richChars += block.source.data.length;
+            break;
+          }
+          case "content": {
+            if (typeof block.source.content === "string") {
+              richChars += block.source.content.length;
+              break;
+            }
+            for (const content of block.source.content) {
+              richChars += content.type === "text" ? content.text.length : IMAGE_CHAR_EQUIV;
+            }
+            break;
+          }
+        }
+        break;
       }
     }
   }
