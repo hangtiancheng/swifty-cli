@@ -23,7 +23,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 
-import { Box, Text, useApp, useInput, useStdout } from "ink";
+import { Box, Static, Text, useApp, useInput, useStdout } from "ink";
 import { useState, useEffect, useRef, useCallback } from "react";
 
 import { Agent } from "../agent/agent.js";
@@ -98,6 +98,7 @@ import { FileStateCache } from "../tools/file-state-cache.js";
 import type { ToolRegistry } from "../tools/registry.js";
 import { SyntheticOutputTool } from "../tools/synthetic-output.js";
 import { randomCompletionVerb } from "../utils/verbs.js";
+import { version } from "../version.js";
 import { connectToIde, type IdeConnection } from "../vscode/ide-client.js";
 
 import {
@@ -108,20 +109,18 @@ import {
   formatToolArgs,
 } from "./app/utils.js";
 import { AskUserDialog } from "./ask-user-dialog.js";
-import { ChatView, type ChatMessage, type ToolSummaryItem } from "./chat.js";
+import { ChatView, CommittedMessage, type ChatMessage, type ToolSummaryItem } from "./chat.js";
 import { InputBox } from "./input.js";
 import { PermissionDialog, type PermissionAction } from "./permission-dialog.js";
 import { PlanApprovalDialog, type PlanChoice } from "./plan-approval.js";
 import { ProviderSelect } from "./provider-select.js";
 import RewindDialog, { type RewindAction } from "./rewind-dialog.js";
 import Spinner from "./spinner.js";
-import { ICONS } from "./styles.js";
+import { BORDER_COLORS, ICONS } from "./styles.js";
 import { TeamStatus } from "./team-status.js";
 import { TeammateSpinnerTree } from "./teammate-spinner-tree.js";
 import { TeamsDialog } from "./teams-dialog.js";
 import { ToolBlock, ToolDisplay, type ToolBlockInfo } from "./tool-display.js";
-import { TranscriptBuffer } from "./transcript-buffer.js";
-import { TranscriptQueue } from "./transcript-writer.js";
 
 import type { ToolSchema } from "@/tools/types.js";
 import { asErrorString, asRecord, contentToText, strArg } from "@/utils/index.js";
@@ -143,8 +142,6 @@ interface Props {
 // Maximum number of recent tool names (deduplicated) passed to the memory recall selector
 const MAX_RECENT_TOOLS = 10;
 
-type MessageUpdate = ChatMessage[] | ((previous: ChatMessage[]) => ChatMessage[]);
-
 export function App({
   providers,
   permissionMode,
@@ -155,13 +152,11 @@ export function App({
   forkDisabled,
 }: Props) {
   const { exit } = useApp();
-  const { stdout, write: writeStdout } = useStdout();
-  const termWidthRef = useRef(stdout.columns || 80);
-  const [, setTermWidth] = useState(termWidthRef.current);
   const [appState, setAppState] = useState<AppState>(
     providers.length === 1 ? "chat" : "providerSelect",
   );
   const [selectedProvider, setSelectedProvider] = useState<ProviderConfig>(providers[0]);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [streamingText, setStreamingText] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const [isCompacting, setIsCompacting] = useState(false);
@@ -306,95 +301,10 @@ export function App({
   const [teammateStates, setTeammateStates] = useState<TeammateUIState[]>([]);
   const [teamsDialogOpen, setTeamsDialogOpen] = useState(false);
   const [toolsExpanded, setToolsExpanded] = useState(false);
-  const toolsExpandedRef = useRef(toolsExpanded);
-  const transcriptBufferRef = useRef(new TranscriptBuffer());
-  const messagesRef = useRef<ChatMessage[]>([]);
   const [subagents, setSubagents] = useState<
     { id: number; label: string; turn: number; lastTool?: string }[]
   >([]);
   const subagentIdRef = useRef(0);
-
-  useEffect(() => {
-    toolsExpandedRef.current = toolsExpanded;
-  }, [toolsExpanded]);
-
-  const writeStdoutRef = useRef(writeStdout);
-  useEffect(() => {
-    writeStdoutRef.current = writeStdout;
-  }, [writeStdout]);
-
-  const transcriptQueueRef = useRef(
-    new TranscriptQueue({
-      write: (data) => {
-        writeStdoutRef.current(data);
-      },
-      columns: () => termWidthRef.current,
-      onError: (err) => {
-        log.error({ err }, "transcript write failed");
-      },
-    }),
-  );
-
-  // Pending output is dropped on unmount: flushing here would render inside the
-  // React commit that is tearing the tree down, which is the crash we avoid.
-  useEffect(() => {
-    const queue = transcriptQueueRef.current;
-    return () => {
-      queue.cancel();
-    };
-  }, []);
-
-  const writeMessages = useCallback(
-    (messages: ChatMessage[], expanded = toolsExpandedRef.current) => {
-      transcriptQueueRef.current.enqueueMessages(messages, expanded);
-    },
-    [],
-  );
-
-  const setMessages = useCallback(
-    (update: MessageUpdate) => {
-      const previous = messagesRef.current;
-      const next = typeof update === "function" ? update(previous) : update;
-      if (next.length === 0) {
-        transcriptBufferRef.current.clear();
-        messagesRef.current = [];
-        return;
-      }
-
-      const appended =
-        previous.length <= next.length &&
-        previous.every((message, index) => next[index] === message);
-      const output = appended ? next.slice(previous.length) : next;
-      if (appended) {
-        transcriptBufferRef.current.append(output);
-      } else {
-        transcriptBufferRef.current.replace(next);
-      }
-      messagesRef.current = transcriptBufferRef.current.snapshot();
-      writeMessages(output);
-    },
-    [writeMessages],
-  );
-
-  const replayTranscript = useCallback((expanded: boolean) => {
-    transcriptQueueRef.current.enqueueReplay(transcriptBufferRef.current.snapshot(), expanded);
-  }, []);
-
-  const writeBrand = useCallback(() => {
-    transcriptQueueRef.current.enqueueBrand(
-      selectedProvider.model || selectedProvider.name,
-      workDir,
-    );
-  }, [selectedProvider.model, selectedProvider.name, workDir]);
-
-  const brandWrittenRef = useRef(false);
-  useEffect(() => {
-    if (appState !== "chat" || brandWrittenRef.current) {
-      return;
-    }
-    brandWrittenRef.current = true;
-    writeBrand();
-  }, [appState, writeBrand]);
 
   const teammateStateSignatureRef = useRef("");
   useEffect(() => {
@@ -501,13 +411,15 @@ export function App({
     }
   });
 
-  // ctrl+o toggles expanded output for the bounded replay tail.
+  // ctrl+o toggles full vs. truncated tool output in the transcript.
+  // <Static> never repaints items it has already printed, so toggling the
+  // flag alone would only affect future commits: erase the visible viewport
+  // (scrollback kept, same trick as the width-change handler) and remount
+  // <Static> via its key so the whole transcript reprints in the new state.
   useInput((input, key) => {
     if (key.ctrl && input === "o") {
-      const expanded = !toolsExpandedRef.current;
-      toolsExpandedRef.current = expanded;
-      setToolsExpanded(expanded);
-      replayTranscript(expanded);
+      process.stdout.write("\x1b[2J\x1b[H");
+      setToolsExpanded((e) => !e);
     }
   });
 
@@ -749,22 +661,35 @@ export function App({
     [workDir, mcpServers, connectMcpServers],
   );
 
-  // Reflow only the bounded replay tail after a width change; older output remains in native scrollback.
+  // Terminal width used to re-key the <Static> transcript. Ink erases the
+  // previous dynamic frame by its logical line count; after a width change the
+  // already-printed rows re-wrap (full-width rows like the input-box borders
+  // double), so that erase under-counts and stale spinner/input rows leak into
+  // scrollback on every subsequent repaint. On a (debounced) width change we
+  // erase the visible viewport ourselves (\x1b[2J\x1b[H — scrollback is kept,
+  // unlike /clear's \x1b[3J) and remount <Static> via the key so the whole
+  // transcript reprints cleanly at the new width.
+  const { stdout } = useStdout();
+  const termWidthRef = useRef(stdout.columns || 80);
+  const [termWidth, setTermWidth] = useState(termWidthRef.current);
+
   useEffect(() => {
     let timer: NodeJS.Timeout | null = null;
     const onResize = () => {
       if (timer) {
         clearTimeout(timer);
       }
+      // Debounce: a drag-resize fires dozens of events; repaint once at the end.
       timer = setTimeout(() => {
         timer = null;
         const width = stdout.columns || 80;
+        // Height-only changes don't re-wrap rows; nothing leaks, skip.
         if (width === termWidthRef.current) {
           return;
         }
         termWidthRef.current = width;
+        stdout.write("\x1b[2J\x1b[H");
         setTermWidth(width);
-        replayTranscript(toolsExpandedRef.current);
       }, 150);
     };
     stdout.on("resize", onResize);
@@ -774,7 +699,7 @@ export function App({
       }
       stdout.off("resize", onResize);
     };
-  }, [replayTranscript, stdout]);
+  }, [stdout]);
 
   useEffect(() => {
     if (appState === "chat" && !clientRef.current) {
@@ -917,9 +842,9 @@ export function App({
           recentToolsRef.current = [];
           surfacedMemoriesRef.current.clear();
           recoveryStateRef.current = new RecoveryState();
-          // Clear both the visible screen and terminal scrollback, then restore the brand.
-          transcriptQueueRef.current.enqueueClear({ scrollback: true });
-          writeBrand();
+          // Clear both the visible screen and terminal scrollback. Changing the
+          // session ID remounts the static brand block on the next render.
+          process.stdout.write("\x1b[2J\x1b[3J\x1b[H");
           break;
         }
         case "quit":
@@ -1941,6 +1866,48 @@ export function App({
   return (
     <Box flexDirection="column" width="100%">
       <Box flexDirection="column" paddingTop={0} flexGrow={1}>
+        {/* Finalized messages are written once into the terminal's native
+            scrollback. This keeps the complete transcript selectable and
+            copyable while only the active turn is re-rendered by Ink. */}
+        <Static
+          key={`transcript-${sessionIdRef.current}-${String(termWidth)}-${String(toolsExpanded)}`}
+          items={[
+            {
+              type: "brand" as const,
+              _key: "brand",
+              model: selectedProvider.model || selectedProvider.name,
+              workDir,
+            },
+            ...messages.map((message, index) => ({
+              type: "message" as const,
+              _key: `message-${String(index)}`,
+              message,
+            })),
+          ]}
+        >
+          {(item) =>
+            item.type === "brand" ? (
+              <Box key={item._key} flexDirection="column">
+                <Text>
+                  <Text color={BORDER_COLORS.focused}>{" /\\_/\\  "}</Text>
+                  <Text dimColor>Swifty v{version}</Text>
+                </Text>
+                <Text>
+                  <Text color={BORDER_COLORS.focused}>{"( o o ) "}</Text>
+                  <Text dimColor>{item.model}</Text>
+                </Text>
+                <Text>
+                  <Text color={BORDER_COLORS.focused}>{" >   <  "}</Text>
+                  <Text dimColor>{item.workDir}</Text>
+                </Text>
+                <Text> </Text>
+              </Box>
+            ) : (
+              <CommittedMessage key={item._key} message={item.message} expanded={toolsExpanded} />
+            )
+          }
+        </Static>
+
         <ChatView
           messages={[]}
           streamingText={isStreaming ? streamingText : undefined}

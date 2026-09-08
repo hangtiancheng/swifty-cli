@@ -153,7 +153,12 @@ export const ChatView = React.memo(function (props: ChatViewProps) {
   );
 });
 
-/** Renders a finalized message before it is written to native terminal scrollback. */
+/**
+ * CommittedMessage renders a single finalized message for use inside Ink's
+ * <Static> component. Once rendered, Static never re-renders it, eliminating
+ * flicker from the scrollback history.
+ */
+
 interface CommitMessageProps {
   message: ChatMessage;
   expanded?: boolean | undefined;
