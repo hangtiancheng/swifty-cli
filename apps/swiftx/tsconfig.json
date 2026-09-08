@@ -1,8 +1,8 @@
 {
   "compilerOptions": {
-    "allowJs": true, // 纳入 .js 文件
-    "checkJs": true, // 对 .js 启用类型检查（配合 JSDoc）
-    "noEmit": true, // 纯类型检查，不产出任何文件
+    "allowJs": true, // include .js files
+    "checkJs": true, // enable type checking for .js (with JSDoc)
+    "noEmit": true, // type checking only, no output files
     "exactOptionalPropertyTypes": false,
     "isolatedModules": true,
     "lib": ["esnext"],

@@ -18,18 +18,18 @@ describe("FileHistory rewind", () => {
     const { base, projectDir } = makeTempProject();
     const fh = new FileHistory(base, "session-1");
 
-    // 第一轮：没有任何文件改动，纯对话，打一个快照。
-    fh.makeSnapshot(0, "第一轮");
+    // Round 1: no file changes, pure conversation, take a snapshot.
+    fh.makeSnapshot(0, "Round 1");
 
-    // 第二轮：新建一个文件。trackEdit 在写入前调用，此时文件还不存在。
+    // Round 2: create a new file. trackEdit is called before the write, when the file does not exist yet.
     const newFile = join(projectDir, "new-file.ts");
     fh.trackEdit(newFile);
     writeFileSync(newFile, "export const x = 1;");
-    fh.makeSnapshot(2, "第二轮：新建文件");
+    fh.makeSnapshot(2, "Round 2: new file created");
 
     expect(existsSync(newFile)).toBe(true);
 
-    // 回滚到第一轮的快照，也就是这个文件创建之前的状态。
+    // Rewind to the round-1 snapshot, i.e. the state before this file was created.
     const changed = fh.rewind(0);
 
     expect(existsSync(newFile)).toBe(false);
@@ -44,10 +44,10 @@ describe("FileHistory rewind", () => {
     writeFileSync(existing, "original");
 
     fh.trackEdit(existing);
-    fh.makeSnapshot(0, "第一轮：修改前的快照");
+    fh.makeSnapshot(0, "Round 1: snapshot before modification");
 
     writeFileSync(existing, "modified");
-    fh.makeSnapshot(2, "第二轮：改了内容");
+    fh.makeSnapshot(2, "Round 2: content changed");
 
     const changed = fh.rewind(0);
 
@@ -59,14 +59,15 @@ describe("FileHistory rewind", () => {
     const { base, projectDir } = makeTempProject();
     const fh = new FileHistory(base, "session-1");
 
-    fh.makeSnapshot(0, "第一轮");
+    fh.makeSnapshot(0, "Round 1");
 
     const newFile = join(projectDir, "new-file.ts");
     fh.trackEdit(newFile);
     writeFileSync(newFile, "export const x = 1;");
-    fh.makeSnapshot(2, "第二轮：新建文件");
+    fh.makeSnapshot(2, "Round 2: new file created");
 
-    // 回滚到文件创建之后的这个快照本身，文件应该保留（内容还原成当时写入的内容）。
+    // Rewinding to the snapshot taken after the file was created should keep the
+    // file (with its content restored to what was written at that time).
     fh.rewind(1);
 
     expect(existsSync(newFile)).toBe(true);

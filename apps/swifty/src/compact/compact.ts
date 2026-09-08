@@ -505,14 +505,15 @@ function serializePrefixText(messages: Message[]): string {
     .join("\n\n");
 }
 
-// 从模型的两阶段回复中提取 <summary> 块内容。<analysis> 是草稿区，
-// 只保留 <summary> 部分作为最终摘要。模型不遵守格式时回退到原始文本。
+// Extract the <summary> block from the model's two-phase reply. <analysis> is a
+// scratch area; only <summary> is kept as the final summary. Falls back to the
+// raw text when the model does not follow the format.
 function formatCompactSummary(raw: string): string {
   const summaryMatch = /<summary>([\s\S]*?)<\/summary>/.exec(raw);
   if (summaryMatch) {
     return summaryMatch[1].trim();
   }
-  // 没有 <summary> 标签，去掉 <analysis> 块后返回剩余内容
+  // No <summary> tag: strip the <analysis> block and return the remainder
   const analysisMatch = /<analysis>[\s\S]*?<\/analysis>/.exec(raw);
   if (analysisMatch) {
     return raw.replace(analysisMatch[0], "").trim();
@@ -520,15 +521,16 @@ function formatCompactSummary(raw: string): string {
   return raw.trim();
 }
 
-// Cache-sharing 摘要：保留原始消息列表不做序列化，在末尾追加摘要指令作为
-// 一条 user message 发给 LLM。消息前缀和主对话上一次 API 调用一致，能命中
-// Prompt Cache（Anthropic 90% 折扣、OpenAI 50% 折扣、DeepSeek ~90% 折扣）。
+// Cache-sharing summary: keep the original message list without serializing it,
+// and append the summary instruction as a trailing user message to the LLM. The
+// message prefix matches the main conversation's last API call, so it hits the
+// Prompt Cache (Anthropic 90% discount, OpenAI 50%, DeepSeek ~90%).
 async function callSummaryWithCacheSharing(
   client: LLMClient,
   messages: Message[],
   toolSchemas: ToolSchema[],
 ): Promise<string> {
-  // 找到最后一条 assistant 消息，确保追加 user message 后消息序列合法
+  // Find the last assistant message so the appended user message keeps the sequence valid
   let lastAssistant = -1;
   for (let i = messages.length - 1; i >= 0; i--) {
     if (messages[i].role === "assistant") {
@@ -626,9 +628,11 @@ async function doCompact(
   const toSummarize = estimationMessages.slice(0, keepStart);
   const toKeep = estimationMessages.slice(keepStart);
 
-  // Cache-sharing 摘要：保留原始消息不动，在末尾追加摘要指令。
-  // API 调用的消息前缀和主对话上一次调用一致，命中 Prompt Cache，
-  // 只有末尾那条摘要指令按全价处理。PTL 时降级到文本序列化 + 截断重试。
+  // Cache-sharing summary: leave the original messages untouched and append the
+  // summary instruction at the end. The API call's message prefix matches the
+  // main conversation's last call, hitting the Prompt Cache; only the trailing
+  // summary instruction is billed at full price. On PTL, fall back to text
+  // serialization with truncation retries.
   let summary: string;
   try {
     summary = await callSummaryWithCacheSharing(client, estimationMessages, toolSchemas);

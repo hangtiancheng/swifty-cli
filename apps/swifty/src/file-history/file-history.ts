@@ -175,9 +175,9 @@ export class FileHistory {
       }
     }
 
-    // target 之后才第一次被追踪的文件，target.backups 里没有它们的记录，
-    // 上面这段循环碰不到：在 target 那个时间点它们还不存在，回滚到那个点
-    // 就该删掉，不能留在磁盘上。
+    // Files first tracked after `target` have no record in target.backups, so the
+    // loop above never touches them: they did not exist at that point in time, so
+    // rewinding to it must delete them rather than leave them on disk.
     const createdAfterTarget = [...this.trackedFiles.keys()].filter((p) => !(p in target.backups));
     for (const filePath of createdAfterTarget) {
       if (existsSync(filePath)) {
