@@ -10,7 +10,6 @@
 
 <p align="center">
   <a href="https://www.npmjs.com/package/@swifty.js/swifty"><img src="https://img.shields.io/npm/v/@swifty.js/swifty.svg?label=swifty" alt="swifty npm version" /></a>
-  <a href="https://www.npmjs.com/package/@swifty.js/swiftx"><img src="https://img.shields.io/npm/v/@swifty.js/swiftx.svg?label=swiftx" alt="swiftx npm version" /></a>
   <a href="https://nodejs.org"><img src="https://img.shields.io/node/v/@swifty.js/swifty.svg" alt="node version" /></a>
   <a href="./LICENSE"><img src="https://img.shields.io/npm/l/@swifty.js/swifty.svg" alt="license" /></a>
 </p>
@@ -38,24 +37,19 @@ Requires **Node.js >= 20**.
 ### One-line installer
 
 ```bash
-# Swifty — the Node.js agent
-curl -fsSL https://raw.githubusercontent.com/hangtiancheng/swifty-cli/main/swifty.sh | bash
-
-# Swiftx — the native-binary agent
-curl -fsSL https://raw.githubusercontent.com/hangtiancheng/swifty-cli/main/swiftx.sh | bash
+curl -fsSL https://raw.githubusercontent.com/hangtiancheng/swifty-cli/main/install.sh | bash
 ```
 
-Both installers support `--uninstall`, `--version=X.Y.Z`, `--alpha`, `--beta`, `--rc`, `--canary`, `--nightly` and `--tag=NAME`:
+The installer supports `--uninstall`, `--version=X.Y.Z`, `--alpha`, `--beta`, `--rc`, `--canary`, `--nightly` and `--tag=NAME`:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/hangtiancheng/swifty-cli/main/swifty.sh | bash -s -- --alpha
+curl -fsSL https://raw.githubusercontent.com/hangtiancheng/swifty-cli/main/install.sh | bash -s -- --alpha
 ```
 
 ### Via npm
 
 ```bash
-npm install -g @swifty.js/swifty   # swifty command
-npm install -g @swifty.js/swiftx   # swiftx command
+npm install -g @swifty.js/swifty
 ```
 
 ### Run it
@@ -81,17 +75,6 @@ providers:
 
 See the [full configuration reference](./apps/swifty/README.md#configuration) for MCP servers, hooks, sandboxing and all provider fields.
 
-## Swifty vs. Swiftx
-
-|              | **Swifty**                           | **Swiftx**                                                 |
-| ------------ | ------------------------------------ | ---------------------------------------------------------- |
-| Package      | [`@swifty.js/swifty`](./apps/swifty) | [`@swifty.js/swiftx`](./apps/swiftx)                       |
-| Runtime      | Node.js (React + Ink TUI)            | Native binary per platform                                 |
-| Platforms    | Anywhere Node >= 20 runs             | macOS / Linux / Windows, x64 / arm64                       |
-| Distribution | npm                                  | npm wrapper that downloads the binary from GitHub Releases |
-
-Same agent, two delivery channels — pick Swiftx when you want the native build.
-
 ## Repository Layout
 
 This is a pnpm monorepo (workspace `apps/*`):
@@ -99,7 +82,6 @@ This is a pnpm monorepo (workspace `apps/*`):
 | Package                                                | Description                                                      |
 | ------------------------------------------------------ | ---------------------------------------------------------------- |
 | [`@swifty.js/swifty`](./apps/swifty)                   | The terminal AI coding agent (Node.js)                           |
-| [`@swifty.js/swiftx`](./apps/swiftx)                   | Native-binary distribution of the agent                          |
 | [`@swifty.js/mcp`](./apps/mcp)                         | Official Swifty MCP tools collection — semantic doc search (RAG) |
 | [`@swifty.js/glob-wasm`](./apps/glob-wasm)             | WebAssembly-powered glob matching and scanning                   |
 | [`@swifty.js/marked-terminal`](./apps/marked-terminal) | Markdown renderer for the terminal (a `marked-terminal` fork)    |

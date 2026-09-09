@@ -8,13 +8,11 @@
     "git:commit:n": "git add -A && git commit -m \"feat: Introduce new features\" --no-verify",
     "git:push": "pnpm git:commit && git push origin main",
     "git:push:n": "pnpm git:commit:n && git push origin main",
-    "format:sh": "shfmt -w ./install.sh ./larky.sh ./swiftx.sh",
-    "format": "concurrently \"pnpm format:swifty\" \"pnpm format:swiftx\"",
+    "format:sh": "shfmt -w ./install.sh",
+    "format": "pnpm format:swifty",
     "format:swifty": "pnpm --filter @swifty.js/swifty format",
-    "format:swiftx": "pnpm --filter @swifty.js/swiftx format",
-    "build": "concurrently \"pnpm build:swifty\" \"pnpm build:swiftx\"",
+    "build": "pnpm build:swifty",
     "build:swifty": "pnpm --filter @swifty.js/swifty build",
-    "build:swiftx": "pnpm --filter @swifty.js/swiftx build",
     "build:wasm": "pnpm --filter @swifty.js/glob-wasm build",
     "build:marked-terminal": "pnpm --filter @swifty.js/marked-terminal build",
     "prebuild": "concurrently \"pnpm build:wasm\" \"pnpm build:marked-terminal\"",
@@ -36,8 +34,7 @@
   "packageManager": "pnpm@10.33.1",
   "pnpm": {
     "overrides": {
-      "@swifty.js/swifty": "workspace:*",
-      "@swifty.js/swiftx": "workspace:*"
+      "@swifty.js/swifty": "workspace:*"
     }
   }
 }

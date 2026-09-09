@@ -205,15 +205,9 @@ target
 
 .swifty/
 **/.swifty/
-.swiftx/
-**/.swiftx/
 
 !apps/swifty/.swifty/
 apps/swifty/.swifty/*
 !apps/swifty/.swifty/config.yaml
-
-!apps/swiftx/.swiftx/
-apps/swiftx/.swiftx/*
-!apps/swiftx/.swiftx/config.yaml
 
 .playwright-cli/
