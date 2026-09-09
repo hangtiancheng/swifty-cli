@@ -566,7 +566,19 @@ export class Agent {
           // combined overflow. Process the entire batch before it enters history
           // so the message is in its final form from the start.
           applyBudget(toolResults, this.workDir, this.sessionId, exemptIds);
-          const exitPlanCalled = toolUses.some((tu) => tu.toolName === "ExitPlanMode");
+          // Only end the loop when ExitPlanMode actually succeeded: an errored
+          // call (e.g. invoked outside plan mode) must flow back to the model as
+          // a normal tool_result so it can self-correct instead of the turn
+          // ending on a dangling error.
+          const exitPlanSucceeded = toolUses.some((tu) => {
+            if (tu.toolName !== "ExitPlanMode") {
+              return false;
+            }
+            const result = results.find(
+              (r) => r.type === "tool_result" && r.toolId === tu.toolUseId,
+            );
+            return result?.type === "tool_result" && !result.isError;
+          });
           this.conversation.addToolResultsMessage(toolResults);
           this.persistLastMessage();
 
@@ -592,7 +604,7 @@ export class Agent {
             this.memoryRecallConsumed = true;
           }
 
-          if (exitPlanCalled) {
+          if (exitPlanSucceeded) {
             yield { type: "turn_complete" };
             yield { type: "loop_complete", stopReason: "end_turn" };
             return;

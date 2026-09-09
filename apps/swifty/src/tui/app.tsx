@@ -1462,6 +1462,7 @@ export function App({
     });
 
     let fullText = "";
+    let exitPlanSucceeded = false;
 
     // Per-turn accumulators for the folded turn_summary display.
     let turnThinkingText = "";
@@ -1528,6 +1529,9 @@ export function App({
         }
 
         case "tool_result": {
+          if (event.toolName === "ExitPlanMode" && !event.isError) {
+            exitPlanSucceeded = true;
+          }
           // Track the just-completed tool name; move duplicates to the end so the list reflects recency
           const recent = recentToolsRef.current;
           const dup = recent.indexOf(event.toolName);
@@ -1644,7 +1648,7 @@ export function App({
           streamingTextRef.current = "";
           setActiveTools([]);
           resetTurnAccumulators();
-          if (permModeRef.current === "plan") {
+          if (permModeRef.current === "plan" && exitPlanSucceeded) {
             setPlanApprovalActive(true);
           }
           break;
@@ -2045,7 +2049,12 @@ export function App({
         onSubmit={(text: string) => {
           void handleSubmit(text);
         }}
-        disabled={rewindDialogActive || permissionRequest !== null || askRequest !== null}
+        disabled={
+          planApprovalActive ||
+          rewindDialogActive ||
+          permissionRequest !== null ||
+          askRequest !== null
+        }
         submitDisabled={isStreaming || isCompacting}
         history={promptHistory}
         commands={cmdRegistryRef.current.listCommands()}

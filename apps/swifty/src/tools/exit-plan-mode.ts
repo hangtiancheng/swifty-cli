@@ -50,6 +50,13 @@ export class ExitPlanModeTool implements Tool {
 
   execute(_ctx: ToolContext, _args: Record<string, unknown>): Promise<ToolResult> {
     if (this.isPlanMode && !this.isPlanMode()) {
+      if (this.planExists?.()) {
+        return Promise.resolve({
+          output:
+            "You are not in plan mode. This tool is only for exiting plan mode after writing a plan. You can call AskUserQuestion tool to ask the user whether to execute the plan.",
+          isError: true,
+        });
+      }
       return Promise.resolve({
         output:
           "You are not in plan mode. This tool is only for exiting plan mode after writing a plan.",

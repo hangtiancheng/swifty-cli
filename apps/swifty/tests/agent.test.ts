@@ -29,6 +29,7 @@ import { HookEngine } from "../src/hooks/hooks.js";
 import type { LLMClient } from "../src/llm/client.js";
 import type { StreamEvent, UsageInfo } from "../src/llm/events.js";
 import { PermissionChecker } from "../src/permissions/checker.js";
+import { ExitPlanModeTool } from "../src/tools/exit-plan-mode.js";
 import { ToolRegistry } from "../src/tools/registry.js";
 import type { Tool } from "../src/tools/types.js";
 import { contentToText } from "../src/utils/index.js";
@@ -240,6 +241,48 @@ describe("Agent loop", () => {
     // No second LLM call after the interrupted tool batch.
     expect(client.calls).toBe(1);
     // The interrupted result is still recorded so tool_use stays paired.
+    expect(conversation.getMessages().at(-1)?.toolResults?.length).toBe(1);
+  });
+
+  it("keeps looping when ExitPlanMode errors outside plan mode", async () => {
+    const exitPlan = new ExitPlanModeTool();
+    exitPlan.isPlanMode = () => false;
+    const client = new MockClient([
+      [
+        { type: "tool_call_complete", toolId: "p1", toolName: "ExitPlanMode", arguments: {} },
+        end("tool_use"),
+      ],
+      [{ type: "text_delta", text: "recovered" }, end()],
+    ]);
+    const { events, conversation } = await runAgent(client, { tool: exitPlan });
+
+    const tr = events.find((e) => e.type === "tool_result");
+    expect(tr?.type === "tool_result" && tr.isError).toBe(true);
+    expect(tr?.type === "tool_result" && tr.output).toContain("not in plan mode");
+    // The errored call must not end the loop: the model gets a second turn to self-correct.
+    expect(client.calls).toBe(2);
+    expect(
+      conversation.getMessages().some((m) => contentToText(m.content).includes("recovered")),
+    ).toBe(true);
+  });
+
+  it("ends the loop when ExitPlanMode succeeds", async () => {
+    const exitPlan = new ExitPlanModeTool();
+    exitPlan.isPlanMode = () => true;
+    exitPlan.planExists = () => true;
+    const client = new MockClient([
+      [
+        { type: "tool_call_complete", toolId: "p1", toolName: "ExitPlanMode", arguments: {} },
+        end("tool_use"),
+      ],
+    ]);
+    const { events, conversation } = await runAgent(client, { tool: exitPlan });
+
+    const tr = events.find((e) => e.type === "tool_result");
+    expect(tr?.type === "tool_result" && tr.isError).toBe(false);
+    expect(client.calls).toBe(1);
+    const lc = events.find((e) => e.type === "loop_complete");
+    expect(lc?.type === "loop_complete" && lc.stopReason).toBe("end_turn");
     expect(conversation.getMessages().at(-1)?.toolResults?.length).toBe(1);
   });
 
