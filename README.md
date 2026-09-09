@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./assets/swifty.svg" width="300" alt="Swifty" />
+  <img src="./assets/favicon.svg" width="300" alt="Swifty" />
 </p>
 
 <h1 align="center">Swifty</h1>
