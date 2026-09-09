@@ -533,8 +533,8 @@ interface ParsedFrontmatter {
 /**
  * Parse frontmatter
  * ---
- * name: swifty-docs
- * description: The description of swifty-docs
+ * name: swifty-lit-jsx
+ * description: The description of swifty-lit-jsx
  * ---
  * Parses frontmatter and extracts name/description/type.
  * The type field is read from the top level first; the nested metadata.type form is also accepted.
