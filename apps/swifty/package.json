@@ -1,13 +1,12 @@
 {
   "name": "@swifty.js/swifty",
-  "version": "0.0.24",
+  "version": "0.0.25",
   "description": "Swifty — CLI coding agent",
   "keywords": [
-    "ai",
+    "agent",
     "cli",
     "coding-agent",
-    "swifty",
-    "swifty.js"
+    "swifty"
   ],
   "homepage": "https://github.com/hangtiancheng/swifty-cli",
   "bugs": {

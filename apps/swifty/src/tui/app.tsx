@@ -852,6 +852,7 @@ export function App({
           break;
         case "plan": {
           setPrePlanMode(permMode);
+          permModeRef.current = "plan";
           setPermMode("plan");
           const planPath = getOrCreatePlanPath(workDir);
           setMessages((prev) => [
@@ -871,6 +872,9 @@ export function App({
               setMessages((prev) => [...prev, { role: "system", content: reentryMsg }]);
             }
             hasExitedPlanModeRef.current = false;
+          }
+          if (parsed.args) {
+            await runUserTurn(parsed.args, "plan");
           }
           break;
         }
@@ -1653,6 +1657,62 @@ export function App({
     }
   };
 
+  const runUserTurn = async (text: string, modeOverride?: PermissionMode) => {
+    if (!clientRef.current) {
+      setError("LLM client not ready yet");
+      return;
+    }
+
+    setMessages((prev) => [...prev, { role: "user", content: text }]);
+    streamStartRef.current = Date.now();
+    setCompletionMark(null);
+    setIsStreaming(true);
+    setStreamingText("");
+    setError(null);
+    setActiveTools([]);
+
+    try {
+      const expanded = await expandAtRefsWithImages(text, workDir);
+      convRef.current.addUserMessage(expanded);
+      sessionMod.saveMessage(workDir, sessionIdRef.current, {
+        role: "user",
+        content:
+          typeof expanded === "string"
+            ? text
+            : [{ type: "text", text }, ...expanded.filter((block) => block.type === "image")],
+        timestamp: Math.floor(Date.now() / 1000),
+      });
+
+      await runAgentLoop(modeOverride);
+    } catch (err) {
+      const msg = asErrorString(err);
+      const isAbort = strArg(asRecord(err), "name") === "AbortError" || msg.includes("abort");
+      if (isAbort) {
+        const partialText = streamingTextRef.current;
+        if (partialText) {
+          setMessages((prev) => [
+            ...prev,
+            { role: "assistant", content: partialText + "\n\n*[cancelled]*" },
+          ]);
+        }
+        setMessages((prev) => [...prev, { role: "system", content: "(response interrupted)" }]);
+      } else {
+        const partialText = streamingTextRef.current;
+        if (partialText) {
+          setMessages((prev) => [...prev, { role: "assistant", content: partialText }]);
+        }
+        setError(msg);
+        setMessages((prev) => [...prev, { role: "system", content: `Error: ${msg}` }]);
+      }
+    } finally {
+      const elapsed = Math.floor((Date.now() - streamStartRef.current) / 1000);
+      setCompletionMark(`✻ ${randomCompletionVerb()} for ${String(elapsed)}s`);
+      setIsStreaming(false);
+      setActiveTools([]);
+      abortControllerRef.current = null;
+    }
+  };
+
   const handlePlanApproval = useCallback(
     (choice: PlanChoice, feedback?: string) => {
       setPlanApprovalActive(false);
@@ -1782,79 +1842,16 @@ export function App({
     }
     submittingRef.current = true;
 
-    refreshSkillsIfNeeded();
+    try {
+      refreshSkillsIfNeeded();
+      setPromptHistory(historyMod.append(historyDir, text));
 
-    // Save to prompt history
-    setPromptHistory(historyMod.append(historyDir, text));
-
-    // Handle slash commands
-    if (text.startsWith("/")) {
-      const handled = await handleSlashCommand(text);
-      if (handled) {
-        submittingRef.current = false;
+      if (text.startsWith("/") && (await handleSlashCommand(text))) {
         return;
       }
-    }
 
-    if (!clientRef.current) {
-      setError("LLM client not ready yet");
-      submittingRef.current = false;
-      return;
-    }
-
-    setMessages((prev) => [...prev, { role: "user", content: text }]);
-    // Inline any @file references for the model; @image references become
-    // inline image content blocks. The UI keeps the original text the user typed.
-    const expanded = await expandAtRefsWithImages(text, workDir);
-    convRef.current.addUserMessage(expanded);
-
-    // Save to session: the original typed text, plus any attached image
-    // blocks (persisted inline as base64 in the JSONL).
-    sessionMod.saveMessage(workDir, sessionIdRef.current, {
-      role: "user",
-      content:
-        typeof expanded === "string"
-          ? text
-          : [{ type: "text", text }, ...expanded.filter((b) => b.type === "image")],
-      timestamp: Math.floor(Date.now() / 1000),
-    });
-
-    streamStartRef.current = Date.now();
-    setCompletionMark(null);
-    setIsStreaming(true);
-    setStreamingText("");
-    setError(null);
-    setActiveTools([]);
-
-    try {
-      await runAgentLoop();
-    } catch (err) {
-      const msg = asErrorString(err);
-      const isAbort = strArg(asRecord(err), "name") === "AbortError" || msg.includes("abort");
-      if (isAbort) {
-        const partialText = streamingTextRef.current;
-        if (partialText) {
-          setMessages((prev) => [
-            ...prev,
-            { role: "assistant", content: partialText + "\n\n*[cancelled]*" },
-          ]);
-        }
-        setMessages((prev) => [...prev, { role: "system", content: "(response interrupted)" }]);
-      } else {
-        // API error (non-abort)
-        const partialText = streamingTextRef.current;
-        if (partialText) {
-          setMessages((prev) => [...prev, { role: "assistant", content: partialText }]);
-        }
-        setError(msg);
-        setMessages((prev) => [...prev, { role: "system", content: `Error: ${msg}` }]);
-      }
+      await runUserTurn(text);
     } finally {
-      const elapsed = Math.floor((Date.now() - streamStartRef.current) / 1000);
-      setCompletionMark(`✻ ${randomCompletionVerb()} for ${String(elapsed)}s`);
-      setIsStreaming(false);
-      setActiveTools([]);
-      abortControllerRef.current = null;
       submittingRef.current = false;
     }
   };
