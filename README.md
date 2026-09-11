@@ -84,7 +84,6 @@ This is a pnpm monorepo (workspace `apps/*`):
 | [`@swifty.js/swifty`](./apps/swifty)                   | The terminal AI coding agent (Node.js)                           |
 | [`@swifty.js/mcp`](./apps/mcp)                         | Official Swifty MCP tools collection — semantic doc search (RAG) |
 | [`@swifty.js/glob-wasm`](./apps/glob-wasm)             | WebAssembly-powered glob matching and scanning                   |
-| [`@swifty.js/marked-terminal`](./apps/marked-terminal) | Markdown renderer for the terminal (a `marked-terminal` fork)    |
 
 ## Development
 

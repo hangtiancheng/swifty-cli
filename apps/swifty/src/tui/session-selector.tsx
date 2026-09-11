@@ -1,65 +1,96 @@
-import { Box, Text, useInput } from "ink";
-import { useState } from "react";
+import Fuse from "fuse.js";
+import { useInput } from "ink";
+import { useMemo, useState } from "react";
 
 import type { SessionInfo } from "../session/session.js";
 
-import { getListWindowStart } from "./list-window.js";
-import { SelectorFrame } from "./selector-frame.js";
-import { THEME } from "./styles.js";
+import { SelectorList, SelectorListRow } from "./selector-list.js";
+import { updateSelectorQuery } from "./selector-search.js";
 
 interface SessionSelectorProps {
+  currentSessionId?: string;
+  reservedRows?: number;
   sessions: SessionInfo[];
   onCancel: () => void;
   onSelect: (sessionId: string) => void;
 }
 
-export function SessionSelector({ sessions, onCancel, onSelect }: SessionSelectorProps) {
-  const [cursor, setCursor] = useState(0);
-  const windowStart = getListWindowStart(sessions.length, cursor, 10);
-  const visibleSessions = sessions.slice(windowStart, windowStart + 10);
+export function SessionSelector({
+  currentSessionId,
+  reservedRows,
+  sessions,
+  onCancel,
+  onSelect,
+}: SessionSelectorProps) {
+  const [query, setQuery] = useState("");
+  const [focusedId, setFocusedId] = useState(currentSessionId);
+  const fuse = useMemo(
+    () =>
+      new Fuse(sessions, {
+        keys: ["id", "firstMessage"],
+        threshold: 0.35,
+        ignoreLocation: true,
+      }),
+    [sessions],
+  );
+  const matches = useMemo(
+    () => (query.trim() ? fuse.search(query.trim()).map(({ item }) => item) : sessions),
+    [fuse, query, sessions],
+  );
+  const cursor = Math.max(
+    0,
+    matches.findIndex((session) => session.id === focusedId),
+  );
 
-  useInput((_input, key) => {
-    if (key.upArrow) {
-      setCursor((current) => (current > 0 ? current - 1 : sessions.length - 1));
-    } else if (key.downArrow) {
-      setCursor((current) => (current < sessions.length - 1 ? current + 1 : 0));
+  useInput((input, key) => {
+    if (key.escape) {
+      onCancel();
+    } else if (key.upArrow || key.downArrow) {
+      if (matches.length > 0) {
+        const next = (cursor + (key.upArrow ? -1 : 1) + matches.length) % matches.length;
+        setFocusedId(matches[next].id);
+      }
     } else if (key.return) {
-      const session = sessions[cursor];
+      const session = matches.at(cursor);
       if (session) {
         onSelect(session.id);
       }
-    } else if (key.escape) {
-      onCancel();
+    } else {
+      const nextQuery = updateSelectorQuery(query, input, key);
+      if (nextQuery !== query) {
+        setQuery(nextQuery);
+        setFocusedId(nextQuery.trim() ? undefined : currentSessionId);
+      }
     }
   });
 
   return (
-    <SelectorFrame
-      hint={`↑↓ navigate · Enter resume · Escape cancel${sessions.length > 10 ? ` · ${String(cursor + 1)}/${String(sessions.length)}` : ""}`}
+    <SelectorList
+      cursor={cursor}
+      emptyText={query.trim() ? "No matching sessions" : "No saved sessions"}
+      hint="↑↓ navigate · Enter resume · Esc cancel · Ctrl+U clear"
+      itemCount={matches.length}
+      itemHeight={2}
+      query={query}
       title="Resume session"
+      totalCount={sessions.length}
+      reservedRows={reservedRows}
     >
-      {visibleSessions.map((session, index) => {
-        const selected = windowStart + index === cursor;
-        return (
-          <Box
-            key={session.id}
-            backgroundColor={selected ? THEME.selectedBg : undefined}
-            flexDirection="column"
-            paddingLeft={1}
-            paddingRight={1}
-            width="100%"
-          >
-            <Text color={selected ? THEME.accent : THEME.text} wrap="truncate-end">
-              {selected ? "› " : "  "}
-              {session.firstMessage || "(empty session)"}
-            </Text>
-            <Text color={THEME.dim} wrap="truncate-end">
-              {`  ${session.id} · ${String(session.messageCount)} messages · ${formatRelativeTime(session.modTime)}`}
-            </Text>
-          </Box>
-        );
-      })}
-    </SelectorFrame>
+      {(start, count, width) =>
+        matches
+          .slice(start, start + count)
+          .map((session, index) => (
+            <SelectorListRow
+              key={session.id}
+              current={session.id === currentSessionId}
+              detail={`${session.id} · ${String(session.messageCount)} messages · ${formatRelativeTime(session.modTime)}`}
+              focused={start + index === cursor}
+              label={session.firstMessage || "(empty session)"}
+              width={width}
+            />
+          ))
+      }
+    </SelectorList>
   );
 }
 

@@ -9,20 +9,16 @@
     "git:push": "pnpm git:commit && git push origin main",
     "git:push:n": "pnpm git:commit:n && git push origin main",
     "format:sh": "shfmt -w ./install.sh",
-    "format": "pnpm format:swifty",
-    "format:swifty": "pnpm --filter @swifty.js/swifty format",
-    "build": "pnpm build:swifty",
-    "build:swifty": "pnpm --filter @swifty.js/swifty build",
+    "format": "pnpm --filter @swifty.js/swifty format",
+    "build": "pnpm --filter @swifty.js/swifty build",
     "build:wasm": "pnpm --filter @swifty.js/glob-wasm build",
-    "build:marked-terminal": "pnpm --filter @swifty.js/marked-terminal build",
-    "prebuild": "concurrently \"pnpm build:wasm\" \"pnpm build:marked-terminal\"",
+    "prebuild": "pnpm build:wasm",
     "prepare": "husky"
   },
-  "keywords": [],
+  "keywords": ["swifty", "code"],
   "devDependencies": {
-    "concurrently": "^9.2.4",
     "husky": "^9.1.7",
-    "lint-staged": "^17.2.0"
+    "lint-staged": "^17.5.1"
   },
   "lint-staged": {
     "apps/swifty/**/*.{json,jsonc,js,cjs,mjs,jsx,ts,cts,mts,tsx,html,vue,css,scss,md,mdx}": [

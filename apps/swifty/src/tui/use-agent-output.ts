@@ -10,6 +10,7 @@ import type { ToolBlockInfo } from "./tool-display.js";
 export function useAgentOutput(setMessages: Dispatch<SetStateAction<ChatMessage[]>>) {
   const [streamingText, setStreamingText] = useState("");
   const [streamingThinking, setStreamingThinking] = useState("");
+  const [retryStatus, setRetryStatus] = useState<string | undefined>();
   const [activeTools, setActiveTools] = useState<ToolBlockInfo[]>([]);
   const [inputTokens, setInputTokens] = useState(0);
   const [outputTokens, setOutputTokens] = useState(0);
@@ -31,12 +32,14 @@ export function useAgentOutput(setMessages: Dispatch<SetStateAction<ChatMessage[
 
   const prepareTurn = () => {
     setStreamingText("");
+    setRetryStatus(undefined);
     clearTools();
   };
 
   const finishTurn = () => {
     cancelFlush();
     setStreamingThinking("");
+    setRetryStatus(undefined);
     clearTools();
   };
 
@@ -64,6 +67,9 @@ export function useAgentOutput(setMessages: Dispatch<SetStateAction<ChatMessage[
     };
 
     return (event: AgentEvent) => {
+      if (event.type !== "retry" && event.type !== "usage" && event.type !== "permission_request") {
+        setRetryStatus(undefined);
+      }
       switch (event.type) {
         case "stream_text": {
           fullText += event.text;
@@ -133,6 +139,9 @@ export function useAgentOutput(setMessages: Dispatch<SetStateAction<ChatMessage[
           break;
         }
         case "retry": {
+          setRetryStatus(
+            `Retrying${event.delay ? ` (${String(Math.round(event.delay / 1000))}s delay)` : ""}: ${event.reason}`,
+          );
           setMessages((messages) => [
             ...messages,
             {
@@ -187,6 +196,7 @@ export function useAgentOutput(setMessages: Dispatch<SetStateAction<ChatMessage[
   return {
     streamingText,
     streamingThinking,
+    retryStatus,
     streamingTextRef,
     activeTools,
     inputTokens,

@@ -62,8 +62,13 @@ async function readAppHtml(): Promise<string> {
   try {
     return await readFile(appHtmlUrl, "utf-8");
   } catch (err) {
-    logger.error({ err, path: appHtmlUrl.pathname }, "render_app UI shell is unavailable");
-    throw new Error("render_app UI shell is unavailable; run pnpm build:ui", { cause: err });
+    logger.error(
+      { err, path: appHtmlUrl.pathname },
+      "render_app UI shell is unavailable",
+    );
+    throw new Error("render_app UI shell is unavailable; run pnpm build:fe", {
+      cause: err,
+    });
   }
 }
 
@@ -96,7 +101,10 @@ export const renderAppModule: ToolModule = {
         logger.debug({ bytes: html.length, title }, "render_app invoked");
         return {
           content: [
-            { type: "text", text: `Rendered interactive app "${title}". ${NO_UI_FALLBACK_NOTE}` },
+            {
+              type: "text",
+              text: `Rendered interactive app "${title}". ${NO_UI_FALLBACK_NOTE}`,
+            },
           ],
           structuredContent: { title },
           _meta: { html, title },

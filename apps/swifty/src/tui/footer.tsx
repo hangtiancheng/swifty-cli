@@ -1,18 +1,41 @@
 import { homedir } from "node:os";
 
-import { Box, Text } from "ink";
+import { Box, Text, useBoxMetrics, useStdout, type DOMElement } from "ink";
+import { useLayoutEffect, useRef } from "react";
 
 import { THEME } from "./styles.js";
+import { truncateToWidth, visibleWidth, wrapToLines } from "./terminal-text.js";
 
 interface FooterProps {
   contextWindow: number;
   inputTokens: number;
   model: string;
   outputTokens: number;
+  onHeightChange?: (height: number) => void;
   permissionMode: string;
   provider: string;
   sessionId: string;
   workDir: string;
+}
+
+const MODE_DISPLAY: Record<string, string> = {
+  default: "default",
+  acceptEdits: "Accept Edits",
+  plan: "Plan",
+  bypassPermissions: "YOLO",
+};
+
+function permissionModeColor(mode: string): string {
+  if (mode === "acceptEdits") {
+    return THEME.success;
+  }
+  if (mode === "plan") {
+    return THEME.warning;
+  }
+  if (mode === "bypassPermissions") {
+    return THEME.error;
+  }
+  return THEME.dim;
 }
 
 function compactPath(path: string): string {
@@ -34,6 +57,21 @@ function formatTokens(value: number): string {
   return `${(value / 1_000_000).toFixed(1)}m`;
 }
 
+function locationLines(workDir: string, sessionId: string, width: number): string[] {
+  const path = compactPath(workDir);
+  if (!sessionId) {
+    return [truncateToWidth(path, width)];
+  }
+  const pathWidth = width - visibleWidth(sessionId) - 3;
+  if (pathWidth >= 1) {
+    const cwd = truncateToWidth(path, pathWidth);
+    return [`${cwd}${" ".repeat(pathWidth - visibleWidth(cwd))} · ${sessionId}`];
+  }
+  // Session IDs are copyable identifiers, never ellipsize them to make room
+  // for a path. On very small terminals they get their own wrapped rows.
+  return [truncateToWidth(path, width), ...wrapToLines(sessionId, width)];
+}
+
 export function Footer(props: FooterProps) {
   const {
     contextWindow,
@@ -45,34 +83,73 @@ export function Footer(props: FooterProps) {
     sessionId,
     workDir,
   } = props;
+  const { stdout } = useStdout();
+  const ref = useRef<DOMElement>(null);
+  const { height, hasMeasured } = useBoxMetrics(ref);
+  useLayoutEffect(() => {
+    if (hasMeasured) {
+      props.onHeightChange?.(height);
+    }
+  }, [hasMeasured, height, props.onHeightChange]);
+  const columns = Math.max(1, stdout.columns || 80);
+  const padding = columns > 2 ? 1 : 0;
+  const width = columns - padding * 2;
   const used = inputTokens + outputTokens;
   const percentage = contextWindow > 0 ? (used / contextWindow) * 100 : 0;
   const contextColor =
     percentage >= 90 ? THEME.error : percentage >= 70 ? THEME.warning : THEME.dim;
+  const tokens = `↑${formatTokens(inputTokens)} ↓${formatTokens(outputTokens)}`;
+  const context = `${percentage.toFixed(1)}%/${formatTokens(contextWindow)}`;
+  const statsWidth = visibleWidth(`${tokens} ${context}`);
+  const mode = MODE_DISPLAY[permissionMode] ?? permissionMode;
+  const rightWidth = width - statsWidth - 2;
+  const separateMode = rightWidth < visibleWidth(mode);
+  const cycleHint = "  Shift+Tab to cycle";
+  let identity = provider ? `${provider}/${model}` : model;
+  let hint = "";
+
+  if (!separateMode) {
+    if (visibleWidth(`${identity} · ${mode}${cycleHint}`) <= rightWidth) {
+      hint = cycleHint;
+    } else if (visibleWidth(`${identity} · ${mode}`) > rightWidth) {
+      // Provider is secondary; only shorten the model once it is gone.
+      const modelWidth = rightWidth - visibleWidth(mode) - 3;
+      identity = modelWidth >= 2 ? truncateToWidth(model, modelWidth) : "";
+    }
+  }
+  const modelPrefix = identity ? `${identity} · ` : "";
+  const gap = Math.max(2, width - statsWidth - visibleWidth(`${modelPrefix}${mode}${hint}`));
+  const stats = (
+    <Text color={THEME.dim}>
+      {tokens} <Text color={contextColor}>{context}</Text>
+    </Text>
+  );
 
   return (
-    <Box flexDirection="column" paddingLeft={1} paddingRight={1}>
-      <Box width="100%">
-        <Box flexGrow={1} minWidth={1}>
-          <Text color={THEME.dim} wrap="truncate-end">
-            {compactPath(workDir)}
+    <Box
+      ref={ref}
+      flexDirection="column"
+      width={columns}
+      paddingLeft={padding}
+      paddingRight={padding}
+    >
+      <Text color={THEME.dim}>{locationLines(workDir, sessionId, width).join("\n")}</Text>
+      {separateMode ? (
+        <>
+          {stats}
+          <Text color={permissionModeColor(permissionMode)}>
+            {wrapToLines(mode, width).join("\n")}
           </Text>
-        </Box>
-        <Box flexShrink={0}>
-          <Text color={THEME.dim}> · {sessionId}</Text>
-        </Box>
-      </Box>
-      <Box justifyContent="space-between" width="100%">
+        </>
+      ) : (
         <Text color={THEME.dim}>
-          ↑{formatTokens(inputTokens)} ↓{formatTokens(outputTokens)}{" "}
-          <Text color={contextColor}>
-            {percentage.toFixed(1)}%/{formatTokens(contextWindow)}
-          </Text>
+          {stats}
+          {" ".repeat(gap)}
+          {modelPrefix}
+          <Text color={permissionModeColor(permissionMode)}>{mode}</Text>
+          {hint}
         </Text>
-        <Text color={THEME.dim} wrap="truncate-start">
-          {provider}/{model} · {permissionMode}
-        </Text>
-      </Box>
+      )}
     </Box>
   );
 }

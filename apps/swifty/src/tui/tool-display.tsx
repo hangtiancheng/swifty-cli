@@ -22,13 +22,13 @@
 
 import { Box, Text, useStdout } from "ink";
 
+import { formatToolArgs } from "../bootstrap/utils.js";
 import { isDiffTool } from "../tools/is-diff-tool.js";
 
 import { DiffLines } from "./diff-render.js";
 import { THEME } from "./styles.js";
+import { truncateToWidth } from "./terminal-text.js";
 import { formatToolOutputPreview } from "./tool-preview.js";
-
-import { strArg } from "@/utils/index.js";
 
 export interface ToolBlockInfo {
   toolId: string;
@@ -40,31 +40,41 @@ export interface ToolBlockInfo {
   loading?: boolean;
 }
 
-interface ToolBlockProps {
-  tool: ToolBlockInfo;
+interface ToolCardProps {
+  toolName: string;
+  argsSummary: string;
+  output?: string;
+  isError?: boolean;
+  elapsed?: number;
+  loading?: boolean;
   expanded?: boolean;
 }
 
-interface ToolDisplayProps {
-  tools: ToolBlockInfo[];
-  expanded?: boolean;
-}
-
-export function ToolBlock(props: ToolBlockProps) {
-  const { tool, expanded = false } = props;
+export function ToolCard({
+  toolName,
+  argsSummary,
+  output,
+  isError,
+  elapsed,
+  loading,
+  expanded = false,
+}: ToolCardProps) {
   const { stdout } = useStdout();
   const width = Math.max(1, stdout.columns || 80);
-  const argSummary = formatArgs(tool.args);
-  const backgroundColor = tool.loading
+  const contentWidth = Math.max(1, width - 2);
+  const backgroundColor = loading
     ? THEME.toolPendingBg
-    : tool.isError
+    : isError
       ? THEME.toolErrorBg
       : THEME.toolSuccessBg;
-  const time = tool.elapsed === undefined ? "" : ` (${tool.elapsed.toFixed(1)}s)`;
-  const output = tool.output
+  const shell = /^(bash|powershell)$/iu.test(toolName);
+  const title = shell
+    ? `${toolName.toLowerCase() === "bash" ? "$" : ">"} ${argsSummary}`
+    : `${toolName}${argsSummary ? ` ${argsSummary}` : ""}`;
+  const shown = output
     ? expanded
-      ? tool.output.trimEnd()
-      : formatToolOutputPreview(tool.toolName, tool.output)
+      ? output.trimEnd()
+      : formatToolOutputPreview(toolName, output, contentWidth)
     : "";
 
   return (
@@ -72,36 +82,40 @@ export function ToolBlock(props: ToolBlockProps) {
       backgroundColor={backgroundColor}
       flexDirection="column"
       marginTop={1}
-      paddingLeft={1}
-      paddingRight={1}
+      paddingX={1}
       paddingY={1}
       width={width}
     >
-      <Text>
-        <Text bold color={THEME.text}>
-          {tool.toolName}
-        </Text>
-        {argSummary ? <Text color={THEME.accent}> {argSummary}</Text> : null}
-        <Text color={THEME.dim}>{time}</Text>
+      <Text bold color={THEME.text}>
+        {truncateToWidth(title, contentWidth)}
       </Text>
-      {output ? (
-        <Box paddingLeft={2}>
-          {isDiffTool(tool.toolName) ? (
-            <DiffLines text={output} />
+      {shown ? (
+        <Box marginTop={1} flexDirection="column">
+          {isDiffTool(toolName) ? (
+            <DiffLines text={shown} />
           ) : (
-            <Text color={THEME.muted}>{output}</Text>
+            <Text color={THEME.muted}>{shown}</Text>
           )}
         </Box>
+      ) : null}
+      {elapsed !== undefined && elapsed > 0 ? (
+        <Text color={THEME.dim}>{`Took ${elapsed.toFixed(1)}s`}</Text>
       ) : null}
     </Box>
   );
 }
 
-export function ToolDisplay(props: ToolDisplayProps) {
-  const { tools, expanded = false } = props;
-  if (tools.length === 0) {
-    return null;
-  }
+export function ToolBlock({ tool, expanded = false }: { tool: ToolBlockInfo; expanded?: boolean }) {
+  return <ToolCard {...tool} argsSummary={formatToolArgs(tool.args)} expanded={expanded} />;
+}
+
+export function ToolDisplay({
+  tools,
+  expanded = false,
+}: {
+  tools: ToolBlockInfo[];
+  expanded?: boolean;
+}) {
   return (
     <Box flexDirection="column">
       {tools.map((tool) => (
@@ -109,23 +123,4 @@ export function ToolDisplay(props: ToolDisplayProps) {
       ))}
     </Box>
   );
-}
-
-// export default ToolDisplay;
-
-function formatArgs(args: Record<string, unknown>): string {
-  if (args.command) {
-    return truncate(strArg(args, "command"), 80);
-  }
-  if (args.file_path) {
-    return truncate(strArg(args, "file_path"), 80);
-  }
-  if (args.pattern) {
-    return truncate(strArg(args, "pattern"), 80);
-  }
-  return "";
-}
-
-function truncate(s: string, max: number): string {
-  return s.length > max ? s.slice(0, max) + "…" : s;
 }

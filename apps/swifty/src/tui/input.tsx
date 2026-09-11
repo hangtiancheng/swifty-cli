@@ -25,12 +25,17 @@ import { join, relative } from "path";
 
 import Fuse from "fuse.js";
 import { Box, Text, useInput, usePaste, useStdout } from "ink";
+import type { Key } from "ink";
 import { useState, useMemo, useRef, useEffect } from "react";
 
 import { createChildLogger } from "../logger/logger.js";
 
+import { useInputDraft } from "./input-draft.js";
+import type { InputDraft } from "./input-draft.js";
 import { getListWindowStart } from "./list-window.js";
+import { StatusBorder } from "./status-border.js";
 import { ICONS, THEME } from "./styles.js";
+import { truncateToWidth, visibleWidth } from "./terminal-text.js";
 
 import type { Command } from "@/commands/commands.js";
 import type { CommandUsageTracker } from "@/commands/usage-tracker.js";
@@ -84,25 +89,7 @@ function scanWorkdirFiles(root: string, max = 2000): string[] {
   return out;
 }
 
-const MODEL_DISPLAY: Record<PermissionMode, string> = {
-  default: "default",
-  acceptEdits: "Accept Edits",
-  plan: "Plan",
-  bypassPermissions: "YOLO",
-};
-
-function permissionModeColor(mode: PermissionMode): string {
-  if (mode === "acceptEdits") {
-    return THEME.success;
-  }
-  if (mode === "plan") {
-    return THEME.warning;
-  }
-  if (mode === "bypassPermissions") {
-    return THEME.error;
-  }
-  return THEME.dim;
-}
+export type { InputDraft } from "./input-draft.js";
 
 const MODEL_CYCLE: PermissionMode[] = ["default", "acceptEdits", "plan", "bypassPermissions"];
 
@@ -129,6 +116,8 @@ interface InputBoxProps {
   /** Receives a function that clears the input draft, so the parent can
    *  bind it to shortcuts handled outside this component (e.g. Ctrl+C). */
   clearRef?: { current: (() => void) | null };
+  /** Owned by the dock so selectors can unmount the input without losing edits. */
+  draftRef?: { current: InputDraft | null };
 }
 
 export function InputBox(props: InputBoxProps) {
@@ -149,28 +138,38 @@ export function InputBox(props: InputBoxProps) {
     sessionId = "default",
     insertTextRef,
     clearRef,
+    draftRef,
   } = props;
   const { stdout } = useStdout();
 
-  const [lines, setLines] = useState<string[]>([""]);
-  const [cursorLine, setCursorLine] = useState(0);
-  const [cursorCol, setCursorCol] = useState(0);
-  const [historyIndex, setHistoryIndex] = useState(-1);
-  // Stashes the in-progress input when the user first arrows up into history,
-  // so arrowing back down past the newest entry restores it instead of clearing.
-  const historyDraftRef = useRef<{
-    lines: string[];
-    cursorLine: number;
-    cursorCol: number;
-  } | null>(null);
+  const {
+    lines,
+    setLines,
+    cursorLine,
+    setCursorLine,
+    cursorCol,
+    setCursorCol,
+    historyIndex,
+    setHistoryIndex,
+    historyDraft,
+    setHistoryDraft,
+  } = useInputDraft(draftRef);
   const [dropdownIndex, setDropdownIndex] = useState(0);
   const [dropdownDismissed, setDropdownDismissed] = useState(false);
   const [pasteError, setPasteError] = useState("");
   const [statusFrame, setStatusFrame] = useState(0);
   const pasteImageInflightRef = useRef(false);
+  const mountedRef = useRef(true);
 
   useEffect(() => {
-    if (!statusLabel) {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!statusLabel || inputState === "error") {
       return;
     }
     const timer = setInterval(() => {
@@ -179,7 +178,7 @@ export function InputBox(props: InputBoxProps) {
     return () => {
       clearInterval(timer);
     };
-  }, [statusLabel]);
+  }, [statusLabel, inputState]);
 
   useEffect(() => {
     if (!insertTextRef) {
@@ -202,7 +201,7 @@ export function InputBox(props: InputBoxProps) {
     return () => {
       insertTextRef.current = null;
     };
-  }, [insertTextRef, lines, cursorLine, cursorCol]);
+  }, [insertTextRef, lines, cursorLine, cursorCol, setLines, setCursorCol]);
 
   useEffect(() => {
     if (!clearRef) {
@@ -218,7 +217,7 @@ export function InputBox(props: InputBoxProps) {
       setCursorLine(0);
       setCursorCol(0);
       setHistoryIndex(-1);
-      historyDraftRef.current = null;
+      setHistoryDraft(null);
       setDropdownIndex(0);
       setDropdownDismissed(false);
       setPasteError("");
@@ -226,7 +225,7 @@ export function InputBox(props: InputBoxProps) {
     return () => {
       clearRef.current = null;
     };
-  }, [clearRef, disabled]);
+  }, [clearRef, disabled, setLines, setCursorLine, setCursorCol, setHistoryIndex, setHistoryDraft]);
 
   const isMultiline = lines.length > 1;
 
@@ -393,6 +392,9 @@ export function InputBox(props: InputBoxProps) {
     setPasteError("");
     try {
       const result = await saveClipboardImage(workDir, sessionId);
+      if (!mountedRef.current) {
+        return;
+      }
       if (result.ok) {
         // The @ ref only expands when preceded by start-of-text or whitespace.
         const line = lines[cursorLine] ?? "";
@@ -421,7 +423,7 @@ export function InputBox(props: InputBoxProps) {
     { isActive: !disabled },
   );
 
-  useInput((input, key) => {
+  const handleInput = (input: string, key: Key) => {
     if (input.includes("[<") && /\[<\d+;\d+;\d+[Mm]/.test(input)) {
       return;
     }
@@ -492,7 +494,7 @@ export function InputBox(props: InputBoxProps) {
         return;
       }
       if (showDropdown && filteredCmds.length > 0 && dropdownIndex < filteredCmds.length) {
-        const selected = filteredCmds[dropdownIndex];
+        const selected = filteredCmds.at(dropdownIndex);
         if (selected) {
           const newLine = "/" + selected.name + " ";
           setLines([newLine]);
@@ -521,7 +523,7 @@ export function InputBox(props: InputBoxProps) {
         setCursorLine(0);
         setCursorCol(0);
         setHistoryIndex(-1);
-        historyDraftRef.current = null;
+        setHistoryDraft(null);
         setDropdownIndex(0);
         setDropdownDismissed(false);
         setPasteError("");
@@ -542,7 +544,7 @@ export function InputBox(props: InputBoxProps) {
     }
 
     if (key.tab && lines[0].startsWith("/") && filteredCmds.length > 0) {
-      const selected = filteredCmds[dropdownIndex];
+      const selected = filteredCmds.at(dropdownIndex);
       if (selected) {
         const newLine = "/" + selected.name + " ";
         setLines([newLine]);
@@ -625,11 +627,11 @@ export function InputBox(props: InputBoxProps) {
       }
       if (!isMultiline && history.length > 0) {
         if (historyIndex === -1) {
-          historyDraftRef.current = {
+          setHistoryDraft({
             lines: [...lines],
             cursorLine,
             cursorCol,
-          };
+          });
         }
         const nextIdx = historyIndex < history.length - 1 ? historyIndex + 1 : historyIndex;
         setHistoryIndex(nextIdx);
@@ -669,8 +671,8 @@ export function InputBox(props: InputBoxProps) {
           setCursorCol(entryLines[0].length);
         } else if (historyIndex === 0) {
           setHistoryIndex(-1);
-          const draft = historyDraftRef.current;
-          historyDraftRef.current = null;
+          const draft = historyDraft;
+          setHistoryDraft(null);
           if (draft) {
             setLines(draft.lines);
             setCursorLine(draft.cursorLine);
@@ -697,7 +699,8 @@ export function InputBox(props: InputBoxProps) {
       setDropdownIndex(0);
       setDropdownDismissed(false);
     }
-  });
+  };
+  useInput(handleInput, { isActive: !disabled });
 
   const borderColor =
     requestedBorderColor ??
@@ -706,7 +709,9 @@ export function InputBox(props: InputBoxProps) {
       : inputState === "idle"
         ? THEME.borderMuted
         : THEME.thinkingHigh);
-  const borderWidth = Math.max(8, stdout.columns || 80);
+  const borderWidth = Math.max(1, stdout.columns || 80);
+  const horizontalPadding = borderWidth > 2 ? 1 : 0;
+  const rowWidth = borderWidth - horizontalPadding * 2;
   const maxVisibleLines = Math.max(5, Math.floor((stdout.rows || 24) * 0.3));
   const visibleStart = Math.max(
     0,
@@ -716,24 +721,13 @@ export function InputBox(props: InputBoxProps) {
   const hiddenAbove = visibleStart;
   const hiddenBelow = Math.max(0, lines.length - visibleStart - visibleLines.length);
   const spinner = SPINNER_FRAMES[statusFrame] ?? SPINNER_FRAMES[0];
-  const fullStatus = statusLabel ? ` ${spinner} ${statusLabel} ` : "";
-  const scrollUp = hiddenAbove > 0 ? ` ↑ ${String(hiddenAbove)} more ` : "";
-  const borderStatus =
-    fullStatus.length + scrollUp.length <= borderWidth - 4
-      ? `${scrollUp}${fullStatus}`
-      : statusLabel
-        ? ` ${spinner} `
-        : scrollUp;
-  const scrollDown = hiddenBelow > 0 ? ` ↓ ${String(hiddenBelow)} more ` : "";
-  const topBorder = `──${borderStatus}${"─".repeat(Math.max(0, borderWidth - borderStatus.length - 2))}`;
-  const bottomBorder = `${"─".repeat(Math.max(0, borderWidth - scrollDown.length))}${scrollDown}`;
 
   const ghostText = useMemo(() => {
     if (isMultiline || !lines[0].startsWith("/") || lines[0].length <= 1) {
       return "";
     }
     const typed = lines[0].slice(1).toLowerCase();
-    const best = filteredCmds[0];
+    const best = filteredCmds.at(0);
     // filteredCmds may be empty when the typed slash command doesn't match
     // any registered command (e.g. /some-slash-command-name). Guard against
     // undefined before accessing .name — mirrors the filteredCmds.length > 0
@@ -745,9 +739,15 @@ export function InputBox(props: InputBoxProps) {
   }, [lines, filteredCmds, isMultiline]);
 
   return (
-    <Box flexDirection="column">
-      <Text color={borderColor}>{topBorder}</Text>
-      <Box paddingLeft={1} paddingRight={1}>
+    <Box flexDirection="column" width={borderWidth}>
+      <StatusBorder
+        width={borderWidth}
+        color={borderColor}
+        statusLabel={statusLabel}
+        spinner={inputState === "error" ? "!" : spinner}
+        hiddenLineCount={hiddenAbove}
+      />
+      <Box paddingLeft={horizontalPadding} paddingRight={horizontalPadding}>
         <Text>
           {disabled ? (
             <Text color={THEME.muted}>Waiting...</Text>
@@ -785,7 +785,12 @@ export function InputBox(props: InputBoxProps) {
           )}
         </Text>
       </Box>
-      <Text color={borderColor}>{bottomBorder}</Text>
+      <StatusBorder
+        width={borderWidth}
+        color={borderColor}
+        hiddenLineCount={hiddenBelow}
+        direction="down"
+      />
       {!disabled && pasteError && (
         <Box paddingLeft={2}>
           <Text color={THEME.error}>Error: {pasteError}</Text>
@@ -793,7 +798,7 @@ export function InputBox(props: InputBoxProps) {
       )}
       {showDropdown && (
         <Box flexDirection="column">
-          <Text color={THEME.dim}>
+          <Text color={THEME.dim} wrap="truncate-end">
             {recentCount > 0 && commandWindowStart === 0 ? "RECENTLY USED" : "COMMANDS"}
             {filteredCmds.length > 8
               ? ` (${String(dropdownIndex + 1)}/${String(filteredCmds.length)})`
@@ -801,31 +806,28 @@ export function InputBox(props: InputBoxProps) {
           </Text>
           {visibleCommands.map((cmd, visibleIndex) => {
             const selected = commandWindowStart + visibleIndex === dropdownIndex;
-            const color = selected ? THEME.accent : undefined;
             const desc = cmd.description.replace(/\s+/g, " ").trim();
             const isSkill = desc.endsWith(SKILL_TAG);
             const body = isSkill ? desc.slice(0, -SKILL_TAG.length).trimEnd() : desc;
+            const label = truncateToWidth(`${selected ? ICONS.arrow : " "} /${cmd.name}`, rowWidth);
+            const descriptionWidth =
+              rowWidth - visibleWidth(label) - 1 - (isSkill ? visibleWidth(SKILL_TAG) + 1 : 0);
+            const showDescription = borderWidth >= 60 && descriptionWidth >= 10;
             return (
               <Box
                 key={cmd.name}
                 backgroundColor={selected ? THEME.selectedBg : undefined}
-                paddingLeft={1}
-                paddingRight={1}
+                paddingLeft={horizontalPadding}
+                paddingRight={horizontalPadding}
                 width="100%"
               >
-                <Box flexShrink={0}>
-                  <Text color={color ?? THEME.muted}>
-                    {selected ? `${ICONS.arrow} ` : "  "}/{cmd.name}{" "}
-                  </Text>
-                </Box>
                 <Text wrap="truncate-end" color={selected ? THEME.accent : THEME.muted}>
-                  {body}
-                </Text>
-                {isSkill && (
-                  <Box flexShrink={0}>
+                  {label}
+                  {showDescription && ` ${truncateToWidth(body, descriptionWidth)}`}
+                  {showDescription && isSkill && (
                     <Text color={selected ? THEME.accent : THEME.dim}> {SKILL_TAG}</Text>
-                  </Box>
-                )}
+                  )}
+                </Text>
               </Box>
             );
           })}
@@ -833,28 +835,24 @@ export function InputBox(props: InputBoxProps) {
       )}
       {showAtDropdown && (
         <Box flexDirection="column">
-          <Text color={THEME.dim}>{"FILES"}</Text>
+          <Text color={THEME.dim} wrap="truncate-end">
+            {"FILES"}
+          </Text>
           {filteredFiles.map((file, i) => (
-            <Text
+            <Box
               key={file}
               backgroundColor={i === dropdownIndex ? THEME.selectedBg : undefined}
-              color={i === dropdownIndex ? THEME.accent : THEME.muted}
+              paddingLeft={horizontalPadding}
+              paddingRight={horizontalPadding}
+              width="100%"
             >
-              {i === dropdownIndex ? `${ICONS.arrow} ` : "  "}@{file}
-            </Text>
+              <Text color={i === dropdownIndex ? THEME.accent : THEME.muted} wrap="truncate-end">
+                {truncateToWidth(`${i === dropdownIndex ? ICONS.arrow : " "} @${file}`, rowWidth)}
+              </Text>
+            </Box>
           ))}
         </Box>
       )}
-      <Box paddingLeft={1}>
-        {permMode !== "default" ? (
-          <Text>
-            <Text color={permissionModeColor(permMode)}>{MODEL_DISPLAY[permMode]} on</Text>
-            <Text color={THEME.dim}> (Shift+Tab to cycle)</Text>
-          </Text>
-        ) : (
-          <Text color={THEME.dim}>default</Text>
-        )}
-      </Box>
     </Box>
   );
 }

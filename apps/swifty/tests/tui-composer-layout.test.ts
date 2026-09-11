@@ -1,0 +1,641 @@
+import { stripVTControlCharacters } from "node:util";
+
+import chalk from "chalk";
+import { render, renderToString } from "ink";
+import type { Instance, Key } from "ink";
+import { act, createElement } from "react";
+import type { ComponentProps } from "react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import type { Command } from "@/commands/commands.js";
+import { saveClipboardImage } from "@/images/clipboard.js";
+import { Footer } from "@/tui/footer.js";
+import { InputBox } from "@/tui/input.js";
+import { InteractionDock } from "@/tui/interaction-dock.js";
+import type { InputDraft } from "@/tui/input.js";
+import { StatusBorder } from "@/tui/status-border.js";
+import { ICONS, THEME } from "@/tui/styles.js";
+import { truncateToWidth, visibleWidth, wrapToLines } from "@/tui/terminal-text.js";
+
+const terminal = vi.hoisted(() => {
+  const input: { current: ((text: string, key: Key) => void) | null } = { current: null };
+  const paste: { current: ((text: string) => void) | null } = { current: null };
+  return { columns: 80, rows: 24, files: ["one.ts", "two.ts"], input, paste };
+});
+
+// Only replace terminal input and dimensions. All layout is rendered by Ink's
+// public renderToString/render APIs; no real CLI, filesystem scan or model runs.
+vi.mock("ink", async (importOriginal) => {
+  // eslint-disable-next-line @typescript-eslint/consistent-type-imports
+  const ink = await importOriginal<typeof import("ink")>();
+  const { useEffect } = await import("react");
+  return {
+    ...ink,
+    useStdout: () => ({ stdout: { columns: terminal.columns, rows: terminal.rows } }),
+    useInput: (handler: (text: string, key: Key) => void, options?: { isActive?: boolean }) => {
+      useEffect(() => {
+        if (options?.isActive === false) {
+          return;
+        }
+        terminal.input.current = handler;
+        return () => {
+          terminal.input.current = null;
+        };
+      }, [handler, options?.isActive]);
+    },
+    usePaste: (handler: (text: string) => void, options?: { isActive?: boolean }) => {
+      useEffect(() => {
+        if (options?.isActive === false) {
+          return;
+        }
+        terminal.paste.current = handler;
+        return () => {
+          terminal.paste.current = null;
+        };
+      }, [handler, options?.isActive]);
+    },
+  };
+});
+
+vi.mock("fs", async (importOriginal) => ({
+  // eslint-disable-next-line @typescript-eslint/consistent-type-imports
+  ...(await importOriginal<typeof import("fs")>()),
+  readdirSync: () => terminal.files,
+  statSync: () => ({ isDirectory: () => false }),
+}));
+
+vi.mock("@/images/clipboard.js", () => ({ saveClipboardImage: vi.fn() }));
+
+const commands: Command[] = [
+  {
+    name: "help",
+    aliases: ["h"],
+    description: "Show all available commands",
+    type: "local",
+    handler: () => "",
+  },
+  {
+    name: "model",
+    aliases: ["m"],
+    description: "Choose the active model [skill]",
+    type: "local_ui",
+    handler: () => "",
+  },
+];
+
+const footerProps: ComponentProps<typeof Footer> = {
+  contextWindow: 200_000,
+  inputTokens: 1250,
+  outputTokens: 230,
+  model: "compact-model",
+  permissionMode: "plan",
+  provider: "very-long-provider-name",
+  sessionId: "01234567-89ab-cdef-0123-456789abcdef",
+  workDir: "/workspace/project",
+};
+const stats = "↑1.3k ↓230 0.7%/200k";
+const initialColorLevel = chalk.level;
+let instance: Instance | undefined;
+
+function draftRef(lines = [""], cursorLine = 0, cursorCol = lines[cursorLine].length) {
+  const ref: { current: InputDraft | null } = {
+    current: { lines, cursorLine, cursorCol, historyIndex: -1, historyDraft: null },
+  };
+  return ref;
+}
+
+function key(overrides: Partial<Key> = {}): Key {
+  return {
+    upArrow: false,
+    downArrow: false,
+    leftArrow: false,
+    rightArrow: false,
+    pageDown: false,
+    pageUp: false,
+    home: false,
+    end: false,
+    return: false,
+    escape: false,
+    ctrl: false,
+    shift: false,
+    tab: false,
+    backspace: false,
+    delete: false,
+    meta: false,
+    super: false,
+    hyper: false,
+    capsLock: false,
+    numLock: false,
+    ...overrides,
+  };
+}
+
+function composer(columns: number, props: Partial<ComponentProps<typeof InputBox>> = {}) {
+  terminal.columns = columns;
+  return renderToString(createElement(InputBox, { onSubmit: vi.fn(), ...props }), { columns });
+}
+
+function footer(columns: number, props: Partial<ComponentProps<typeof Footer>> = {}) {
+  terminal.columns = columns;
+  return stripVTControlCharacters(
+    renderToString(createElement(Footer, { ...footerProps, ...props }), { columns }),
+  );
+}
+
+function mount(props: Partial<ComponentProps<typeof InputBox>> = {}) {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  act(() => {
+    instance = render(createElement(InputBox, { onSubmit: vi.fn(), ...props }), {
+      interactive: false,
+      patchConsole: false,
+    });
+  });
+}
+
+function unmount() {
+  act(() => {
+    instance?.unmount();
+    instance?.cleanup();
+  });
+  instance = undefined;
+}
+
+function press(text = "", overrides: Partial<Key> = {}) {
+  const handler = terminal.input.current;
+  if (!handler) {
+    throw new Error("Composer input is not active");
+  }
+  act(() => {
+    handler(text, key(overrides));
+  });
+}
+
+beforeEach(() => {
+  terminal.columns = 80;
+  terminal.rows = 24;
+  terminal.files = ["one.ts", "two.ts"];
+  terminal.input.current = null;
+  terminal.paste.current = null;
+  chalk.level = 0;
+  vi.useFakeTimers();
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", false);
+  vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+});
+
+afterEach(() => {
+  unmount();
+  chalk.level = initialColorLevel;
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
+
+describe("composer status borders", () => {
+  it.each([1, 2, 3, 4, 5, 8, 12, 20, 28, 40, 80, 100])(
+    "uses exactly %i terminal columns even with wide/ANSI status and overflow",
+    (width) => {
+      for (const statusLabel of [undefined, "\x1b[35m思考 e\u0301\x1b[0m"]) {
+        for (const direction of ["up", "down"] satisfies ("up" | "down")[]) {
+          const output = renderToString(
+            createElement(StatusBorder, { width, statusLabel, hiddenLineCount: 123, direction }),
+            { columns: width },
+          );
+          expect(output.split("\n")).toHaveLength(1);
+          expect(visibleWidth(output)).toBe(width);
+        }
+      }
+    },
+  );
+
+  it("keeps the status left and centers the overflow independently", () => {
+    const width = 80;
+    const output = renderToString(
+      createElement(StatusBorder, { width, statusLabel: "思考 e\u0301", hiddenLineCount: 4 }),
+      { columns: width },
+    );
+    expect(output.startsWith("── ⠋ 思考 e\u0301 ")).toBe(true);
+    const overflow = " ↑ 4 more ";
+    expect(visibleWidth(output.slice(0, output.indexOf(overflow)))).toBe(
+      Math.floor((width - visibleWidth(overflow)) / 2),
+    );
+  });
+
+  it("falls back to a spinner to leave the overflow centered", () => {
+    const output = renderToString(
+      createElement(StatusBorder, {
+        width: 30,
+        statusLabel: "A status too long to share the border",
+        hiddenLineCount: 3,
+      }),
+      { columns: 30 },
+    );
+    expect(output.startsWith("── ⠋ ")).toBe(true);
+    expect(output).not.toContain("A status");
+    expect(output.indexOf(" ↑ 3 more ")).toBe(10);
+  });
+
+  it("centers lower overflow without inventing a status", () => {
+    const output = renderToString(
+      createElement(StatusBorder, { width: 40, direction: "down", hiddenLineCount: 5 }),
+      { columns: 40 },
+    );
+    expect(output.indexOf(" ↓ 5 more ")).toBe(15);
+    expect(output).not.toContain("⠋");
+  });
+
+  it("uses both borders in InputBox and removes its duplicate permission row", () => {
+    const lines = Array.from({ length: 20 }, (_, index) => `line ${String(index)}`);
+    const output = composer(60, {
+      draftRef: draftRef(lines, 10),
+      statusLabel: "Thinking",
+      permMode: "acceptEdits",
+    }).split("\n");
+    expect(output).toHaveLength(9);
+    expect(output[0]).toContain("── ⠋ Thinking ");
+    expect(output[0]).toContain(" ↑ 7 more ");
+    expect(output.at(-1)).toContain(" ↓ 6 more ");
+    expect(visibleWidth(output[0])).toBe(60);
+    expect(visibleWidth(output.at(-1) ?? "")).toBe(60);
+    expect(output.join("\n")).not.toMatch(/Accept Edits|Shift\+Tab/);
+  });
+
+  it.each([1, 2, 4, 7])("does not impose an eight-column minimum at width %i", (width) => {
+    const output = composer(width).split("\n");
+    expect(visibleWidth(output[0])).toBe(width);
+    expect(visibleWidth(output.at(-1) ?? "")).toBe(width);
+    expect(output.every((line) => visibleWidth(line) <= width)).toBe(true);
+  });
+
+  it("preserves the inverse cursor in the input body", () => {
+    chalk.level = 3;
+    const output = composer(30, { draftRef: draftRef(["abc"], 0, 1) });
+    expect(output).toContain("\x1b[7mb\x1b[27m");
+    expect(stripVTControlCharacters(output)).toContain("abc");
+  });
+});
+
+describe("composer completion rows", () => {
+  it("hides descriptions and skill tags on narrow slash lists", () => {
+    const narrow = composer(30, { commands, draftRef: draftRef(["/"]) });
+    expect(narrow).toContain(`${ICONS.arrow} /help`);
+    expect(narrow).toContain("/model");
+    expect(narrow).not.toContain("Show all");
+    expect(narrow).not.toContain("[skill]");
+    const wide = composer(80, { commands, draftRef: draftRef(["/"]) });
+    expect(wide).toContain("Show all available commands");
+    expect(wide).toContain("Choose the active model [skill]");
+  });
+
+  it("keeps long wide-character command names in a single row", () => {
+    const longCommand: Command = { ...commands[0], name: "很长的命令名称".repeat(4) };
+    const output = composer(18, { commands: [longCommand], draftRef: draftRef(["/"]) });
+    expect(output.split("\n")).toHaveLength(5);
+    expect(output.split("\n").every((line) => visibleWidth(line) <= 18)).toBe(true);
+    expect(output).toContain("…");
+  });
+
+  it("paints a full-width selected @file row and aligns its arrow with slash rows", () => {
+    chalk.level = 3;
+    const output = composer(30, { workDir: "/virtual", draftRef: draftRef(["@"]) });
+    const row = output.split("\n").find((line) => line.includes("@one.ts")) ?? "";
+    expect(stripVTControlCharacters(row).startsWith(` ${ICONS.arrow} @one.ts`)).toBe(true);
+    expect(visibleWidth(row)).toBe(30);
+    const background = chalk.bgHex(THEME.selectedBg)(" ").split(" ")[0];
+    expect(row.startsWith(background)).toBe(true);
+    expect(row).toContain("\x1b[49m");
+  });
+
+  it("clips long @file suggestions to one row", () => {
+    terminal.files = ["很长的文件路径/".repeat(8) + "file.ts"];
+    const output = composer(20, { workDir: "/virtual", draftRef: draftRef(["@"]) });
+    expect(output.split("\n")).toHaveLength(5);
+    expect(output.split("\n").every((line) => visibleWidth(line) <= 20)).toBe(true);
+  });
+});
+
+describe("footer priorities", () => {
+  it("shows provider, model, mode and the cycle hint when there is room", () => {
+    const output = footer(150);
+    expect(output.split("\n")).toHaveLength(2);
+    expect(output).toContain(stats);
+    expect(output).toContain("very-long-provider-name/compact-model · Plan  Shift+Tab to cycle");
+    expect(output).toContain(footerProps.sessionId);
+  });
+
+  it("drops the hint and provider before shortening the model with a two-column gap", () => {
+    const width = visibleWidth(stats) + 2 + visibleWidth("compact-model · Plan") + 2;
+    const line = footer(width).split("\n").at(-1) ?? "";
+    expect(line.trim()).toBe(`${stats}  compact-model · Plan`);
+    expect(line).not.toContain("provider");
+    expect(line).not.toContain("Shift+Tab");
+    const narrower =
+      footer(width - 5)
+        .split("\n")
+        .at(-1) ?? "";
+    expect(narrower.trim()).toBe(`${stats}  ${truncateToWidth("compact-model", 8)} · Plan`);
+  });
+
+  it("only truncates cwd and keeps the complete session ID on the first row when possible", () => {
+    const output = footer(70, { workDir: "/工作目录/".repeat(20) });
+    const first = output.split("\n")[0];
+    expect(first).toContain("…");
+    expect(first.trimEnd().endsWith(footerProps.sessionId)).toBe(true);
+    expect(visibleWidth(first)).toBeLessThanOrEqual(70);
+  });
+
+  it("gives the complete session ID its own wrapped rows on tiny terminals", () => {
+    const output = footer(16).split("\n");
+    const sessionRows = wrapToLines(footerProps.sessionId, 14);
+    expect(output.slice(1, sessionRows.length + 1).map((line) => line.trim())).toEqual(sessionRows);
+    expect(
+      output
+        .slice(1, sessionRows.length + 1)
+        .map((line) => line.trim())
+        .join(""),
+    ).toBe(footerProps.sessionId);
+    expect(output.join("\n")).toContain("Plan");
+  });
+
+  it.each([1, 2, 3, 8, 16, 24, 40, 80, 120])("never overflows a %i-column terminal", (width) => {
+    const output = footer(width, {
+      model: "模型-".repeat(30),
+      permissionMode: "acceptEdits",
+      workDir: "/工作区/项目/".repeat(10),
+    });
+    expect(output.split("\n").every((line) => visibleWidth(line) <= width)).toBe(true);
+  });
+
+  it.each([
+    ["default", "default"],
+    ["acceptEdits", "Accept Edits"],
+    ["plan", "Plan"],
+    ["bypassPermissions", "YOLO"],
+  ])("keeps %s mode identifiable on a narrow footer", (permissionMode, label) => {
+    expect(footer(24, { permissionMode })).toContain(label);
+  });
+
+  it("preserves the existing token rounding and zero-context semantics", () => {
+    const output = footer(150, {
+      inputTokens: 1_250_000,
+      outputTokens: 12_500,
+      contextWindow: 0,
+    });
+    expect(output).toContain("↑1.3m ↓13k 0.0%/0");
+  });
+});
+
+describe("persistent composer drafts and input behavior", () => {
+  it("restores the dock-owned draft and caret after a provider selector closes", () => {
+    const onSubmit = vi.fn();
+    const onCancel = vi.fn();
+    const view = (selecting: boolean) =>
+      createElement(InteractionDock, {
+        composer: { onSubmit },
+        provider: selecting
+          ? {
+              providers: [
+                {
+                  name: "local",
+                  protocol: "openai-compat",
+                  base_url: "http://localhost",
+                  model: "local",
+                },
+              ],
+              onSelect: vi.fn(),
+              onCancel,
+            }
+          : undefined,
+      });
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    act(() => {
+      instance = render(view(false), { interactive: false, patchConsole: false });
+    });
+    press("draft");
+    press("", { leftArrow: true });
+    act(() => {
+      instance?.rerender(view(true));
+    });
+    expect(terminal.paste.current).toBeNull();
+    press("", { escape: true });
+    expect(onCancel).toHaveBeenCalledOnce();
+    act(() => {
+      instance?.rerender(view(false));
+    });
+    expect(terminal.paste.current).not.toBeNull();
+    press("!");
+    press("\r", { return: true });
+    expect(onSubmit).toHaveBeenCalledWith("draf!t");
+  });
+
+  it("reports the actual wrapped footer height to the page", () => {
+    const onHeightChange = vi.fn();
+    const output = footer(20, { onHeightChange });
+    expect(onHeightChange).toHaveBeenLastCalledWith(output.split("\n").length);
+    expect(output.split("\n").length).toBeGreaterThan(2);
+  });
+  it("restores multiline content and cursor, preserving editing and newline behavior", () => {
+    const ref = draftRef(["first", "second"], 1, 3);
+    mount({ draftRef: ref });
+    press("X");
+    expect(ref.current?.lines).toEqual(["first", "secXond"]);
+    press("", { leftArrow: true });
+    press("", { backspace: true });
+    expect(ref.current?.lines).toEqual(["first", "seXond"]);
+    press("", { return: true, shift: true });
+    expect(ref.current?.lines).toEqual(["first", "se", "Xond"]);
+    expect(ref.current?.cursorLine).toBe(2);
+    expect(ref.current?.cursorCol).toBe(0);
+  });
+
+  it("persists before an event can unmount the input and leaves no hidden input hook", () => {
+    const ref: { current: InputDraft | null } = { current: null };
+    mount({ draftRef: ref });
+    act(() => {
+      terminal.input.current?.("unsent", key());
+      expect(ref.current?.lines).toEqual(["unsent"]);
+      expect(ref.current?.cursorCol).toBe(6);
+      instance?.unmount();
+      instance?.cleanup();
+    });
+    instance = undefined;
+    expect(terminal.input.current).toBeNull();
+    expect(terminal.paste.current).toBeNull();
+    mount({ draftRef: ref });
+    press("!");
+    expect(ref.current?.lines).toEqual(["unsent!"]);
+  });
+
+  it("restores history position and the original unsent draft after a selector remount", () => {
+    const ref = draftRef(["draft"], 0, 3);
+    const history = ["older", "newer"];
+    mount({ draftRef: ref, history });
+    press("", { upArrow: true });
+    press("", { upArrow: true });
+    expect(ref.current?.lines).toEqual(["older"]);
+    expect(ref.current?.historyIndex).toBe(1);
+    unmount();
+    mount({ draftRef: ref, history });
+    press("", { downArrow: true });
+    expect(ref.current?.lines).toEqual(["newer"]);
+    press("", { downArrow: true });
+    expect(ref.current).toEqual({
+      lines: ["draft"],
+      cursorLine: 0,
+      cursorCol: 3,
+      historyIndex: -1,
+      historyDraft: null,
+    });
+  });
+
+  it("saves imperative insertion before unmount and clears the saved draft via clearRef", () => {
+    const ref = draftRef(["hello"]);
+    const insertTextRef: { current: ((text: string) => void) | null } = { current: null };
+    const clearRef: { current: (() => void) | null } = { current: null };
+    mount({ draftRef: ref, insertTextRef, clearRef });
+    act(() => {
+      insertTextRef.current?.("@file");
+      instance?.unmount();
+      instance?.cleanup();
+    });
+    instance = undefined;
+    expect(ref.current?.lines).toEqual(["hello @file"]);
+    expect(ref.current?.cursorCol).toBe(11);
+    expect(insertTextRef.current).toBeNull();
+    expect(clearRef.current).toBeNull();
+    mount({ draftRef: ref, clearRef });
+    act(() => {
+      clearRef.current?.();
+    });
+    expect(ref.current).toEqual(draftRef().current);
+  });
+
+  it("normalizes bracketed and plain multiline pastes without submitting", () => {
+    const ref = draftRef();
+    const onSubmit = vi.fn();
+    mount({ draftRef: ref, onSubmit });
+    act(() => {
+      terminal.paste.current?.("first\r\nsecond\rthird");
+    });
+    expect(ref.current?.lines).toEqual(["first", "second", "third"]);
+    press("\nlast");
+    expect(ref.current?.lines).toEqual(["first", "second", "third", "last"]);
+    expect(ref.current?.cursorLine).toBe(3);
+    expect(ref.current?.cursorCol).toBe(4);
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it("inserts a mocked clipboard image as the existing quoted @file mention", async () => {
+    vi.mocked(saveClipboardImage).mockResolvedValue({ ok: true, value: "/virtual/image.png" });
+    const ref = draftRef(["hello"]);
+    mount({ draftRef: ref, workDir: "/virtual", sessionId: "session" });
+    await act(async () => {
+      terminal.paste.current?.("");
+      await Promise.resolve();
+    });
+    expect(ref.current?.lines).toEqual(["hello '@image.png' "]);
+    expect(saveClipboardImage).toHaveBeenLastCalledWith("/virtual", "session");
+  });
+
+  it("ignores a late image paste from the input replaced by a selector", async () => {
+    type ClipboardResult = Awaited<ReturnType<typeof saveClipboardImage>>;
+    let resolve: ((result: ClipboardResult) => void) | undefined;
+    const pending = new Promise<ClipboardResult>((complete) => {
+      resolve = complete;
+    });
+    vi.mocked(saveClipboardImage).mockReturnValue(pending);
+    const ref = draftRef(["draft"]);
+    mount({ draftRef: ref, workDir: "/virtual" });
+    act(() => {
+      terminal.paste.current?.("");
+    });
+    unmount();
+    mount({ draftRef: ref, workDir: "/virtual" });
+    press("!");
+    await act(async () => {
+      resolve?.({ ok: true, value: "/virtual/image.png" });
+      await pending;
+    });
+    expect(ref.current?.lines).toEqual(["draft!"]);
+  });
+
+  it("keeps Enter-to-complete separate from Enter-to-submit for slash and @file", () => {
+    const ref = draftRef();
+    const onSubmit = vi.fn();
+    mount({ draftRef: ref, onSubmit, commands, workDir: "/virtual" });
+    press("/");
+    press("", { downArrow: true });
+    press("", { return: true });
+    expect(ref.current?.lines).toEqual(["/model "]);
+    expect(onSubmit).not.toHaveBeenCalled();
+    press("", { return: true });
+    expect(onSubmit).toHaveBeenLastCalledWith("/model");
+    expect(ref.current).toEqual(draftRef().current);
+    press("@");
+    press("", { return: true });
+    expect(ref.current?.lines).toEqual(["@one.ts "]);
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+    press("", { return: true });
+    expect(onSubmit).toHaveBeenLastCalledWith("@one.ts");
+    expect(ref.current).toEqual(draftRef().current);
+  });
+
+  it("retains Tab completion and Shift+Tab mode cycling", () => {
+    const ref = draftRef();
+    const onModeChange = vi.fn();
+    mount({ draftRef: ref, commands, onModeChange, workDir: "/virtual" });
+    press("/h");
+    press("", { tab: true });
+    expect(ref.current?.lines).toEqual(["/help "]);
+    press("", { tab: true, shift: true });
+    expect(onModeChange).toHaveBeenCalledWith("acceptEdits");
+    expect(ref.current?.lines).toEqual(["/help "]);
+  });
+
+  it("dismisses autocomplete before delegating Escape", () => {
+    const onEscape = vi.fn();
+    const ref = draftRef();
+    mount({ draftRef: ref, commands, onEscape, workDir: "/virtual" });
+    press("/");
+    press("", { escape: true });
+    expect(onEscape).not.toHaveBeenCalled();
+    press("\x1b");
+    expect(onEscape).toHaveBeenCalledTimes(1);
+    unmount();
+    mount({ draftRef: draftRef(["text @one"]), onEscape, workDir: "/virtual" });
+    press("", { escape: true });
+    expect(onEscape).toHaveBeenCalledTimes(1);
+  });
+
+  it("allows edits with submission locked but does not register hidden input while disabled", () => {
+    const ref = draftRef(["draft"]);
+    const onSubmit = vi.fn();
+    mount({ draftRef: ref, submitDisabled: true, onSubmit });
+    press("!");
+    press("", { return: true });
+    expect(ref.current?.lines).toEqual(["draft!"]);
+    expect(onSubmit).not.toHaveBeenCalled();
+    unmount();
+    const clearRef: { current: (() => void) | null } = { current: null };
+    mount({ draftRef: ref, disabled: true, clearRef });
+    expect(terminal.input.current).toBeNull();
+    expect(terminal.paste.current).toBeNull();
+    act(() => {
+      clearRef.current?.();
+    });
+    expect(ref.current?.lines).toEqual(["draft!"]);
+  });
+
+  it("clears submitted drafts even if onSubmit immediately unmounts the input", () => {
+    const ref = draftRef(["/model "]);
+    const onSubmit = vi.fn(() => {
+      instance?.unmount();
+    });
+    mount({ draftRef: ref, onSubmit });
+    press("", { return: true });
+    expect(onSubmit).toHaveBeenCalledWith("/model");
+    expect(ref.current).toEqual(draftRef().current);
+    unmount();
+    mount({ draftRef: ref });
+    expect(ref.current?.lines).toEqual([""]);
+  });
+});

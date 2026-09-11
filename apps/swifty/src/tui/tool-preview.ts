@@ -1,6 +1,29 @@
-export function formatToolOutputPreview(toolName: string, text: string): string {
+import { Chalk } from "chalk";
+
+import { isDiffTool } from "../tools/is-diff-tool.js";
+
+import { THEME } from "./styles.js";
+import { wrapToLines } from "./terminal-text.js";
+
+const colors = new Chalk({ level: 3 });
+
+export function formatToolOutputPreview(toolName: string, text: string, width = 80): string {
   const normalized = text.trimEnd();
-  const lines = normalized.split("\n");
+  const styled = isDiffTool(toolName)
+    ? normalized
+        .split("\n")
+        .map((line) =>
+          colors.hex(
+            line.startsWith("+ ")
+              ? THEME.toolDiffAdded
+              : line.startsWith("- ")
+                ? THEME.toolDiffRemoved
+                : THEME.toolDiffContext,
+          )(line),
+        )
+        .join("\n")
+    : normalized;
+  const lines = wrapToLines(styled, width);
   const lowerName = toolName.toLowerCase();
   const limit = lowerName.includes("grep")
     ? 15
@@ -10,7 +33,7 @@ export function formatToolOutputPreview(toolName: string, text: string): string 
         ? 5
         : 10;
   if (lines.length <= limit) {
-    return normalized;
+    return lines.join("\n");
   }
   const visible =
     lowerName.includes("bash") || lowerName.includes("powershell")

@@ -1,6 +1,7 @@
-import type { ComponentProps } from "react";
+import { useRef, type ComponentProps } from "react";
 
 import { AskUserDialog } from "./ask-user-dialog.js";
+import type { InputDraft } from "./input-draft.js";
 import { InputBox } from "./input.js";
 import { PermissionDialog } from "./permission-dialog.js";
 import { PlanApprovalDialog } from "./plan-approval.js";
@@ -30,6 +31,7 @@ export function InteractionDock({
   teams,
   composer,
 }: Props) {
+  const draftRef = useRef<InputDraft | null>(null);
   if (provider) {
     return <ProviderSelect {...provider} />;
   }
@@ -51,5 +53,5 @@ export function InteractionDock({
   if (teams) {
     return <TeamsDialog {...teams} />;
   }
-  return <InputBox {...composer} />;
+  return <InputBox {...composer} draftRef={draftRef} />;
 }

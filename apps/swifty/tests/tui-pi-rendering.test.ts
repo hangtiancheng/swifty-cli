@@ -1,0 +1,144 @@
+import { stripVTControlCharacters } from "node:util";
+
+import { Chalk } from "chalk";
+import { renderToString } from "ink";
+import { createElement } from "react";
+import { afterEach, describe, expect, it } from "vitest";
+
+import { CommittedMessage } from "@/tui/chat.js";
+import { renderMarkdown, renderStreamingMarkdown, type MarkdownCache } from "@/tui/markdown.js";
+import { setThemeMode } from "@/tui/styles.js";
+import { truncateToWidth, visibleWidth, wrapToLines } from "@/tui/terminal-text.js";
+import { ThinkingBlock } from "@/tui/thinking-block.js";
+import { ToolBlock } from "@/tui/tool-display.js";
+import { formatToolOutputPreview } from "@/tui/tool-preview.js";
+
+const colors = new Chalk({ level: 3 });
+afterEach(() => {
+  setThemeMode("dark");
+});
+
+describe("terminal column handling", () => {
+  it("measures ANSI, CJK and combining characters without splitting glyphs", () => {
+    const text = colors.red("中文e\u0301");
+    expect(visibleWidth(text)).toBe(5);
+    expect(visibleWidth(truncateToWidth(text, 4))).toBeLessThanOrEqual(4);
+    expect(stripVTControlCharacters(truncateToWidth(text, 4))).toBe("中…");
+    expect(wrapToLines(colors.green("中文中文"), 4).map(stripVTControlCharacters)).toEqual([
+      "中文",
+      "中文",
+    ]);
+    expect(truncateToWidth(text, 0)).toBe("");
+  });
+
+  it("counts shell previews in visual lines", () => {
+    const output = "1234567890".repeat(6);
+    const preview = stripVTControlCharacters(formatToolOutputPreview("Bash", output, 10));
+    expect(preview.split("\n").slice(0, 5)).toEqual(Array.from({ length: 5 }, () => "1234567890"));
+    expect(preview).toContain("1 more lines");
+  });
+});
+
+describe("pi Markdown presentation", () => {
+  it.each([20, 40, 80, 120])("fits long text, code and tables in %i columns", (width) => {
+    for (const source of [
+      "中文测试".repeat(30),
+      "```unknown-language\n" + "const value = 123; ".repeat(20) + "\n```",
+      "| Long column one | Long column two |\n| --- | --- |\n| " +
+        "value".repeat(15) +
+        " | 中文测试中文测试 |",
+      "[label](https://example.com/" + "long-path/".repeat(15) + ")",
+    ]) {
+      expect(
+        renderMarkdown(source, width)
+          .split("\n")
+          .every((line) => visibleWidth(line) <= width),
+      ).toBe(true);
+    }
+  });
+
+  it("preserves the source numbering and escaped syntax of user messages", () => {
+    const text = renderMarkdown("3. first\n8. \\*literal\\*\n", 80, "user");
+    const plain = stripVTControlCharacters(text);
+    expect(plain).toContain("3. first");
+    expect(plain).toContain("8. \\*literal\\*");
+  });
+
+  it("keeps streamed fences, lists and reference links consistent with committed Markdown", () => {
+    const cache: MarkdownCache = { prefix: "", rendered: "", width: 0, theme: "" };
+    const sources = [
+      "Intro\n\n```ts\nconst first = 1;\n\nconst second",
+      "Intro\n\n```ts\nconst first = 1;\n\nconst second = 2;\n```\n\nDone",
+      "Intro\n\n1. one\n2. two\n\nNext",
+      "A [reference][target]\n\n[target]: https://example.com",
+    ];
+    for (const text of sources) {
+      expect(renderStreamingMarkdown(text, 40, cache)).toBe(renderMarkdown(text, 40));
+    }
+    setThemeMode("light");
+    expect(renderStreamingMarkdown(sources[1], 20, cache)).toBe(renderMarkdown(sources[1], 20));
+  });
+
+  it("collapses thinking to one line and expands it as italic Markdown", () => {
+    const text = "**Reasoning**\n\n" + "detail ".repeat(40);
+    const collapsed = renderToString(createElement(ThinkingBlock, { text, expanded: false }), {
+      columns: 40,
+    });
+    expect(stripVTControlCharacters(collapsed).trim()).toBe("Thinking...");
+    const expanded = renderToString(createElement(ThinkingBlock, { text, expanded: true }), {
+      columns: 40,
+    });
+    expect(stripVTControlCharacters(expanded)).toContain("Reasoning");
+    expect(stripVTControlCharacters(expanded)).not.toContain("**Reasoning**");
+  });
+});
+
+describe("shared live and committed tool cards", () => {
+  it.each(["dark", "light"] as const)(
+    "keeps live and saved tool layout identical in %s mode",
+    (mode) => {
+      setThemeMode(mode);
+      const tool = {
+        toolId: "read-a",
+        toolName: "Read",
+        args: { file_path: "src/main.tsx" },
+        output: "line one\nline two",
+        isError: false,
+        elapsed: 0.5,
+      };
+      const live = renderToString(createElement(ToolBlock, { tool }), { columns: 40 });
+      const saved = renderToString(
+        createElement(CommittedMessage, {
+          message: {
+            role: "turn_summary",
+            content: "",
+            toolSummary: [
+              {
+                toolName: tool.toolName,
+                argsSummary: "src/main.tsx",
+                output: tool.output,
+                isError: tool.isError,
+                elapsed: tool.elapsed,
+              },
+            ],
+          },
+        }),
+        { columns: 40 },
+      );
+      expect(saved).toBe(live);
+      expect(stripVTControlCharacters(live)).toContain("Read src/main.tsx");
+      expect(stripVTControlCharacters(live)).toContain("Took 0.5s");
+    },
+  );
+
+  it("uses command titles for shell calls and hides unknown durations", () => {
+    const output = renderToString(
+      createElement(ToolBlock, {
+        tool: { toolId: "bash-a", toolName: "Bash", args: { command: "pwd" }, loading: true },
+      }),
+      { columns: 20 },
+    );
+    expect(stripVTControlCharacters(output)).toContain("$ pwd");
+    expect(stripVTControlCharacters(output)).not.toContain("Took");
+  });
+});

@@ -207,6 +207,7 @@ export function App({
   } | null>(null);
   const [promptHistory, setPromptHistory] = useState<string[]>([]);
   const [pendingMessages, setPendingMessages] = useState<string[]>([]);
+  const [footerRows, setFooterRows] = useState(2);
 
   const workDir = process.cwd();
   const historyDir = `${workDir}/.swifty`;
@@ -1696,7 +1697,9 @@ export function App({
   }, [isCompacting, isStreaming, pendingMessages]);
 
   if (appState === "providerSelect") {
-    return <ProviderSelect providers={providers} onSelect={handleProviderSelect} />;
+    return (
+      <ProviderSelect providers={providers} reservedRows={0} onSelect={handleProviderSelect} />
+    );
   }
 
   return (
@@ -1751,6 +1754,8 @@ export function App({
           providerDialogActive
             ? {
                 providers,
+                currentProviderName: selectedProvider.name,
+                reservedRows: footerRows,
                 onCancel: () => {
                   setProviderDialogActive(false);
                 },
@@ -1774,6 +1779,8 @@ export function App({
           resumeDialogActive
             ? {
                 sessions: resumeSessions,
+                currentSessionId: sessionIdRef.current,
+                reservedRows: footerRows,
                 onCancel: () => {
                   setResumeDialogActive(false);
                 },
@@ -1847,13 +1854,15 @@ export function App({
             : isCompacting || providerSwitching
               ? THEME.accent
               : THEME.thinkingHigh,
-          statusLabel: providerSwitching
-            ? "Switching provider..."
-            : isCompacting
-              ? "Compacting context... (Esc to cancel)"
-              : isStreaming
-                ? "Working"
-                : undefined,
+          statusLabel: error
+            ? "Error"
+            : providerSwitching
+              ? "Switching provider..."
+              : isCompacting
+                ? "Compacting context... (Esc to cancel)"
+                : isStreaming
+                  ? (output.retryStatus ?? "Working")
+                  : undefined,
           permMode,
           onModeChange: (mode) => {
             setPermMode(mode);
@@ -1873,6 +1882,7 @@ export function App({
         }}
       />
       <Footer
+        onHeightChange={setFooterRows}
         contextWindow={contextWindowRef.current}
         inputTokens={inputTokens}
         model={selectedProvider.model}

@@ -220,6 +220,19 @@ describe("agent output hook", () => {
     expect(state().messages).toEqual([{ role: "assistant", content: "new turn" }]);
   });
 
+  it("shows retry feedback until output resumes or the turn ends", () => {
+    const send = startLoop();
+    send({ type: "retry", reason: "busy", delay: 2000 });
+    expect(state().output.retryStatus).toBe("Retrying (2s delay): busy");
+    send({ type: "stream_text", text: "resumed" });
+    expect(state().output.retryStatus).toBeUndefined();
+    send({ type: "retry", reason: "busy", delay: 0 });
+    act(() => {
+      state().output.finishTurn();
+    });
+    expect(state().output.retryStatus).toBeUndefined();
+  });
+
   it("cancels a scheduled stream flush when unmounted", () => {
     const send = startLoop();
     send({ type: "stream_text", text: "pending" });

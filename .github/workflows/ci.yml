@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  HUSKY: 0
+
+jobs:
+  ci:
+    name: Test & Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # --- @swifty.js/glob-wasm (must build first: swifty's typecheck/tests
+      # resolve it from dist/, and swifty's tsup build copies release.wasm) ---
+
+      - name: Test glob-wasm
+        run: pnpm --filter @swifty.js/glob-wasm test
+
+      - name: Build glob-wasm
+        run: pnpm --filter @swifty.js/glob-wasm build
+
+      # --- @swifty.js/swifty ---
+
+      - name: Typecheck swifty
+        run: pnpm --filter @swifty.js/swifty typecheck
+
+      - name: Test swifty
+        run: pnpm --filter @swifty.js/swifty test
+
+      - name: Lint swifty
+        run: pnpm --filter @swifty.js/swifty lint
+
+      - name: Build swifty
+        run: pnpm --filter @swifty.js/swifty build
+
+      - name: Build swifty frontend
+        run: pnpm --filter @swifty.js/swifty build:fe
+
+      # --- @swifty.js/mcp ---
+
+      - name: Typecheck mcp
+        run: pnpm --filter @swifty.js/mcp typecheck
+
+      - name: Test mcp
+        run: pnpm --filter @swifty.js/mcp test
+
+      - name: Build mcp
+        run: pnpm --filter @swifty.js/mcp build
+
+      - name: Build mcp frontend
+        run: pnpm --filter @swifty.js/mcp build:fe
