@@ -1,0 +1,200 @@
+import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
+
+import type { AgentEvent } from "../agent/events.js";
+import { formatToolArgs } from "../bootstrap/utils.js";
+import { toDisplayPreview } from "../tool-result/budget.js";
+
+import type { ChatMessage, ToolSummaryItem } from "./chat.js";
+import type { ToolBlockInfo } from "./tool-display.js";
+
+export function useAgentOutput(setMessages: Dispatch<SetStateAction<ChatMessage[]>>) {
+  const [streamingText, setStreamingText] = useState("");
+  const [streamingThinking, setStreamingThinking] = useState("");
+  const [activeTools, setActiveTools] = useState<ToolBlockInfo[]>([]);
+  const [inputTokens, setInputTokens] = useState(0);
+  const [outputTokens, setOutputTokens] = useState(0);
+  const streamingTextRef = useRef("");
+  const streamThrottleRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const cancelFlush = () => {
+    if (streamThrottleRef.current) {
+      clearTimeout(streamThrottleRef.current);
+      streamThrottleRef.current = null;
+    }
+  };
+
+  useEffect(() => cancelFlush, []);
+
+  const clearTools = () => {
+    setActiveTools([]);
+  };
+
+  const prepareTurn = () => {
+    setStreamingText("");
+    clearTools();
+  };
+
+  const finishTurn = () => {
+    cancelFlush();
+    setStreamingThinking("");
+    clearTools();
+  };
+
+  const resetUsage = () => {
+    setInputTokens(0);
+    setOutputTokens(0);
+  };
+
+  const createEventHandler = () => {
+    setStreamingThinking("");
+    let fullText = "";
+    let turnThinkingText = "";
+    let turnThinkingStart = 0;
+    let turnThinkingDuration = 0;
+    let turnToolCalls: ToolSummaryItem[] = [];
+    const pendingToolArgs = new Map<string, string>();
+
+    const resetTurn = () => {
+      turnThinkingText = "";
+      turnThinkingStart = 0;
+      turnThinkingDuration = 0;
+      turnToolCalls = [];
+      setStreamingThinking("");
+      pendingToolArgs.clear();
+    };
+
+    return (event: AgentEvent) => {
+      switch (event.type) {
+        case "stream_text": {
+          fullText += event.text;
+          streamingTextRef.current = fullText;
+          streamThrottleRef.current ??= setTimeout(() => {
+            setStreamingText(streamingTextRef.current);
+            streamThrottleRef.current = null;
+          }, 50);
+          break;
+        }
+        case "thinking_text": {
+          if (!turnThinkingStart) {
+            turnThinkingStart = Date.now();
+          }
+          turnThinkingText += event.text;
+          setStreamingThinking(turnThinkingText);
+          break;
+        }
+        case "thinking_complete": {
+          if (turnThinkingStart) {
+            turnThinkingDuration = (Date.now() - turnThinkingStart) / 1000;
+          }
+          break;
+        }
+        case "tool_use": {
+          pendingToolArgs.set(`${event.toolName}:${event.toolId}`, formatToolArgs(event.args));
+          setActiveTools((tools) => [
+            ...tools,
+            { toolId: event.toolId, toolName: event.toolName, args: event.args, loading: true },
+          ]);
+          break;
+        }
+        case "tool_result": {
+          const output = toDisplayPreview(event.output);
+          setActiveTools((tools) =>
+            tools.map((tool) =>
+              tool.toolId === event.toolId
+                ? {
+                    ...tool,
+                    output,
+                    isError: event.isError,
+                    elapsed: event.elapsed,
+                    loading: false,
+                  }
+                : tool,
+            ),
+          );
+          turnToolCalls.push({
+            toolName: event.toolName,
+            argsSummary: pendingToolArgs.get(`${event.toolName}:${event.toolId}`) ?? "",
+            output,
+            isError: event.isError,
+            elapsed: event.elapsed,
+          });
+          break;
+        }
+        case "usage": {
+          setInputTokens((tokens) => tokens + event.usage.inputTokens);
+          setOutputTokens((tokens) => tokens + event.usage.outputTokens);
+          break;
+        }
+        case "compact": {
+          setMessages((messages) => [
+            ...messages,
+            { role: "system", content: `⊙ ${event.message}` },
+          ]);
+          break;
+        }
+        case "retry": {
+          setMessages((messages) => [
+            ...messages,
+            {
+              role: "system",
+              content: `↻ ${event.reason}${event.delay ? ` (waiting ${String(Math.round(event.delay / 1000))}s)` : ""}`,
+            },
+          ]);
+          break;
+        }
+        case "turn_complete": {
+          cancelFlush();
+          setStreamingText("");
+          const turnText = fullText;
+          fullText = "";
+          streamingTextRef.current = "";
+          clearTools();
+          const commits: ChatMessage[] = [];
+          if (turnThinkingText || turnThinkingDuration >= 1) {
+            commits.push({
+              role: "turn_summary",
+              content: turnThinkingText,
+              thinkingDuration: turnThinkingDuration > 0 ? turnThinkingDuration : undefined,
+            });
+          }
+          if (turnText) {
+            commits.push({ role: "assistant", content: turnText });
+          }
+          if (turnToolCalls.length > 0) {
+            commits.push({ role: "turn_summary", content: "", toolSummary: turnToolCalls });
+          }
+          if (commits.length > 0) {
+            setMessages((messages) => [...messages, ...commits]);
+          }
+          resetTurn();
+          break;
+        }
+        case "loop_complete": {
+          cancelFlush();
+          setStreamingText("");
+          if (fullText) {
+            setMessages((messages) => [...messages, { role: "assistant", content: fullText }]);
+          }
+          streamingTextRef.current = "";
+          clearTools();
+          resetTurn();
+          break;
+        }
+      }
+    };
+  };
+
+  return {
+    streamingText,
+    streamingThinking,
+    streamingTextRef,
+    activeTools,
+    inputTokens,
+    outputTokens,
+    resetUsage,
+    prepareTurn,
+    finishTurn,
+    clearTools,
+    createEventHandler,
+  };
+}

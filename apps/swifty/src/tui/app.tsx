@@ -21,9 +21,9 @@
  */
 
 import { existsSync, readFileSync } from "node:fs";
-import { join, relative } from "node:path";
+import { join } from "node:path";
 
-import { Box, Static, Text, useApp, useInput, useStdout } from "ink";
+import { Box, Text, useApp } from "ink";
 import { useState, useEffect, useRef, useCallback } from "react";
 
 import { Agent } from "../agent/agent.js";
@@ -85,7 +85,6 @@ import { AgentTool } from "../subagent/agent-tool.js";
 import { BUILTIN_AGENTS } from "../subagent/definition.js";
 import { spawnSubagent } from "../subagent/spawn.js";
 import { coordinatorToolFilter, coordinatorActive } from "../teams/coordinator.js";
-import type { TeammateUIState } from "../teams/progress.js";
 import { TaskStopTool } from "../teams/task-stop.js";
 import type { RunAgent } from "../teams/team.js";
 import { TeamManager } from "../teams/team.js";
@@ -105,24 +104,22 @@ import type { ExitPlanModeTool } from "../tools/exit-plan-mode.js";
 import { FileStateCache } from "../tools/file-state-cache.js";
 import type { ToolRegistry } from "../tools/registry.js";
 import { SyntheticOutputTool } from "../tools/synthetic-output.js";
-import { version } from "../version.js";
-import { connectToIde, type IdeConnection } from "../vscode/ide-client.js";
 
-import { AskUserDialog } from "./ask-user-dialog.js";
-import { ChatView, CommittedMessage, type ChatMessage, type ToolSummaryItem } from "./chat.js";
+import { AgentActivity, type SubagentProgress } from "./agent-activity.js";
+import { ChatView, type ChatMessage, type ToolSummaryItem } from "./chat.js";
 import { Footer } from "./footer.js";
-import { InputBox } from "./input.js";
+import { InteractionDock } from "./interaction-dock.js";
 import { PendingQueue } from "./pending-queue.js";
-import { PermissionDialog, type PermissionAction } from "./permission-dialog.js";
-import { PlanApprovalDialog, type PlanChoice } from "./plan-approval.js";
+import type { PlanChoice } from "./plan-approval.js";
 import { ProviderSelect } from "./provider-select.js";
-import RewindDialog, { type RewindAction } from "./rewind-dialog.js";
-import { SessionSelector } from "./session-selector.js";
+import type { RewindAction } from "./rewind-dialog.js";
 import { THEME } from "./styles.js";
 import { TeamStatus } from "./team-status.js";
-import { TeammateSpinnerTree } from "./teammate-spinner-tree.js";
-import { TeamsDialog } from "./teams-dialog.js";
-import { ToolBlock, ToolDisplay, type ToolBlockInfo } from "./tool-display.js";
+import { Transcript } from "./transcript.js";
+import { useAgentOutput } from "./use-agent-output.js";
+import { useIdeInput } from "./use-ide-input.js";
+import { useTeammateStates } from "./use-teammate-states.js";
+import { useTerminalControls } from "./use-terminal-controls.js";
 
 import type { ToolSchema } from "@/tools/types.js";
 import { asErrorString, asRecord, contentToText, strArg } from "@/utils/index.js";
@@ -166,15 +163,17 @@ export function App({
   const [providerDialogActive, setProviderDialogActive] = useState(false);
   const [providerSwitching, setProviderSwitching] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [streamingText, setStreamingText] = useState("");
-  const [streamingThinking, setStreamingThinking] = useState("");
+  const output = useAgentOutput(setMessages);
+  const {
+    streamingText,
+    streamingThinking,
+    streamingTextRef,
+    activeTools,
+    inputTokens,
+    outputTokens,
+  } = output;
   const [isStreaming, setIsStreaming] = useState(false);
   const [isCompacting, setIsCompacting] = useState(false);
-  const streamingTextRef = useRef("");
-  const streamThrottleRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [activeTools, setActiveTools] = useState<ToolBlockInfo[]>([]);
-  const [inputTokens, setInputTokens] = useState(0);
-  const [outputTokens, setOutputTokens] = useState(0);
   const [permMode, setPermMode] = useState<PermissionMode>(() => {
     if (process.env.SWIFTY_BYPASS_PERMISSIONS === "1") {
       return "bypassPermissions";
@@ -331,73 +330,12 @@ export function App({
   } | null>(null);
   const [askRequest, setAskRequest] = useState<Question[] | null>(null);
   const askResolveRef = useRef<((a: Record<string, string>) => void) | null>(null);
-  const [teammateStates, setTeammateStates] = useState<TeammateUIState[]>([]);
+  const teammateStates = useTeammateStates(teamManagerRef.current);
   const [teamsDialogOpen, setTeamsDialogOpen] = useState(false);
-  const [toolsExpanded, setToolsExpanded] = useState(false);
-  const [subagents, setSubagents] = useState<
-    { id: number; label: string; turn: number; lastTool?: string }[]
-  >([]);
+  const [subagents, setSubagents] = useState<SubagentProgress[]>([]);
   const subagentIdRef = useRef(0);
+  const { insertInputTextRef, clearInputRef } = useIdeInput(workDir);
 
-  const teammateStateSignatureRef = useRef("");
-  useEffect(() => {
-    const timer = setInterval(() => {
-      const states = teamManagerRef.current.getAllTeammateStates();
-      const signature = JSON.stringify(states);
-      if (signature !== teammateStateSignatureRef.current) {
-        teammateStateSignatureRef.current = signature;
-        setTeammateStates(states);
-      }
-    }, 500);
-    return () => {
-      clearInterval(timer);
-    };
-  }, []);
-
-  // VSCode integration: connect to the Claude Code extension's MCP server so
-  // Cmd+Option+K in the editor inserts @file#Lx-y references into the input.
-  const insertInputTextRef = useRef<((text: string) => void) | null>(null);
-  const clearInputRef = useRef<(() => void) | null>(null);
-  useEffect(() => {
-    let conn: IdeConnection | null = null;
-    let cancelled = false;
-    void connectToIde({
-      cwd: workDir,
-      onAtMentioned: ({ filePath, lineStart, lineEnd }) => {
-        const rel = relative(workDir, filePath);
-        const shown = rel && !rel.startsWith("..") ? rel : filePath;
-        let mention = `@${shown}`;
-        if (lineStart !== undefined) {
-          mention += `#L${String(lineStart)}`;
-          if (lineEnd !== undefined && lineEnd !== lineStart) {
-            mention += `-${String(lineEnd)}`;
-          }
-        }
-        insertInputTextRef.current?.(mention + " ");
-      },
-    }).then((c) => {
-      if (!c) {
-        return;
-      }
-      if (cancelled) {
-        void c.close();
-        return;
-      }
-      conn = c;
-    });
-    return () => {
-      cancelled = true;
-      void conn?.close();
-    };
-  }, [workDir]);
-
-  // Mode cycling logic for InputBox useInput (input.tsx),
-  // app raw stdin listener.
-
-  // ctrl+c: interrupt streaming, or clear the input draft and exit app
-  const ctrlCCountRef = useRef(0);
-  const ctrlCTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [ctrlCHint, setCtrlCHint] = useState(false);
   const requestExit = useCallback(() => {
     const activeToolTime = activeToolBatchStartedAtRef.current
       ? Date.now() - activeToolBatchStartedAtRef.current
@@ -410,73 +348,16 @@ export function App({
     exit();
   }, [exit, onExitSummary]);
 
-  useInput((input, key) => {
-    if (key.ctrl && input === "c") {
-      // Streaming keeps the old semantics: Ctrl+C only interrupts the agent
-      // and never touches the draft the user may be typing for the next turn.
-      if (isStreaming && abortControllerRef.current) {
-        abortControllerRef.current.abort();
-        ctrlCCountRef.current = 0;
-        return;
-      }
-      ctrlCCountRef.current += 1;
-      if (ctrlCCountRef.current >= 2) {
-        requestExit();
-        return;
-      }
-      // First press clears the input draft, shows the hint, and arms the
-      // 2s exit window.
-      clearInputRef.current?.();
-      setCtrlCHint(true);
-      if (ctrlCTimerRef.current) {
-        clearTimeout(ctrlCTimerRef.current);
-      }
-      ctrlCTimerRef.current = setTimeout(() => {
-        ctrlCCountRef.current = 0;
-        setCtrlCHint(false);
-      }, 2000);
-      return;
-    }
-
-    // Mouse reporting sequences are not user intent; don't let them disarm
-    // the exit confirmation.
-    if (input.includes("[<") && /\[<\d+;\d+;\d+[Mm]/.test(input)) {
-      return;
-    }
-
-    // Any other keypress cancels a pending exit confirmation: the user kept
-    // working, so the next Ctrl+C should clear again rather than exit.
-    if (ctrlCCountRef.current > 0) {
-      ctrlCCountRef.current = 0;
-      setCtrlCHint(false);
-      if (ctrlCTimerRef.current) {
-        clearTimeout(ctrlCTimerRef.current);
-        ctrlCTimerRef.current = null;
-      }
-    }
-  });
-
-  // ctrl+o toggles full vs. truncated tool output in the transcript.
-  // <Static> never repaints items it has already printed, so toggling the
-  // flag alone would only affect future commits: erase the visible viewport
-  // (scrollback kept, same trick as the width-change handler) and remount
-  // <Static> via its key so the whole transcript reprints in the new state.
-  useInput((input, key) => {
-    if (key.ctrl && input === "o") {
-      process.stdout.write("\x1b[2J\x1b[H");
-      setToolsExpanded((e) => !e);
-    }
-  });
-
-  // ctrl+t toggles the Teams dialog overlay.
-  useInput(
-    (input, key) => {
-      if (key.ctrl && input === "t" && !isStreaming) {
-        setTeamsDialogOpen((prev) => !prev);
-      }
+  const { termWidth, toolsExpanded, ctrlCHint } = useTerminalControls({
+    isStreaming,
+    abortControllerRef,
+    clearInputRef,
+    onExit: requestExit,
+    teamsDialogOpen,
+    onToggleTeams: () => {
+      setTeamsDialogOpen((open) => !open);
     },
-    { isActive: !teamsDialogOpen },
-  );
+  });
 
   // Connects every configured MCP server that has no live connection yet and
   // registers the tools it reports. Safe to call repeatedly: connectAll skips
@@ -706,46 +587,6 @@ export function App({
     [workDir, mcpServers, connectMcpServers],
   );
 
-  // Terminal width used to re-key the <Static> transcript. Ink erases the
-  // previous dynamic frame by its logical line count; after a width change the
-  // already-printed rows re-wrap (full-width rows like the input-box borders
-  // double), so that erase under-counts and stale spinner/input rows leak into
-  // scrollback on every subsequent repaint. On a (debounced) width change we
-  // erase the visible viewport ourselves (\x1b[2J\x1b[H — scrollback is kept,
-  // unlike /clear's \x1b[3J) and remount <Static> via the key so the whole
-  // transcript reprints cleanly at the new width.
-  const { stdout } = useStdout();
-  const termWidthRef = useRef(stdout.columns || 80);
-  const [termWidth, setTermWidth] = useState(termWidthRef.current);
-
-  useEffect(() => {
-    let timer: NodeJS.Timeout | null = null;
-    const onResize = () => {
-      if (timer) {
-        clearTimeout(timer);
-      }
-      // Debounce: a drag-resize fires dozens of events; repaint once at the end.
-      timer = setTimeout(() => {
-        timer = null;
-        const width = stdout.columns || 80;
-        // Height-only changes don't re-wrap rows; nothing leaks, skip.
-        if (width === termWidthRef.current) {
-          return;
-        }
-        termWidthRef.current = width;
-        stdout.write("\x1b[2J\x1b[H");
-        setTermWidth(width);
-      }, 150);
-    };
-    stdout.on("resize", onResize);
-    return () => {
-      if (timer) {
-        clearTimeout(timer);
-      }
-      stdout.off("resize", onResize);
-    };
-  }, [stdout]);
-
   useEffect(() => {
     if (appState === "chat" && !clientRef.current) {
       void initClient(selectedProvider);
@@ -935,8 +776,7 @@ export function App({
           taskListRef.current.useStore(new TaskStore(workDir, sessionIdRef.current));
           fileHistoryRef.current = new FileHistory(workDir, sessionIdRef.current);
           // Reset token counters
-          setInputTokens(0);
-          setOutputTokens(0);
+          output.resetUsage();
           // Reset memory extraction and recall state
           memCursorRef.current = 0;
           memExtractingRef.current = false;
@@ -999,11 +839,11 @@ export function App({
               { role: "system", content: "✓ Plan approved — executing." },
             ]);
             setIsStreaming(true);
-            setStreamingText("");
+            output.prepareTurn();
             runAgentLoopWithStats("default")
               .then(() => {
                 setIsStreaming(false);
-                setActiveTools([]);
+                output.clearTools();
               })
               .catch((err: unknown) => {
                 setError(asErrorString(err));
@@ -1346,11 +1186,11 @@ export function App({
           timestamp: Math.floor(Date.now() / 1000),
         });
         setIsStreaming(true);
-        setStreamingText("");
+        output.prepareTurn();
         runAgentLoopWithStats()
           .then(() => {
             setIsStreaming(false);
-            setActiveTools([]);
+            output.clearTools();
           })
           .catch((err: unknown) => {
             setError(asErrorString(err));
@@ -1427,7 +1267,7 @@ export function App({
   const runAgentLoop = async (modeOverride?: PermissionMode) => {
     const controller = new AbortController();
     abortControllerRef.current = controller;
-    setStreamingThinking("");
+    const onAgentEvent = output.createEventHandler();
 
     // modeOverride avoids a stale-closure read of permMode right after a
     // setPermMode call (e.g. plan approval switching out of plan mode in the same tick).
@@ -1565,79 +1405,18 @@ export function App({
       },
     });
 
-    let fullText = "";
     let exitPlanSucceeded = false;
 
-    // Per-turn accumulators for the folded turn_summary display.
-    let turnThinkingText = "";
-    let turnThinkingStart = 0;
-    let turnThinkingDuration = 0;
-    let turnToolCalls: ToolSummaryItem[] = [];
-    // Indices of in-flight tool_use messages added during the current turn.
-    // These are removed when the turn completes and replaced by a single
-    // turn_summary message.
-
-    // let turnToolUseIndices: number[] = [];
-    // Map toolName+toolId -> argsSummary so tool_result can look it up
-    // (the agent's tool_result event doesn't carry args).
-    const pendingToolArgs = new Map<string, string>();
-
-    const resetTurnAccumulators = () => {
-      turnThinkingText = "";
-      turnThinkingStart = 0;
-      turnThinkingDuration = 0;
-      turnToolCalls = [];
-      setStreamingThinking("");
-      // turnToolUseIndices = [];
-      pendingToolArgs.clear();
-    };
-
     for await (const event of agent.run()) {
+      onAgentEvent(event);
       switch (event.type) {
-        case "stream_text": {
-          fullText += event.text;
-          streamingTextRef.current = fullText;
-          // Throttled streaming: flush within 50ms to reduce React re-render churn
-          streamThrottleRef.current ??= setTimeout(() => {
-            setStreamingText(streamingTextRef.current);
-            streamThrottleRef.current = null;
-          }, 50);
-          break;
-        }
-
-        case "thinking_text": {
-          if (!turnThinkingStart) {
-            turnThinkingStart = Date.now();
-          }
-          turnThinkingText += event.text;
-          setStreamingThinking(turnThinkingText);
-          break;
-        }
-
-        case "thinking_complete": {
-          if (turnThinkingStart) {
-            turnThinkingDuration = (Date.now() - turnThinkingStart) / 1000;
-          }
-          // Don't add a separate "thinking" message -- it'll be folded into the turn summary.
-          break;
-        }
-
         case "tool_use": {
           if (activeToolIdsRef.current.size === 0) {
             activeToolBatchStartedAtRef.current = Date.now();
           }
           activeToolIdsRef.current.add(event.toolId);
-          const argsSummary = formatToolArgs(event.args);
-          // Store for lookup when tool_result arrives (it lacks args).
-          pendingToolArgs.set(`${event.toolName}:${event.toolId}`, argsSummary);
-          // Show the active spinner while the tool runs.
-          setActiveTools((prev) => [
-            ...prev,
-            { toolId: event.toolId, toolName: event.toolName, args: event.args, loading: true },
-          ]);
           break;
         }
-
         case "tool_result": {
           activeToolIdsRef.current.delete(event.toolId);
           if (activeToolIdsRef.current.size === 0 && activeToolBatchStartedAtRef.current !== null) {
@@ -1653,7 +1432,6 @@ export function App({
           if (event.toolName === "ExitPlanMode" && !event.isError) {
             exitPlanSucceeded = true;
           }
-          // Track the just-completed tool name; move duplicates to the end so the list reflects recency
           const recent = recentToolsRef.current;
           const dup = recent.indexOf(event.toolName);
           if (dup >= 0) {
@@ -1663,118 +1441,20 @@ export function App({
           if (recent.length > MAX_RECENT_TOOLS) {
             recent.shift();
           }
-          // Look up the argsSummary we saved during tool_use.
-          const argsSummary = pendingToolArgs.get(`${event.toolName}:${event.toolId}`) ?? "";
-          const outputText = toDisplayPreview(event.output);
-          // Update active tools spinner.
-          setActiveTools((prev) =>
-            prev.map((t) =>
-              t.toolId === event.toolId
-                ? {
-                    ...t,
-                    output: outputText,
-                    isError: event.isError,
-                    elapsed: event.elapsed,
-                    loading: false,
-                  }
-                : t,
-            ),
-          );
-          // Accumulate into the turn summary.
-          turnToolCalls.push({
-            toolName: event.toolName,
-            argsSummary,
-            output: outputText,
-            isError: event.isError,
-            elapsed: event.elapsed,
-          });
           break;
         }
-
-        case "usage": {
-          setInputTokens((prev) => prev + event.usage.inputTokens);
-          setOutputTokens((prev) => prev + event.usage.outputTokens);
-          break;
-        }
-
         case "compact": {
-          setMessages((prev) => [...prev, { role: "system", content: `⊙ ${event.message}` }]);
           if (event.boundary) {
             sessionMod.saveCompactBoundary(workDir, sessionIdRef.current, event.boundary);
           }
           break;
         }
-        case "retry": {
-          setMessages((prev) => [
-            ...prev,
-            {
-              role: "system",
-              content: `↻ ${event.reason}${event.delay ? ` (waiting ${String(Math.round(event.delay / 1000))}s)` : ""}`,
-            },
-          ]);
-          break;
-        }
-
-        case "turn_complete": {
-          if (streamThrottleRef.current) {
-            clearTimeout(streamThrottleRef.current);
-            streamThrottleRef.current = null;
-          }
-          setStreamingText("");
-          // Preserve the assistant text streamed during this turn: it was only
-          // visible in the dynamic area and would otherwise be lost when the
-          // next tool batch repaints it.
-          const turnText = fullText;
-          fullText = "";
-          streamingTextRef.current = "";
-          setActiveTools([]);
-          // Commit this turn to the transcript in chronological order:
-          // thinking → streamed assistant text → tool calls.
-          const commits: ChatMessage[] = [];
-          if (turnThinkingText || turnThinkingDuration >= 1) {
-            commits.push({
-              role: "turn_summary",
-              content: turnThinkingText,
-              thinkingDuration: turnThinkingDuration > 0 ? turnThinkingDuration : undefined,
-            });
-          }
-          if (turnText) {
-            commits.push({ role: "assistant", content: turnText });
-          }
-          if (turnToolCalls.length > 0) {
-            commits.push({
-              role: "turn_summary",
-              content: "",
-              toolSummary: turnToolCalls,
-            });
-          }
-          if (commits.length > 0) {
-            setMessages((prev) => [...prev, ...commits]);
-          }
-          resetTurnAccumulators();
-          break;
-        }
-
         case "loop_complete": {
-          if (streamThrottleRef.current) {
-            clearTimeout(streamThrottleRef.current);
-            streamThrottleRef.current = null;
-          }
-          setStreamingText("");
-          if (fullText) {
-            setMessages((prev) => [...prev, { role: "assistant" as const, content: fullText }]);
-            // Assistant messages are persisted by the agent main loop as they
-            // enter the conversation history (tool blocks included), so we don't duplicate that here
-          }
-          streamingTextRef.current = "";
-          setActiveTools([]);
-          resetTurnAccumulators();
           if (permModeRef.current === "plan" && exitPlanSucceeded) {
             setPlanApprovalActive(true);
           }
           break;
         }
-
         case "error": {
           throw event.error;
         }
@@ -1805,9 +1485,8 @@ export function App({
 
     setMessages((prev) => [...prev, { role: "user", content: text }]);
     setIsStreaming(true);
-    setStreamingText("");
+    output.prepareTurn();
     setError(null);
-    setActiveTools([]);
 
     try {
       const expanded = await expandAtRefsWithImages(text, workDir);
@@ -1844,8 +1523,7 @@ export function App({
       }
     } finally {
       setIsStreaming(false);
-      setStreamingThinking("");
-      setActiveTools([]);
+      output.finishTurn();
       abortControllerRef.current = null;
     }
   };
@@ -2024,52 +1702,14 @@ export function App({
   return (
     <Box flexDirection="column" width="100%">
       <Box flexDirection="column" paddingTop={0} flexGrow={1}>
-        {/* Finalized messages are written once into the terminal's native
-            scrollback. This keeps the complete transcript selectable and
-            copyable while only the active turn is re-rendered by Ink. */}
-        <Static
-          key={`transcript-${sessionIdRef.current}-${String(termWidth)}-${String(toolsExpanded)}`}
-          items={[
-            {
-              type: "brand" as const,
-              _key: "brand",
-              model: selectedProvider.model || selectedProvider.name,
-              workDir,
-            },
-            ...messages.map((message, index) => ({
-              type: "message" as const,
-              _key: `message-${String(index)}`,
-              message,
-            })),
-          ]}
-        >
-          {(item) =>
-            item.type === "brand" ? (
-              <Box
-                key={item._key}
-                flexDirection="column"
-                marginBottom={1}
-                marginTop={1}
-                paddingLeft={1}
-              >
-                <Text>
-                  <Text bold color={THEME.accent}>
-                    Swifty
-                  </Text>
-                  <Text color={THEME.dim}> v{version}</Text>
-                </Text>
-                <Text color={THEME.muted}>
-                  Esc interrupt · Ctrl+C clear/exit · / commands · Ctrl+O more
-                </Text>
-                <Text color={THEME.dim} wrap="truncate-end">
-                  {item.model} · {item.workDir}
-                </Text>
-              </Box>
-            ) : (
-              <CommittedMessage key={item._key} message={item.message} expanded={toolsExpanded} />
-            )
-          }
-        </Static>
+        <Transcript
+          messages={messages}
+          sessionId={sessionIdRef.current}
+          termWidth={termWidth}
+          expanded={toolsExpanded}
+          model={selectedProvider.model || selectedProvider.name}
+          workDir={workDir}
+        />
 
         <ChatView
           messages={[]}
@@ -2078,47 +1718,15 @@ export function App({
           expanded={toolsExpanded}
         />
 
-        {activeTools.length > 0 && !askRequest && subagents.length === 0 && (
-          <ToolDisplay tools={activeTools} expanded={toolsExpanded} />
-        )}
-
-        {subagents.length > 0 && !askRequest && (
-          <>
-            <ToolDisplay
-              tools={activeTools.filter((t) => !(t.toolName === "Agent" && t.loading))}
-              expanded={toolsExpanded}
-            />
-            <Box flexDirection="column" paddingLeft={1}>
-              {subagents.map((s, idx) => {
-                // Pair each subagent with its still-running Agent tool call.
-                const tool = activeTools.filter((t) => t.toolName === "Agent" && t.loading).at(idx);
-                return (
-                  <Box key={s.id} gap={1}>
-                    {tool && <ToolBlock tool={tool} expanded={toolsExpanded} />}
-                    <Text color={THEME.customMessageLabel}>
-                      • {s.label} subagent · turn {s.turn}
-                      {s.lastTool ? ` · ${s.lastTool}` : ""}
-                    </Text>
-                  </Box>
-                );
-              })}
-            </Box>
-          </>
-        )}
-
-        {isStreaming && !askRequest && teammateStates.length > 0 && (
-          <Box paddingLeft={1}>
-            <TeammateSpinnerTree
-              teammates={teammateStates}
-              leaderTokens={inputTokens + outputTokens}
-            />
-          </Box>
-        )}
-        {!isStreaming && teammateStates.some((t) => t.status === "running") && (
-          <Box paddingLeft={1}>
-            <TeammateSpinnerTree teammates={teammateStates} />
-          </Box>
-        )}
+        <AgentActivity
+          tools={activeTools}
+          subagents={subagents}
+          teammates={teammateStates}
+          isStreaming={isStreaming}
+          isAsking={askRequest !== null}
+          expanded={toolsExpanded}
+          leaderTokens={inputTokens + outputTokens}
+        />
 
         {error && (
           <Box marginTop={1} paddingLeft={1}>
@@ -2138,119 +1746,132 @@ export function App({
       <TeamStatus
         count={teammateStates.filter((t) => t.status === "running" || t.status === "idle").length}
       />
-      {providerDialogActive ? (
-        <ProviderSelect
-          providers={providers}
-          onCancel={() => {
-            setProviderDialogActive(false);
-          }}
-          onSelect={handleProviderSelect}
-        />
-      ) : planApprovalActive ? (
-        <PlanApprovalDialog onSelect={handlePlanApproval} />
-      ) : rewindDialogActive ? (
-        <RewindDialog
-          snapshots={rewindSnapshots}
-          onComplete={handleRewindAction}
-          onCancel={() => {
-            setRewindDialogActive(false);
-          }}
-        />
-      ) : resumeDialogActive ? (
-        <SessionSelector
-          sessions={resumeSessions}
-          onCancel={() => {
-            setResumeDialogActive(false);
-          }}
-          onSelect={(sessionId) => {
-            void handleSlashCommand(`/resume ${sessionId}`);
-          }}
-        />
-      ) : permissionRequest ? (
-        <PermissionDialog
-          toolName={permissionRequest.toolName}
-          argsSummary={permissionRequest.argsSummary}
-          reason={permissionRequest.reason}
-          onComplete={(action: PermissionAction) => {
-            permissionResolveRef.current?.(action);
-            permissionResolveRef.current = null;
-            setPermissionRequest(null);
-          }}
-        />
-      ) : askRequest ? (
-        <AskUserDialog
-          questions={askRequest}
-          onComplete={(answers) => {
-            askResolveRef.current?.(answers);
-            askResolveRef.current = null;
-            setAskRequest(null);
-          }}
-        />
-      ) : teamsDialogOpen ? (
-        <TeamsDialog
-          teammates={teammateStates}
-          onClose={() => {
-            setTeamsDialogOpen(false);
-          }}
-          onKill={(name, teamName) => {
-            const team = teamManagerRef.current.get(teamName);
-            if (team) {
-              void team.stopMember(name);
-            }
-          }}
-          onShutdown={(name, teamName) => {
-            const team = teamManagerRef.current.get(teamName);
-            if (team) {
-              void team.sendMessage("lead", name, "[shutdown] Please finish and exit");
-            }
-          }}
-        />
-      ) : (
-        <InputBox
-          onSubmit={(text: string) => {
+      <InteractionDock
+        provider={
+          providerDialogActive
+            ? {
+                providers,
+                onCancel: () => {
+                  setProviderDialogActive(false);
+                },
+                onSelect: handleProviderSelect,
+              }
+            : undefined
+        }
+        planApproval={planApprovalActive ? { onSelect: handlePlanApproval } : undefined}
+        rewind={
+          rewindDialogActive
+            ? {
+                snapshots: rewindSnapshots,
+                onComplete: handleRewindAction,
+                onCancel: () => {
+                  setRewindDialogActive(false);
+                },
+              }
+            : undefined
+        }
+        resume={
+          resumeDialogActive
+            ? {
+                sessions: resumeSessions,
+                onCancel: () => {
+                  setResumeDialogActive(false);
+                },
+                onSelect: (sessionId) => {
+                  void handleSlashCommand(`/resume ${sessionId}`);
+                },
+              }
+            : undefined
+        }
+        permission={
+          permissionRequest
+            ? {
+                ...permissionRequest,
+                onComplete: (action) => {
+                  permissionResolveRef.current?.(action);
+                  permissionResolveRef.current = null;
+                  setPermissionRequest(null);
+                },
+              }
+            : undefined
+        }
+        askUser={
+          askRequest
+            ? {
+                questions: askRequest,
+                onComplete: (answers) => {
+                  askResolveRef.current?.(answers);
+                  askResolveRef.current = null;
+                  setAskRequest(null);
+                },
+              }
+            : undefined
+        }
+        teams={
+          teamsDialogOpen
+            ? {
+                teammates: teammateStates,
+                onClose: () => {
+                  setTeamsDialogOpen(false);
+                },
+                onKill: (name, teamName) => {
+                  const team = teamManagerRef.current.get(teamName);
+                  if (team) {
+                    void team.stopMember(name);
+                  }
+                },
+                onShutdown: (name, teamName) => {
+                  const team = teamManagerRef.current.get(teamName);
+                  if (team) {
+                    void team.sendMessage("lead", name, "[shutdown] Please finish and exit");
+                  }
+                },
+              }
+            : undefined
+        }
+        composer={{
+          onSubmit: (text) => {
             void handleSubmit(text);
-          }}
-          disabled={providerSwitching}
-          history={promptHistory}
-          commands={cmdRegistryRef.current.listCommands()}
-          usageTracker={usageTrackerRef.current}
-          inputState={
-            error ? "error" : isStreaming || isCompacting || providerSwitching ? "agent" : "focused"
-          }
-          borderColor={
-            error
-              ? THEME.error
-              : isCompacting || providerSwitching
-                ? THEME.accent
-                : THEME.thinkingHigh
-          }
-          statusLabel={
-            providerSwitching
-              ? "Switching provider..."
-              : isCompacting
-                ? "Compacting context... (Esc to cancel)"
-                : isStreaming
-                  ? "Working"
-                  : undefined
-          }
-          permMode={permMode}
-          onModeChange={(mode) => {
+          },
+          disabled: providerSwitching,
+          history: promptHistory,
+          commands: cmdRegistryRef.current.listCommands(),
+          usageTracker: usageTrackerRef.current,
+          inputState: error
+            ? "error"
+            : isStreaming || isCompacting || providerSwitching
+              ? "agent"
+              : "focused",
+          borderColor: error
+            ? THEME.error
+            : isCompacting || providerSwitching
+              ? THEME.accent
+              : THEME.thinkingHigh,
+          statusLabel: providerSwitching
+            ? "Switching provider..."
+            : isCompacting
+              ? "Compacting context... (Esc to cancel)"
+              : isStreaming
+                ? "Working"
+                : undefined,
+          permMode,
+          onModeChange: (mode) => {
             setPermMode(mode);
             if (checkerRef.current) {
               checkerRef.current.mode = mode;
             }
-          }}
-          workDir={workDir}
-          sessionId={sessionIdRef.current}
-          insertTextRef={insertInputTextRef}
-          clearRef={clearInputRef}
-          onEscape={() => {
+          },
+          workDir,
+          sessionId: sessionIdRef.current,
+          insertTextRef: insertInputTextRef,
+          clearRef: clearInputRef,
+          onEscape: () => {
             if (isStreaming) {
               abortControllerRef.current?.abort();
             }
-          }}
-        />
-      )}
+          },
+        }}
+      />
       <Footer
         contextWindow={contextWindowRef.current}
         inputTokens={inputTokens}
