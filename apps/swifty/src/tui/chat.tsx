@@ -23,33 +23,95 @@
 import { markedTerminal } from "@swifty.js/marked-terminal";
 import chalk from "chalk";
 import { Box, Text, useStdout } from "ink";
-import { marked } from "marked";
+import { Marked } from "marked";
 import React, { useRef } from "react";
 
 import { createChildLogger } from "../logger/logger.js";
 import { isDiffTool } from "../tools/is-diff-tool.js";
 
 import { DiffLines } from "./diff-render.js";
-import { COLORS, ICONS } from "./styles.js";
+import { THEME } from "./styles.js";
+import { formatToolOutputPreview } from "./tool-preview.js";
 
 const log = createChildLogger({ module: "tui" });
 
 chalk.level = 3;
-marked.use(markedTerminal({ showSectionPrefix: false }));
 
-const isPromise = (val: unknown): val is Promise<unknown> => {
-  return typeof val === "object" && val !== null && "then" in val && typeof val.then === "function";
-};
+const isPromise = (value: unknown): value is Promise<unknown> =>
+  typeof value === "object" &&
+  value !== null &&
+  "then" in value &&
+  typeof value.then === "function";
 
-function renderMarkdown(text: string): string {
+function stripIncompleteFence(text: string): string {
+  return text.replace(/\n`{1,2}$/u, "");
+}
+
+function renderMarkdown(
+  text: string,
+  width = Math.max(1, (process.stdout.columns || 80) - 2),
+): string {
+  const markdown = new Marked({ breaks: false, gfm: true });
+  markdown.use(
+    markedTerminal(
+      {
+        blockquote: (value) =>
+          value
+            .trimEnd()
+            .split("\n")
+            .map(
+              (line) =>
+                `${chalk.hex(THEME.mdQuoteBorder)("│")} ${chalk.italic.hex(THEME.mdQuote)(line.trimStart())}`,
+            )
+            .join("\n"),
+        code: chalk.hex(THEME.mdCodeBlock),
+        codespan: chalk.hex(THEME.mdCode),
+        del: chalk.strikethrough.hex(THEME.dim),
+        em: chalk.italic,
+        firstHeading: chalk.bold.underline.hex(THEME.mdHeading),
+        heading: chalk.bold.hex(THEME.mdHeading),
+        hr: chalk.hex(THEME.mdHr),
+        href: chalk.underline.hex(THEME.mdLinkUrl),
+        link: chalk.hex(THEME.mdLink),
+        listitem: chalk.hex(THEME.text),
+        paragraph: chalk.hex(THEME.text),
+        reflowText: true,
+        sanitize: true,
+        showSectionPrefix: false,
+        strong: chalk.bold,
+        tab: 3,
+        table: chalk.hex(THEME.text),
+        text: chalk.hex(THEME.text),
+        width,
+      },
+      {
+        language: "plaintext",
+        theme: {
+          addition: chalk.hex(THEME.toolDiffAdded),
+          attr: chalk.hex(THEME.syntaxVariable),
+          built_in: chalk.hex(THEME.syntaxType),
+          class: chalk.hex(THEME.syntaxType),
+          comment: chalk.hex(THEME.syntaxComment),
+          default: chalk.hex(THEME.syntaxOperator),
+          deletion: chalk.hex(THEME.toolDiffRemoved),
+          function: chalk.hex(THEME.syntaxFunction),
+          keyword: chalk.hex(THEME.syntaxKeyword),
+          literal: chalk.hex(THEME.syntaxNumber),
+          name: chalk.hex(THEME.syntaxFunction),
+          number: chalk.hex(THEME.syntaxNumber),
+          params: chalk.hex(THEME.syntaxVariable),
+          string: chalk.hex(THEME.syntaxString),
+          title: chalk.hex(THEME.syntaxFunction),
+          type: chalk.hex(THEME.syntaxType),
+          variable: chalk.hex(THEME.syntaxVariable),
+        },
+      },
+    ),
+  );
+
   try {
-    let result = marked.parse(text);
-    if (isPromise(result)) {
-      return text;
-    }
-    result = result.replace(/\*\*([^*]+)\*\*/g, (_, t) => chalk.bold(t));
-    result = result.replace(/^( {4})\* /gm, "  - ");
-    return result;
+    const result = markdown.parse(stripIncompleteFence(text));
+    return isPromise(result) ? text : result.trimEnd();
   } catch (err) {
     log.error({ err }, "tui operation failed");
     return text;
@@ -75,6 +137,7 @@ export interface ChatMessage {
 interface ChatViewProps {
   messages: ChatMessage[];
   streamingText?: string;
+  thinkingText?: string;
   expanded?: boolean;
 }
 
@@ -88,9 +151,13 @@ interface ChatViewProps {
 const ANSI_RE = /\x1b\[[0-9;]*[a-zA-Z]|\x1b\].*?(?:\x07|\x1b\\)/g;
 
 function StreamingText({ text }: { text: string }) {
-  const stableRef = useRef({ text: "", rendered: "" });
+  const stableRef = useRef({ text: "", rendered: "", width: 0 });
   const { stdout } = useStdout();
   const cols = stdout.columns || 80;
+  const contentWidth = Math.max(1, cols - 2);
+  if (stableRef.current.width !== contentWidth) {
+    stableRef.current = { text: "", rendered: "", width: contentWidth };
+  }
   // Reserve 12 physical lines for dynamic area components like Spinner, ToolDisplay, InputBox, user messages, etc.
   const maxPhysical = Math.max(5, (stdout.rows || 24) - 12);
 
@@ -105,11 +172,12 @@ function StreamingText({ text }: { text: string }) {
   if (stableText.length > stableRef.current.text.length) {
     stableRef.current = {
       text: stableText,
-      rendered: renderMarkdown(stableText),
+      rendered: renderMarkdown(stableText, contentWidth),
+      width: contentWidth,
     };
   }
 
-  const unstableRendered = unstableText ? renderMarkdown(unstableText) : "";
+  const unstableRendered = unstableText ? renderMarkdown(unstableText, contentWidth) : "";
   const fullRendered = stableRef.current.rendered + unstableRendered;
 
   // Truncate based on physical lines: Take from the end backwards until physical line limit is reached
@@ -129,23 +197,25 @@ function StreamingText({ text }: { text: string }) {
   const truncated = cutIndex > 0;
   const visibleText = truncated ? "…\n" + lines.slice(cutIndex).join("\n") : fullRendered;
 
-  return (
-    <Text>
-      {COLORS.assistant(`${ICONS.dot} `)}
-      {visibleText}
-    </Text>
-  );
+  return <Text>{visibleText}</Text>;
 }
 
 export const ChatView = React.memo(function (props: ChatViewProps) {
-  const { messages, streamingText, expanded = false } = props;
+  const { messages, streamingText, thinkingText, expanded = false } = props;
   return (
-    <Box flexDirection="column" paddingLeft={1}>
+    <Box flexDirection="column">
       {messages.map((msg, i) => (
         <MessageBlock key={i} message={msg} expanded={expanded} />
       ))}
+      {thinkingText ? (
+        <Box marginTop={1} paddingLeft={1} paddingRight={1}>
+          <Text color={THEME.thinking} italic>
+            {expanded ? thinkingText.trimEnd() : clampOutput(thinkingText)}
+          </Text>
+        </Box>
+      ) : null}
       {streamingText !== undefined && streamingText !== "" && (
-        <Box>
+        <Box marginTop={1} paddingLeft={1}>
           <StreamingText text={streamingText} />
         </Box>
       )}
@@ -165,11 +235,7 @@ interface CommitMessageProps {
 }
 export function CommittedMessage(props: CommitMessageProps) {
   const { message, expanded = false } = props;
-  return (
-    <Box paddingLeft={1}>
-      <MessageBlock message={message} expanded={expanded} />
-    </Box>
-  );
+  return <MessageBlock message={message} expanded={expanded} />;
 }
 
 interface TurnSummaryBlockProps {
@@ -185,6 +251,8 @@ function clampOutput(text: string): string {
 
 function TurnSummaryBlock(props: TurnSummaryBlockProps) {
   const { message, expanded } = props;
+  const { stdout } = useStdout();
+  const width = Math.max(1, stdout.columns || 80);
   const { content: thinkingText, thinkingDuration, toolSummary = [] } = message;
   if (!thinkingText && !thinkingDuration && toolSummary.length === 0) {
     return null;
@@ -192,35 +260,48 @@ function TurnSummaryBlock(props: TurnSummaryBlockProps) {
   return (
     <Box flexDirection="column" marginBottom={0}>
       {(thinkingText !== "" || (thinkingDuration !== undefined && thinkingDuration >= 1)) && (
-        <Text dimColor>
-          {COLORS.thinking(`${ICONS.thinking} `)}Thought for{" "}
-          {Math.max(1, Math.round(thinkingDuration ?? 0))}s
+        <Text color={THEME.thinking} italic>
+          Thinking for {Math.max(1, Math.round(thinkingDuration ?? 0))}s
         </Text>
       )}
       {thinkingText !== "" && (
         <Box paddingLeft={2}>
-          <Text dimColor italic>
+          <Text color={THEME.thinking} italic>
             {expanded ? thinkingText.trimEnd() : clampOutput(thinkingText)}
           </Text>
         </Box>
       )}
       {toolSummary.map((t, i) => {
-        const icon = t.isError ? COLORS.error(ICONS.error) : COLORS.success(ICONS.success);
         // Summaries rebuilt from a resumed session carry no timing (elapsed 0) — omit the suffix.
         const timeStr = t.elapsed > 0 ? ` (${t.elapsed.toFixed(1)}s)` : "";
 
         const isDiff = isDiffTool(t.toolName);
-        const output = t.output ? (expanded ? t.output.trimEnd() : clampOutput(t.output)) : "";
+        const output = t.output
+          ? expanded
+            ? t.output.trimEnd()
+            : formatToolOutputPreview(t.toolName, t.output)
+          : "";
         return (
-          <Box key={i} flexDirection="column" marginBottom={0}>
+          <Box
+            key={i}
+            backgroundColor={t.isError ? THEME.toolErrorBg : THEME.toolSuccessBg}
+            flexDirection="column"
+            marginTop={1}
+            paddingLeft={1}
+            paddingRight={1}
+            paddingY={1}
+            width={width}
+          >
             <Text>
-              {icon} {COLORS.tool(t.toolName)}
-              {t.argsSummary ? <Text dimColor> {t.argsSummary}</Text> : null}
-              <Text dimColor>{timeStr}</Text>
+              <Text bold color={THEME.text}>
+                {t.toolName}
+              </Text>
+              {t.argsSummary ? <Text color={THEME.accent}> {t.argsSummary}</Text> : null}
+              <Text color={THEME.dim}>{timeStr}</Text>
             </Text>
             {output ? (
-              <Box paddingLeft={4}>
-                {isDiff ? <DiffLines text={output} /> : <Text dimColor>{output}</Text>}
+              <Box paddingLeft={2}>
+                {isDiff ? <DiffLines text={output} /> : <Text color={THEME.muted}>{output}</Text>}
               </Box>
             ) : null}
           </Box>
@@ -237,22 +318,28 @@ interface MessageBlockProps {
 
 function MessageBlock(props: MessageBlockProps) {
   const { message, expanded } = props;
+  const { stdout } = useStdout();
+  const width = Math.max(1, stdout.columns || 80);
 
   switch (message.role) {
     case "user": {
       return (
-        <Box marginBottom={0}>
-          <Text>
-            {COLORS.primary(`${ICONS.prompt} `)}
-            {message.content}
-          </Text>
+        <Box
+          backgroundColor={THEME.userMessageBg}
+          marginTop={1}
+          paddingLeft={1}
+          paddingRight={1}
+          paddingY={1}
+          width={width}
+        >
+          <Text color={THEME.text}>{message.content}</Text>
         </Box>
       );
     }
 
     case "assistant": {
       return (
-        <Box marginBottom={0}>
+        <Box marginTop={1} paddingLeft={1} paddingRight={1}>
           <Text>{renderMarkdown(message.content)}</Text>
         </Box>
       );
@@ -263,9 +350,32 @@ function MessageBlock(props: MessageBlockProps) {
     }
 
     case "system": {
+      const isError = /^(?:Error:|Hook error:)/u.test(message.content);
+      const isWarning = /^(?:Warning:|Hook warning:|↻)/u.test(message.content);
+      const isCompaction = /^(?:⊙ |Compact:)/u.test(message.content);
+      if (isCompaction) {
+        return (
+          <Box
+            backgroundColor={THEME.customMessageBg}
+            flexDirection="column"
+            marginTop={1}
+            paddingLeft={1}
+            paddingRight={1}
+            paddingY={1}
+            width={width}
+          >
+            <Text bold color={THEME.customMessageLabel}>
+              [compaction]
+            </Text>
+            <Text color={THEME.muted}>{message.content.replace(/^(?:⊙ |Compact:\s*)/u, "")}</Text>
+          </Box>
+        );
+      }
       return (
-        <Box marginBottom={0}>
-          <Text dimColor>{message.content}</Text>
+        <Box marginTop={1} paddingLeft={1} paddingRight={1}>
+          <Text color={isError ? THEME.error : isWarning ? THEME.warning : THEME.muted}>
+            {message.content.replace(/^↻\s*/u, "Retrying: ")}
+          </Text>
         </Box>
       );
     }

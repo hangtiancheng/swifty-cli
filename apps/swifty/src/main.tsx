@@ -24,13 +24,20 @@
 
 import { render } from "ink";
 
+import {
+  formatInteractionSummary,
+  type InteractionSummary,
+} from "./bootstrap/interaction-summary.js";
+import { detectTerminalTheme } from "./bootstrap/terminal-theme.js";
+import { parseResumeArgument } from "./bootstrap/tui-selection.js";
 import { forkEnabled, loadConfig } from "./config/config.js";
 import { initLogger, logger } from "./logger/logger.js";
 import { parsePrintFlags, runPrintMode } from "./print-mode.js";
 import { recover, recordError, recordExit } from "./recover.js";
 import { newSessionId } from "./session/session.js";
 import { parseTeammateFlags, runTeammate } from "./teammate.js";
-import { App } from "./tui/app.js";
+import { App as AppV2 } from "./tui/app.js";
+import { setThemeMode } from "./tui/styles.js";
 import { installSyncOutput } from "./tui/sync-output.js";
 import { asErrorString } from "./utils/index.js";
 
@@ -105,21 +112,32 @@ async function main() {
 
   // TUI mode: initialize logger before rendering.
   initLogger({ sessionId: newSessionId(), mode: "tui" });
-
+  setThemeMode(await detectTerminalTheme());
   installSyncOutput();
-  const instance = render(
-    <App
-      providers={cfg.providers}
-      permissionMode={cfg.permission_mode}
-      mcpServers={cfg.mcp_servers}
-      hooks={cfg.hooks}
-      sandboxConfig={cfg.sandbox}
-      enableCoordinatorMode={cfg.enable_coordinator_mode}
-      forkDisabled={!forkEnabled(cfg)}
-    />,
-    { exitOnCtrlC: false },
+  let interactionSummary: InteractionSummary | undefined;
+  const appProps = {
+    providers: cfg.providers,
+    permissionMode: cfg.permission_mode,
+    mcpServers: cfg.mcp_servers,
+    hooks: cfg.hooks,
+    sandboxConfig: cfg.sandbox,
+    enableCoordinatorMode: cfg.enable_coordinator_mode,
+    forkDisabled: !forkEnabled(cfg),
+  };
+  const application = (
+    <AppV2
+      {...appProps}
+      resume={parseResumeArgument(args)}
+      onExitSummary={(summary) => {
+        interactionSummary = summary;
+      }}
+    />
   );
+  const instance = render(application, { exitOnCtrlC: false });
   await instance.waitUntilExit();
+  if (interactionSummary) {
+    process.stdout.write(`\n${formatInteractionSummary(interactionSummary)}\n`);
+  }
 }
 
 main()

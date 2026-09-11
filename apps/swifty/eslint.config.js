@@ -104,12 +104,15 @@ export default defineConfig(
     // The library barrel must never reach the ink/react TUI layer; main.tsx is
     // the only sanctioned bridge into src/tui.
     files: ["src/**/*.{ts,tsx}"],
-    ignores: ["src/tui/**", "src/main.tsx"],
+    ignores: ["src/tui/**", "src/tui/**", "src/main.tsx"],
     rules: {
       "import/no-restricted-paths": [
         "error",
         {
-          zones: [{ target: "./src", from: "./src/tui" }],
+          zones: [
+            { target: "./src", from: "./src/tui" },
+            { target: "./src", from: "./src/tui" },
+          ],
         },
       ],
     },

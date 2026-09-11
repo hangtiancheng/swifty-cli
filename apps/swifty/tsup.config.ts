@@ -62,12 +62,11 @@ const externalizeNodeBuiltinsPlugin: EsbuildPlugin = {
   },
 };
 
-const tuiDir = join(__dirname, "src", "tui") + sep;
+const tuiDirs = [join(__dirname, "src", "tui") + sep];
 
 // Library-build guard: the barrel entry (src/index.ts) must never reach the
-// ink/react TUI layer, neither via bare specifiers nor via any path resolving
-// into src/tui. Failing the build is the point — an accidental TUI import must
-// not ship to library consumers.
+// ink/react TUI layer, neither via bare specifiers nor via a path resolving
+// into either TUI implementation. Failing the build is the point.
 const banTuiAndInkPlugin: EsbuildPlugin = {
   name: "ban-tui-and-ink",
   setup(build) {
@@ -79,7 +78,7 @@ const banTuiAndInkPlugin: EsbuildPlugin = {
     build.onResolve({ filter: /^(ink|react|@\/tui)/ }, (args) => ban(args.importer, args.path));
     build.onResolve({ filter: /^\.\.?\// }, (args) => {
       const resolved = resolve(dirname(args.importer), args.path);
-      if (resolved.startsWith(tuiDir)) {
+      if (tuiDirs.some((directory) => resolved.startsWith(directory))) {
         ban(args.importer, args.path);
       }
       return undefined;

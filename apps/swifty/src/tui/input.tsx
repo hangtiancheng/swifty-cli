@@ -24,12 +24,13 @@ import { readdirSync, statSync } from "fs";
 import { join, relative } from "path";
 
 import Fuse from "fuse.js";
-import { Box, Text, useInput, usePaste } from "ink";
+import { Box, Text, useInput, usePaste, useStdout } from "ink";
 import { useState, useMemo, useRef, useEffect } from "react";
 
 import { createChildLogger } from "../logger/logger.js";
 
-import { BORDER_COLORS, COLORS, ICONS, THEME } from "./styles.js";
+import { getListWindowStart } from "./list-window.js";
+import { ICONS, THEME } from "./styles.js";
 
 import type { Command } from "@/commands/commands.js";
 import type { CommandUsageTracker } from "@/commands/usage-tracker.js";
@@ -41,6 +42,7 @@ const log = createChildLogger({ module: "tui" });
 
 // Suffix appended to skill-backed command descriptions (see wireSkillsToRegistry).
 const SKILL_TAG = "[skill]";
+const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"] as const;
 
 function scanWorkdirFiles(root: string, max = 2000): string[] {
   const out: string[] = [];
@@ -82,12 +84,25 @@ function scanWorkdirFiles(root: string, max = 2000): string[] {
   return out;
 }
 
-const MODEL_DISPLAY: Record<PermissionMode, { name: string; color: string }> = {
-  default: { name: "default", color: "gray" },
-  acceptEdits: { name: "Accept Edits", color: "green" },
-  plan: { name: "Plan", color: "yellow" },
-  bypassPermissions: { name: "YOLO", color: "red" },
+const MODEL_DISPLAY: Record<PermissionMode, string> = {
+  default: "default",
+  acceptEdits: "Accept Edits",
+  plan: "Plan",
+  bypassPermissions: "YOLO",
 };
+
+function permissionModeColor(mode: PermissionMode): string {
+  if (mode === "acceptEdits") {
+    return THEME.success;
+  }
+  if (mode === "plan") {
+    return THEME.warning;
+  }
+  if (mode === "bypassPermissions") {
+    return THEME.error;
+  }
+  return THEME.dim;
+}
 
 const MODEL_CYCLE: PermissionMode[] = ["default", "acceptEdits", "plan", "bypassPermissions"];
 
@@ -101,6 +116,8 @@ interface InputBoxProps {
   commands?: Command[];
   onEscape?: () => void;
   inputState?: "idle" | "focused" | "agent" | "error";
+  borderColor?: string;
+  statusLabel?: string;
   usageTracker?: CommandUsageTracker;
   permMode?: PermissionMode;
   onModeChange?: (mode: PermissionMode) => void;
@@ -123,6 +140,8 @@ export function InputBox(props: InputBoxProps) {
     commands = [],
     onEscape,
     inputState = "idle",
+    borderColor: requestedBorderColor,
+    statusLabel,
     usageTracker,
     permMode = "default",
     onModeChange,
@@ -131,6 +150,7 @@ export function InputBox(props: InputBoxProps) {
     insertTextRef,
     clearRef,
   } = props;
+  const { stdout } = useStdout();
 
   const [lines, setLines] = useState<string[]>([""]);
   const [cursorLine, setCursorLine] = useState(0);
@@ -146,7 +166,20 @@ export function InputBox(props: InputBoxProps) {
   const [dropdownIndex, setDropdownIndex] = useState(0);
   const [dropdownDismissed, setDropdownDismissed] = useState(false);
   const [pasteError, setPasteError] = useState("");
+  const [statusFrame, setStatusFrame] = useState(0);
   const pasteImageInflightRef = useRef(false);
+
+  useEffect(() => {
+    if (!statusLabel) {
+      return;
+    }
+    const timer = setInterval(() => {
+      setStatusFrame((current) => (current + 1) % SPINNER_FRAMES.length);
+    }, 80);
+    return () => {
+      clearInterval(timer);
+    };
+  }, [statusLabel]);
 
   useEffect(() => {
     if (!insertTextRef) {
@@ -273,6 +306,8 @@ export function InputBox(props: InputBoxProps) {
     !isMultiline &&
     !dropdownDismissed &&
     historyIndex < 0;
+  const commandWindowStart = getListWindowStart(filteredCmds.length, dropdownIndex, 8);
+  const visibleCommands = filteredCmds.slice(commandWindowStart, commandWindowStart + 8);
 
   // @-file-mention autocomplete: active when the current line ends with an
   // @<partial> token (and we're not typing a slash command).
@@ -664,7 +699,34 @@ export function InputBox(props: InputBoxProps) {
     }
   });
 
-  const borderColor = inputState in BORDER_COLORS ? BORDER_COLORS[inputState] : BORDER_COLORS.idle;
+  const borderColor =
+    requestedBorderColor ??
+    (inputState === "error"
+      ? THEME.error
+      : inputState === "idle"
+        ? THEME.borderMuted
+        : THEME.thinkingHigh);
+  const borderWidth = Math.max(8, stdout.columns || 80);
+  const maxVisibleLines = Math.max(5, Math.floor((stdout.rows || 24) * 0.3));
+  const visibleStart = Math.max(
+    0,
+    Math.min(cursorLine - Math.floor(maxVisibleLines / 2), lines.length - maxVisibleLines),
+  );
+  const visibleLines = lines.slice(visibleStart, visibleStart + maxVisibleLines);
+  const hiddenAbove = visibleStart;
+  const hiddenBelow = Math.max(0, lines.length - visibleStart - visibleLines.length);
+  const spinner = SPINNER_FRAMES[statusFrame] ?? SPINNER_FRAMES[0];
+  const fullStatus = statusLabel ? ` ${spinner} ${statusLabel} ` : "";
+  const scrollUp = hiddenAbove > 0 ? ` ↑ ${String(hiddenAbove)} more ` : "";
+  const borderStatus =
+    fullStatus.length + scrollUp.length <= borderWidth - 4
+      ? `${scrollUp}${fullStatus}`
+      : statusLabel
+        ? ` ${spinner} `
+        : scrollUp;
+  const scrollDown = hiddenBelow > 0 ? ` ↓ ${String(hiddenBelow)} more ` : "";
+  const topBorder = `──${borderStatus}${"─".repeat(Math.max(0, borderWidth - borderStatus.length - 2))}`;
+  const bottomBorder = `${"─".repeat(Math.max(0, borderWidth - scrollDown.length))}${scrollDown}`;
 
   const ghostText = useMemo(() => {
     if (isMultiline || !lines[0].startsWith("/") || lines[0].length <= 1) {
@@ -684,40 +746,36 @@ export function InputBox(props: InputBoxProps) {
 
   return (
     <Box flexDirection="column">
-      <Box
-        borderStyle="round"
-        borderTop={true}
-        borderBottom={true}
-        borderLeft={false}
-        borderRight={false}
-        borderColor={borderColor}
-      >
+      <Text color={borderColor}>{topBorder}</Text>
+      <Box paddingLeft={1} paddingRight={1}>
         <Text>
-          {COLORS.primary(`${ICONS.prompt} `)}
           {disabled ? (
-            <Text dimColor>Waiting...</Text>
+            <Text color={THEME.muted}>Waiting...</Text>
           ) : (
             <>
-              {lines.map((line, i) => {
-                const prefix = i > 0 ? "\n  " : "";
-                if (i === cursorLine) {
+              {visibleLines.map((line, visibleIndex) => {
+                const lineIndex = visibleStart + visibleIndex;
+                const prefix = visibleIndex > 0 ? "\n" : "";
+                if (lineIndex === cursorLine) {
                   const col = Math.min(cursorCol, line.length);
                   const before = line.slice(0, col);
                   const atChar = col < line.length ? line[col] : " ";
                   const after = col < line.length ? line.slice(col + 1) : "";
                   const atEnd = col >= line.length;
                   return (
-                    <Text key={i}>
+                    <Text key={lineIndex}>
                       {prefix}
                       {before}
                       <Text inverse>{atChar}</Text>
                       {after}
-                      {atEnd && i === 0 && ghostText ? <Text dimColor>{ghostText}</Text> : null}
+                      {atEnd && lineIndex === 0 && ghostText ? (
+                        <Text color={THEME.dim}>{ghostText}</Text>
+                      ) : null}
                     </Text>
                   );
                 }
                 return (
-                  <Text key={i}>
+                  <Text key={lineIndex}>
                     {prefix}
                     {line}
                   </Text>
@@ -727,36 +785,45 @@ export function InputBox(props: InputBoxProps) {
           )}
         </Text>
       </Box>
+      <Text color={borderColor}>{bottomBorder}</Text>
       {!disabled && pasteError && (
         <Box paddingLeft={2}>
-          <Text color="red">{pasteError}</Text>
+          <Text color={THEME.error}>Error: {pasteError}</Text>
         </Box>
       )}
       {showDropdown && (
         <Box flexDirection="column">
-          {recentCount > 0 && <Text dimColor>{"RECENTLY USED"}</Text>}
-          {filteredCmds.slice(0, 8).map((cmd, i) => {
-            const selected = i === dropdownIndex;
-            const color = selected ? THEME.primary : undefined;
+          <Text color={THEME.dim}>
+            {recentCount > 0 && commandWindowStart === 0 ? "RECENTLY USED" : "COMMANDS"}
+            {filteredCmds.length > 8
+              ? ` (${String(dropdownIndex + 1)}/${String(filteredCmds.length)})`
+              : ""}
+          </Text>
+          {visibleCommands.map((cmd, visibleIndex) => {
+            const selected = commandWindowStart + visibleIndex === dropdownIndex;
+            const color = selected ? THEME.accent : undefined;
             const desc = cmd.description.replace(/\s+/g, " ").trim();
             const isSkill = desc.endsWith(SKILL_TAG);
             const body = isSkill ? desc.slice(0, -SKILL_TAG.length).trimEnd() : desc;
             return (
-              <Box key={cmd.name}>
+              <Box
+                key={cmd.name}
+                backgroundColor={selected ? THEME.selectedBg : undefined}
+                paddingLeft={1}
+                paddingRight={1}
+                width="100%"
+              >
                 <Box flexShrink={0}>
-                  <Text color={color} dimColor={!selected}>
-                    /{cmd.name}{" "}
+                  <Text color={color ?? THEME.muted}>
+                    {selected ? `${ICONS.arrow} ` : "  "}/{cmd.name}{" "}
                   </Text>
                 </Box>
-                <Text wrap="truncate-end" color={color} dimColor={!selected}>
+                <Text wrap="truncate-end" color={selected ? THEME.accent : THEME.muted}>
                   {body}
                 </Text>
                 {isSkill && (
                   <Box flexShrink={0}>
-                    <Text color={color} dimColor={!selected}>
-                      {" "}
-                      {SKILL_TAG}
-                    </Text>
+                    <Text color={selected ? THEME.accent : THEME.dim}> {SKILL_TAG}</Text>
                   </Box>
                 )}
               </Box>
@@ -766,14 +833,14 @@ export function InputBox(props: InputBoxProps) {
       )}
       {showAtDropdown && (
         <Box flexDirection="column">
-          <Text dimColor>{"FILES"}</Text>
+          <Text color={THEME.dim}>{"FILES"}</Text>
           {filteredFiles.map((file, i) => (
             <Text
               key={file}
-              color={i === dropdownIndex ? THEME.primary : undefined}
-              dimColor={i !== dropdownIndex}
+              backgroundColor={i === dropdownIndex ? THEME.selectedBg : undefined}
+              color={i === dropdownIndex ? THEME.accent : THEME.muted}
             >
-              {ICONS.arrow} @{file}
+              {i === dropdownIndex ? `${ICONS.arrow} ` : "  "}@{file}
             </Text>
           ))}
         </Box>
@@ -781,13 +848,11 @@ export function InputBox(props: InputBoxProps) {
       <Box paddingLeft={1}>
         {permMode !== "default" ? (
           <Text>
-            <Text color={permMode in MODEL_DISPLAY ? MODEL_DISPLAY[permMode].color : "gray"}>
-              {permMode in MODEL_DISPLAY ? MODEL_DISPLAY[permMode].name : permMode} on
-            </Text>
-            <Text dimColor> (shift+tab to cycle)</Text>
+            <Text color={permissionModeColor(permMode)}>{MODEL_DISPLAY[permMode]} on</Text>
+            <Text color={THEME.dim}> (Shift+Tab to cycle)</Text>
           </Text>
         ) : (
-          <Text dimColor>default</Text>
+          <Text color={THEME.dim}>default</Text>
         )}
       </Box>
     </Box>

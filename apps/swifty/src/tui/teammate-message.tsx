@@ -23,6 +23,8 @@
 import { Box, Text } from "ink";
 import { useCallback, useImperativeHandle, type Ref } from "react";
 
+import { THEME } from "./styles.js";
+
 type PropsWithRef<T, R> = T & { ref: Ref<R> };
 
 interface TeammateMessageProps {
@@ -101,9 +103,9 @@ export function TeammateMessage(props: PropsWithRef<TeammateMessageProps, Teamma
     return (
       <Box flexDirection="column">
         <Text>
-          <Text color="cyan">@{from}</Text>
-          <Text>{">"} </Text>
-          <Text color="green">✓</Text>
+          <Text color={THEME.accent}>@{from}</Text>
+          <Text color={THEME.dim}> · </Text>
+          <Text color={THEME.success}>✓</Text>
           <Text> Task completed</Text>
         </Text>
         {content ? (
@@ -124,8 +126,8 @@ export function TeammateMessage(props: PropsWithRef<TeammateMessageProps, Teamma
   return (
     <Box flexDirection="column">
       <Text>
-        <Text color="cyan">@{from}</Text>
-        <Text>{">"} </Text>
+        <Text color={THEME.accent}>@{from}</Text>
+        <Text color={THEME.dim}> · </Text>
         <Text>{summary}</Text>
       </Text>
       {rest ? (

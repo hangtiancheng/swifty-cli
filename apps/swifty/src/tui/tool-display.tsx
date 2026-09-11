@@ -20,16 +20,18 @@
  * SOFTWARE.
  */
 
-import { Box, Text } from "ink";
+import { Box, Text, useStdout } from "ink";
 
 import { isDiffTool } from "../tools/is-diff-tool.js";
 
 import { DiffLines } from "./diff-render.js";
-import { COLORS, ICONS } from "./styles.js";
+import { THEME } from "./styles.js";
+import { formatToolOutputPreview } from "./tool-preview.js";
 
 import { strArg } from "@/utils/index.js";
 
 export interface ToolBlockInfo {
+  toolId: string;
   toolName: string;
   args: Record<string, unknown>;
   output?: string;
@@ -40,70 +42,70 @@ export interface ToolBlockInfo {
 
 interface ToolBlockProps {
   tool: ToolBlockInfo;
+  expanded?: boolean;
 }
 
 interface ToolDisplayProps {
   tools: ToolBlockInfo[];
+  expanded?: boolean;
 }
 
 export function ToolBlock(props: ToolBlockProps) {
-  const { tool } = props;
+  const { tool, expanded = false } = props;
+  const { stdout } = useStdout();
+  const width = Math.max(1, stdout.columns || 80);
   const argSummary = formatArgs(tool.args);
-  if (tool.loading) {
-    return (
-      <Box>
-        <Text>
-          <Text color="magenta">●</Text> {COLORS.tool(tool.toolName)}
-          {argSummary ? <Text dimColor> {argSummary}</Text> : null}
-        </Text>
-      </Box>
-    );
-  }
-
-  const icon = tool.isError ? COLORS.error(ICONS.error) : COLORS.success(ICONS.success);
-  const timeStr = tool.elapsed !== undefined ? `(${tool.elapsed.toFixed(1)}s)` : "";
-
-  // Keep the live region short so Ink can repaint it without overwriting earlier output.
-  const clamped = tool.output ? clampLines(tool.output, 8) : "";
+  const backgroundColor = tool.loading
+    ? THEME.toolPendingBg
+    : tool.isError
+      ? THEME.toolErrorBg
+      : THEME.toolSuccessBg;
+  const time = tool.elapsed === undefined ? "" : ` (${tool.elapsed.toFixed(1)}s)`;
+  const output = tool.output
+    ? expanded
+      ? tool.output.trimEnd()
+      : formatToolOutputPreview(tool.toolName, tool.output)
+    : "";
 
   return (
-    <Box flexDirection="column">
+    <Box
+      backgroundColor={backgroundColor}
+      flexDirection="column"
+      marginTop={1}
+      paddingLeft={1}
+      paddingRight={1}
+      paddingY={1}
+      width={width}
+    >
       <Text>
-        {icon} {COLORS.tool(tool.toolName)}
-        {argSummary ? <Text dimColor> {argSummary}</Text> : null}
-        <Text dimColor>{timeStr}</Text>
+        <Text bold color={THEME.text}>
+          {tool.toolName}
+        </Text>
+        {argSummary ? <Text color={THEME.accent}> {argSummary}</Text> : null}
+        <Text color={THEME.dim}>{time}</Text>
       </Text>
-      {clamped && (
-        <Box paddingLeft={2} marginBottom={0}>
+      {output ? (
+        <Box paddingLeft={2}>
           {isDiffTool(tool.toolName) ? (
-            <DiffLines text={clamped} />
+            <DiffLines text={output} />
           ) : (
-            <Text dimColor>{clamped}</Text>
+            <Text color={THEME.muted}>{output}</Text>
           )}
         </Box>
-      )}
+      ) : null}
     </Box>
   );
 }
 
-function clampLines(text: string, max: number): string {
-  const truncated = text.length > 500 ? text.slice(0, 500) + "…" : text;
-  const lines = truncated.split("\n");
-  if (lines.length <= max) {
-    return truncated;
-  }
-  return lines.slice(0, max).join("\n") + `\n… (+${String(lines.length - max)} lines)`;
-}
-
 export function ToolDisplay(props: ToolDisplayProps) {
-  const { tools } = props;
+  const { tools, expanded = false } = props;
   if (tools.length === 0) {
     return null;
   }
   return (
-    <Box flexDirection="column" paddingLeft={1}>
-      {tools.map((tool, idx) => (
-        <ToolBlock key={idx} tool={tool} />
+    <Box flexDirection="column">
+      {tools.map((tool) => (
+        <ToolBlock key={tool.toolId} tool={tool} expanded={expanded} />
       ))}
     </Box>
   );

@@ -20,7 +20,7 @@ describe("cli entry (dist/main.js)", () => {
 
 describe.skipIf(!existsSync(libEntry))("library entry (dist/lib)", () => {
   it("contains no ink/react/tui imports in any emitted module", () => {
-    const banned = /(from|import)\s*\(?\s*["'][^"']*(\bink\b|\breact\b|\btui\/)/;
+    const banned = /(from|import)\s*\(?\s*["'][^"']*(\bink\b|\breact\b|\btui(?:-v2)?\/)/;
     const atAlias = /["']@\/[^"']*["']/;
     for (const file of readdirSync(libDir)) {
       if (!file.endsWith(".js") && !file.endsWith(".d.ts")) {

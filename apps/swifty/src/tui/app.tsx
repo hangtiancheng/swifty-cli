@@ -27,6 +27,14 @@ import { Box, Static, Text, useApp, useInput, useStdout } from "ink";
 import { useState, useEffect, useRef, useCallback } from "react";
 
 import { Agent } from "../agent/agent.js";
+import type { InteractionSummary } from "../bootstrap/interaction-summary.js";
+import {
+  countMcpTools,
+  createToolRegistry,
+  wireSkillsToRegistry,
+  buildComposedToolFilter,
+  formatToolArgs,
+} from "../bootstrap/utils.js";
 import {
   parse as parseCommand,
   createDefaultRegistry as createCommandRegistry,
@@ -97,26 +105,20 @@ import type { ExitPlanModeTool } from "../tools/exit-plan-mode.js";
 import { FileStateCache } from "../tools/file-state-cache.js";
 import type { ToolRegistry } from "../tools/registry.js";
 import { SyntheticOutputTool } from "../tools/synthetic-output.js";
-import { randomCompletionVerb } from "../utils/verbs.js";
 import { version } from "../version.js";
 import { connectToIde, type IdeConnection } from "../vscode/ide-client.js";
 
-import {
-  countMcpTools,
-  createToolRegistry,
-  wireSkillsToRegistry,
-  buildComposedToolFilter,
-  formatToolArgs,
-} from "./app/utils.js";
 import { AskUserDialog } from "./ask-user-dialog.js";
 import { ChatView, CommittedMessage, type ChatMessage, type ToolSummaryItem } from "./chat.js";
+import { Footer } from "./footer.js";
 import { InputBox } from "./input.js";
+import { PendingQueue } from "./pending-queue.js";
 import { PermissionDialog, type PermissionAction } from "./permission-dialog.js";
 import { PlanApprovalDialog, type PlanChoice } from "./plan-approval.js";
 import { ProviderSelect } from "./provider-select.js";
 import RewindDialog, { type RewindAction } from "./rewind-dialog.js";
-import Spinner from "./spinner.js";
-import { BORDER_COLORS, ICONS } from "./styles.js";
+import { SessionSelector } from "./session-selector.js";
+import { THEME } from "./styles.js";
 import { TeamStatus } from "./team-status.js";
 import { TeammateSpinnerTree } from "./teammate-spinner-tree.js";
 import { TeamsDialog } from "./teams-dialog.js";
@@ -137,6 +139,8 @@ interface Props {
   sandboxConfig?: SandboxYamlConfig;
   enableCoordinatorMode?: boolean;
   forkDisabled?: boolean;
+  resume?: true | string;
+  onExitSummary?: (summary: InteractionSummary) => void;
 }
 
 // Maximum number of recent tool names (deduplicated) passed to the memory recall selector
@@ -150,18 +154,22 @@ export function App({
   sandboxConfig: sandboxYaml,
   enableCoordinatorMode,
   forkDisabled,
+  resume,
+  onExitSummary,
 }: Props) {
   const { exit } = useApp();
   const [appState, setAppState] = useState<AppState>(
     providers.length === 1 ? "chat" : "providerSelect",
   );
   const [selectedProvider, setSelectedProvider] = useState<ProviderConfig>(providers[0]);
+  const selectedProviderRef = useRef(providers[0]);
+  const [providerDialogActive, setProviderDialogActive] = useState(false);
+  const [providerSwitching, setProviderSwitching] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [streamingText, setStreamingText] = useState("");
+  const [streamingThinking, setStreamingThinking] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const [isCompacting, setIsCompacting] = useState(false);
-  const [completionMark, setCompletionMark] = useState<string | null>(null);
-  const streamStartRef = useRef(0);
   const streamingTextRef = useRef("");
   const streamThrottleRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [activeTools, setActiveTools] = useState<ToolBlockInfo[]>([]);
@@ -199,6 +207,7 @@ export function App({
     toolCount: number;
   } | null>(null);
   const [promptHistory, setPromptHistory] = useState<string[]>([]);
+  const [pendingMessages, setPendingMessages] = useState<string[]>([]);
 
   const workDir = process.cwd();
   const historyDir = `${workDir}/.swifty`;
@@ -209,6 +218,15 @@ export function App({
   const contextWindowRef = useRef(getContextWindow(providers[0]));
   const convRef = useRef(new ConversationManager());
   const sessionIdRef = useRef(sessionMod.newSessionId());
+  const interactionStatsRef = useRef({
+    agentActiveMs: 0,
+    failedToolCalls: 0,
+    startedAt: Date.now(),
+    successfulToolCalls: 0,
+    toolTimeMs: 0,
+  });
+  const activeToolIdsRef = useRef(new Set<string>());
+  const activeToolBatchStartedAtRef = useRef<number | null>(null);
   const taskListRef = useRef(new TaskList(new TaskStore(workDir, sessionIdRef.current)));
   const registryRef = useRef(
     (() => {
@@ -225,7 +243,19 @@ export function App({
       return reg;
     })(),
   );
-  const cmdRegistryRef = useRef(createCommandRegistry());
+  const cmdRegistryRef = useRef(
+    (() => {
+      const registry = createCommandRegistry();
+      registry.register({
+        name: "provider",
+        aliases: [],
+        type: "local_ui",
+        description: "Switch the active provider",
+        handler: () => "provider",
+      });
+      return registry;
+    })(),
+  );
   const usageTrackerRef = useRef(new CommandUsageTracker(workDir));
   const mcpManagerRef = useRef<MCPManager | null>(null);
   // The MCP load mode is decided once per session; a later retry pass must
@@ -291,6 +321,9 @@ export function App({
   const permissionResolveRef = useRef<((v: "allow" | "deny" | "allowAlways") => void) | null>(null);
   const [rewindDialogActive, setRewindDialogActive] = useState(false);
   const [rewindSnapshots, setRewindSnapshots] = useState<Snapshot[]>([]);
+  const [resumeSessions, setResumeSessions] = useState<sessionMod.SessionInfo[]>([]);
+  const [resumeDialogActive, setResumeDialogActive] = useState(false);
+  const initialResumeHandledRef = useRef(false);
   const [permissionRequest, setPermissionRequest] = useState<{
     toolName: string;
     argsSummary: string;
@@ -365,6 +398,18 @@ export function App({
   const ctrlCCountRef = useRef(0);
   const ctrlCTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [ctrlCHint, setCtrlCHint] = useState(false);
+  const requestExit = useCallback(() => {
+    const activeToolTime = activeToolBatchStartedAtRef.current
+      ? Date.now() - activeToolBatchStartedAtRef.current
+      : 0;
+    onExitSummary?.({
+      ...interactionStatsRef.current,
+      sessionId: sessionIdRef.current,
+      toolTimeMs: interactionStatsRef.current.toolTimeMs + activeToolTime,
+    });
+    exit();
+  }, [exit, onExitSummary]);
+
   useInput((input, key) => {
     if (key.ctrl && input === "c") {
       // Streaming keeps the old semantics: Ctrl+C only interrupts the agent
@@ -376,7 +421,7 @@ export function App({
       }
       ctrlCCountRef.current += 1;
       if (ctrlCCountRef.current >= 2) {
-        exit();
+        requestExit();
         return;
       }
       // First press clears the input draft, shows the hint, and arms the
@@ -573,9 +618,9 @@ export function App({
           spawnSubagent(
             BUILTIN_AGENTS[0],
             task,
-            client,
+            clientRef.current ?? client,
             registryRef.current,
-            provider,
+            selectedProviderRef.current,
             workDir,
             undefined,
             onEvent,
@@ -587,9 +632,9 @@ export function App({
             spawnSubagent(
               BUILTIN_AGENTS[0],
               task,
-              client,
+              clientRef.current ?? client,
               registry,
-              provider,
+              selectedProviderRef.current,
               workDir,
               undefined,
               onEvent,
@@ -630,9 +675,9 @@ export function App({
               return await spawnSubagent(
                 def,
                 prompt,
-                client,
+                clientRef.current ?? client,
                 registryRef.current,
-                provider,
+                selectedProviderRef.current,
                 workDirOverride ?? workDir,
                 onProgress,
                 undefined,
@@ -708,8 +753,41 @@ export function App({
   }, [appState, selectedProvider, initClient]);
 
   const handleProviderSelect = (provider: ProviderConfig) => {
-    setSelectedProvider(provider);
-    setAppState("chat");
+    if (appState === "providerSelect" || !clientRef.current) {
+      selectedProviderRef.current = provider;
+      setSelectedProvider(provider);
+      setAppState("chat");
+      return;
+    }
+
+    setProviderDialogActive(false);
+    setProviderSwitching(true);
+    const previousProvider = selectedProviderRef.current;
+    void (async () => {
+      try {
+        const environment = detectEnvironment(workDir);
+        environment.model = provider.model;
+        const client = await createClient(provider, buildSystemPrompt(environment));
+        clientRef.current = client;
+        selectedProviderRef.current = provider;
+        setSelectedProvider(provider);
+        contextWindowRef.current = getContextWindow(provider);
+        decideAndApply(registryRef.current, provider.base_url, contextWindowRef.current);
+        const resolvedWindow = await getContextWindowAsync(provider);
+        if (selectedProviderRef.current === provider && resolvedWindow > 0) {
+          contextWindowRef.current = resolvedWindow;
+        }
+        setMessages((current) => [
+          ...current,
+          { role: "system", content: `Provider switched to ${provider.name} · ${provider.model}.` },
+        ]);
+      } catch (err) {
+        selectedProviderRef.current = previousProvider;
+        setError(`Failed to switch provider: ${asErrorString(err)}`);
+      } finally {
+        setProviderSwitching(false);
+      }
+    })();
   };
 
   const handleSlashCommand = async (text: string): Promise<boolean> => {
@@ -819,6 +897,20 @@ export function App({
     if (cmd.type === "local_ui") {
       const action = cmd.handler({ workDir, args: parsed.args });
       switch (action) {
+        case "provider": {
+          if (providers.length < 2) {
+            setMessages((current) => [
+              ...current,
+              {
+                role: "system",
+                content: `Provider: ${selectedProvider.name} · ${selectedProvider.model}`,
+              },
+            ]);
+          } else {
+            setProviderDialogActive(true);
+          }
+          break;
+        }
         case "clear": {
           // Clear messages and start a fresh conversation. Reset in place —
           // AgentTool captures the manager for its fork path, so swapping the
@@ -831,6 +923,15 @@ export function App({
           );
           // Reset the session ID and the stores derived from it
           sessionIdRef.current = sessionMod.newSessionId();
+          interactionStatsRef.current = {
+            agentActiveMs: 0,
+            failedToolCalls: 0,
+            startedAt: Date.now(),
+            successfulToolCalls: 0,
+            toolTimeMs: 0,
+          };
+          activeToolIdsRef.current.clear();
+          activeToolBatchStartedAtRef.current = null;
           taskListRef.current.useStore(new TaskStore(workDir, sessionIdRef.current));
           fileHistoryRef.current = new FileHistory(workDir, sessionIdRef.current);
           // Reset token counters
@@ -848,7 +949,7 @@ export function App({
           break;
         }
         case "quit":
-          exit();
+          requestExit();
           break;
         case "plan": {
           setPrePlanMode(permMode);
@@ -899,7 +1000,7 @@ export function App({
             ]);
             setIsStreaming(true);
             setStreamingText("");
-            runAgentLoop("default")
+            runAgentLoopWithStats("default")
               .then(() => {
                 setIsStreaming(false);
                 setActiveTools([]);
@@ -952,27 +1053,23 @@ export function App({
         case "resume": {
           const arg = parsed.args.trim();
           if (!arg) {
-            const sessions = sessionMod.listSessions(workDir);
+            const sessions = sessionMod
+              .listSessions(workDir)
+              .filter((session) => session.messageCount > 0);
             if (sessions.length === 0) {
               setMessages((prev) => [...prev, { role: "system", content: "No sessions found." }]);
             } else {
-              const list = sessions
-                .slice(0, 10)
-                .map((s) => `  ${s.id} (${String(s.messageCount)} msgs) — ${s.firstMessage}`)
-                .join("\n");
-              setMessages((prev) => [
-                ...prev,
-                {
-                  role: "system",
-                  content: `Sessions (use /resume <id> to restore):\n${list}`,
-                },
-              ]);
+              setResumeSessions(sessions);
+              setResumeDialogActive(true);
             }
             break;
           }
 
           const saved = sessionMod.loadSession(workDir, arg);
           if (saved.length === 0) {
+            const sessions = sessionMod
+              .listSessions(workDir)
+              .filter((session) => session.messageCount > 0);
             setMessages((prev) => [
               ...prev,
               {
@@ -980,6 +1077,10 @@ export function App({
                 content: `Session "${arg}" not found or empty.`,
               },
             ]);
+            if (sessions.length > 0) {
+              setResumeSessions(sessions);
+              setResumeDialogActive(true);
+            }
             break;
           }
 
@@ -1023,6 +1124,8 @@ export function App({
           }
           convRef.current = conv;
           sessionIdRef.current = arg;
+          setResumeDialogActive(false);
+          setResumeSessions([]);
           recentToolsRef.current = [];
           surfacedMemoriesRef.current.clear();
           recoveryStateRef.current = new RecoveryState();
@@ -1244,7 +1347,7 @@ export function App({
         });
         setIsStreaming(true);
         setStreamingText("");
-        runAgentLoop()
+        runAgentLoopWithStats()
           .then(() => {
             setIsStreaming(false);
             setActiveTools([]);
@@ -1324,6 +1427,7 @@ export function App({
   const runAgentLoop = async (modeOverride?: PermissionMode) => {
     const controller = new AbortController();
     abortControllerRef.current = controller;
+    setStreamingThinking("");
 
     // modeOverride avoids a stale-closure read of permMode right after a
     // setPermMode call (e.g. plan approval switching out of plan mode in the same tick).
@@ -1483,6 +1587,7 @@ export function App({
       turnThinkingStart = 0;
       turnThinkingDuration = 0;
       turnToolCalls = [];
+      setStreamingThinking("");
       // turnToolUseIndices = [];
       pendingToolArgs.clear();
     };
@@ -1505,6 +1610,7 @@ export function App({
             turnThinkingStart = Date.now();
           }
           turnThinkingText += event.text;
+          setStreamingThinking(turnThinkingText);
           break;
         }
 
@@ -1517,18 +1623,33 @@ export function App({
         }
 
         case "tool_use": {
+          if (activeToolIdsRef.current.size === 0) {
+            activeToolBatchStartedAtRef.current = Date.now();
+          }
+          activeToolIdsRef.current.add(event.toolId);
           const argsSummary = formatToolArgs(event.args);
           // Store for lookup when tool_result arrives (it lacks args).
           pendingToolArgs.set(`${event.toolName}:${event.toolId}`, argsSummary);
           // Show the active spinner while the tool runs.
           setActiveTools((prev) => [
             ...prev,
-            { toolName: event.toolName, args: event.args, loading: true },
+            { toolId: event.toolId, toolName: event.toolName, args: event.args, loading: true },
           ]);
           break;
         }
 
         case "tool_result": {
+          activeToolIdsRef.current.delete(event.toolId);
+          if (activeToolIdsRef.current.size === 0 && activeToolBatchStartedAtRef.current !== null) {
+            interactionStatsRef.current.toolTimeMs +=
+              Date.now() - activeToolBatchStartedAtRef.current;
+            activeToolBatchStartedAtRef.current = null;
+          }
+          if (event.isError) {
+            interactionStatsRef.current.failedToolCalls += 1;
+          } else {
+            interactionStatsRef.current.successfulToolCalls += 1;
+          }
           if (event.toolName === "ExitPlanMode" && !event.isError) {
             exitPlanSucceeded = true;
           }
@@ -1548,7 +1669,7 @@ export function App({
           // Update active tools spinner.
           setActiveTools((prev) =>
             prev.map((t) =>
-              t.toolName === event.toolName && t.loading
+              t.toolId === event.toolId
                 ? {
                     ...t,
                     output: outputText,
@@ -1661,6 +1782,21 @@ export function App({
     }
   };
 
+  const runAgentLoopWithStats = async (modeOverride?: PermissionMode) => {
+    const startedAt = Date.now();
+    try {
+      await runAgentLoop(modeOverride);
+    } finally {
+      const endedAt = Date.now();
+      interactionStatsRef.current.agentActiveMs += endedAt - startedAt;
+      if (activeToolBatchStartedAtRef.current !== null) {
+        interactionStatsRef.current.toolTimeMs += endedAt - activeToolBatchStartedAtRef.current;
+        activeToolBatchStartedAtRef.current = null;
+        activeToolIdsRef.current.clear();
+      }
+    }
+  };
+
   const runUserTurn = async (text: string, modeOverride?: PermissionMode) => {
     if (!clientRef.current) {
       setError("LLM client not ready yet");
@@ -1668,8 +1804,6 @@ export function App({
     }
 
     setMessages((prev) => [...prev, { role: "user", content: text }]);
-    streamStartRef.current = Date.now();
-    setCompletionMark(null);
     setIsStreaming(true);
     setStreamingText("");
     setError(null);
@@ -1687,7 +1821,7 @@ export function App({
         timestamp: Math.floor(Date.now() / 1000),
       });
 
-      await runAgentLoop(modeOverride);
+      await runAgentLoopWithStats(modeOverride);
     } catch (err) {
       const msg = asErrorString(err);
       const isAbort = strArg(asRecord(err), "name") === "AbortError" || msg.includes("abort");
@@ -1709,9 +1843,8 @@ export function App({
         setMessages((prev) => [...prev, { role: "system", content: `Error: ${msg}` }]);
       }
     } finally {
-      const elapsed = Math.floor((Date.now() - streamStartRef.current) / 1000);
-      setCompletionMark(`✻ ${randomCompletionVerb()} for ${String(elapsed)}s`);
       setIsStreaming(false);
+      setStreamingThinking("");
       setActiveTools([]);
       abortControllerRef.current = null;
     }
@@ -1841,6 +1974,10 @@ export function App({
   const submittingRef = useRef(false);
 
   const handleSubmit = async (text: string) => {
+    if (isStreaming || isCompacting) {
+      setPendingMessages((current) => [...current, text]);
+      return;
+    }
     if (submittingRef.current) {
       return;
     }
@@ -1859,6 +1996,26 @@ export function App({
       submittingRef.current = false;
     }
   };
+
+  useEffect(() => {
+    if (!resume || appState !== "chat" || initialResumeHandledRef.current) {
+      return;
+    }
+    initialResumeHandledRef.current = true;
+    void handleSlashCommand(resume === true ? "/resume" : `/resume ${resume}`);
+  }, [appState, resume]);
+
+  useEffect(() => {
+    if (isStreaming || isCompacting || submittingRef.current) {
+      return;
+    }
+    const next = pendingMessages[0];
+    if (!next) {
+      return;
+    }
+    setPendingMessages((current) => current.slice(1));
+    void handleSubmit(next);
+  }, [isCompacting, isStreaming, pendingMessages]);
 
   if (appState === "providerSelect") {
     return <ProviderSelect providers={providers} onSelect={handleProviderSelect} />;
@@ -1888,20 +2045,25 @@ export function App({
         >
           {(item) =>
             item.type === "brand" ? (
-              <Box key={item._key} flexDirection="column">
+              <Box
+                key={item._key}
+                flexDirection="column"
+                marginBottom={1}
+                marginTop={1}
+                paddingLeft={1}
+              >
                 <Text>
-                  <Text color={BORDER_COLORS.focused}>{" /\\_/\\  "}</Text>
-                  <Text dimColor>Swifty v{version}</Text>
+                  <Text bold color={THEME.accent}>
+                    Swifty
+                  </Text>
+                  <Text color={THEME.dim}> v{version}</Text>
                 </Text>
-                <Text>
-                  <Text color={BORDER_COLORS.focused}>{"( o o ) "}</Text>
-                  <Text dimColor>{item.model}</Text>
+                <Text color={THEME.muted}>
+                  Esc interrupt · Ctrl+C clear/exit · / commands · Ctrl+O more
                 </Text>
-                <Text>
-                  <Text color={BORDER_COLORS.focused}>{" >   <  "}</Text>
-                  <Text dimColor>{item.workDir}</Text>
+                <Text color={THEME.dim} wrap="truncate-end">
+                  {item.model} · {item.workDir}
                 </Text>
-                <Text> </Text>
               </Box>
             ) : (
               <CommittedMessage key={item._key} message={item.message} expanded={toolsExpanded} />
@@ -1912,17 +2074,19 @@ export function App({
         <ChatView
           messages={[]}
           streamingText={isStreaming ? streamingText : undefined}
+          thinkingText={isStreaming ? streamingThinking : undefined}
           expanded={toolsExpanded}
         />
 
         {activeTools.length > 0 && !askRequest && subagents.length === 0 && (
-          <ToolDisplay tools={activeTools} />
+          <ToolDisplay tools={activeTools} expanded={toolsExpanded} />
         )}
 
         {subagents.length > 0 && !askRequest && (
           <>
             <ToolDisplay
               tools={activeTools.filter((t) => !(t.toolName === "Agent" && t.loading))}
+              expanded={toolsExpanded}
             />
             <Box flexDirection="column" paddingLeft={1}>
               {subagents.map((s, idx) => {
@@ -1930,9 +2094,9 @@ export function App({
                 const tool = activeTools.filter((t) => t.toolName === "Agent" && t.loading).at(idx);
                 return (
                   <Box key={s.id} gap={1}>
-                    {tool && <ToolBlock tool={tool} />}
-                    <Text color="magenta">
-                      {ICONS.dot} {s.label} subagent · turn {s.turn}
+                    {tool && <ToolBlock tool={tool} expanded={toolsExpanded} />}
+                    <Text color={THEME.customMessageLabel}>
+                      • {s.label} subagent · turn {s.turn}
                       {s.lastTool ? ` · ${s.lastTool}` : ""}
                     </Text>
                   </Box>
@@ -1942,15 +2106,12 @@ export function App({
           </>
         )}
 
-        {isStreaming && !askRequest && (
-          <Box paddingLeft={1} flexDirection="column">
-            <Spinner inputTokens={inputTokens} outputTokens={outputTokens} />
-            {teammateStates.length > 0 && (
-              <TeammateSpinnerTree
-                teammates={teammateStates}
-                leaderTokens={inputTokens + outputTokens}
-              />
-            )}
+        {isStreaming && !askRequest && teammateStates.length > 0 && (
+          <Box paddingLeft={1}>
+            <TeammateSpinnerTree
+              teammates={teammateStates}
+              leaderTokens={inputTokens + outputTokens}
+            />
           </Box>
         )}
         {!isStreaming && teammateStates.some((t) => t.status === "running") && (
@@ -1959,30 +2120,35 @@ export function App({
           </Box>
         )}
 
-        {isCompacting && !isStreaming && !askRequest && (
-          <Box paddingLeft={1}>
-            <Spinner label="Compacting conversation" />
-          </Box>
-        )}
-
         {error && (
-          <Box paddingLeft={1}>
-            <Text color="red">{error}</Text>
+          <Box marginTop={1} paddingLeft={1}>
+            <Text color={THEME.error}>Error: {error}</Text>
           </Box>
         )}
 
-        {!isStreaming && completionMark && !askRequest && !permissionRequest && (
-          <Box paddingLeft={1}>
-            <Text dimColor>{completionMark}</Text>
-          </Box>
-        )}
-
+        <PendingQueue messages={pendingMessages} />
         <Text> </Text>
       </Box>
 
-      {planApprovalActive && <PlanApprovalDialog onSelect={handlePlanApproval} />}
-
-      {rewindDialogActive && (
+      {ctrlCHint && (
+        <Box paddingLeft={1}>
+          <Text color={THEME.dim}>Press Ctrl+C again to exit.</Text>
+        </Box>
+      )}
+      <TeamStatus
+        count={teammateStates.filter((t) => t.status === "running" || t.status === "idle").length}
+      />
+      {providerDialogActive ? (
+        <ProviderSelect
+          providers={providers}
+          onCancel={() => {
+            setProviderDialogActive(false);
+          }}
+          onSelect={handleProviderSelect}
+        />
+      ) : planApprovalActive ? (
+        <PlanApprovalDialog onSelect={handlePlanApproval} />
+      ) : rewindDialogActive ? (
         <RewindDialog
           snapshots={rewindSnapshots}
           onComplete={handleRewindAction}
@@ -1990,9 +2156,17 @@ export function App({
             setRewindDialogActive(false);
           }}
         />
-      )}
-
-      {permissionRequest && (
+      ) : resumeDialogActive ? (
+        <SessionSelector
+          sessions={resumeSessions}
+          onCancel={() => {
+            setResumeDialogActive(false);
+          }}
+          onSelect={(sessionId) => {
+            void handleSlashCommand(`/resume ${sessionId}`);
+          }}
+        />
+      ) : permissionRequest ? (
         <PermissionDialog
           toolName={permissionRequest.toolName}
           argsSummary={permissionRequest.argsSummary}
@@ -2003,9 +2177,7 @@ export function App({
             setPermissionRequest(null);
           }}
         />
-      )}
-
-      {askRequest && (
+      ) : askRequest ? (
         <AskUserDialog
           questions={askRequest}
           onComplete={(answers) => {
@@ -2014,9 +2186,7 @@ export function App({
             setAskRequest(null);
           }}
         />
-      )}
-
-      {teamsDialogOpen && (
+      ) : teamsDialogOpen ? (
         <TeamsDialog
           teammates={teammateStates}
           onClose={() => {
@@ -2035,56 +2205,61 @@ export function App({
             }
           }}
         />
-      )}
-
-      {ctrlCHint && (
-        <Box paddingLeft={1}>
-          <Text dimColor>Press Ctrl+C again to exit.</Text>
-        </Box>
-      )}
-      <TeamStatus
-        count={teammateStates.filter((t) => t.status === "running" || t.status === "idle").length}
-      />
-      <InputBox
-        onSubmit={(text: string) => {
-          void handleSubmit(text);
-        }}
-        disabled={
-          planApprovalActive ||
-          rewindDialogActive ||
-          permissionRequest !== null ||
-          askRequest !== null
-        }
-        submitDisabled={isStreaming || isCompacting}
-        history={promptHistory}
-        commands={cmdRegistryRef.current.listCommands()}
-        usageTracker={usageTrackerRef.current}
-        inputState={
-          error
-            ? "error"
-            : isStreaming || isCompacting || rewindDialogActive || permissionRequest
-              ? "idle"
-              : "focused"
-        }
-        permMode={permMode}
-        onModeChange={(mode) => {
-          setPermMode(mode);
-          // A fresh checker is created per agent loop with the mode captured
-          // at loop start; mutate the live one so the change applies to the
-          // current loop instead of only the next.
-          if (checkerRef.current) {
-            checkerRef.current.mode = mode;
+      ) : (
+        <InputBox
+          onSubmit={(text: string) => {
+            void handleSubmit(text);
+          }}
+          disabled={providerSwitching}
+          history={promptHistory}
+          commands={cmdRegistryRef.current.listCommands()}
+          usageTracker={usageTrackerRef.current}
+          inputState={
+            error ? "error" : isStreaming || isCompacting || providerSwitching ? "agent" : "focused"
           }
-        }}
-        workDir={workDir}
+          borderColor={
+            error
+              ? THEME.error
+              : isCompacting || providerSwitching
+                ? THEME.accent
+                : THEME.thinkingHigh
+          }
+          statusLabel={
+            providerSwitching
+              ? "Switching provider..."
+              : isCompacting
+                ? "Compacting context... (Esc to cancel)"
+                : isStreaming
+                  ? "Working"
+                  : undefined
+          }
+          permMode={permMode}
+          onModeChange={(mode) => {
+            setPermMode(mode);
+            if (checkerRef.current) {
+              checkerRef.current.mode = mode;
+            }
+          }}
+          workDir={workDir}
+          sessionId={sessionIdRef.current}
+          insertTextRef={insertInputTextRef}
+          clearRef={clearInputRef}
+          onEscape={() => {
+            if (isStreaming) {
+              abortControllerRef.current?.abort();
+            }
+          }}
+        />
+      )}
+      <Footer
+        contextWindow={contextWindowRef.current}
+        inputTokens={inputTokens}
+        model={selectedProvider.model}
+        outputTokens={outputTokens}
+        permissionMode={permMode}
+        provider={selectedProvider.name}
         sessionId={sessionIdRef.current}
-        insertTextRef={insertInputTextRef}
-        clearRef={clearInputRef}
-        onEscape={() => {
-          if (isStreaming) {
-            abortControllerRef.current?.abort();
-          }
-        }}
+        workDir={workDir}
       />
     </Box>
   );

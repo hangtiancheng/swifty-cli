@@ -25,6 +25,9 @@ import { useReducer } from "react";
 
 import type { Question } from "../tools/ask-user.js";
 
+import { SelectorFrame } from "./selector-frame.js";
+import { ICONS, THEME } from "./styles.js";
+
 interface Props {
   questions: Question[];
   onComplete: (answers: Record<string, string>) => void;
@@ -94,37 +97,33 @@ function NavigationBar({
 
   return (
     <Box flexDirection="row" marginBottom={1}>
-      <Text dimColor={isFirst} color={isFirst ? undefined : "white"}>
-        {" ← "}
-      </Text>
+      <Text color={isFirst ? THEME.dim : THEME.text}>{" ← "}</Text>
       {questions.map((q, i) => {
         const active = currentIndex === i;
         const answered = states[i].answer !== undefined;
         const check = answered ? "☑" : "☐";
         if (active) {
           return (
-            <Text key={i} backgroundColor="magenta" color="white" bold>
+            <Text key={i} backgroundColor={THEME.selectedBg} color={THEME.text} bold>
               {` ${check} ${q.header} `}
             </Text>
           );
         }
         return (
-          <Text key={i} dimColor={!answered} color={answered ? "green" : undefined}>
+          <Text key={i} color={answered ? THEME.success : THEME.dim}>
             {` ${check} ${q.header} `}
           </Text>
         );
       })}
       {!hideSubmit &&
         (currentIndex === questions.length ? (
-          <Text backgroundColor="magenta" color="white" bold>
+          <Text backgroundColor={THEME.selectedBg} color={THEME.text} bold>
             {" ✓ Submit "}
           </Text>
         ) : (
-          <Text dimColor>{" ✓ Submit "}</Text>
+          <Text color={THEME.dim}>{" ✓ Submit "}</Text>
         ))}
-      <Text dimColor={isLast} color={isLast ? undefined : "white"}>
-        {" → "}
-      </Text>
+      <Text color={isLast ? THEME.dim : THEME.text}>{" → "}</Text>
     </Box>
   );
 }
@@ -146,31 +145,33 @@ function QuestionContent({
   return (
     <Box flexDirection="column" paddingLeft={1}>
       <Text bold>{question.question}</Text>
-      {question.multiSelect && <Text dimColor>{"  (space to toggle, enter to confirm)"}</Text>}
+      {question.multiSelect && (
+        <Text color={THEME.dim}>{"  (Space to toggle · Enter to confirm)"}</Text>
+      )}
       <Text> </Text>
       {options.map((opt, i) => {
         const isFocused = state.cursor === i;
         const isSelected = state.answer === opt.label;
         const idx = String(i + 1).padStart(maxIdxWidth, " ");
-        const pointer = isFocused ? ">" : " ";
+        const pointer = isFocused ? ICONS.arrow : " ";
         const checked =
           question.multiSelect &&
           (Array.isArray(state.selectedValue) ? state.selectedValue.includes(opt.label) : false);
         const checkMark = question.multiSelect ? (checked ? "☑ " : "☐ ") : "";
-        const color = isFocused ? "cyan" : isSelected ? "green" : undefined;
+        const color = isFocused ? THEME.accent : isSelected ? THEME.success : THEME.muted;
         return (
           <Box key={opt.label} flexDirection="column">
             <Text>
-              <Text color={isFocused ? "cyan" : undefined}>{pointer}</Text>
-              <Text dimColor> {idx}. </Text>
-              <Text color={color} dimColor={!isFocused && !isSelected}>
+              <Text color={isFocused ? THEME.accent : THEME.dim}>{pointer}</Text>
+              <Text color={THEME.dim}> {idx}. </Text>
+              <Text color={color}>
                 {checkMark}
                 {opt.label}
               </Text>
             </Text>
             {opt.description && (
               <Box paddingLeft={maxIdxWidth + 5}>
-                <Text dimColor>{opt.description}</Text>
+                <Text color={THEME.muted}>{opt.description}</Text>
               </Box>
             )}
           </Box>
@@ -179,14 +180,11 @@ function QuestionContent({
       {/* "Other" option */}
       <Box flexDirection="column">
         <Text>
-          <Text color={state.cursor === otherIndex ? "cyan" : undefined}>
-            {state.cursor === otherIndex ? ">" : " "}
+          <Text color={state.cursor === otherIndex ? THEME.accent : THEME.dim}>
+            {state.cursor === otherIndex ? ICONS.arrow : " "}
           </Text>
-          <Text dimColor> {String(otherIndex + 1).padStart(maxIdxWidth, " ")}. </Text>
-          <Text
-            color={state.cursor === otherIndex ? "cyan" : undefined}
-            dimColor={state.cursor !== otherIndex}
-          >
+          <Text color={THEME.dim}> {String(otherIndex + 1).padStart(maxIdxWidth, " ")}. </Text>
+          <Text color={state.cursor === otherIndex ? THEME.accent : THEME.dim}>
             Other (type your own)
           </Text>
         </Text>
@@ -194,8 +192,8 @@ function QuestionContent({
       {state.otherMode && (
         <Box paddingLeft={maxIdxWidth + 5}>
           <Text>
-            <Text dimColor>{"> "}</Text>
-            <Text color="cyan">{state.textInputValue}</Text>
+            <Text color={THEME.dim}>{`${ICONS.arrow} `}</Text>
+            <Text color={THEME.text}>{state.textInputValue}</Text>
             <Text inverse> </Text>
           </Text>
         </Box>
@@ -221,47 +219,43 @@ function SubmitContent({
     <Box flexDirection="column" paddingLeft={1}>
       <Text bold>Review your answers</Text>
       <Text> </Text>
-      {!allAnswered && <Text color="yellow">{"  ⚠ You have not answered all questions"}</Text>}
+      {!allAnswered && (
+        <Text color={THEME.warning}>{"  Warning: You have not answered all questions"}</Text>
+      )}
       {questions.map((q, i) => (
         <Box key={q.question} flexDirection="column" marginBottom={0}>
           <Text>
-            <Text dimColor>{"  • "}</Text>
+            <Text color={THEME.dim}>{"  • "}</Text>
             <Text>{q.question}</Text>
           </Text>
           {states[i].answer !== undefined ? (
             <Text>
-              <Text color="green">{"    → "}</Text>
-              <Text color="green">{states[i].answer}</Text>
+              <Text color={THEME.success}>{"    → "}</Text>
+              <Text color={THEME.success}>{states[i].answer}</Text>
             </Text>
           ) : (
-            <Text dimColor>{"    → (not answered)"}</Text>
+            <Text color={THEME.dim}>{"    → (not answered)"}</Text>
           )}
         </Box>
       ))}
       <Text> </Text>
       {allAnswered && (
         <Box flexDirection="column">
-          <Text dimColor>Ready to submit your answers?</Text>
+          <Text color={THEME.muted}>Ready to submit your answers?</Text>
           <Text> </Text>
           <Text>
-            <Text color={submitCursor === 0 ? "cyan" : undefined}>
-              {submitCursor === 0 ? ">" : " "}
+            <Text color={submitCursor === 0 ? THEME.accent : THEME.dim}>
+              {submitCursor === 0 ? ICONS.arrow : " "}
             </Text>
-            <Text
-              color={submitCursor === 0 ? "cyan" : undefined}
-              dimColor={submitCursor !== 0}
-              bold={submitCursor === 0}
-            >
+            <Text color={submitCursor === 0 ? THEME.accent : THEME.dim} bold={submitCursor === 0}>
               {" Submit answers"}
             </Text>
           </Text>
           <Text>
-            <Text color={submitCursor === 1 ? "cyan" : undefined}>
-              {submitCursor === 1 ? ">" : " "}
+            <Text color={submitCursor === 1 ? THEME.accent : THEME.dim}>
+              {submitCursor === 1 ? ICONS.arrow : " "}
             </Text>
-            <Text color={submitCursor === 1 ? "cyan" : undefined} dimColor={submitCursor !== 1}>
-              {" Cancel"}
-            </Text>
+            <Text color={submitCursor === 1 ? THEME.accent : THEME.dim}>{" Cancel"}</Text>
           </Text>
         </Box>
       )}
@@ -475,8 +469,7 @@ export function AskUserDialog({ questions, onComplete }: Props) {
   const helpText = helpParts.join(" · ");
 
   return (
-    <Box flexDirection="column" paddingLeft={1}>
-      <Text dimColor>{"─".repeat(60)}</Text>
+    <SelectorFrame hint={helpText} title="Answer questions">
       <NavigationBar
         questions={questions}
         currentIndex={currentIndex}
@@ -498,11 +491,6 @@ export function AskUserDialog({ questions, onComplete }: Props) {
           totalQuestions={questions.length}
         />
       ) : null}
-      <Text> </Text>
-      <Text dimColor>
-        {"  "}
-        {helpText}
-      </Text>
-    </Box>
+    </SelectorFrame>
   );
 }
