@@ -47,14 +47,16 @@ jobs:
       - name: Typecheck swifty
         run: pnpm --filter @swifty.js/swifty typecheck
 
+      # Build before test: tests/library-entry.test.ts asserts on dist/ artifacts
+      # (bin shebang, library boundary), so a fresh runner must have them.
+      - name: Build swifty
+        run: pnpm --filter @swifty.js/swifty build
+
       - name: Test swifty
         run: pnpm --filter @swifty.js/swifty test
 
       - name: Lint swifty
         run: pnpm --filter @swifty.js/swifty lint
-
-      - name: Build swifty
-        run: pnpm --filter @swifty.js/swifty build
 
       - name: Build swifty frontend
         run: pnpm --filter @swifty.js/swifty build:fe
