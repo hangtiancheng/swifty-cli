@@ -1,5 +1,5 @@
 {
-  "name": "swifty-cli",
+  "name": "swifty-code",
   "version": "0.0.1",
   "description": "swifty cli",
   "private": true,
@@ -15,7 +15,10 @@
     "prebuild": "pnpm build:wasm",
     "prepare": "husky"
   },
-  "keywords": ["swifty", "code"],
+  "keywords": [
+    "swifty",
+    "code"
+  ],
   "devDependencies": {
     "husky": "^9.1.7",
     "lint-staged": "^17.5.1"

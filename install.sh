@@ -22,9 +22,9 @@
 # install.sh — Bootstrap installer for swifty CLI via npm global install.
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/hangtiancheng/swifty-cli/main/install.sh | bash
-#   curl -fsSL https://raw.githubusercontent.com/hangtiancheng/swifty-cli/main/install.sh | bash -s -- --alpha
-#   curl -fsSL https://raw.githubusercontent.com/hangtiancheng/swifty-cli/main/install.sh | bash -s -- --version=0.0.15
+#   curl -fsSL https://raw.githubusercontent.com/hangtiancheng/swifty-code/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/hangtiancheng/swifty-code/main/install.sh | bash -s -- --alpha
+#   curl -fsSL https://raw.githubusercontent.com/hangtiancheng/swifty-code/main/install.sh | bash -s -- --version=0.0.15
 #
 # Installs @swifty.js/swifty globally via npm. npm's `bin` field automatically
 # creates the `swifty` command on PATH. Requires Node.js >= 20.

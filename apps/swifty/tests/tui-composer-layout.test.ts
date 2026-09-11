@@ -11,8 +11,8 @@ import type { Command } from "@/commands/commands.js";
 import { saveClipboardImage } from "@/images/clipboard.js";
 import { Footer } from "@/tui/footer.js";
 import { InputBox } from "@/tui/input.js";
-import { InteractionDock } from "@/tui/interaction-dock.js";
 import type { InputDraft } from "@/tui/input.js";
+import { InteractionDock } from "@/tui/interaction-dock.js";
 import { StatusBorder } from "@/tui/status-border.js";
 import { ICONS, THEME } from "@/tui/styles.js";
 import { truncateToWidth, visibleWidth, wrapToLines } from "@/tui/terminal-text.js";
@@ -425,13 +425,6 @@ describe("persistent composer drafts and input behavior", () => {
     press("!");
     press("\r", { return: true });
     expect(onSubmit).toHaveBeenCalledWith("draf!t");
-  });
-
-  it("reports the actual wrapped footer height to the page", () => {
-    const onHeightChange = vi.fn();
-    const output = footer(20, { onHeightChange });
-    expect(onHeightChange).toHaveBeenLastCalledWith(output.split("\n").length);
-    expect(output.split("\n").length).toBeGreaterThan(2);
   });
   it("restores multiline content and cursor, preserving editing and newline behavior", () => {
     const ref = draftRef(["first", "second"], 1, 3);

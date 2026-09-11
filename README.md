@@ -37,13 +37,13 @@ Requires **Node.js >= 20**.
 ### One-line installer
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/hangtiancheng/swifty-cli/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/hangtiancheng/swifty-code/main/install.sh | bash
 ```
 
 The installer supports `--uninstall`, `--version=X.Y.Z`, `--alpha`, `--beta`, `--rc`, `--canary`, `--nightly` and `--tag=NAME`:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/hangtiancheng/swifty-cli/main/install.sh | bash -s -- --alpha
+curl -fsSL https://raw.githubusercontent.com/hangtiancheng/swifty-code/main/install.sh | bash -s -- --alpha
 ```
 
 ### Via npm
@@ -79,11 +79,11 @@ See the [full configuration reference](./apps/swifty/README.md#configuration) fo
 
 This is a pnpm monorepo (workspace `apps/*`):
 
-| Package                                                | Description                                                      |
-| ------------------------------------------------------ | ---------------------------------------------------------------- |
-| [`@swifty.js/swifty`](./apps/swifty)                   | The terminal AI coding agent (Node.js)                           |
-| [`@swifty.js/mcp`](./apps/mcp)                         | Official Swifty MCP tools collection — semantic doc search (RAG) |
-| [`@swifty.js/glob-wasm`](./apps/glob-wasm)             | WebAssembly-powered glob matching and scanning                   |
+| Package                                    | Description                                                      |
+| ------------------------------------------ | ---------------------------------------------------------------- |
+| [`@swifty.js/swifty`](./apps/swifty)       | The terminal AI coding agent (Node.js)                           |
+| [`@swifty.js/mcp`](./apps/mcp)             | Official Swifty MCP tools collection — semantic doc search (RAG) |
+| [`@swifty.js/glob-wasm`](./apps/glob-wasm) | WebAssembly-powered glob matching and scanning                   |
 
 ## Development
 

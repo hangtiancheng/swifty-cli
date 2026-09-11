@@ -289,6 +289,21 @@ describe("session selector", () => {
     expect(frame).toContain(`Conversation-12 ${ICONS.success}`);
   });
 
+  it("shrinks the visible window when the page reserves extra footer rows", () => {
+    mount(
+      createElement(SessionSelector, {
+        sessions: sessions(),
+        currentSessionId: "session-12",
+        reservedRows: 8,
+        onSelect: vi.fn(),
+        onCancel: vi.fn(),
+      }),
+    );
+    const rendered = frame.match(/Conversation-\d+/g)?.length ?? 0;
+    expect(rendered).toBeGreaterThan(0);
+    expect(rendered).toBeLessThan(8);
+  });
+
   it("searches first messages past the beginning and IDs, and restores selection on backspace", () => {
     const saved = sessions(2);
     saved[1].firstMessage = `${"Earlier context. ".repeat(10)}Fix deployment pipeline`;
