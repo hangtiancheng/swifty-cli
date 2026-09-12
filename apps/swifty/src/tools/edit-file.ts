@@ -21,6 +21,7 @@
  */
 
 import { readFile, writeFile } from "node:fs/promises";
+import { resolve } from "node:path";
 
 import { createChildLogger } from "../logger/logger.js";
 import { asErrorString } from "../utils/index.js";
@@ -54,15 +55,18 @@ export class EditFileTool implements Tool {
       properties: {
         file_path: {
           type: "string" as const,
-          description: "Absolute path to the file",
+          description:
+            "Path to the existing file, absolute or relative to the Agent's working directory. Read it first with ReadFile.",
         },
         old_string: {
           type: "string" as const,
-          description: "Exact string to find and replace",
+          description:
+            "Non-empty exact text to replace, including whitespace but excluding ReadFile line-number prefixes. Must match once unless replace_all is true.",
         },
         new_string: {
           type: "string" as const,
-          description: "Replacement string",
+          description:
+            "Replacement text. May be empty to delete the matched text; must differ from old_string.",
         },
         replace_all: {
           type: "boolean" as const,
@@ -80,18 +84,19 @@ export class EditFileTool implements Tool {
   }
 
   async execute(ctx: ToolContext, args: Record<string, unknown>): Promise<ToolResult> {
-    const filePath = strArg(args, "file_path");
+    const requestedPath = strArg(args, "file_path");
     const oldString = strArg(args, "old_string");
     const newString = strArg(args, "new_string");
     const replaceAll = boolArg(args, "replace_all");
 
-    if (!filePath) {
+    if (!requestedPath) {
       return {
         output: "Error: file_path is required",
         isError: true,
       };
     }
 
+    const filePath = resolve(ctx.workDir, requestedPath);
     if (!oldString) {
       return {
         output: "Error: old_string is required",

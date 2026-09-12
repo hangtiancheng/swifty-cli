@@ -93,6 +93,7 @@ describe("LoadSkillTool fork mode", () => {
 
   it("runs a fork skill in a sub-agent and keeps the SOP out of the main context", async () => {
     const { catalog, host, forkHost, calls, activated } = forkFixture("fork");
+
     // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
     const tool = new LoadSkillTool(catalog as SkillCatalog, host, forkHost);
 
@@ -107,6 +108,7 @@ describe("LoadSkillTool fork mode", () => {
 
   it("falls back to inline when no fork host is wired", async () => {
     const { catalog, host } = forkFixture("fork");
+
     // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
     const tool = new LoadSkillTool(catalog as SkillCatalog, host);
 
@@ -118,6 +120,7 @@ describe("LoadSkillTool fork mode", () => {
 
   it("does not spawn a sub-agent for inline skills", async () => {
     const { catalog, host, forkHost, calls } = forkFixture("inline");
+
     // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
     const tool = new LoadSkillTool(catalog as SkillCatalog, host, forkHost);
 

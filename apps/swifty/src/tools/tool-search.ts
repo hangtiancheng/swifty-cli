@@ -80,78 +80,54 @@ export class ToolSearchTool implements Tool {
         isError: true,
       });
     }
-    // Handle "select:name1,name2" syntax
-    if (query.startsWith("select:")) {
-      const names = query
-        .slice("select:".length)
-        .split(",")
-        .map((n) => n.trim());
-      const tools = this.registry.findDeferredByNames(names);
-      if (tools.length === 0) {
-        return Promise.resolve({
-          output: `No deferred tools found matching: ${names.join(", ")}`,
-          isError: false,
-        });
-      }
-      // Non-MCP deferred tools have no McpCall entry point, so they can only be
-      // marked as discovered as before, letting them into the next turn's tools[]
-      const mcpNames: string[] = [];
-      for (const t of tools) {
-        if (t.name.startsWith(MCP_TOOL_PREFIX)) {
-          mcpNames.push(t.name);
-        } else {
-          this.registry.markDiscovered(t.name);
-        }
-      }
-
-      // Official endpoint: return a tool_reference and let the server expand the
-      // schema into the context. The tools array stays untouched, so the cache
-      // prefix is not broken.
-      if (mcpNames.length > 0 && this.registry.mcpLoadingMode === "native") {
-        return Promise.resolve({
-          output:
-            `Loaded ${String(mcpNames.length)} tool(s): ${mcpNames.join(", ")}. ` +
-            "You can call them directly now.",
-          isError: false,
-          contentBlocks: mcpNames.map(
-            (name) =>
-              ({
-                type: "tool_reference",
-                tool_name: name,
-              }) satisfies ToolResultContentBlock,
-          ),
-        });
-      }
-
-      // Other endpoints: show the raw schema to the model and route calls through
-      // McpCall. This text lands at the end of messages, so it's an append and
-      // does not affect the cache prefix.
-      const schemas = tools.map((t) => JSON.stringify(t.schema(), null, 2));
-      const suffix =
-        mcpNames.length > 0
-          ? "\n\nTo invoke any of the tools above, call McpCall with that tool's " +
-            "full name and an `arguments` object matching its input_schema exactly, " +
-            "using the same JSON types."
-          : "";
-      return Promise.resolve({
-        output: schemas.join("\n\n") + suffix,
-        isError: false,
-      });
-    }
-
-    // Keyword search
-    const tools = this.registry.searchDeferred(query, maxResults);
+    const selection = query.startsWith("select:");
+    const tools = selection
+      ? this.registry.findDeferredByNames(
+          query
+            .slice("select:".length)
+            .split(",")
+            .map((name) => name.trim())
+            .filter(Boolean),
+        )
+      : this.registry.searchDeferred(query, Math.max(1, Math.min(maxResults, 50)));
     if (tools.length === 0) {
-      return Promise.resolve({
-        output: "No deferred tools matched the query.",
-        isError: false,
-      });
+      return Promise.resolve({ output: "No deferred tools matched the query.", isError: false });
     }
 
-    const schemas = tools.map((t) => JSON.stringify(t.schema(), null, 2));
+    const mcp = tools.filter((tool) => tool.name.startsWith(MCP_TOOL_PREFIX));
+    const local = tools.filter((tool) => !tool.name.startsWith(MCP_TOOL_PREFIX));
+    for (const tool of local) {
+      this.registry.markDiscovered(tool.name);
+    }
+    const native = this.registry.mcpLoadingMode === "native";
+    const schemas = (native ? local : tools).map((tool) => JSON.stringify(tool.schema(), null, 2));
+    const routing =
+      mcp.length === 0
+        ? ""
+        : this.registry.mcpLoadingMode === "dispatch"
+          ? "\n\nInvoke MCP tools through McpCall with the server name, full tool name, and an arguments object matching the target input_schema, including JSON types."
+          : "\n\nThese MCP tools can be called directly by their full names.";
+    const output =
+      [
+        `Loaded ${String(tools.length)} tool(s): ${tools.map((tool) => tool.name).join(", ")}.`,
+        ...schemas,
+      ].join("\n\n") + routing;
     return Promise.resolve({
-      output: schemas.join("\n\n"),
+      output,
       isError: false,
+      ...(native && mcp.length > 0
+        ? {
+            contentBlocks: [
+              { type: "text", text: output },
+              ...mcp.map(
+                (tool): ToolResultContentBlock => ({
+                  type: "tool_reference",
+                  tool_name: tool.name,
+                }),
+              ),
+            ] satisfies ToolResultContentBlock[],
+          }
+        : {}),
     });
   }
 }

@@ -153,6 +153,14 @@ export function createDefaultRegistry(): CommandRegistry {
   const registry = new CommandRegistry();
 
   registry.register({
+    name: "login",
+    aliases: [],
+    type: "local_ui",
+    description: "Configure, save, and activate an LLM provider",
+    handler: () => "login",
+  });
+
+  registry.register({
     name: "help",
     aliases: ["h", "?"],
     type: "local",

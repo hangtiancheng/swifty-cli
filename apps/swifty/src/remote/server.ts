@@ -43,7 +43,7 @@ import {
 import { loadUserCommands } from "../commands/loader.js";
 import { forceCompact } from "../compact/compact.js";
 import { RecoveryState } from "../compact/recovery.js";
-import { getContextWindow, getContextWindowAsync, getMaxOutputTokens } from "../config/config.js";
+import { getContextWindow, getMaxOutputTokens } from "../config/config.js";
 import type { HookConfig, MCPServerConfig, ProviderConfig } from "../config/config.js";
 import { ConversationManager } from "../conversation/conversation.js";
 import { FileHistory } from "../file-history/file-history.js";
@@ -70,7 +70,7 @@ import {
   rebuildFromSession,
   getSessionFilePath,
 } from "../session/session.js";
-import { SkillCatalog } from "../skills/catalog.js";
+import { SkillCatalog, buildSkillSection } from "../skills/catalog.js";
 import { runInline as runSkillInline } from "../skills/executor.js";
 import { LoadSkillTool } from "../skills/load-skill-tool.js";
 import type { SkillForkHost, SkillHost } from "../skills/skill.js";
@@ -309,6 +309,13 @@ class AgentHandleImpl implements RemoteAgentHandle {
         coordinatorActiveFn: () => coordinatorActive(this.enableCoordinatorMode),
         instructions: this.longTermMemoryInstructions,
         memoryContent: this.longTermMemoryMemoryContent,
+        skillSection: this.skillCatalog ? buildSkillSection(this.skillCatalog, this.workDir) : "",
+        skillDeltaFn: () => {
+          const section = this.skillCatalog
+            ? buildSkillSection(this.skillCatalog, this.workDir)
+            : "";
+          return section && !this.conv.hasReminderContaining(section) ? section : "";
+        },
         notificationFn: () => this.teamManager.drainLeads(),
         onPermissionRequest: callbacks.onPermissionRequest,
         onLoopComplete: (conv) => {
@@ -396,17 +403,7 @@ export async function createRemoteAgent(
   // 5. Create conversation manager
   const conv = new ConversationManager();
 
-  // 6. Async context window fetch (sync + async layered)
-  let contextWindow = getContextWindow(provider);
-  getContextWindowAsync(provider)
-    .then((w) => {
-      if (w > 0) {
-        contextWindow = w;
-      }
-    })
-    .catch(() => {
-      /* best-effort */
-    });
+  const contextWindow = getContextWindow(provider);
 
   // 7. Load instructions and memory, inject into conversation
   const instructions = loadInstructions(workDir);
@@ -497,19 +494,20 @@ export async function createRemoteAgent(
   // registry (with shared task-board tools injected) and returns the callback
   // that runs the teammate agent's main loop.
   const teamRunAgentFactory =
-    (registry: ToolRegistry, teamChecker?: PermissionChecker): RunAgent =>
-    (task, onEvent) =>
+    (registry: ToolRegistry, teamChecker?: PermissionChecker, memberWorkDir = workDir): RunAgent =>
+    (task, onEvent, abortSignal) =>
       spawnSubagent(
         BUILTIN_AGENTS[0],
         task,
         client,
         registry,
         provider,
-        workDir,
+        memberWorkDir,
         undefined,
         onEvent,
         undefined,
         teamChecker,
+        { abortSignal },
       );
   // 14. Register Team tools
   const teamManager = new TeamManager(workDir);
@@ -523,7 +521,7 @@ export async function createRemoteAgent(
   const agentTool = new AgentTool(
     workDir,
     registry,
-    async (def, prompt, _bg, modelOverride?, workDirOverride?) => {
+    async (def, prompt, background, modelOverride?, workDirOverride?, context?) => {
       return spawnSubagent(
         def,
         prompt,
@@ -534,20 +532,31 @@ export async function createRemoteAgent(
         undefined,
         undefined,
         modelOverride,
+        workDirOverride
+          ? context?.permissionChecker?.forWorkDir(workDirOverride)
+          : context?.permissionChecker,
+        {
+          abortSignal: context?.abortSignal,
+          background,
+          onPermissionRequest: context?.onPermissionRequest,
+          permissionMode: context?.permissionChecker?.mode,
+        },
       );
     },
-    undefined,
-    async (prompt, forkConv, forkRegistry, modelOverride?) => {
+    conv,
+    async (prompt, forkConv, forkRegistry, modelOverride?, context?) => {
+      const forkWorkDir = context?.workDir ?? workDir;
       // Fork path: create an isolated agent on the forked conversation
       const resolvedModel = modelOverride ? resolveModelId(modelOverride) : provider.model;
-      const forkEnv = detectEnvironment(workDir);
+      const forkEnv = detectEnvironment(forkWorkDir);
       forkEnv.model = resolvedModel;
       const forkSystemPrompt = buildSystemPrompt(forkEnv);
       const forkClient = modelOverride
         ? await createClient({ ...provider, model: resolvedModel }, forkSystemPrompt)
         : client;
 
-      const checker = new PermissionChecker(workDir, "acceptEdits");
+      const checker =
+        context?.permissionChecker ?? new PermissionChecker(forkWorkDir, "acceptEdits");
       forkConv.addUserMessage(prompt);
 
       const agent = new Agent({
@@ -555,8 +564,13 @@ export async function createRemoteAgent(
         registry: forkRegistry,
         checker,
         conversation: forkConv,
-        workDir,
+        workDir: forkWorkDir,
         maxIterations: 200,
+        abortSignal: context?.abortSignal,
+        onPermissionRequest: context?.onPermissionRequest,
+        fileStateCache: new FileStateCache(),
+        instructions,
+        memoryContent: memReminder,
       });
 
       let output = "";
@@ -1367,6 +1381,7 @@ export class RemoteServer {
         handle.client,
         handle.recoveryState,
         toolNames,
+
         // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
         toolSchemas as ToolSchema[],
         getSessionFilePath(handle.workDir, handle.sessionId),

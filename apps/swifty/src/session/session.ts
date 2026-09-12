@@ -279,12 +279,24 @@ function recordsToCamelResults(recs?: ToolResultRecord[]): ToolResultBlock[] | u
 //   - If there is no boundary (old sessions, or never compacted), replay every
 //     ordinary message verbatim. Fully backward-compatible.
 export function rebuildFromSession(saved: SessionMessage[]): RestoredMessage[] {
-  // Find the last boundary record.
+  // A damaged boundary must not discard the only recoverable history. Walk
+  // back to the last valid boundary, or replay ordinary messages if none exist.
   let lastBoundary = -1;
+  let payload: CompactBoundaryPayload | null = null;
   for (let i = saved.length - 1; i >= 0; i--) {
     if (saved[i].type === COMPACT_BOUNDARY) {
-      lastBoundary = i;
-      break;
+      try {
+        const raw = saved[i].content;
+        const parsed: unknown = typeof raw === "string" ? JSON.parse(raw) : null;
+        const boundary = CompactBoundaryPayloadSchema.safeParse(parsed);
+        if (boundary.success && boundary.data.summary.trim()) {
+          payload = boundary.data;
+          lastBoundary = i;
+          break;
+        }
+      } catch {
+        /* Ignore this damaged boundary and try the previous one. */
+      }
     }
   }
 
@@ -292,15 +304,6 @@ export function rebuildFromSession(saved: SessionMessage[]): RestoredMessage[] {
 
   if (lastBoundary >= 0) {
     // Compacted state: summary + inlined keep, then post-boundary appends.
-    let payload: CompactBoundaryPayload | null = null;
-    try {
-      // Boundary records always carry their payload as a JSON string.
-      const raw = saved[lastBoundary].content;
-      const payload_: unknown = typeof raw === "string" ? JSON.parse(raw) : null;
-      payload = parse(CompactBoundaryPayloadSchema, payload_);
-    } catch {
-      payload = null;
-    }
     if (payload) {
       // The summary stands in for everything before the boundary, replayed as a
       // single user message (mirrors how doCompact rebuilds the live transcript).
@@ -345,6 +348,9 @@ export function rebuildFromSession(saved: SessionMessage[]): RestoredMessage[] {
 
   // No boundary → full replay (backward compatible).
   for (const m of saved) {
+    if (m.type === COMPACT_BOUNDARY) {
+      continue;
+    }
     const restored = toRestored(m);
     if (restored) {
       out.push(restored);

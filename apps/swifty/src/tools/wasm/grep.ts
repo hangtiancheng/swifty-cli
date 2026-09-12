@@ -110,16 +110,19 @@ export class GrepTool implements Tool {
       properties: {
         pattern: {
           type: "string" as const,
-          description: "Regex pattern to search",
+          description:
+            "Case-insensitive regular expression matched against each line. Escape backslashes in JSON; use ReadFile for surrounding context.",
         },
         path: {
           type: "string" as const,
-          description: "Directory or file to search",
+          description:
+            "Directory or file, absolute or relative to the Agent's working directory (default '.'). Narrow the path to reduce output.",
           default: ".",
         },
         include: {
           type: "string" as const,
-          description: "File pattern filter (e.g., '*.ts', 'src/**/*.js')",
+          description:
+            "Optional filename glob. Bare patterns such as '*.ts' match at any depth; patterns with '/' match paths relative to the Agent's working directory.",
         },
       },
       required: ["pattern"],

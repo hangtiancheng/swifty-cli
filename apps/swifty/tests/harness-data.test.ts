@@ -1,0 +1,363 @@
+import {
+  existsSync,
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { z } from "zod";
+
+import { Agent } from "../src/agent/agent.js";
+import { ConversationManager, type Message } from "../src/conversation/conversation.js";
+import { AnthropicClient, buildAnthropicMessages } from "../src/llm/anthropic.js";
+import type { LLMClient } from "../src/llm/client.js";
+import type { StreamEvent } from "../src/llm/events.js";
+import { buildChatCompletionMessages, buildOpenAIInput } from "../src/llm/openai.js";
+import { MemoryExtractor } from "../src/memory/extractor.js";
+import { MemoryPermissionChecker } from "../src/memory/permissions.js";
+import { extractWrittenPaths } from "../src/memory/written-paths.js";
+import { PermissionChecker } from "../src/permissions/checker.js";
+import { AgentTool } from "../src/subagent/agent-tool.js";
+import { EditFileTool } from "../src/tools/edit-file.js";
+import { FileStateCache } from "../src/tools/file-state-cache.js";
+import { ReadFileTool } from "../src/tools/read-file.js";
+import { ToolRegistry } from "../src/tools/registry.js";
+import type { ToolContext } from "../src/tools/types.js";
+import { WriteFileTool } from "../src/tools/write-file.js";
+import * as worktrees from "../src/worktree/worktree.js";
+
+const end: StreamEvent = {
+  type: "stream_end",
+  stopReason: "end_turn",
+  usage: { inputTokens: 1, outputTokens: 1, cacheReadInputTokens: 0, cacheCreationInputTokens: 0 },
+};
+function mockClient(turns: StreamEvent[][]): LLMClient {
+  let turn = 0;
+  return {
+    setSystemPrompt: vi.fn(),
+    // eslint-disable-next-line @typescript-eslint/require-await
+    async *stream() {
+      yield* turns[turn++] ?? [end];
+    },
+  };
+}
+const workDir = () => mkdtempSync(join(tmpdir(), "swifty-data-"));
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+});
+
+describe("file and memory execution", () => {
+  it("reads, edits, and writes relative to the agent working directory", async () => {
+    const directory = workDir();
+    const ctx = { workDir: directory, fileStateCache: new FileStateCache() };
+    expect(
+      (await new WriteFileTool().execute(ctx, { file_path: "nested/test.txt", content: "before" }))
+        .isError,
+    ).toBe(false);
+    expect((await new ReadFileTool().execute(ctx, { file_path: "nested/test.txt" })).output).toBe(
+      "1\tbefore",
+    );
+    expect(
+      (
+        await new EditFileTool().execute(ctx, {
+          file_path: "nested/test.txt",
+          old_string: "before",
+          new_string: "after",
+        })
+      ).isError,
+    ).toBe(false);
+    expect(readFileSync(join(directory, "nested/test.txt"), "utf-8")).toBe("after");
+  });
+
+  it("records actual successful memory tool calls and rebuilds their index", async () => {
+    const directory = workDir();
+    const path = join(directory, ".swifty/memory/preference.md");
+    const client = mockClient([
+      [
+        {
+          type: "tool_call_complete",
+          toolId: "save",
+          toolName: "WriteFile",
+          arguments: {
+            file_path: path,
+            content:
+              "---\nname: preference\ndescription: test project preference\nmetadata:\n  type: project\n---\nKeep task constraints.\n",
+          },
+        },
+        end,
+      ],
+      [end],
+    ]);
+    expect(
+      await new MemoryExtractor(client, directory).extract(
+        "User explicitly requested a durable project preference.",
+      ),
+    ).toEqual(["preference.md"]);
+    expect(readFileSync(join(directory, ".swifty/memory/MEMORY.md"), "utf-8")).toContain(
+      "preference.md",
+    );
+  });
+
+  it("does not report prose or failed tool calls as saved memories", () => {
+    expect(
+      extractWrittenPaths([
+        {
+          role: "assistant",
+          content: '{"tool":"WriteFile","file_path":"fake.md"}',
+          toolUses: [
+            { toolName: "WriteFile", toolUseId: "failed", arguments: { file_path: "failed.md" } },
+          ],
+        },
+        {
+          role: "user",
+          content: "",
+          toolResults: [{ toolUseId: "failed", content: "denied", isError: true }],
+        },
+      ]),
+    ).toEqual([]);
+  });
+
+  it("keeps multiline fallback memory bodies and rejects path traversal", async () => {
+    const directory = workDir();
+    const client = mockClient([
+      [
+        {
+          type: "text_delta",
+          text: "MEMORY_NAME: useful\nMEMORY_TYPE: project\nMEMORY_DESC: durable fact\nMEMORY_BODY:\nFirst line\nSecond line\n---\nMEMORY_NAME: ../escape\nMEMORY_TYPE: project\nMEMORY_BODY: unwanted",
+        },
+        end,
+      ],
+    ]);
+    expect(await new MemoryExtractor(client, directory).extract("conversation")).toEqual([
+      "useful",
+    ]);
+    expect(readFileSync(join(directory, ".swifty/memory/useful.md"), "utf-8")).toContain(
+      "First line\nSecond line",
+    );
+    expect(existsSync(join(directory, ".swifty/escape.md"))).toBe(false);
+  });
+
+  it("denies background writes through symlinks and outside memory storage", () => {
+    const directory = workDir();
+    mkdirSync(join(directory, ".swifty/memory"), { recursive: true });
+    symlinkSync(workDir(), join(directory, ".swifty/memory/escape"));
+    const checker = new MemoryPermissionChecker(directory, true);
+    for (const path of ["source.ts", ".swifty/memory/escape/file.md", ".swifty/memory/lock"]) {
+      expect(checker.check("WriteFile", "write", { file_path: path }).effect).toBe("deny");
+    }
+    expect(
+      checker.check("WriteFile", "write", { file_path: ".swifty/memory/valid.md" }).effect,
+    ).toBe("allow");
+    expect(checker.check("Bash", "command", { command: "echo dangerous > source.ts" }).effect).toBe(
+      "deny",
+    );
+  });
+});
+
+describe("fork and restored context", () => {
+  it("honors fork worktree isolation and keeps parent permission rules", async () => {
+    const directory = workDir();
+    const isolated = workDir();
+    mkdirSync(join(directory, ".swifty"));
+    writeFileSync(
+      join(directory, ".swifty/permissions.yaml"),
+      '- rule: "WriteFile(blocked*)"\n  effect: deny\n',
+    );
+    vi.spyOn(worktrees, "createAgentWorktree").mockResolvedValue({
+      path: isolated,
+      branch: "test-branch",
+      headCommit: "test-head",
+      gitRoot: directory,
+    });
+    const handler = vi.fn(
+      (
+        _prompt: string,
+        _conversation: ConversationManager,
+        _registry: ToolRegistry,
+        _model?: string,
+        context?: ToolContext,
+      ) => {
+        expect(context?.workDir).toBe(isolated);
+        expect(
+          context?.permissionChecker?.check("WriteFile", "write", { file_path: "blocked.ts" })
+            .effect,
+        ).toBe("deny");
+        return Promise.resolve("isolated result");
+      },
+    );
+    const parent = new ConversationManager();
+    parent.addUserMessage("parent task");
+    const tool = new AgentTool(
+      directory,
+      new ToolRegistry(),
+      () => Promise.resolve("unused"),
+      parent,
+      handler,
+    );
+    const result = await tool.execute(
+      { workDir: directory, permissionChecker: new PermissionChecker(directory, "acceptEdits") },
+      { description: "isolated audit", prompt: "Inspect this", isolation: "worktree" },
+    );
+    expect(handler).toHaveBeenCalledOnce();
+    expect(result.output).toContain(isolated);
+    expect(parent.getMessages()).toEqual([{ role: "user", content: "parent task" }]);
+  });
+
+  it("forks deeply, keeps the initial reminder once, and returns worker evidence", async () => {
+    const parent = new ConversationManager();
+    parent.injectLongTermMemory("project constraints", "");
+    parent.addUserMessage([{ type: "text", text: "parent attachment" }]);
+    const before = structuredClone(parent.getMessages());
+    const handler = vi.fn((_prompt: string, snapshot: ConversationManager) => {
+      snapshot.injectLongTermMemory("duplicate", "");
+      expect(snapshot.getMessages()).toEqual(before);
+      const content = snapshot.getMessages().at(-1)?.content;
+      if (Array.isArray(content)) {
+        content[0].text = "child change";
+      }
+      snapshot.addAssistantMessage("worker result");
+      return Promise.resolve("verified worker result");
+    });
+    const tool = new AgentTool(
+      workDir(),
+      new ToolRegistry(),
+      () => Promise.resolve("unused"),
+      parent,
+      handler,
+    );
+    const result = await tool.execute(
+      { workDir: workDir() },
+      { description: "audit", prompt: "Inspect this" },
+    );
+    expect(result.output).toContain("verified worker result");
+    expect(parent.getMessages()).toEqual(before);
+  });
+
+  it("restores instructions and active skills after manual compaction without changing the system prompt", async () => {
+    const conversation = new ConversationManager();
+    conversation.replaceWithCompacted("summary", []);
+    const client = mockClient([[end]]);
+    const setSystemPrompt = vi.spyOn(client, "setSystemPrompt");
+    const agent = new Agent({
+      client,
+      conversation,
+      workDir: workDir(),
+      registry: new ToolRegistry(),
+      checker: new PermissionChecker(workDir()),
+      instructions: "preserve prefix",
+      memoryContent: "memory fact",
+      skillSection: "available skill",
+      activeSkills: new Map([["audit", "active skill procedure"]]),
+    });
+    for await (const event of agent.run()) {
+      expect(event.type).not.toBe("error");
+    }
+    expect(JSON.stringify(conversation.getMessages())).toContain("active skill procedure");
+    expect(JSON.stringify(conversation.getMessages())).toContain("preserve prefix");
+    expect(setSystemPrompt).not.toHaveBeenCalled();
+  });
+});
+
+describe("multimodal provider requests", () => {
+  it("retains attachments beside tool results in every protocol", () => {
+    const messages: Message[] = [
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "attached note" },
+          {
+            type: "image",
+            source: { type: "base64", media_type: "image/png", data: "IMAGE_PAYLOAD" },
+          },
+        ],
+        toolResults: [{ toolUseId: "read", content: "result", isError: false }],
+      },
+    ];
+    for (const converted of [
+      buildAnthropicMessages(messages),
+      buildOpenAIInput(messages),
+      buildChatCompletionMessages(messages),
+    ]) {
+      expect(JSON.stringify(converted)).toContain("attached note");
+      expect(JSON.stringify(converted)).toContain("IMAGE_PAYLOAD");
+      expect(JSON.stringify(converted)).toContain("result");
+    }
+  });
+
+  it.each([true, false])(
+    "sends valid Anthropic thinking configuration when enabled=%s",
+    async (thinking) => {
+      let request: unknown;
+      vi.stubGlobal(
+        "fetch",
+        vi.fn((_url: unknown, init: RequestInit) => {
+          request = JSON.parse(z.string().parse(init.body));
+          const events = [
+            {
+              type: "message_start",
+              message: {
+                id: "test",
+                type: "message",
+                role: "assistant",
+                model: "test",
+                content: [],
+                stop_reason: null,
+                stop_sequence: null,
+                usage: { input_tokens: 1, output_tokens: 0 },
+              },
+            },
+            {
+              type: "message_delta",
+              delta: { stop_reason: "end_turn", stop_sequence: null },
+              usage: { output_tokens: 1 },
+            },
+            { type: "message_stop" },
+          ];
+          return Promise.resolve(
+            new Response(
+              events
+                .map((event) => `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`)
+                .join(""),
+              { headers: { "content-type": "text/event-stream" } },
+            ),
+          );
+        }),
+      );
+      const client = new AnthropicClient(
+        {
+          name: "test",
+          protocol: "anthropic",
+          base_url: "https://example.invalid",
+          api_key: "test",
+          model: "test",
+          thinking,
+        },
+        "stable system",
+      );
+      const conversation = new ConversationManager();
+      conversation.addUserMessage("hi");
+      for await (const event of client.stream(conversation, [])) {
+        expect(event.type).not.toBe("error");
+      }
+      const body = z
+        .object({
+          max_tokens: z.number(),
+          thinking: z.object({ type: z.string(), budget_tokens: z.number().optional() }),
+        })
+        .parse(request);
+      expect(body.max_tokens).toBe(128000);
+      expect(body.thinking.type).toBe(thinking ? "enabled" : "disabled");
+      if (thinking) {
+        expect(body.thinking.budget_tokens).toBeGreaterThanOrEqual(1024);
+        expect(body.thinking.budget_tokens).toBeLessThan(body.max_tokens);
+      }
+    },
+  );
+});

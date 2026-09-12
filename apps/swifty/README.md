@@ -118,9 +118,9 @@ Provider fields:
 | base_url          | yes      | API base URL                                                         |
 | model             | yes      | Model identifier                                                     |
 | api_key           | no       | API key (falls back to environment variable)                         |
-| thinking          | no       | Enable extended thinking mode (increases max_output_tokens to 64000) |
-| context_window    | no       | Override auto-detected context window size                           |
-| max_output_tokens | no       | Override default max output tokens                                   |
+| thinking          | no       | Enable extended thinking (default: true)                             |
+| context_window    | no       | Context window in tokens (default: 1000000; no model-name inference) |
+| max_output_tokens | no       | Maximum output tokens (default: 128000)                              |
 
 API keys are resolved in this order: explicit api_key field, then environment variables (ANTHROPIC_API_KEY for anthropic, OPENAI_API_KEY for openai and openai-compat).
 
@@ -133,6 +133,10 @@ swifty
 ```
 
 Launches the terminal interface. If multiple providers are configured, a provider selection screen appears first.
+
+Use `/login` to configure and activate a provider from the TUI. When no provider is configured, the login form opens automatically. Name, protocol, base URL, API key, and model are required in the form. Use ↑↓ or Tab to move between fields, ←→ to select protocol or thinking, Enter to save, and Esc to cancel. Duplicate names receive numeric suffixes (`name2`, `name3`, …).
+
+The form saves to the project's `.swifty/config.local.yaml`, retaining existing providers and other settings. Context window accepts integers from 1000 to 10000000; max output accepts integers from 1 to 1000000 and must not exceed the context window. Empty optional fields use the defaults above.
 
 ### Print Mode (Non-Interactive)
 
@@ -158,6 +162,7 @@ Inside the TUI, these commands are available:
 
 | Command                 | Description                                                                        |
 | ----------------------- | ---------------------------------------------------------------------------------- |
+| /login                  | Configure, save, and activate an LLM provider                                      |
 | /status                 | Show current session status (model, tokens, tools, sandbox, memories, skills, MCP) |
 | /permission mode <mode> | Change permission mode (default, acceptEdits, plan, bypassPermissions)             |
 | /memory                 | List stored memories                                                               |

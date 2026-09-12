@@ -30,6 +30,7 @@ import z, { parse } from "zod";
 import { createChildLogger } from "../logger/logger.js";
 import { MCP_CALL_TOOL_NAME, mcpCallPermissionContent } from "../tools/mcp-call.js";
 import { strArg } from "../utils/index.js";
+import { canonicalPath, isPathWithin } from "../utils/paths.js";
 
 const log = createChildLogger({ module: "permissions" });
 
@@ -170,9 +171,10 @@ export class PathSandbox {
    * denyWrite has the highest priority — even if the path is within an allowed root, writes are still denied.
    */
   checkDenyWrite(filePath: string): Decision | null {
-    const absolute = resolve(filePath);
+    const absolute = resolve(this.projectDir, filePath);
+    const canonical = canonicalPath(absolute);
     for (const denied of this.denyWritePaths) {
-      if (absolute.startsWith(denied)) {
+      if (isPathWithin(denied, absolute) || isPathWithin(canonicalPath(denied), canonical)) {
         return {
           effect: "deny",
           reason: `Path ${filePath} is in deny-write list`,
@@ -183,9 +185,9 @@ export class PathSandbox {
   }
 
   check(filePath: string): Decision | null {
-    const absolute = resolve(filePath);
+    const absolute = canonicalPath(resolve(this.projectDir, filePath));
     for (const root of this.allowedRoots) {
-      if (absolute.startsWith(root)) {
+      if (isPathWithin(canonicalPath(root), absolute)) {
         return null;
       }
     }
@@ -383,6 +385,8 @@ export function isSafeCommand(command: string): boolean {
   // not become a gateway to piping/chaining/redirection/substitution.
   if (
     trimmed.includes(">") ||
+    trimmed.includes("<") ||
+    /[\r\n&]/.test(trimmed) ||
     trimmed.includes("|") ||
     trimmed.includes(";") ||
     trimmed.includes("&&") ||
@@ -420,10 +424,21 @@ export class PermissionChecker {
   private sandbox: PathSandbox;
   private ruleEngine: RuleEngine;
 
-  constructor(workDir: string, mode: PermissionMode = "default") {
+  constructor(
+    private readonly workDir: string,
+    mode: PermissionMode = "default",
+  ) {
     this.mode = mode;
     this.sandbox = new PathSandbox(workDir);
     this.ruleEngine = new RuleEngine(workDir);
+  }
+
+  forWorkDir(workDir: string): PermissionChecker {
+    const checker = new PermissionChecker(workDir, this.mode);
+    checker.ruleEngine = this.ruleEngine;
+    checker.sandboxEnabled = this.sandboxEnabled;
+    checker.sandboxAutoAllow = this.sandboxAutoAllow;
+    return checker;
   }
 
   check(
@@ -433,18 +448,25 @@ export class PermissionChecker {
   ): Decision {
     const content = extractContent(toolName, args);
 
-    // Rules snapshot is fetched lazily once: safe/dangerous commands return in
-    // earlier layers without touching the rules file; compound commands share
-    // the same snapshot across sub-command checks to avoid redundant disk reads.
+    // Use one rule snapshot for this call, including all compound-command checks.
     let snapshot: Rule[] | null = null;
     const rules = (): Rule[] => (snapshot ??= this.ruleEngine.snapshot());
+    const explicitEffect = evaluateRules(rules(), toolName, content);
+    if (explicitEffect === "deny" || explicitEffect === "ask") {
+      return { effect: explicitEffect, reason: `Permission rule: ${explicitEffect}` };
+    }
 
     // Layer 0: plan-mode plan-file write exception.
     // Both WriteFile and EditFile targeting the plan file are allowed so the
     // model can create and update its plan.
     if (this.mode === "plan" && (toolName === "WriteFile" || toolName === "EditFile")) {
       const path = strArg(args, "file_path", "");
-      if (path.includes(".swifty/plans/")) {
+      if (
+        this.planFilePath &&
+        canonicalPath(resolve(this.workDir, path)) ===
+          canonicalPath(resolve(this.workDir, this.planFilePath)) &&
+        !this.sandbox.checkDenyWrite(path)
+      ) {
         return {
           effect: "allow",
           reason: "Plan file write allowed in plan mode",
@@ -551,7 +573,7 @@ export class PermissionChecker {
       toolName === "ReadFile" || toolName === "WriteFile" || toolName === "EditFile";
     let pattern: string;
     if (isFilePath && content) {
-      const abs = resolve(content);
+      const abs = resolve(this.workDir, content);
       let isDir = false;
       try {
         isDir = statSync(abs).isDirectory();

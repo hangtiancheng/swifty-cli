@@ -52,20 +52,6 @@ export class ConfigError extends Error {
   }
 }
 
-// export interface ProviderConfig {
-//   name: string;
-//   /**
-//    * enum: ["anthropic", "openai", "openai-compat"]
-//    */
-//   protocol: string;
-//   base_url: string;
-//   model: string;
-//   api_key?: string;
-//   thinking?: boolean;
-//   context_window?: number;
-//   max_output_tokens?: number;
-// }
-
 export const ProviderConfigSchema = z.object({
   name: z.string(),
   /**
@@ -82,106 +68,29 @@ export const ProviderConfigSchema = z.object({
 
 export type ProviderConfig = z.infer<typeof ProviderConfigSchema>;
 
-// Built-in model-name → context-window map
-// Values are reasonable starting points and MAY become stale as vendors update models — if a value is wrong,
-// set `context_window` in the provider config to override it.
-const MODEL_CONTEXT_WINDOWS: readonly (readonly [string, number])[] = [
-  // 1M-token variants (e.g. "...-1m") come first so they win over the base family.
-  ["1m", 1_000_000],
-  ["gpt-4.1", 1_000_000],
-  ["gpt-4o", 128_000],
-  ["gpt-4-turbo", 128_000],
-  ["o1", 200_000],
-  ["o3", 200_000],
-  ["o4", 200_000],
-  ["gpt-3.5", 16_385],
-  ["claude", 200_000],
-];
+export const DEFAULT_PROVIDER_THINKING = true;
+export const DEFAULT_CONTEXT_WINDOW = 1_000_000;
+export const DEFAULT_MAX_OUTPUT_TOKENS = 128_000;
 
-// Look up the built-in table by substring,
-// then fall back to the conservative defaults (claude → 200k, otherwise → 128k).
-export function lookupModelContextWindow(model: string): number {
-  const model_ = model.toLowerCase();
-  for (const [m, window] of MODEL_CONTEXT_WINDOWS) {
-    if (model_.includes(m)) {
-      return window;
-    }
-  }
-  return model_.includes("claude") ? 200_000 : 128_000;
+export function withProviderDefaults(provider: ProviderConfig): ProviderConfig {
+  return {
+    ...provider,
+    thinking: provider.thinking ?? DEFAULT_PROVIDER_THINKING,
+    context_window: getContextWindow(provider),
+    max_output_tokens: getMaxOutputTokens(provider),
+  };
 }
 
-// Synchronous context-window resolver
-// 1. config-supplied context_window > 0 → use it (highest priority)
-// 2. built-in model-name → window table (substring match)
-// 3. conservative default (claude → 200k / else → 128k)
-export function getContextWindow(p: ProviderConfig): number {
-  if (p.context_window && p.context_window > 0) {
-    return p.context_window;
-  }
-  return lookupModelContextWindow(p.model);
+export function getContextWindow(provider: ProviderConfig): number {
+  return Number.isSafeInteger(provider.context_window) && (provider.context_window ?? 0) > 0
+    ? (provider.context_window ?? DEFAULT_CONTEXT_WINDOW)
+    : DEFAULT_CONTEXT_WINDOW;
 }
 
-// Memoizes the auto-fetched window per provider name+model
-// so we only hit the network once even if resolution is requested repeatedly.
-const fetchedWindowCache = new Map<string, number>();
-
-// Async context-window resolver
-// 1. config context_window > 0 → use it (no network)
-// 2. anthropic protocol -> fetcher(p) → ModelInfo.max_input_tokens (> 0)
-// 3. built-in model-name → window table
-// 4. conservative default
-// `fetcher` is injected (defaults to fetchModelContextWindow)
-// so it can be stubbed (mock substitution) in tests.
-// The fetcher itself must never throw — but we still guard here
-// so a rejected promise degrades silently to layers 3/4 instead of blocking startup.
-export async function getContextWindowAsync(
-  p: ProviderConfig,
-  fetcher?: (p: ProviderConfig) => Promise<number>,
-): Promise<number> {
-  // 1. Explicit config always wins.
-  if (p.context_window && p.context_window > 0) {
-    return p.context_window;
-  }
-
-  // 2. Only the anthropic protocol exposes /v1/models/{model}.
-  if (p.protocol === "anthropic") {
-    const key = `${p.name}-${p.model}`;
-    let fetched = fetchedWindowCache.get(key);
-    if (fetched === undefined) {
-      try {
-        // Lazy import of the anthropic fetcher
-        // avoids a static config.ts ↔ anthropic.ts import cycle;
-        // tests pass `fetcher` directly and never hit this path.
-        const fn = fetcher ?? (await import("../llm/anthropic.js")).fetchModelContextWindow;
-
-        fetched = await fn(p);
-      } catch (err) {
-        log.error({ err }, "config operation failed");
-        fetched = 0;
-      }
-      fetchedWindowCache.set(key, fetched);
-    }
-    if (fetched && fetched > 0) {
-      return fetched;
-    }
-  }
-  // 3. 4.
-  return lookupModelContextWindow(p.model);
-}
-
-// Test-only: clears the per-provider auto-fetch cache.
-export function _resetContextWindowCache() {
-  fetchedWindowCache.clear();
-}
-
-export function getMaxOutputTokens(p: ProviderConfig): number {
-  if (p.max_output_tokens && p.max_output_tokens > 0) {
-    return p.max_output_tokens;
-  }
-  if (p.thinking) {
-    return 64_000;
-  }
-  return 8192;
+export function getMaxOutputTokens(provider: ProviderConfig): number {
+  return Number.isSafeInteger(provider.max_output_tokens) && (provider.max_output_tokens ?? 0) > 0
+    ? (provider.max_output_tokens ?? DEFAULT_MAX_OUTPUT_TOKENS)
+    : DEFAULT_MAX_OUTPUT_TOKENS;
 }
 
 export function resolveAPIKey(p: ProviderConfig): string {
@@ -196,16 +105,6 @@ export function resolveAPIKey(p: ProviderConfig): string {
   return process.env[envVar] ?? "";
 }
 
-// export interface MCPServerConfig {
-//   name: string;
-//   command?: string;
-//   args?: string[];
-//   url?: string;
-//   transport?: string;
-//   headers?: Record<string, string>;
-//   env?: Record<string, string>;
-// }
-
 const MCPServerConfigSchema = z.object({
   name: z.string(),
   command: z.string().optional(),
@@ -217,23 +116,6 @@ const MCPServerConfigSchema = z.object({
 });
 
 export type MCPServerConfig = z.infer<typeof MCPServerConfigSchema>;
-
-// export interface HookConfig {
-//   id?: string;
-//   event: string;
-//   condition?: string;
-//   action: {
-//     type: string;
-//     command?: string;
-//     url?: string;
-//     method?: string;
-//     prompt?: string;
-//   };
-//   reject?: boolean;
-//   once?: boolean;
-//   async?: boolean;
-//   on_error?: string;
-// }
 
 export const HookConfigSchema = z.object({
   id: z.string().optional(),
@@ -253,13 +135,6 @@ export const HookConfigSchema = z.object({
 });
 
 export type HookConfig = z.infer<typeof HookConfigSchema>;
-
-// export interface AppConfig {
-//   providers: ProviderConfig[];
-//   permission_mode?: string | undefined;
-//   mcp_servers: MCPServerConfig[];
-//   hooks: HookConfig[];
-// }
 
 const SandboxYamlConfigSchema = z.object({
   enabled: z.boolean().optional(),
@@ -307,10 +182,8 @@ function loadSingleFile(path: string): AppConfig {
   if (parsed.success) {
     const data = parsed.data;
     return {
-      providers: data.providers,
-      permission_mode: data.permission_mode,
-      mcp_servers: data.mcp_servers,
-      hooks: data.hooks,
+      ...data,
+      providers: data.providers.map(withProviderDefaults),
     };
   }
   log.error({ error: parsed.error }, "config error");
@@ -325,7 +198,7 @@ function loadSingleFile(path: string): AppConfig {
   if ("providers" in raw) {
     const parsed = safeParse(z.array(ProviderConfigSchema), raw.providers);
     if (parsed.success) {
-      providers = parsed.data;
+      providers = parsed.data.map(withProviderDefaults);
     }
   }
   if ("permission_mode" in raw && typeof raw.permission_mode === "string") {
@@ -424,7 +297,7 @@ function validateProviders(config: AppConfig): void {
       base_url: p.base_url,
       model: p.model,
     } as const;
-    const missing = requiredFields.filter((field) => !(field in values));
+    const missing = requiredFields.filter((field) => !values[field].trim());
     if (missing.length > 0) {
       throw new ConfigError(`Provider #${String(i + 1)}: missing fields: ${missing.join(", ")}`);
     }
@@ -437,10 +310,15 @@ function validateProviders(config: AppConfig): void {
   }
 }
 
-export function loadConfig(path?: string): AppConfig {
+export function loadConfig(
+  path?: string,
+  options: { allowEmptyProviders?: boolean } = {},
+): AppConfig {
   if (path) {
     const config = loadSingleFile(path);
-    validateProviders(config);
+    if (!options.allowEmptyProviders || config.providers.length > 0) {
+      validateProviders(config);
+    }
     return config;
   }
 
@@ -466,10 +344,15 @@ export function loadConfig(path?: string): AppConfig {
   }
 
   if (!merged) {
+    if (options.allowEmptyProviders) {
+      return { providers: [], mcp_servers: [], hooks: [] };
+    }
     throw new ConfigError(
       "No config file found, expected .swifty/config.y(a)ml under project or $HOME/.swifty/config.y(a)ml.",
     );
   }
-  validateProviders(merged);
+  if (!options.allowEmptyProviders || merged.providers.length > 0) {
+    validateProviders(merged);
+  }
   return merged;
 }

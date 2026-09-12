@@ -22,6 +22,8 @@
 
 import type Anthropic from "@anthropic-ai/sdk";
 
+import type { Decision, PermissionChecker } from "../permissions/checker.js";
+
 import type { FileStateCache } from "./file-state-cache.js";
 
 import type { FileHistory } from "@/file-history/file-history.js";
@@ -180,6 +182,12 @@ export interface ToolContext {
   abortSignal?: AbortSignal;
   fileHistory?: FileHistory | undefined;
   fileStateCache?: FileStateCache | undefined;
+  permissionChecker?: PermissionChecker;
+  onPermissionRequest?: (
+    toolName: string,
+    args: Record<string, unknown>,
+    decision: Decision,
+  ) => Promise<"allow" | "deny" | "allowAlways">;
 }
 
 /**

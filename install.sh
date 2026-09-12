@@ -105,16 +105,6 @@ if [ -f "$CONFIG_FILE" ]; then
 else
 	mkdir -p "$CONFIG_DIR"
 	cat >"$CONFIG_FILE" <<'EOF'
-# Swifty project-level configuration (.swifty/config.yaml)
-#
-# Load order (later layers override earlier ones, see src/config/config.ts loadConfig):
-#   ~/.swifty/config.yaml -> ./.swifty/config.yaml -> ./.swifty/config.local.yaml
-# Merge semantics: `providers` replaced wholesale when the override layer is non-empty;
-# `permission_mode` overridden; `mcp_servers` merged by name; `hooks` appended;
-# `sandbox` shallow-merged; `enable_coordinator_mode` sticky once true.
-#
-# Schema source: src/config/config.ts (AppConfigSchema)
-
 # permission_mode — optional, string, default: "default"
 # One of: "default" | "acceptEdits" | "plan" | "bypassPermissions"
 permission_mode: bypassPermissions

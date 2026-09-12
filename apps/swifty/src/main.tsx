@@ -82,7 +82,7 @@ async function main() {
 
   let cfg;
   try {
-    cfg = loadConfig();
+    cfg = loadConfig(undefined, { allowEmptyProviders: !remoteAddr });
   } catch (err) {
     console.error(`Error: ${asErrorString(err)}`);
     process.exit(1);

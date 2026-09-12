@@ -45,6 +45,49 @@ const t3 = t0 + 3;
 const t4 = t0 + 4;
 
 describe("session save/load round-trip", () => {
+  it("falls back to the last valid boundary when a later boundary is damaged", () => {
+    const restored = rebuildFromSession([
+      { role: "user", content: "old task", timestamp: t0 },
+      {
+        role: "system",
+        type: COMPACT_BOUNDARY,
+        timestamp: t1,
+        content: JSON.stringify({
+          summary: "valid summary",
+          keep: [
+            {
+              role: "user",
+              content: [
+                { type: "text", text: "image task" },
+                {
+                  type: "image",
+                  source: { type: "base64", media_type: "image/png", data: "QUJD" },
+                },
+              ],
+            },
+          ],
+        }),
+      },
+      { role: "assistant", content: "after boundary", timestamp: t2 },
+      { role: "system", type: COMPACT_BOUNDARY, timestamp: t3, content: "{broken" },
+      { role: "user", content: "latest task", timestamp: t4 },
+    ]);
+    expect(contentToText(restored[0].content)).toContain("valid summary");
+    expect(restored[1].content).toEqual([
+      { type: "text", text: "image task" },
+      { type: "image", source: { type: "base64", media_type: "image/png", data: "QUJD" } },
+    ]);
+    expect(restored.slice(2).map((m) => m.content)).toEqual(["after boundary", "latest task"]);
+  });
+
+  it("replays ordinary history if all compaction boundaries are invalid", () => {
+    const restored = rebuildFromSession([
+      { role: "user", content: "original task", timestamp: t0 },
+      { role: "assistant", content: "original answer", timestamp: t1 },
+      { role: "system", type: COMPACT_BOUNDARY, content: "not json", timestamp: t2 },
+    ]);
+    expect(restored.map((m) => m.content)).toEqual(["original task", "original answer"]);
+  });
   it("persists messages and loads them back in order", () => {
     const workDir = mkdtempSync(join(tmpdir(), "swifty-sess-"));
     const id = newSessionId();

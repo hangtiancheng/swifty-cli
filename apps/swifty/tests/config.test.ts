@@ -20,15 +20,12 @@
  * SOFTWARE.
  */
 
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect } from "vitest";
 
 import {
   forkEnabled,
   mergeConfig,
   getContextWindow,
-  getContextWindowAsync,
-  lookupModelContextWindow,
-  _resetContextWindowCache,
   getMaxOutputTokens,
   resolveAPIKey,
   type AppConfig,
@@ -48,149 +45,24 @@ describe("config", () => {
       expect(getContextWindow(p)).toBe(100000);
     });
 
-    it("returns 200k for claude models", () => {
+    it("uses the 1M default independently of model names", () => {
       const p: ProviderConfig = {
         model: "claude-sonnet-4-6",
         name: "p",
         protocol: "anthropic",
         base_url: "#",
       };
-      expect(getContextWindow(p)).toBe(200000);
+      expect(getContextWindow(p)).toBe(1000000);
     });
 
-    it("returns 128k for non-claude models", () => {
+    it("uses the same default for OpenAI models", () => {
       const p: ProviderConfig = {
         model: "gpt-4o",
         name: "p",
         protocol: "openai",
         base_url: "#",
       };
-      expect(getContextWindow(p)).toBe(128000);
-    });
-  });
-
-  describe("lookupModelContextWindow (built-in table, layer 3/4)", () => {
-    // Each case asserts the substring matcher lands on the right window.
-    const cases: [string, number][] = [
-      ["claude-sonnet-4-5-1m", 1_000_000], // 1m variant wins over claude
-      ["claude-sonnet-4-5-20250929-1m", 1_000_000],
-      ["gpt-4.1", 1_000_000],
-      ["gpt-4.1-mini", 1_000_000],
-      ["gpt-4o", 128_000],
-      ["gpt-4o-mini", 128_000],
-      ["gpt-4-turbo", 128_000],
-      ["o1", 200_000],
-      ["o1-preview", 200_000],
-      ["o3-mini", 200_000],
-      ["o4-mini", 200_000],
-      ["gpt-3.5-turbo", 16_385],
-      ["claude-opus-4-6", 200_000],
-      ["claude-haiku-4-5", 200_000],
-      ["some-unknown-model", 128_000], // conservative non-claude default
-    ];
-    for (const [model, want] of cases) {
-      it(`maps ${model} -> ${String(want)}`, () => {
-        expect(lookupModelContextWindow(model)).toBe(want);
-      });
-    }
-  });
-
-  describe("getContextWindowAsync (four-layer fallback)", () => {
-    beforeEach(() => {
-      _resetContextWindowCache();
-    });
-
-    it("layer 1: config context_window wins over everything (no fetch)", async () => {
-      let called = false;
-      // eslint-disable-next-line @typescript-eslint/require-await
-      const fetcher = async () => {
-        called = true;
-        return 999_999;
-      };
-      const p: ProviderConfig = {
-        name: "p",
-        base_url: "#",
-        protocol: "anthropic",
-        model: "claude-sonnet-4-6",
-        context_window: 321_000,
-      };
-      expect(await getContextWindowAsync(p, fetcher)).toBe(321_000);
-      expect(called).toBe(false);
-    });
-
-    it("layer 2: anthropic provider uses fetched max_input_tokens when > 0", async () => {
-      const p: ProviderConfig = {
-        name: "p",
-        base_url: "#",
-        protocol: "anthropic",
-        model: "claude-sonnet-4-6",
-      };
-      // eslint-disable-next-line @typescript-eslint/require-await
-      const fetcher = async () => 500_000;
-      expect(await getContextWindowAsync(p, fetcher)).toBe(500_000);
-    });
-
-    it("layer 2 result is memoized per provider (fetcher called once)", async () => {
-      let calls = 0;
-      // eslint-disable-next-line @typescript-eslint/require-await
-      const fetcher = async () => {
-        calls++;
-        return 400_000;
-      };
-      const p: ProviderConfig = {
-        name: "p",
-        base_url: "#",
-        protocol: "anthropic",
-        model: "claude-sonnet-4-6",
-      };
-      expect(await getContextWindowAsync(p, fetcher)).toBe(400_000);
-      expect(await getContextWindowAsync(p, fetcher)).toBe(400_000);
-      expect(calls).toBe(1);
-    });
-
-    it("degrades to the table when the fetcher throws (does not crash)", async () => {
-      // eslint-disable-next-line @typescript-eslint/require-await
-      const fetcher = async () => {
-        throw new Error("network down");
-      };
-      const p: ProviderConfig = {
-        name: "p",
-        base_url: "#",
-        protocol: "anthropic",
-        model: "claude-sonnet-4-6",
-      };
-      // claude -> 200k from the built-in table
-      expect(await getContextWindowAsync(p, fetcher)).toBe(200_000);
-    });
-
-    it("degrades to the table when the fetcher returns 0", async () => {
-      // eslint-disable-next-line @typescript-eslint/require-await
-      const fetcher = async () => 0;
-      const p: ProviderConfig = {
-        name: "p",
-        base_url: "#",
-        protocol: "anthropic",
-        model: "gpt-4o", // non-anthropic model name, but anthropic protocol
-      };
-      expect(await getContextWindowAsync(p, fetcher)).toBe(128_000);
-    });
-
-    it("skips the fetch entirely for non-anthropic protocols", async () => {
-      let called = false;
-      // eslint-disable-next-line @typescript-eslint/require-await
-      const fetcher = async () => {
-        called = true;
-        return 777_000;
-      };
-      const p: ProviderConfig = {
-        name: "p",
-        base_url: "#",
-        protocol: "openai-compat",
-        model: "gpt-4.1",
-      };
-      // gpt-4.1 -> 1m from the table, fetcher never invoked
-      expect(await getContextWindowAsync(p, fetcher)).toBe(1_000_000);
-      expect(called).toBe(false);
+      expect(getContextWindow(p)).toBe(1000000);
     });
   });
 
@@ -206,7 +78,7 @@ describe("config", () => {
       expect(getMaxOutputTokens(p)).toBe(4096);
     });
 
-    it("returns 64k when thinking enabled", () => {
+    it("returns 128k when thinking enabled", () => {
       const p: ProviderConfig = {
         thinking: true,
         name: "p",
@@ -214,17 +86,17 @@ describe("config", () => {
         protocol: "anthropic",
         model: "m",
       };
-      expect(getMaxOutputTokens(p)).toBe(64000);
+      expect(getMaxOutputTokens(p)).toBe(128000);
     });
 
-    it("returns 8192 by default", () => {
+    it("returns 128k by default", () => {
       const p: ProviderConfig = {
         name: "p",
         base_url: "#",
         protocol: "anthropic",
         model: "m",
       };
-      expect(getMaxOutputTokens(p)).toBe(8192);
+      expect(getMaxOutputTokens(p)).toBe(128000);
     });
   });
 

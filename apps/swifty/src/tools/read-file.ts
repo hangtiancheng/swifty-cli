@@ -21,7 +21,7 @@
  */
 
 import { existsSync, readFileSync, statSync } from "fs";
-import { basename } from "path";
+import { basename, resolve } from "path";
 
 import { isImagePath, loadImageAttachment } from "../images/image.js";
 import { createChildLogger } from "../logger/logger.js";
@@ -54,16 +54,20 @@ export class ReadFileTool implements Tool {
       properties: {
         file_path: {
           type: "string" as const,
-          description: "Absolute path to the file",
+          description:
+            "File path, absolute or relative to the Agent's working directory. Supports text and image files.",
         },
         offset: {
           type: "integer" as const,
-          description: "Line number to start from (0-based)",
+          description:
+            "Number of text lines to skip (0-based). Use 0 for the first line, 100 for displayed line 101. Ignored for images.",
+          minimum: 0,
           default: 0,
         },
         limit: {
           type: "integer" as const,
-          description: "Max lines to read",
+          description: "Maximum number of text lines to return (default 2000). Ignored for images.",
+          minimum: 1,
           default: 2000,
         },
       },
@@ -78,14 +82,15 @@ export class ReadFileTool implements Tool {
   }
 
   execute(ctx: ToolContext, args: Record<string, unknown>): Promise<ToolResult> {
-    const filePath = strArg(args, "file_path");
-    if (!filePath) {
+    const requestedPath = strArg(args, "file_path");
+    if (!requestedPath) {
       return Promise.resolve({
         output: "Error: file_path is required",
         isError: true,
       });
     }
 
+    const filePath = resolve(ctx.workDir, requestedPath);
     if (!existsSync(filePath)) {
       return Promise.resolve({
         output: `Error: file not found: ${filePath}`,
@@ -107,6 +112,12 @@ export class ReadFileTool implements Tool {
 
     const offset = intArg(args, "offset", 0);
     const limit = intArg(args, "limit", 2000);
+    if (offset < 0 || limit < 1) {
+      return Promise.resolve({
+        output: "Error: offset must be >= 0 and limit must be >= 1",
+        isError: true,
+      });
+    }
 
     try {
       const content = readFileSync(filePath, "utf-8");

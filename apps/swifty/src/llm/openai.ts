@@ -460,6 +460,9 @@ export function buildOpenAIInput(messages: Message[]): OpenAIMessageParam[] {
           output: toolOutputForResponses(tr),
         });
       }
+      if (m.content.length > 0) {
+        result.push({ role: "user", content: userContentsFor(m.content) });
+      }
     } // end if (m.toolResults && m.toolResults.length > 0)
     else if (m.role === "assistant") {
       result.push({
@@ -736,6 +739,7 @@ export function buildChatCompletionMessages(
       params.push({
         role: "assistant",
         content: assistantText || null,
+        ...(reasoning ? { reasoning_content: reasoning } : {}),
         tool_calls: m.toolUses.map((tu) => ({
           id: tu.toolUseId,
           type: "function" as const,
@@ -743,11 +747,6 @@ export function buildChatCompletionMessages(
             name: tu.toolName,
             arguments: JSON.stringify(tu.arguments),
           },
-          ...(reasoning
-            ? {
-                reasoning_content: reasoning,
-              }
-            : {}),
         })),
       });
     } // end if (m.toolUses && m.toolUses.length > 0)
@@ -760,6 +759,12 @@ export function buildChatCompletionMessages(
           content: tr.content,
         });
         pendingRichParts.push(...collectRichParts(tr));
+      }
+      if (m.content.length > 0) {
+        const content = userPartsFor(m.content);
+        pendingRichParts.push(
+          ...(typeof content === "string" ? [{ type: "text" as const, text: content }] : content),
+        );
       }
       if (pendingRichParts.length > 0) {
         params.push({

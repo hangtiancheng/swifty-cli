@@ -87,6 +87,47 @@ describe("teams orchestration", () => {
     expect(mgr.drainLeads().some((d) => d.includes("failed"))).toBe(true);
   });
 
+  it("TaskStop aborts an active in-process teammate and waits for it to settle", async () => {
+    const mgr = new TeamManager(workDir());
+    let resolveStarted!: (signal: AbortSignal) => void;
+    let cancelled = false;
+    const started = new Promise<AbortSignal>((resolve) => {
+      resolveStarted = resolve;
+    });
+
+    const team = mgr.create("squad");
+    team.spawnTeammate("scout", "long task", async (_task, _onEvent, signal) => {
+      if (!signal) {
+        throw new Error("missing teammate abort signal");
+      }
+      resolveStarted(signal);
+      await new Promise<void>((resolve) => {
+        if (signal.aborted) {
+          resolve();
+          return;
+        }
+        signal.addEventListener(
+          "abort",
+          () => {
+            cancelled = true;
+            resolve();
+          },
+          { once: true },
+        );
+      });
+      throw new Error("Operation aborted");
+    });
+
+    const signal = await started;
+    await team.stopMember("scout");
+
+    expect(signal.aborted).toBe(true);
+    expect(cancelled).toBe(true);
+    expect(team.getMember("scout")?.active).toBe(false);
+    expect(team.getMember("scout")?.uiState?.status).toBe("stopped");
+    expect(mgr.drainLeads().some((message) => message.includes("reason: stopped"))).toBe(true);
+  });
+
   it("coordination tools create, spawn, message, and list", async () => {
     const mgr = new TeamManager(workDir());
 

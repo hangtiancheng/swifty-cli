@@ -80,7 +80,12 @@ const echoTool: Tool = {
 
 async function runAgent(
   client: LLMClient,
-  opts: { tool?: Tool; hookEngine?: HookEngine; abortSignal?: AbortSignal } = {},
+  opts: {
+    tool?: Tool;
+    hookEngine?: HookEngine;
+    abortSignal?: AbortSignal;
+    maxOutput?: number;
+  } = {},
 ): Promise<{ events: AgentEvent[]; conversation: ConversationManager }> {
   const conversation = new ConversationManager();
   conversation.addUserMessage("hi");
@@ -96,6 +101,7 @@ async function runAgent(
     workDir: process.cwd(),
     hookEngine: opts.hookEngine,
     abortSignal: opts.abortSignal,
+    maxOutput: opts.maxOutput,
   });
   const events: AgentEvent[] = [];
   for await (const e of agent.run()) {
@@ -146,7 +152,7 @@ describe("Agent loop", () => {
       [{ type: "text_delta", text: "partial" }, end("max_tokens")],
       [{ type: "text_delta", text: " done" }, end()],
     ]);
-    const { events } = await runAgent(client);
+    const { events } = await runAgent(client, { maxOutput: 8192 });
 
     expect(events.some((e) => e.type === "retry" && e.reason.includes("max_tokens"))).toBe(true);
     expect(client.maxTokensSet).toBe(64000);

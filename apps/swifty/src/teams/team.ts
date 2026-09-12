@@ -67,6 +67,8 @@ export interface Member {
   name: string;
   active: boolean;
   cancel?: () => void;
+  /** Resolves when the in-process teammate's current loop has fully stopped. */
+  done?: Promise<void>;
   mailbox: FileMailbox;
   uiState?: TeammateUIState;
   /** Optional: Conversation manager for the teammate; when set, the transcript is persisted on exit. */
@@ -93,7 +95,11 @@ export interface Member {
 // layer stays decoupled from the LLM/agent layer (and is unit-testable).
 // The optional onEvent callback lets the team layer observe agent events
 // (tool_use, usage) without coupling to the Agent/LLM types directly.
-export type RunAgent = (task: string, onEvent?: AgentEventCallback) => Promise<string>;
+export type RunAgent = (
+  task: string,
+  onEvent?: AgentEventCallback,
+  abortSignal?: AbortSignal,
+) => Promise<string>;
 
 export class Team {
   name: string;
@@ -276,6 +282,8 @@ export class Team {
     const member = this.addMember(name);
     member.active = true;
     member.checker = checker;
+    const abortController = new AbortController();
+    member.cancel = () => abortController.abort();
 
     // Register the member name in the global name registry so SendMessage can resolve and deliver by name
     getNameRegistry().register(name, name);
@@ -313,14 +321,14 @@ export class Team {
     };
 
     // Main loop: execute task → idle notification → poll mailbox → resume execution upon receiving new message
-    void (async () => {
+    const done = (async () => {
       let nextPrompt = task;
       let idleReason = "available";
       try {
         while (member.active) {
           // Execute one turn of the agent
           uiState.status = "running";
-          const result = await runAgent(nextPrompt, onEvent);
+          const result = await runAgent(nextPrompt, onEvent, abortController.signal);
           uiState.lastMessage = result.length > 200 ? result.slice(0, 200) + "..." : result;
           // Plan-mode teammate: a completed turn means it called ExitPlanMode and the plan
           // has been written to disk. Submit the plan to the Lead for approval; only after
@@ -363,10 +371,16 @@ export class Team {
 
         uiState.status = "completed";
       } catch (err) {
-        log.error({ err }, "teams operation failed");
-        uiState.status = "failed";
-        uiState.lastMessage = asErrorString(err);
-        await this.leadMailbox.send(name, `[idle] ${name} (reason: failed)`);
+        if (abortController.signal.aborted || !member.active) {
+          uiState.status = "stopped";
+          uiState.lastMessage = "Stopped";
+          await this.leadMailbox.send(name, `[idle] ${name} (reason: stopped)`);
+        } else {
+          log.error({ err }, "teams operation failed");
+          uiState.status = "failed";
+          uiState.lastMessage = asErrorString(err);
+          await this.leadMailbox.send(name, `[idle] ${name} (reason: failed)`);
+        }
       } finally {
         member.active = false;
         if (uiState.status === "running") {
@@ -383,6 +397,7 @@ export class Team {
         }
       }
     })();
+    member.done = done;
   }
 
   /**
@@ -505,6 +520,7 @@ export class Team {
       }
     }
     member.cancel?.();
+    await member.done;
   }
 
   listMembers(): Member[] {
@@ -512,12 +528,7 @@ export class Team {
   }
 
   getTeammateStates(): TeammateUIState[] {
-    return (
-      this.listMembers()
-        .filter((m) => m.uiState)
-        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-        .map((m) => m.uiState!)
-    );
+    return this.listMembers().flatMap((member) => (member.uiState ? [member.uiState] : []));
   }
 }
 

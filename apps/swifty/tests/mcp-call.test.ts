@@ -240,15 +240,37 @@ describe("McpCall tool name resolution", () => {
     expect(tool.received).toEqual({ issueId: "A" });
   });
 
-  test("misspelled server name falls back to a unique suffix match", async () => {
+  test("rejects a server mismatch even for a fully qualified target", async () => {
+    const { dispatcher, tool } = setup();
+    const result = await dispatcher.execute(toolContext, {
+      server: "other",
+      tool: tool.name,
+      arguments: {},
+    });
+    expect(result.isError).toBe(true);
+    expect(tool.received).toBeNull();
+  });
+
+  test("does not dispatch a built-in tool by name or recurse into itself", async () => {
+    const { dispatcher, registry } = setup();
+    registry.register(new ToolSearchTool(registry));
+    for (const name of ["ToolSearch", "McpCall"]) {
+      expect(
+        (await dispatcher.execute(toolContext, { server: "linear", tool: name, arguments: {} }))
+          .isError,
+      ).toBe(true);
+    }
+  });
+
+  test("does not reroute a misspelled server outside the checked permission scope", async () => {
     const { dispatcher, tool } = setup();
     const res = await dispatcher.execute(toolContext, {
       server: "typo",
       tool: "create_issue",
       arguments: { issueId: "A" },
     });
-    expect(res.isError).toBe(false);
-    expect(tool.received).toEqual({ issueId: "A" });
+    expect(res.isError).toBe(true);
+    expect(tool.received).toBeNull();
   });
 
   test("ambiguous suffix errors out and lists the available tools", async () => {
@@ -457,19 +479,22 @@ describe("per-mode tool selection", () => {
     expect(names("native")).toEqual(["ToolSearch", "mcp__linear__create_issue"]);
   });
 
-  test("native ToolSearch returns Anthropic tool references", async () => {
-    const registry = new ToolRegistry();
-    const tool = new FakeMcpTool("linear", "create_issue", inputSchema);
-    registry.register(tool);
-    applyMode(registry, "native");
+  test.each(["select:mcp__linear__create_issue", "fake"])(
+    "native ToolSearch returns references for %s",
+    async (query) => {
+      const registry = new ToolRegistry();
+      const tool = new FakeMcpTool("linear", "create_issue", inputSchema);
+      registry.register(tool);
+      applyMode(registry, "native");
 
-    const result = await new ToolSearchTool(registry).execute(toolContext, {
-      query: `select:${tool.name}`,
-    });
+      const result = await new ToolSearchTool(registry).execute(toolContext, {
+        query,
+      });
 
-    expect(result.output).toContain(tool.name);
-    expect(result.contentBlocks).toEqual([{ type: "tool_reference", tool_name: tool.name }]);
-  });
+      expect(result.output).toContain(tool.name);
+      expect(result.contentBlocks).toContainEqual({ type: "tool_reference", tool_name: tool.name });
+    },
+  );
 
   test("dispatch: both are sent, MCP tools are not", () => {
     expect(names("dispatch")).toEqual(["McpCall", "ToolSearch"]);

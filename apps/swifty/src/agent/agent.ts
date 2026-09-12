@@ -22,6 +22,7 @@
 
 import { manageContext, forceCompact, AutoCompactTrackingState } from "../compact/compact.js";
 import { RecoveryState } from "../compact/recovery.js";
+import { DEFAULT_CONTEXT_WINDOW, DEFAULT_MAX_OUTPUT_TOKENS } from "../config/config.js";
 import type { ConversationManager } from "../conversation/conversation.js";
 import type { ToolUseBlock, ToolResultBlock } from "../conversation/conversation.js";
 import { REJECTED_TOOL_RESULT } from "../conversation/pairing.js";
@@ -43,6 +44,7 @@ import {
   replaceToolResultContent,
 } from "../tool-result/budget.js";
 import type { FileStateCache } from "../tools/file-state-cache.js";
+import { McpCallTool } from "../tools/mcp-call.js";
 import type { ToolRegistry } from "../tools/registry.js";
 import type { ToolResult, ToolSchema } from "../tools/types.js";
 import { asRecord, strArg } from "../utils/index.js";
@@ -168,8 +170,8 @@ export class Agent {
     this.fileHistory = config.fileHistory;
     this.fileStateCache = config.fileStateCache;
     this.abortSignal = config.abortSignal;
-    this.contextWindow = config.contextWindow ?? 200000;
-    this.maxOutput = config.maxOutput ?? 8192;
+    this.contextWindow = config.contextWindow ?? DEFAULT_CONTEXT_WINDOW;
+    this.maxOutput = config.maxOutput ?? DEFAULT_MAX_OUTPUT_TOKENS;
     this.recoveryState = config.recoveryState ?? new RecoveryState();
     this.maxIterations = config.maxIterations ?? 0;
     this.notificationFn = config.notificationFn;
@@ -196,7 +198,18 @@ export class Agent {
     );
   }
 
+  private restoreContext(): void {
+    const skills = [
+      this.skillSection,
+      ...[...this.activeSkills].map(([name, body]) => `## Active skill: ${name}\n${body}`),
+    ]
+      .filter(Boolean)
+      .join("\n\n");
+    this.conversation.injectLongTermMemory(this.instructions, this.memoryContent, skills);
+  }
+
   async *run(): AsyncGenerator<AgentEvent> {
+    this.restoreContext();
     // The filter is the sole authority — no exception branches.
     let toolSchemas = this.registry.getAllSchemas();
     if (this.toolFilter) {
@@ -212,6 +225,10 @@ export class Agent {
     try {
       let looping = true;
       while (looping) {
+        if (this.abortSignal?.aborted) {
+          yield { type: "loop_complete", stopReason: "interrupted" };
+          return;
+        }
         iteration++;
         if (this.maxIterations > 0 && iteration > this.maxIterations) {
           yield {
@@ -272,7 +289,7 @@ export class Agent {
               "to load tool schemas";
             reminder +=
               this.registry.mcpLoadingMode === "dispatch"
-                ? ", then invoke them with the mcp_call tool"
+                ? ", then invoke them with the McpCall tool"
                 : " before calling them";
             this.conversation.addSystemReminder(reminder + ":\n" + deferredNames.join("\n"));
             this.announcedDeferred = deferredNames;
@@ -315,26 +332,28 @@ export class Agent {
           this.compactTracking,
           this.recoveryState,
           toolSchemaNames,
+
           // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
           toolSchemas as ToolSchema[],
           this.sessionFilePath,
+          this.abortSignal,
         );
         if (mc.message) {
           yield { type: "compact", message: mc.message, boundary: mc.boundary };
         }
         if (mc.compacted) {
-          // replaceWithCompacted
-          this.conversation.injectLongTermMemory(
-            this.instructions,
-            this.memoryContent,
-            this.skillSection,
-          );
+          this.restoreContext();
+        }
+        if (this.abortSignal?.aborted) {
+          yield { type: "loop_complete", stopReason: "interrupted" };
+          return;
         }
 
         try {
           // Initiate API call directly with the conversation — no need to rebuild
           const stream = this.client.stream(
             this.conversation,
+
             // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
             toolSchemas as ToolSchema[],
             this.abortSignal,
@@ -393,6 +412,10 @@ export class Agent {
           }
         } catch (err) {
           if (this.abortSignal?.aborted) {
+            if (fullText || thinkingBlocks.length > 0) {
+              this.conversation.addAssistantFull(fullText, thinkingBlocks, []);
+              this.persistLastMessage();
+            }
             yield { type: "loop_complete", stopReason: "interrupted" };
             return;
           }
@@ -405,16 +428,18 @@ export class Agent {
                 this.client,
                 this.recoveryState,
                 toolSchemaNames,
+
                 // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
                 toolSchemas as ToolSchema[],
                 this.sessionFilePath,
+                this.abortSignal,
               );
+              if (!result.compacted) {
+                yield { type: "error", error: err };
+                return;
+              }
               this.conversation.clearUsageAnchor();
-              this.conversation.injectLongTermMemory(
-                this.instructions,
-                this.memoryContent,
-                this.skillSection,
-              );
+              this.restoreContext();
               yield {
                 type: "compact",
                 message: "Auto-compacted due to context length: " + result.message,
@@ -446,7 +471,7 @@ export class Agent {
         }
 
         if (this.abortSignal?.aborted) {
-          if (fullText) {
+          if (fullText || thinkingBlocks.length > 0) {
             this.conversation.addAssistantFull(fullText, thinkingBlocks, []);
             this.persistLastMessage();
           }
@@ -460,8 +485,13 @@ export class Agent {
         // then do up to N multi-turn recoveries before giving up. Each recovery
         // re-prompts the model to resume from where it stopped.
         if (stopReason === "max_tokens") {
-          if (!maxTokensEscalated) {
+          if (
+            !maxTokensEscalated &&
+            this.maxOutput < MAX_TOKENS_CEILING &&
+            this.client.setMaxOutputTokens
+          ) {
             this.client.setMaxOutputTokens?.(MAX_TOKENS_CEILING);
+            this.maxOutput = MAX_TOKENS_CEILING;
             maxTokensEscalated = true;
             if (fullText) {
               this.conversation.addAssistantFull(fullText, thinkingBlocks, []);
@@ -717,6 +747,8 @@ export class Agent {
       abortSignal: this.abortSignal,
       fileHistory: this.fileHistory,
       fileStateCache: this.fileStateCache,
+      permissionChecker: this.checker,
+      onPermissionRequest: this.onPermissionRequest,
     });
 
     for (const tu of toolUses) {
@@ -728,6 +760,18 @@ export class Agent {
           toolName: tu.toolName,
           toolId: tu.toolUseId,
           output: "Error: command interrupted",
+          isError: true,
+          elapsed: 0,
+        });
+        continue;
+      }
+
+      if (this.toolFilter && !this.toolFilter(tu.toolName)) {
+        events.push({
+          type: "tool_result",
+          toolName: tu.toolName,
+          toolId: tu.toolUseId,
+          output: `Tool '${tu.toolName}' is not available to this agent.`,
           isError: true,
           elapsed: 0,
         });
@@ -753,7 +797,31 @@ export class Agent {
       const tool = this.registry.get(tu.toolName);
       const category = tool?.category ?? "command";
 
-      const decision = this.checker.check(tu.toolName, category, tu.arguments);
+      const target = tool instanceof McpCallTool ? tool.resolveTarget(tu.arguments) : undefined;
+      if (
+        target &&
+        (!this.registry.get(target.name) || (this.toolFilter && !this.toolFilter(target.name)))
+      ) {
+        events.push({
+          type: "tool_result",
+          toolName: tu.toolName,
+          toolId: tu.toolUseId,
+          output: `Tool '${target.name}' is not available to this agent.`,
+          isError: true,
+          elapsed: 0,
+        });
+        continue;
+      }
+      const decisions = [this.checker.check(tu.toolName, category, tu.arguments)];
+      if (target) {
+        decisions.push(
+          this.checker.check(target.name, target.category, asRecord(tu.arguments.arguments ?? {})),
+        );
+      }
+      const decision =
+        decisions.find((d) => d.effect === "deny") ??
+        decisions.find((d) => d.effect === "ask") ??
+        decisions[0];
 
       if (decision.effect === "deny") {
         events.push({
@@ -767,6 +835,18 @@ export class Agent {
         continue;
       }
 
+      if (decision.effect === "ask" && !this.onPermissionRequest) {
+        events.push({
+          type: "tool_result",
+          toolName: tu.toolName,
+          toolId: tu.toolUseId,
+          output:
+            "Permission required, but this agent has no approval handler. The tool was not executed.",
+          isError: true,
+          elapsed: 0,
+        });
+        continue;
+      }
       if (decision.effect === "ask" && this.onPermissionRequest) {
         const response = await this.onPermissionRequest(tu.toolName, tu.arguments, decision);
         if (response === "deny") {

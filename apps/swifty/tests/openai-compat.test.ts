@@ -27,6 +27,18 @@ import type { Message } from "../src/conversation/conversation.js";
 import { buildChatCompletionMessages, buildOpenAIInput } from "../src/llm/openai.js";
 
 describe("openai-compat chat message building", () => {
+  it("attaches reasoning_content to the assistant message alongside tool_calls", () => {
+    const messages = buildChatCompletionMessages([
+      {
+        role: "assistant",
+        content: "",
+        thinkingBlocks: [{ thinking: "Check the file first", signature: "" }],
+        toolUses: [{ toolUseId: "r1", toolName: "ReadFile", arguments: { file_path: "a.ts" } }],
+      },
+    ]);
+    expect(messages[0]).toMatchObject({ reasoning_content: "Check the file first" });
+    expect(messages[0]).toMatchObject({ tool_calls: [{ id: "r1" }] });
+  });
   it("preserves assistant tool_calls and tool-result turns", () => {
     const history: Message[] = [
       { role: "user", content: "list files" },

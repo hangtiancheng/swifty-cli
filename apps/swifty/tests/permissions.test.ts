@@ -191,8 +191,11 @@ describe("memory background agent sandbox", () => {
     const captured: PermissionChecker[] = [];
     // eslint-disable-next-line require-yield, @typescript-eslint/require-await
     const spy = vi.spyOn(Agent.prototype, "run").mockImplementation(async function* (this: Agent) {
-      // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
-      captured.push(Reflect.get(this, "checker") as PermissionChecker);
+      const checker: unknown = Reflect.get(this, "checker");
+      if (!(checker instanceof PermissionChecker)) {
+        throw new Error("Agent checker was not a PermissionChecker");
+      }
+      captured.push(checker);
     });
 
     try {
@@ -224,7 +227,7 @@ describe("memory background agent sandbox", () => {
       // Other directories outside the project are unaffected and still blocked by the sandbox
       const unrelated = join(homedir(), "unrelated-dir", "x.txt");
       const blocked = checker.check("WriteFile", "write", { file_path: unrelated });
-      expect(blocked.reason).toContain("outside allowed directories");
+      expect(blocked.effect).toBe("deny");
     } finally {
       spy.mockRestore();
     }

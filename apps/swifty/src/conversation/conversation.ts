@@ -151,7 +151,7 @@ export class ConversationManager {
         `# SWIFTY.md
 Codebase and user instructions are shown below. Be sure to adhere to these instructions. IMPORTANT: These instructions OVERRIDE any default behavior and you MUST follow them exactly as written.
 
-${instructions}}`,
+${instructions}`,
       );
     }
     if (memories) {
@@ -185,6 +185,15 @@ Today's date is ${today}.`);
     this.history.push(...msgs);
   }
 
+  fork(): ConversationManager {
+    const fork = new ConversationManager();
+    fork.history = structuredClone(this.history);
+    fork.longTermMemoryInjected = this.longTermMemoryInjected;
+    fork.baselineTokens = this.baselineTokens;
+    fork._anchorCount = this._anchorCount;
+    return fork;
+  }
+
   len(): number {
     return this.history.length;
   }
@@ -199,6 +208,10 @@ Today's date is ${today}.`);
     }
 
     this.history = this.history.slice(0, index);
+    this.clearUsageAnchor();
+    if (index === 0) {
+      this.longTermMemoryInjected = false;
+    }
   }
 
   // Empties the conversation in place. Replacing the manager would strand every

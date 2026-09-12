@@ -149,6 +149,21 @@ describe("ConversationManager", () => {
   });
 
   describe("buildAnthropicMessages", () => {
+    it("does not mutate attachment history when merging reminders or marking the cache tail", () => {
+      const mgr = new ConversationManager();
+      mgr.addUserMessage([
+        { type: "text", text: "Inspect the attachment" },
+        { type: "image", source: { type: "base64", media_type: "image/png", data: "QUJD" } },
+      ]);
+      mgr.addSystemReminder("Project instructions");
+      const before = structuredClone(mgr.getMessages());
+      const first = buildAnthropicMessages(mgr.getMessages());
+      markLastUserTailForCache(first);
+      const second = buildAnthropicMessages(mgr.getMessages());
+      markLastUserTailForCache(second);
+      expect(second).toEqual(first);
+      expect(mgr.getMessages()).toEqual(before);
+    });
     it("serializes tool use messages", () => {
       const mgr = new ConversationManager();
       mgr.addToolUseMessage("text", "tu-1", "Bash", { command: "ls" });

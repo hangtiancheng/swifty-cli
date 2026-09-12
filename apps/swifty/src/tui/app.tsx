@@ -49,7 +49,8 @@ import type {
   HookConfig,
   SandboxYamlConfig,
 } from "../config/config.js";
-import { getContextWindow, getContextWindowAsync, getMaxOutputTokens } from "../config/config.js";
+import { getContextWindow, getMaxOutputTokens, DEFAULT_CONTEXT_WINDOW } from "../config/config.js";
+import { saveLocalProvider } from "../config/provider-login.js";
 import { expandAtRefsWithImages } from "../conversation/at-expand.js";
 import { ConversationManager } from "../conversation/conversation.js";
 import { FileHistory } from "../file-history/file-history.js";
@@ -76,7 +77,7 @@ import { buildSystemPrompt, detectEnvironment } from "../prompt/builder.js";
 import { buildPlanModeExitReminder, buildPlanModeReentryReminder } from "../prompt/plan-mode.js";
 import { createSandbox, type Sandbox } from "../sandbox/index.js";
 import * as sessionMod from "../session/session.js";
-import { SkillCatalog } from "../skills/catalog.js";
+import { SkillCatalog, buildSkillSection } from "../skills/catalog.js";
 import { runFork as runSkillFork } from "../skills/executor.js";
 import { InstallSkillTool } from "../skills/install-tool.js";
 import { LoadSkillTool } from "../skills/load-skill-tool.js";
@@ -111,6 +112,7 @@ import { Footer } from "./footer.js";
 import { InteractionDock } from "./interaction-dock.js";
 import { PendingQueue } from "./pending-queue.js";
 import type { PlanChoice } from "./plan-approval.js";
+import { ProviderLogin } from "./provider-login.js";
 import { ProviderSelect } from "./provider-select.js";
 import type { RewindAction } from "./rewind-dialog.js";
 import { activityStatusColor, THEME } from "./styles.js";
@@ -144,7 +146,7 @@ interface Props {
 const MAX_RECENT_TOOLS = 10;
 
 export function App({
-  providers,
+  providers: initialProviders,
   permissionMode,
   mcpServers,
   hooks,
@@ -155,11 +157,15 @@ export function App({
   onExitSummary,
 }: Props) {
   const { exit } = useApp();
+  const [providers, setProviders] = useState(initialProviders);
+  const [loginActive, setLoginActive] = useState(initialProviders.length === 0);
   const [appState, setAppState] = useState<AppState>(
     providers.length === 1 ? "chat" : "providerSelect",
   );
-  const [selectedProvider, setSelectedProvider] = useState<ProviderConfig>(providers[0]);
-  const selectedProviderRef = useRef(providers[0]);
+  const [selectedProvider, setSelectedProvider] = useState<ProviderConfig>(
+    providers[0] ?? { name: "", protocol: "anthropic", base_url: "", model: "" },
+  );
+  const selectedProviderRef = useRef(selectedProvider);
   const [providerDialogActive, setProviderDialogActive] = useState(false);
   const [providerSwitching, setProviderSwitching] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -215,7 +221,9 @@ export function App({
   const clientRef = useRef<LLMClient | null>(null);
   // Resolved context window for the active provider. Seeded synchronously
   // (layers 1/3/4) and upgraded in initClient via the async auto-fetch (layer 2).
-  const contextWindowRef = useRef(getContextWindow(providers[0]));
+  const contextWindowRef = useRef(
+    providers[0] ? getContextWindow(providers[0]) : DEFAULT_CONTEXT_WINDOW,
+  );
   const convRef = useRef(new ConversationManager());
   const sessionIdRef = useRef(sessionMod.newSessionId());
   const interactionStatsRef = useRef({
@@ -231,6 +239,7 @@ export function App({
   const registryRef = useRef(
     (() => {
       const reg = createToolRegistry(workDir, taskListRef.current);
+
       // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
       const exitPlan = reg.get("ExitPlanMode") as ExitPlanModeTool | undefined;
       if (exitPlan) {
@@ -426,20 +435,7 @@ export function App({
         const client = await createClient(provider, systemPrompt);
         clientRef.current = client;
 
-        // Resolve the context window through the full four-layer fallback.
-        // Seed synchronously first so we never run with a 0 window, then upgrade
-        // with the (cached, best-effort) auto-fetched value. Failures degrade
-        // silently to the synchronous result, so startup is never blocked.
         contextWindowRef.current = getContextWindow(provider);
-        getContextWindowAsync(provider)
-          .then((w) => {
-            if (w > 0) {
-              contextWindowRef.current = w;
-            }
-          })
-          .catch(() => {
-            /** noop */
-          });
 
         // Init file history
         fileHistoryRef.current = new FileHistory(workDir, sessionIdRef.current);
@@ -506,7 +502,7 @@ export function App({
 
         // Register team coordination tools. Teammates run as background
         // general-purpose subagents whose results return via the team channel.
-        const teamRunAgent: RunAgent = (task, onEvent) =>
+        const teamRunAgent: RunAgent = (task, onEvent, abortSignal) =>
           spawnSubagent(
             BUILTIN_AGENTS[0],
             task,
@@ -516,20 +512,30 @@ export function App({
             workDir,
             undefined,
             onEvent,
+            undefined,
+            undefined,
+            { abortSignal },
           );
         // Teammate-scoped registry factory: injects shared task-board tools, then runs the teammate agent main loop
         const teamRunAgentFactory =
-          (registry: ToolRegistry): RunAgent =>
-          (task, onEvent) =>
+          (
+            registry: ToolRegistry,
+            teamChecker?: PermissionChecker,
+            memberWorkDir = workDir,
+          ): RunAgent =>
+          (task, onEvent, abortSignal) =>
             spawnSubagent(
               BUILTIN_AGENTS[0],
               task,
               clientRef.current ?? client,
               registry,
               selectedProviderRef.current,
-              workDir,
+              memberWorkDir,
               undefined,
               onEvent,
+              undefined,
+              teamChecker,
+              { abortSignal },
             );
         registryRef.current.register(new TeamCreateTool(teamManagerRef.current));
         registryRef.current.register(new SpawnTeammateTool(teamManagerRef.current, teamRunAgent));
@@ -557,7 +563,7 @@ export function App({
         const agentTool = new AgentTool(
           workDir,
           registryRef.current,
-          async (def, prompt, _bg, modelOverride?, workDirOverride?) => {
+          async (def, prompt, background, modelOverride?, workDirOverride?, context?) => {
             const id = ++subagentIdRef.current;
             setSubagents((prev) => [...prev, { id, label: def.name, turn: 0 }]);
             const onProgress = (p: { turn?: number; lastTool?: string }) => {
@@ -574,11 +580,39 @@ export function App({
                 onProgress,
                 undefined,
                 modelOverride,
+                workDirOverride
+                  ? context?.permissionChecker?.forWorkDir(workDirOverride)
+                  : context?.permissionChecker,
+                {
+                  abortSignal: context?.abortSignal,
+                  background,
+                  onPermissionRequest: context?.onPermissionRequest,
+                  permissionMode: context?.permissionChecker?.mode,
+                },
               );
             } finally {
               setSubagents((prev) => prev.filter((s) => s.id !== id));
             }
           },
+          convRef.current,
+          (prompt, conversation, registry, modelOverride, context) =>
+            spawnSubagent(
+              BUILTIN_AGENTS[0],
+              prompt,
+              clientRef.current ?? client,
+              registry,
+              selectedProviderRef.current,
+              context?.workDir ?? workDir,
+              undefined,
+              undefined,
+              modelOverride,
+              context?.permissionChecker,
+              {
+                conversation,
+                abortSignal: context?.abortSignal,
+                onPermissionRequest: context?.onPermissionRequest,
+              },
+            ),
         );
         agentTool.forkDisabled = forkDisabled ?? false;
         // Wire the team manager into AgentTool to enable the team_name teammate path (teammates receive shared task-board tools)
@@ -625,10 +659,6 @@ export function App({
         setSelectedProvider(provider);
         contextWindowRef.current = getContextWindow(provider);
         decideAndApply(registryRef.current, provider.base_url, contextWindowRef.current);
-        const resolvedWindow = await getContextWindowAsync(provider);
-        if (selectedProviderRef.current === provider && resolvedWindow > 0) {
-          contextWindowRef.current = resolvedWindow;
-        }
         setMessages((current) => [
           ...current,
           { role: "system", content: `Provider switched to ${provider.name} · ${provider.model}.` },
@@ -749,6 +779,10 @@ export function App({
     if (cmd.type === "local_ui") {
       const action = cmd.handler({ workDir, args: parsed.args });
       switch (action) {
+        case "login": {
+          setLoginActive(true);
+          break;
+        }
         case "provider": {
           if (providers.length < 2) {
             setMessages((current) => [
@@ -769,6 +803,7 @@ export function App({
           // instance would leave it pointing at the discarded history.
           setMessages([]);
           convRef.current.reset();
+          announcedSkillsRef.current.clear();
           convRef.current.injectLongTermMemory(
             loadInstructions(workDir),
             memManagerRef.current?.buildSystemReminder() ?? "",
@@ -867,15 +902,19 @@ export function App({
         }
         case "compact":
           if (clientRef.current) {
+            const controller = new AbortController();
+            abortControllerRef.current = controller;
             setIsCompacting(true);
             forceCompact(
               convRef.current,
               clientRef.current,
               recoveryStateRef.current,
               registryRef.current.listTools().map((t) => t.name),
+
               // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
               registryRef.current.getAllSchemas() as ToolSchema[],
               sessionMod.getSessionFilePath(workDir, sessionIdRef.current),
+              controller.signal,
             )
               .then((result) => {
                 // Persist the boundary so the compacted state survives /resume.
@@ -897,6 +936,9 @@ export function App({
                 ]);
               })
               .finally(() => {
+                if (abortControllerRef.current === controller) {
+                  abortControllerRef.current = null;
+                }
                 setIsCompacting(false);
               });
           }
@@ -941,39 +983,23 @@ export function App({
           // session contains a compact_boundary it replays the compacted state
           // (summary + inlined keep + post-boundary appends) instead of the full
           // pre-boundary history; with no boundary it replays everything.
-          const conv = new ConversationManager();
+          const conv = convRef.current;
+          conv.reset();
           conv.injectLongTermMemory(
             loadInstructions(workDir),
             new MemoryManager(workDir).buildSystemReminder(),
           );
           const restored = sessionMod.rebuildFromSession(saved);
-          for (const m of restored) {
-            // Tool blocks must be restored as well; otherwise the recovered
-            // history is missing its call chain and the model can't see what was done before
-            if (m.toolUses?.length) {
-              conv.addAssistantMessageWithTools(
-                contentToText(m.content),
-                m.toolUses.map((tu) => ({
-                  ...tu,
-                  arguments: tu.arguments ?? {},
-                })),
-              );
-            } else if (m.toolResults?.length) {
-              conv.addToolResultsMessage(
-                m.toolResults.map((tr) => ({
-                  toolUseId: tr.toolUseId,
-                  content: tr.content,
-                  ...(tr.contentBlocks?.length ? { contentBlocks: tr.contentBlocks } : {}),
-                  isError: tr.isError,
-                })),
-              );
-            } else if (m.role === "user") {
-              conv.addUserMessage(m.content);
-            } else {
-              conv.addAssistantMessage(contentToText(m.content));
-            }
-          }
-          convRef.current = conv;
+          conv.appendMessages(
+            restored.map((message) => ({
+              ...message,
+              toolUses: message.toolUses?.map((tool) => ({
+                ...tool,
+                arguments: tool.arguments ?? {},
+              })),
+            })),
+          );
+          announcedSkillsRef.current.clear();
           sessionIdRef.current = arg;
           setResumeDialogActive(false);
           setResumeSessions([]);
@@ -1289,6 +1315,7 @@ export function App({
     checker.sandboxAutoAllow = sandboxAutoAllowRef.current;
 
     // Attach the sandbox to the BashTool when sandboxing is enabled
+
     // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
     const bashTool = registryRef.current.get("Bash") as BashTool | undefined;
     if (bashTool && sandboxEnabledRef.current) {
@@ -1350,7 +1377,11 @@ export function App({
       activeSkills: activeSkillsRef.current,
       // The first system-reminder carries the full skill list; later turns
       // only append the delta
-      skillSection: skillDelta(),
+      instructions: loadInstructions(workDir),
+      memoryContent: memManagerRef.current?.buildSystemReminder() ?? "",
+      skillSection: skillCatalogRef.current
+        ? buildSkillSection(skillCatalogRef.current, workDir)
+        : "",
       skillDeltaFn: skillDelta,
       memoryRecallPromise: recallPromise,
       onMemoriesSurfaced: (paths) => {
@@ -1706,6 +1737,42 @@ export function App({
     void handleSubmit(next);
   }, [isCompacting, isStreaming, pendingMessages]);
 
+  const handleLogin = async (input: ProviderConfig): Promise<void> => {
+    const environment = detectEnvironment(workDir);
+    environment.model = input.model;
+    // Construct before saving so invalid client configuration leaves the form editable.
+    const client = await createClient(input, buildSystemPrompt(environment));
+    const saved = saveLocalProvider(workDir, input, providers);
+    setProviders(saved.providers);
+    setError("");
+    if (clientRef.current) {
+      clientRef.current = client;
+      selectedProviderRef.current = saved.provider;
+      setSelectedProvider(saved.provider);
+      contextWindowRef.current = getContextWindow(saved.provider);
+      decideAndApply(registryRef.current, saved.provider.base_url, contextWindowRef.current);
+      memExtractorRef.current = null;
+      setMessages((current) => [
+        ...current,
+        {
+          role: "system",
+          content: `Provider ${saved.provider.name} activated. Saved to .swifty/config.local.yaml.`,
+        },
+      ]);
+    } else {
+      handleProviderSelect(saved.provider);
+    }
+    setLoginActive(false);
+  };
+
+  if (appState === "providerSelect" && loginActive) {
+    return (
+      <ProviderLogin
+        onSubmit={handleLogin}
+        onCancel={() => (providers.length === 0 ? requestExit() : setLoginActive(false))}
+      />
+    );
+  }
   if (appState === "providerSelect") {
     return (
       <ProviderSelect providers={providers} reservedRows={0} onSelect={handleProviderSelect} />
@@ -1760,6 +1827,9 @@ export function App({
         count={teammateStates.filter((t) => t.status === "running" || t.status === "idle").length}
       />
       <InteractionDock
+        login={
+          loginActive ? { onSubmit: handleLogin, onCancel: () => setLoginActive(false) } : undefined
+        }
         provider={
           providerDialogActive
             ? {
@@ -1881,7 +1951,7 @@ export function App({
           insertTextRef: insertInputTextRef,
           clearRef: clearInputRef,
           onEscape: () => {
-            if (isStreaming) {
+            if (isStreaming || isCompacting) {
               abortControllerRef.current?.abort();
             }
           },

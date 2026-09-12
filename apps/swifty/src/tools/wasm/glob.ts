@@ -53,11 +53,13 @@ export class GlobTool implements Tool {
       properties: {
         pattern: {
           type: "string" as const,
-          description: "Glob pattern (e.g., '**/*.ts', '**/*.go')",
+          description:
+            "Filename glob relative to path, e.g. '**/*.ts' for recursive search or '*.{ts,tsx}' for direct children.",
         },
         path: {
           type: "string" as const,
-          description: "Base directory to search from",
+          description:
+            "Search base, absolute or relative to the Agent's working directory (default '.'). Returned filenames are relative to this base.",
           default: ".",
         },
       },

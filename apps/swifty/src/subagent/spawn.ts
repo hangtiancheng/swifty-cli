@@ -20,14 +20,16 @@
  * SOFTWARE.
  */
 
-import { Agent } from "../agent/agent.js";
+import { Agent, type AgentConfig } from "../agent/agent.js";
 import type { ProviderConfig } from "../config/config.js";
 import { ConversationManager } from "../conversation/conversation.js";
 import type { LLMClient } from "../llm/client.js";
 import { createClient } from "../llm/client.js";
 import { resolveModelId } from "../llm/model-resolver.js";
+import { loadInstructions } from "../memory/instructions.js";
 import { PermissionChecker } from "../permissions/checker.js";
 import { buildSystemPrompt, detectEnvironment } from "../prompt/builder.js";
+import { FileStateCache } from "../tools/file-state-cache.js";
 import type { ToolRegistry } from "../tools/registry.js";
 
 import type { AgentDefinition } from "./definition.js";
@@ -41,6 +43,14 @@ export type AgentEventSink = (event: {
   text?: string;
 }) => void;
 
+export interface SubagentRunOptions {
+  abortSignal?: AbortSignal;
+  background?: boolean;
+  onPermissionRequest?: AgentConfig["onPermissionRequest"];
+  permissionMode?: PermissionChecker["mode"];
+  conversation?: ConversationManager;
+}
+
 export async function spawnSubagent(
   definition: AgentDefinition,
   prompt: string,
@@ -52,7 +62,9 @@ export async function spawnSubagent(
   onEvent?: AgentEventSink,
   modelOverride?: string,
   checkerOverride?: PermissionChecker,
+  options: SubagentRunOptions = {},
 ): Promise<string> {
+  options.abortSignal?.throwIfAborted();
   // Determine the model: call-level override > definition-level model > parent Agent's model
 
   const effectiveModel = modelOverride ?? definition.model;
@@ -60,23 +72,29 @@ export async function spawnSubagent(
   const env = detectEnvironment(workDir);
   env.model = resolvedModel;
   const systemPrompt = definition.systemPromptOverride ?? buildSystemPrompt(env);
-  const client: LLMClient = effectiveModel
-    ? await createClient({ ...parentProvider, model: resolvedModel }, systemPrompt)
-    : parentClient;
+  const client: LLMClient =
+    effectiveModel || definition.systemPromptOverride
+      ? await createClient({ ...parentProvider, model: resolvedModel }, systemPrompt)
+      : parentClient;
 
   // Build the subagent tool registry through multi-layer filtering
-  const registry = filterToolsForAgent(
-    parentRegistry,
-    definition.tools,
-    definition.disallowedTools,
-    false, // isAsync — spawnSubagent currently on the synchronous path
-  );
+  const registry = options.conversation
+    ? parentRegistry
+    : filterToolsForAgent(
+        parentRegistry,
+        definition.tools,
+        definition.disallowedTools,
+        options.background ?? false,
+      );
   // When a teammate runs in plan mode, the checker is created and held by the team layer:
   // after approval passes, the mode must be switched back to default in place. If the checker
   // were only instantiated here, the team layer would have no handle to modify it.
-  const permMode = definition.permissionMode ?? "acceptEdits";
+  const permMode =
+    options.permissionMode === "plan"
+      ? "plan"
+      : (definition.permissionMode ?? options.permissionMode ?? "acceptEdits");
   const checker = checkerOverride ?? new PermissionChecker(workDir, permMode);
-  const conversation = new ConversationManager();
+  const conversation = options.conversation ?? new ConversationManager();
   conversation.addUserMessage(prompt);
 
   const agent = new Agent({
@@ -86,6 +104,10 @@ export async function spawnSubagent(
     conversation,
     workDir,
     maxIterations: definition.maxTurns ?? 200,
+    abortSignal: options.abortSignal,
+    onPermissionRequest: options.onPermissionRequest,
+    fileStateCache: new FileStateCache(),
+    instructions: loadInstructions(workDir),
   });
 
   let output = "";
@@ -116,6 +138,9 @@ export async function spawnSubagent(
         onProgress?.({ turn: ++turn });
         break;
       case "loop_complete":
+        if (event.stopReason === "interrupted") {
+          return `${output}${output ? "\n\n" : ""}[Interrupted]`;
+        }
         return output || "[No output]";
       case "error":
         return output

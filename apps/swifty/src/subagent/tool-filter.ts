@@ -124,29 +124,35 @@ export function filterToolsForAgent(
   const hasWhitelist = allowed.size > 0 && !(allowed.size === 1 && allowed.has("*"));
 
   const filtered = new ToolRegistry();
+  filtered.mcpLoadingMode = registry.mcpLoadingMode;
 
   for (const tool of registry.listTools()) {
     const name = tool.name;
 
     // Layer 1: MCP tools are always allowed
     if (isMCPTool(name)) {
-      filtered.register(tool);
+      if (!disallowed.has(name) && (!hasWhitelist || allowed.has(name))) {
+        filtered.register(tool);
+      }
       continue;
     }
 
     // Layer 2: Global disallow — no subagent can use these
+
     // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
     if ((SUBAGENT_DISALLOWED_TOOLS as Set<string>).has(name)) {
       continue;
     }
 
     // Layer 3: Additional restrictions for custom Agents
+
     // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
     if (isCustom && (CUSTOM_AGENT_DISALLOWED_TOOLS as Set<string>).has(name)) {
       continue;
     }
 
     // Layer 4: Whitelist filtering for asynchronous Agents
+
     // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
     if (isAsync && !(ASYNC_AGENT_ALLOWED_TOOLS as Set<string>).has(name)) {
       continue;
@@ -170,6 +176,7 @@ export function filterToolsForAgent(
 export const FORK_QUERY_SOURCE = "agent:builtin:fork";
 export function cloneRegistryForFork(registry: ToolRegistry): ToolRegistry {
   const forked = new ToolRegistry();
+  forked.mcpLoadingMode = registry.mcpLoadingMode;
   for (const tool of registry.listTools()) {
     if (tool.name === "Agent" && "querySource" in tool) {
       // eslint-disable-next-line @typescript-eslint/consistent-type-assertions

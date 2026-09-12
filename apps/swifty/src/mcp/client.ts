@@ -217,11 +217,18 @@ export class MCPClient {
   }
 
   /** Calls a tool and preserves both its text fallback and provider-native rich content. */
-  async callTool(name: string, args: Record<string, unknown>): Promise<ToolResult> {
+  async callTool(
+    name: string,
+    args: Record<string, unknown>,
+    abortSignal?: AbortSignal,
+  ): Promise<ToolResult> {
+    abortSignal?.throwIfAborted();
     if (!this.client) {
       throw new Error("Not connected");
     }
-    const result = await this.client.callTool({ name, arguments: args });
+    const result = await this.client.callTool({ name, arguments: args }, undefined, {
+      signal: abortSignal,
+    });
     const converted =
       result.content && Array.isArray(result.content)
         ? await mcpContentToToolOutput(result.content)

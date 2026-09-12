@@ -24,7 +24,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { safeParseAsync, z } from "zod";
 
 import {
-  getContextWindow,
+  DEFAULT_PROVIDER_THINKING,
   getMaxOutputTokens,
   type ProviderConfig,
   resolveAPIKey,
@@ -33,7 +33,15 @@ import type { ConversationManager, Message } from "../conversation/conversation.
 import { ensureToolPairing } from "../conversation/pairing.js";
 import { createChildLogger } from "../logger/logger.js";
 import { NATIVE_TOOL_USE_BETA } from "../mcp/strategy.js";
-import { asErrorString, asRecord, asString, contentToText, isRecord } from "../utils/index.js";
+import { normalizeToolResultContentBlock } from "../tools/types.js";
+import {
+  asErrorString,
+  asRecord,
+  asString,
+  contentToText,
+  isRecord,
+  strArg,
+} from "../utils/index.js";
 
 import type { LLMClient } from "./client.js";
 import {
@@ -45,7 +53,6 @@ import {
 } from "./errors.js";
 import type { StreamEvent } from "./events.js";
 
-import { computeCompactThreshold } from "@/compact/compact.js";
 import type { ToolSchema } from "@/tools/types.js";
 
 /**
@@ -107,8 +114,7 @@ const ModelContextWindowResSchema = z.object({
 // type ModelContextWindowRes = z.infer<typeof ModelContextWindowResSchema>;
 
 export async function fetchModelContextWindow(config: ProviderConfig): Promise<number> {
-  // Non-anthropic: return 0 to signal "not applicable" — the caller falls
-  // through to lookupModelContextWindow which knows the right per-model value.
+  // Non-anthropic endpoints do not support this metadata request.
   if (config.protocol !== "anthropic") {
     return 0;
   }
@@ -150,21 +156,20 @@ export async function fetchModelContextWindow(config: ProviderConfig): Promise<n
   }
 }
 
-/**
- * FIXME: Always return true
- */
-function supportsAdaptiveThinking(): boolean {
-  return true;
-}
-
 // User message content → Anthropic blocks. String content becomes a single
 // text block; block arrays (text/image) already use the provider shape.
 function userBlocksFor(content: Message["content"]): Anthropic.ContentBlockParam[] {
   if (typeof content === "string") {
     return [{ type: "text", text: content }];
   }
-  // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
-  return content as unknown as Anthropic.ContentBlockParam[];
+
+  return content.map((raw) => {
+    const block = normalizeToolResultContentBlock(raw);
+    if (!block || block.type === "tool_reference") {
+      throw new Error(`Unsupported user content block: ${strArg(raw, "type", "unknown")}`);
+    }
+    return block;
+  });
 }
 
 export function buildAnthropicMessages(messages: Message[]): Anthropic.MessageParam[] {
@@ -209,7 +214,7 @@ export function buildAnthropicMessages(messages: Message[]): Anthropic.MessagePa
       result.push({ role: "assistant", content: blocks });
     } //! end if (m.role === "assistant")
     else if (m.toolResults && m.toolResults.length > 0) {
-      const blocks: Anthropic.ToolResultBlockParam[] = [];
+      const blocks: Anthropic.ContentBlockParam[] = [];
       for (const tr of m.toolResults) {
         blocks.push({
           type: "tool_result", // tool result
@@ -217,6 +222,9 @@ export function buildAnthropicMessages(messages: Message[]): Anthropic.MessagePa
           is_error: tr.isError,
           content: tr.contentBlocks?.length ? tr.contentBlocks : tr.content,
         });
+      }
+      if (m.content.length > 0) {
+        blocks.push(...userBlocksFor(m.content));
       }
 
       result.push({ role: "user", content: blocks });
@@ -291,7 +299,6 @@ export class AnthropicClient implements LLMClient {
   private systemPrompt: string;
   private maxOutputTokens: number;
   /** Currently not used */
-  private contextWindow: number;
 
   constructor(config: ProviderConfig, systemPrompt: string) {
     const apiKey = resolveAPIKey(config);
@@ -306,10 +313,9 @@ export class AnthropicClient implements LLMClient {
       baseURL: config.base_url,
     });
     this.model = config.model;
-    this.thinking = config.thinking ?? true;
+    this.thinking = config.thinking ?? DEFAULT_PROVIDER_THINKING;
     this.systemPrompt = systemPrompt;
     this.maxOutputTokens = getMaxOutputTokens(config);
-    this.contextWindow = getContextWindow(config);
   }
   setSystemPrompt(prompt: string): void {
     this.systemPrompt = prompt;
@@ -370,19 +376,10 @@ export class AnthropicClient implements LLMClient {
       ...(antToolSchemas.length > 0 ? { tools: antToolSchemas } : {}),
     };
 
-    if (this.thinking) {
-      if (supportsAdaptiveThinking()) {
-        params.thinking = {
-          type: "enabled",
-          budget_tokens: computeCompactThreshold(this.contextWindow, this.maxOutputTokens),
-        };
-      }
-    } else {
-      params.thinking = {
-        type: "enabled",
-        budget_tokens: computeCompactThreshold(this.contextWindow, this.maxOutputTokens),
-      };
-    }
+    params.thinking =
+      this.thinking && this.maxOutputTokens > 1024
+        ? { type: "enabled", budget_tokens: Math.min(16_384, this.maxOutputTokens - 1) }
+        : { type: "disabled" };
 
     let inputTokens = 0;
     let outputTokens = 0;

@@ -84,7 +84,7 @@ function coerceScalar(value: unknown, want: string): unknown {
       return value;
     }
     const parsed = want === "integer" ? Number.parseInt(text, 10) : Number.parseFloat(text);
-    return Number.isNaN(parsed) ? value : parsed;
+    return Number.isFinite(parsed) ? parsed : value;
   }
   if (want === "boolean" && typeof value === "string") {
     const low = value.trim().toLowerCase();
@@ -217,24 +217,20 @@ export class McpCallTool implements Tool {
     };
   }
 
-  /**
-   * Try in order: full name / server+short name / unique short-name suffix match.
-   *
-   * The model very often passes only the short name (roughly three in ten calls in
-   * practice), so this must be tolerant — otherwise it needlessly costs a retry
-   * round.
-   */
-  private resolve(server: string, tool: string): Tool | undefined {
-    const direct = this.registry.get(tool) ?? this.registry.get(buildMcpToolName(server, tool));
-    if (direct) {
-      return direct;
+  resolveTarget(args: Record<string, unknown>): MCPToolLike | undefined {
+    const server = strArg(args, "server");
+    const name = strArg(args, "tool");
+    if (!server || !name) {
+      return undefined;
     }
-
-    const suffix = MCP_NAME_SEP + sanitizeSegment(tool);
-    const matches = this.registry
-      .listTools()
-      .filter((t) => t.name.startsWith(MCP_TOOL_PREFIX) && t.name.endsWith(suffix));
-    return matches.length === 1 ? matches[0] : undefined;
+    const fullName = name.startsWith(MCP_TOOL_PREFIX) ? name : buildMcpToolName(server, name);
+    const target = this.registry.get(fullName);
+    // The routed server must be the one that permission rules evaluated.
+    return target &&
+      isMcpToolLike(target) &&
+      sanitizeSegment(target.mcpServerName) === sanitizeSegment(server)
+      ? target
+      : undefined;
   }
 
   private availableNames(): string[] {
@@ -252,7 +248,7 @@ export class McpCallTool implements Tool {
       return { output: "McpCall requires a 'tool' name", isError: true };
     }
 
-    const target = this.resolve(server, tool);
+    const target = this.resolveTarget(args);
     if (!target) {
       const names = this.availableNames();
       const hint = names.length > 0 ? names.join(", ") : "(none connected)";
@@ -262,14 +258,17 @@ export class McpCallTool implements Tool {
       };
     }
 
-    let inner: Record<string, unknown> = {};
     if (
-      typeof args.arguments === "object" &&
-      args.arguments !== null &&
-      !Array.isArray(args.arguments)
+      typeof args.arguments !== "object" ||
+      args.arguments === null ||
+      Array.isArray(args.arguments)
     ) {
-      inner = asRecord(args.arguments);
+      return {
+        output: "McpCall requires an 'arguments' object matching the target schema",
+        isError: true,
+      };
     }
+    let inner = asRecord(args.arguments);
 
     if (isMcpToolLike(target)) {
       const schema = target.mcpInputSchema();
@@ -281,6 +280,7 @@ export class McpCallTool implements Tool {
       }
     }
 
+    ctx.abortSignal?.throwIfAborted();
     return target.execute(ctx, inner);
   }
 }

@@ -5,12 +5,14 @@ import type { InputDraft } from "./input-draft.js";
 import { InputBox } from "./input.js";
 import { PermissionDialog } from "./permission-dialog.js";
 import { PlanApprovalDialog } from "./plan-approval.js";
+import { ProviderLogin } from "./provider-login.js";
 import { ProviderSelect } from "./provider-select.js";
 import RewindDialog from "./rewind-dialog.js";
 import { SessionSelector } from "./session-selector.js";
 import { TeamsDialog } from "./teams-dialog.js";
 
 interface Props {
+  login?: ComponentProps<typeof ProviderLogin>;
   provider?: ComponentProps<typeof ProviderSelect>;
   planApproval?: ComponentProps<typeof PlanApprovalDialog>;
   rewind?: ComponentProps<typeof RewindDialog>;
@@ -22,6 +24,7 @@ interface Props {
 }
 
 export function InteractionDock({
+  login,
   provider,
   planApproval,
   rewind,
@@ -32,6 +35,9 @@ export function InteractionDock({
   composer,
 }: Props) {
   const draftRef = useRef<InputDraft | null>(null);
+  if (login) {
+    return <ProviderLogin {...login} />;
+  }
   if (provider) {
     return <ProviderSelect {...provider} />;
   }

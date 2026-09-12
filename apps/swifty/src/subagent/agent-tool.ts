@@ -59,7 +59,7 @@ Rules (non-negotiable):
 2. Do NOT converse, ask questions, or request confirmation.
 3. Use tools directly: read files, search code, make changes.
 4. Stay strictly within your assigned task scope.
-5. Final report must be under 500 characters, starting with "Scope:".
+5. Return a concise report of changes, evidence, verification, and unresolved blockers. Do not claim unverified work is complete.
 </fork_boilerplate>`;
 
 export class AgentTool implements Tool {
@@ -90,7 +90,11 @@ export class AgentTool implements Tool {
    * teammate-scoped tool registry (with shared task-board tools injected)
    * and returns the callback that runs the teammate agent's main loop.
    */
-  private teamRunAgentFactory?: (registry: ToolRegistry, checker?: PermissionChecker) => RunAgent;
+  private teamRunAgentFactory?: (
+    registry: ToolRegistry,
+    checker?: PermissionChecker,
+    workDir?: string,
+  ) => RunAgent;
 
   private spawnHandler: (
     definition: AgentDefinition,
@@ -98,6 +102,7 @@ export class AgentTool implements Tool {
     background: boolean,
     modelOverride?: string,
     workDirOverride?: string,
+    context?: ToolContext,
   ) => Promise<string>;
 
   private forkHandler?: (
@@ -105,6 +110,7 @@ export class AgentTool implements Tool {
     conversation: ConversationManager,
     registry: ToolRegistry,
     modelOverride?: string,
+    context?: ToolContext,
   ) => Promise<string>;
 
   constructor(
@@ -116,6 +122,7 @@ export class AgentTool implements Tool {
       bg: boolean,
       modelOverride?: string,
       workDirOverride?: string,
+      context?: ToolContext,
     ) => Promise<string>,
     conversation?: ConversationManager,
     forkHandler?: (
@@ -123,6 +130,7 @@ export class AgentTool implements Tool {
       conversation: ConversationManager,
       registry: ToolRegistry,
       modelOverride?: string,
+      context?: ToolContext,
     ) => Promise<string>,
   ) {
     this.definitions = loadAgentDefinitions(workDir);
@@ -139,7 +147,11 @@ export class AgentTool implements Tool {
    */
   setTeamManager(
     mgr: TeamManager,
-    runAgentFactory: (registry: ToolRegistry, checker?: PermissionChecker) => RunAgent,
+    runAgentFactory: (
+      registry: ToolRegistry,
+      checker?: PermissionChecker,
+      workDir?: string,
+    ) => RunAgent,
   ): void {
     this.teamManager = mgr;
     this.teamRunAgentFactory = runAgentFactory;
@@ -172,7 +184,8 @@ export class AgentTool implements Tool {
           },
           run_in_background: {
             type: "boolean",
-            description: "Run in background",
+            description:
+              "Apply background-agent tool restrictions. One-shot calls currently wait and return their result inline; use team_name for persistent asynchronous teammates.",
             default: false,
           },
           isolation: {
@@ -206,7 +219,7 @@ export class AgentTool implements Tool {
   }
 
   private buildDescription(): string {
-    let desc = `Launch a subagent to handle a complex task. Each subagent runs independently with its own context. The subagent cannot see the current conversation.
+    let desc = `Launch a subagent for a bounded task. Definition-based agents receive your prompt; omitting subagent_type forks a snapshot of the current conversation when fork mode is enabled. Results return inline for one-shot agents; persistent teammates report through their team mailbox.
 
 This is ONE tool with multiple roles. Roles are NOT separate tools — you pick one by passing its name in the "subagent_type" parameter. Do not search for a tool named after a role; call THIS tool ("Agent") and set "subagent_type".
 
@@ -233,7 +246,7 @@ When tasks are independent, launch multiple subagents in parallel by making mult
     return desc;
   }
 
-  async execute(_ctx: ToolContext, args: Record<string, unknown>): Promise<ToolResult> {
+  async execute(ctx: ToolContext, args: Record<string, unknown>): Promise<ToolResult> {
     const description = strArg(args, "description");
     const prompt = strArg(args, "prompt");
     if (!description || !prompt) {
@@ -269,7 +282,7 @@ When tasks are independent, launch multiple subagents in parallel by making mult
 
     // Fork path: Inherits parent conversation context when subagent_type is not specified
     if (!subagentType) {
-      return this.runFork(prompt, description, modelOverride);
+      return this.runFork(prompt, description, modelOverride, ctx, isolation === "worktree");
     }
 
     // Definition path: Look up Agent definition by subagent_type
@@ -307,11 +320,15 @@ ${prompt}`;
         background || !!definition.background,
         modelOverride,
         workDirOverride,
+        ctx,
       );
-      return { output, isError: false };
+      return {
+        output: workDirOverride ? `${output}\n\nWorktree retained at: ${workDirOverride}` : output,
+        isError: false,
+      };
     } catch (err) {
       return {
-        output: `Agent error: ${asErrorString(err)}`,
+        output: `Agent error: ${asErrorString(err)}${workDirOverride ? `\nWorktree retained at: ${workDirOverride}` : ""}`,
         isError: true,
       };
     }
@@ -357,11 +374,13 @@ ${prompt}`;
     // Two categories are excluded during cloning: tools no subagent should
     // have, and team membership management tools reserved for the Lead.
     const teammateRegistry = new ToolRegistry();
+    teammateRegistry.mcpLoadingMode = this.registry.mcpLoadingMode;
     for (const tool of this.registry.listTools()) {
       // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
       if ((SUBAGENT_DISALLOWED_TOOLS as Set<string>).has(tool.name)) {
         continue;
       }
+
       // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
       if ((TEAMMATE_DISALLOWED_TOOLS as Set<string>).has(tool.name)) {
         continue;
@@ -376,14 +395,14 @@ ${prompt}`;
     // The plan-mode teammate requires the checker to be created here: after team-level approval
     // passes, the mode must be switched back to default in place. If the checker were created
     // only inside spawnSubAgent, no one would have a handle to modify it.
-    const checker = planModeRequired ? new PermissionChecker(this.workDir, "plan") : undefined;
 
     // Worktree isolation: the teammate works on its own branch; changes are merged back during convergence
     let teammatePrompt = prompt;
+    let memberWorkDir = this.workDir;
     if (worktreeIsolation) {
       try {
         const wt = await createAgentWorktree(newAgentSlug());
-        team.setMemberMeta(memberName, { worktreePath: wt.path });
+        memberWorkDir = wt.path;
         teammatePrompt = `${buildWorktreeNotice(this.workDir, wt.path)}
 
 ${prompt}`;
@@ -395,10 +414,14 @@ ${prompt}`;
       }
     }
 
-    const runAgent = this.teamRunAgentFactory?.(teammateRegistry, checker);
+    const checker = planModeRequired ? new PermissionChecker(memberWorkDir, "plan") : undefined;
+    const runAgent = this.teamRunAgentFactory?.(teammateRegistry, checker, memberWorkDir);
 
     if (runAgent) {
       team.spawnTeammate(memberName, teammatePrompt, runAgent, checker);
+      if (worktreeIsolation) {
+        team.setMemberMeta(memberName, { worktreePath: memberWorkDir });
+      }
     }
 
     return {
@@ -409,7 +432,7 @@ ${prompt}`;
   }
 
   /**
-   * Fork mode: Inherits parent conversation context and runs in the background.
+   * Fork mode: Inherits a snapshot of parent conversation context.
    * Unlike definition mode, the forked subagent can see the full history of the parent conversation,
    * achieving byte alignment for the prompt-cache prefix to improve cache hit rate.
    */
@@ -417,6 +440,8 @@ ${prompt}`;
     prompt: string,
     description: string,
     modelOverride: string,
+    ctx: ToolContext,
+    isolate: boolean,
   ): Promise<ToolResult> {
     if (!this.conversation || !this.forkHandler) {
       return {
@@ -445,23 +470,37 @@ ${prompt}`;
       }
     }
 
+    let worktreePath: string | undefined;
     try {
+      if (isolate) {
+        ctx.abortSignal?.throwIfAborted();
+        const worktree = await createAgentWorktree(newAgentSlug());
+        worktreePath = worktree.path;
+        prompt = `${buildWorktreeNotice(ctx.workDir, worktree.path)}\n\n${prompt}`;
+        ctx = {
+          ...ctx,
+          workDir: worktree.path,
+          permissionChecker: ctx.permissionChecker?.forWorkDir(worktree.path),
+        };
+      }
       const { cloneRegistryForFork } = await import("./tool-filter.js");
       const forkedRegistry = cloneRegistryForFork(this.registry);
-      /** const output = */ await this.forkHandler(
+      const snapshot = this.conversation.fork();
+      const output = await this.forkHandler(
         `${FORK_BOILERPLATE}\n\nYour task:\n${prompt}`,
-        this.conversation,
+        snapshot,
         forkedRegistry,
         modelOverride,
+        ctx,
       );
       return {
-        output: `Forked agent "${description}" launched in background. Results will arrive via task-notification.`,
+        output: `Forked agent "${description}":\n${output}${worktreePath ? `\nWorktree retained at: ${worktreePath}` : ""}`,
         isError: false,
       };
     } catch (err) {
       log.error({ err }, "subagent operation failed");
       return {
-        output: `Fork error: ${asErrorString(err)}`,
+        output: `Fork error: ${asErrorString(err)}${worktreePath ? `\nWorktree retained at: ${worktreePath}` : ""}`,
         isError: true,
       };
     }

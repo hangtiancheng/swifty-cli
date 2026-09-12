@@ -61,6 +61,14 @@ export class StreamingExecutor {
     const promises = calls.map(async (call) => {
       const tool = this.registry.get(call.toolName);
       const start = Date.now();
+      if (this.ctx.abortSignal?.aborted) {
+        return {
+          toolId: call.toolId,
+          toolName: call.toolName,
+          result: { output: "Tool execution was cancelled before it started.", isError: true },
+          elapsed: 0,
+        };
+      }
 
       // On invalid tool name, return a single error and let the model self-correct with another tool; keep the loop running.
       if (!tool) {

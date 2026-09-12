@@ -21,7 +21,7 @@
  */
 
 import { existsSync, mkdirSync, writeFileSync } from "fs";
-import { dirname } from "path";
+import { dirname, resolve } from "path";
 
 import { createChildLogger } from "../logger/logger.js";
 import { asErrorString } from "../utils/index.js";
@@ -54,11 +54,13 @@ export class WriteFileTool implements Tool {
       properties: {
         file_path: {
           type: "string" as const,
-          description: "Absolute path to write",
+          description:
+            "File path, absolute or relative to the Agent's working directory. Missing parent directories are created; existing files must be read first.",
         },
         content: {
           type: "string" as const,
-          description: "Content to write",
+          description:
+            "Complete UTF-8 file contents. Replaces all existing content; an empty string creates or truncates an empty file.",
         },
       },
       required: ["file_path", "content"],
@@ -72,15 +74,16 @@ export class WriteFileTool implements Tool {
   }
 
   execute(ctx: ToolContext, args: Record<string, unknown>): Promise<ToolResult> {
-    const filePath = strArg(args, "file_path");
+    const requestedPath = strArg(args, "file_path");
     const content = strArg(args, "content");
-    if (!filePath) {
+    if (!requestedPath) {
       return Promise.resolve({
         output: "Error: file_path is required",
         isError: true,
       });
     }
 
+    const filePath = resolve(ctx.workDir, requestedPath);
     // Gate: read-before-write enforcement (skip for new files)
     if (ctx.fileStateCache && existsSync(filePath)) {
       const gate = ctx.fileStateCache.check(filePath);
