@@ -67,7 +67,6 @@ import {
   saveCompactBoundary,
   listSessions,
   loadSession,
-  rebuildFromSession,
   getSessionFilePath,
 } from "../session/session.js";
 import { SkillCatalog, buildSkillSection } from "../skills/catalog.js";
@@ -101,7 +100,9 @@ import { GlobTool } from "../tools/wasm/glob.js";
 import { GrepTool } from "../tools/wasm/grep.js";
 import { WriteFileTool } from "../tools/write-file.js";
 
+import { parseRemoteAddress } from "./address.js";
 import { AgentEventLogger } from "./log.js";
+import { restoreRemoteSession } from "./session-state.js";
 
 import { BUILTIN_AGENTS } from "@/subagent/definition.js";
 import { contentToText, strArg } from "@/utils/index.js";
@@ -771,6 +772,7 @@ export class RemoteServer {
   // Agent handle
   private agentHandle: RemoteAgentHandle | null = null;
   private streaming = false;
+  private compactController: AbortController | null = null;
   private turnCount = 0;
   private readonly eventLogger = new AgentEventLogger(log);
 
@@ -904,7 +906,7 @@ export class RemoteServer {
         break;
       }
       case "cancel": {
-        this.agentHandle?.abort();
+        this.cancelActiveRun();
         break;
       }
       case "ping": {
@@ -1367,6 +1369,9 @@ export class RemoteServer {
       return;
     }
     const handle = this.agentHandle;
+    const controller = new AbortController();
+    this.compactController = controller;
+    this.streaming = true;
 
     this.broadcast({
       type: "system",
@@ -1385,6 +1390,7 @@ export class RemoteServer {
         // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
         toolSchemas as ToolSchema[],
         getSessionFilePath(handle.workDir, handle.sessionId),
+        controller.signal,
       );
       this.broadcast({
         type: "system",
@@ -1398,9 +1404,11 @@ export class RemoteServer {
         type: "error",
         data: { message: err instanceof Error ? err.message : String(err) },
       });
+    } finally {
+      this.compactController = null;
+      this.streaming = false;
+      this.broadcast({ type: "command_done", data: null });
     }
-
-    this.broadcast({ type: "command_done", data: null });
   }
 
   /** Handles /plan command: enter plan mode, optionally with args. */
@@ -1504,12 +1512,14 @@ export class RemoteServer {
 
     // Resolve target session (by index or session ID)
     let targetId = args.trim();
-    const idx = parseInt(targetId, 10);
+    const idx = /^\d+$/.test(targetId) ? Number(targetId) : NaN;
     if (!Number.isNaN(idx) && idx >= 1 && idx <= sessions.length) {
       targetId = sessions[idx - 1].id;
     }
 
-    const saved = loadSession(workDir, targetId);
+    const saved = sessions.some((session) => session.id === targetId)
+      ? loadSession(workDir, targetId)
+      : [];
     if (saved.length === 0) {
       this.broadcast({
         type: "error",
@@ -1519,35 +1529,11 @@ export class RemoteServer {
       return;
     }
 
-    // Rebuild conversation from saved session
-    handle.conv = new ConversationManager();
-    handle.sessionId = targetId;
-
-    const replay = rebuildFromSession(saved);
+    const replay = restoreRemoteSession(handle, targetId, saved);
 
     // Clear UI and replay messages
     this.broadcast({ type: "clear", data: null });
     for (const msg of replay) {
-      // Tool blocks must be restored as well, otherwise the replayed history will have a broken call chain
-      if (msg.toolUses?.length) {
-        handle.conv.addAssistantMessageWithTools(
-          contentToText(msg.content),
-          msg.toolUses.map((tu) => ({ ...tu, arguments: tu.arguments ?? {} })),
-        );
-      } else if (msg.toolResults?.length) {
-        handle.conv.addToolResultsMessage(
-          msg.toolResults.map((tr) => ({
-            toolUseId: tr.toolUseId,
-            content: tr.content,
-            ...(tr.contentBlocks?.length ? { contentBlocks: tr.contentBlocks } : {}),
-            isError: tr.isError,
-          })),
-        );
-      } else if (msg.role === "user") {
-        handle.conv.addUserMessage(msg.content);
-      } else {
-        handle.conv.addAssistantMessage(contentToText(msg.content));
-      }
       // Messages carrying only tool results have no text content; skip pushing them to the frontend
       if (!msg.content) {
         continue;
@@ -1656,6 +1642,7 @@ export class RemoteServer {
    * Initializes the agent handle eagerly; falls back to lazy init on first message.
    */
   async run(): Promise<void> {
+    const { host, port } = parseRemoteAddress(this.opts.addr);
     // Attempt eager agent initialization
     try {
       this.agentHandle = await createRemoteAgent({
@@ -1672,11 +1659,6 @@ export class RemoteServer {
       this.agentHandle = null;
     }
 
-    // Parse listen address
-    const parts = this.opts.addr.split(":");
-    const host = parts[0] || "0.0.0.0";
-    const port = parseInt(parts[1] ?? "18888", 10);
-
     return new Promise((resolve, reject) => {
       this.server.on("error", reject);
       this.server.listen(port, host, () => {
@@ -1687,11 +1669,26 @@ export class RemoteServer {
 
   /** Stops the server and cleans up all connections. */
   stop(): void {
+    this.cancelActiveRun();
     for (const ws of this.clients) {
       ws.close();
     }
     this.clients.clear();
     this.wss.close();
     this.server.close();
+  }
+
+  private cancelActiveRun(): void {
+    this.agentHandle?.abort();
+    this.compactController?.abort();
+    // Aborting a provider cannot settle promises owned by the WebSocket UI.
+    for (const resolve of this.pendingPermissions.values()) {
+      resolve("deny");
+    }
+    this.pendingPermissions.clear();
+    for (const resolve of this.pendingAsks.values()) {
+      resolve({});
+    }
+    this.pendingAsks.clear();
   }
 }

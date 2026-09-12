@@ -633,6 +633,19 @@ describe("persistent composer drafts and input behavior", () => {
     expect(onSubmit).toHaveBeenCalledWith("ok");
   });
 
+  it("submits the latest paste even when Enter arrives before the next render", () => {
+    const ref = draftRef();
+    const onSubmit = vi.fn();
+    const text = "x".repeat(1001);
+    mount({ draftRef: ref, onSubmit });
+    act(() => {
+      terminal.paste.current?.(text);
+      terminal.input.current?.("!", key());
+      terminal.input.current?.("\r", key({ return: true }));
+    });
+    expect(onSubmit).toHaveBeenCalledWith(`${text}!`);
+  });
+
   it("retains pasted drafts during history browsing without expanding literal history markers", () => {
     const ref = draftRef();
     const onSubmit = vi.fn();
@@ -724,6 +737,69 @@ describe("persistent composer drafts and input behavior", () => {
       await pending;
     });
     expect(ref.current?.lines).toEqual(["draft!"]);
+  });
+
+  it("invalidates an in-flight clipboard image when the draft is cleared", async () => {
+    type ClipboardResult = Awaited<ReturnType<typeof saveClipboardImage>>;
+    let resolve: ((result: ClipboardResult) => void) | undefined;
+    const pending = new Promise<ClipboardResult>((complete) => {
+      resolve = complete;
+    });
+    vi.mocked(saveClipboardImage).mockReturnValue(pending);
+    const ref = draftRef(["draft"]);
+    const clearRef: { current: (() => void) | null } = { current: null };
+    mount({ draftRef: ref, clearRef, workDir: "/virtual" });
+    act(() => {
+      terminal.paste.current?.("");
+    });
+    act(() => {
+      clearRef.current?.();
+    });
+    press("new draft");
+    await act(async () => {
+      resolve?.({ ok: true, value: "/virtual/image.png" });
+      await pending;
+    });
+    expect(ref.current?.lines).toEqual(["new draft"]);
+    expect(ref.current?.pastes).toBeUndefined();
+  });
+
+  it("waits for the clipboard image before allowing submission", async () => {
+    type ClipboardResult = Awaited<ReturnType<typeof saveClipboardImage>>;
+    let resolve: ((result: ClipboardResult) => void) | undefined;
+    const pending = new Promise<ClipboardResult>((complete) => {
+      resolve = complete;
+    });
+    vi.mocked(saveClipboardImage).mockReturnValue(pending);
+    const ref = draftRef(["Describe"]);
+    const onSubmit = vi.fn();
+    mount({ draftRef: ref, onSubmit, workDir: "/virtual" });
+    act(() => {
+      terminal.paste.current?.("");
+    });
+    press("\r", { return: true });
+    expect(onSubmit).not.toHaveBeenCalled();
+    await act(async () => {
+      resolve?.({ ok: true, value: "/virtual/image.png" });
+      await pending;
+    });
+    press("\r", { return: true });
+    expect(onSubmit).toHaveBeenCalledWith("Describe '@image.png'");
+  });
+
+  it("returns from multiline history to the original pasted draft", () => {
+    const ref = draftRef();
+    const onSubmit = vi.fn();
+    mount({ draftRef: ref, onSubmit, history: ["first\nsecond"] });
+    act(() => {
+      terminal.paste.current?.("x".repeat(1001));
+    });
+    press("", { upArrow: true });
+    press("", { downArrow: true });
+    press("", { downArrow: true });
+    expect(ref.current?.lines).toEqual(["[paste #1 1001 chars]"]);
+    press("\r", { return: true });
+    expect(onSubmit).toHaveBeenCalledWith("x".repeat(1001));
   });
 
   it("keeps Enter-to-complete separate from Enter-to-submit for slash and @file", () => {

@@ -152,7 +152,6 @@ export function InputBox(props: InputBoxProps) {
     setCursorCol,
     historyIndex,
     setHistoryIndex,
-    historyDraft,
     setHistoryDraft,
     pastes,
     setPastes,
@@ -163,6 +162,8 @@ export function InputBox(props: InputBoxProps) {
   const [pasteError, setPasteError] = useState("");
   const [statusFrame, setStatusFrame] = useState(0);
   const pasteImageInflightRef = useRef(false);
+  const pasteGenerationRef = useRef(0);
+  const [isPastingImage, setIsPastingImage] = useState(false);
   const mountedRef = useRef(true);
 
   useEffect(() => {
@@ -189,8 +190,9 @@ export function InputBox(props: InputBoxProps) {
       return;
     }
     insertTextRef.current = (text: string) => {
+      const { lines, cursorLine, cursorCol, pastes } = getDraft();
       const line = lines[cursorLine] ?? "";
-      const col = Math.min(cursorCol, line.length);
+      const col = inputBoundary(line, cursorCol, "clamp", pastes);
       const before = line.slice(0, col);
       const pad = before.length > 0 && !/\s$/.test(before) ? " " : "";
       const inserted = pad + text;
@@ -205,7 +207,7 @@ export function InputBox(props: InputBoxProps) {
     return () => {
       insertTextRef.current = null;
     };
-  }, [insertTextRef, lines, cursorLine, cursorCol, setLines, setCursorCol]);
+  }, [insertTextRef, getDraft, setLines, setCursorCol]);
 
   useEffect(() => {
     if (!clearRef) {
@@ -223,6 +225,9 @@ export function InputBox(props: InputBoxProps) {
       setHistoryIndex(-1);
       setHistoryDraft(null);
       setPastes(undefined);
+      pasteGenerationRef.current++;
+      pasteImageInflightRef.current = false;
+      setIsPastingImage(false);
       setDropdownIndex(0);
       setDropdownDismissed(false);
       setPasteError("");
@@ -420,10 +425,12 @@ export function InputBox(props: InputBoxProps) {
       return;
     }
     pasteImageInflightRef.current = true;
+    const generation = ++pasteGenerationRef.current;
+    setIsPastingImage(true);
     setPasteError("");
     try {
       const result = await saveClipboardImage(workDir, sessionId);
-      if (!mountedRef.current) {
+      if (!mountedRef.current || generation !== pasteGenerationRef.current) {
         return;
       }
       if (result.ok) {
@@ -432,10 +439,16 @@ export function InputBox(props: InputBoxProps) {
         setPasteError(result.reason);
       }
     } catch (err) {
+      if (!mountedRef.current || generation !== pasteGenerationRef.current) {
+        return;
+      }
       log.error({ err }, "clipboard image paste failed");
       setPasteError("Could not read an image from the clipboard.");
     } finally {
-      pasteImageInflightRef.current = false;
+      if (mountedRef.current && generation === pasteGenerationRef.current) {
+        pasteImageInflightRef.current = false;
+        setIsPastingImage(false);
+      }
     }
   };
 
@@ -451,6 +464,9 @@ export function InputBox(props: InputBoxProps) {
   );
 
   const handleInput = (input: string, key: Key) => {
+    // Ink can deliver another key before React commits the preceding paste.
+    const { lines, cursorLine, cursorCol, historyIndex, historyDraft, pastes } = getDraft();
+    const isMultiline = lines.length > 1;
     if (input.includes("[<") && /\[<\d+;\d+;\d+[Mm]/.test(input)) {
       return;
     }
@@ -532,7 +548,7 @@ export function InputBox(props: InputBoxProps) {
       if (finalValue) {
         // Sending is locked (agent streaming / compacting): keep the draft
         // instead of submitting, so nothing is silently dropped.
-        if (submitDisabled) {
+        if (submitDisabled || pasteImageInflightRef.current) {
           return;
         }
         onSubmit(finalValue);
@@ -662,7 +678,7 @@ export function InputBox(props: InputBoxProps) {
         );
         return;
       }
-      if (!isMultiline && history.length > 0) {
+      if ((!isMultiline || historyIndex >= 0) && history.length > 0) {
         if (historyIndex === -1) {
           setHistoryDraft({
             lines: [...lines],
@@ -703,7 +719,7 @@ export function InputBox(props: InputBoxProps) {
         );
         return;
       }
-      if (!isMultiline) {
+      if (!isMultiline || historyIndex >= 0) {
         if (historyIndex > 0) {
           const nextIdx = historyIndex - 1;
           setHistoryIndex(nextIdx);
@@ -841,6 +857,11 @@ export function InputBox(props: InputBoxProps) {
         hiddenLineCount={hiddenBelow}
         direction="down"
       />
+      {!disabled && isPastingImage && (
+        <Box paddingLeft={2}>
+          <Text color={THEME.muted}>Reading clipboard image…</Text>
+        </Box>
+      )}
       {!disabled && pasteError && (
         <Box paddingLeft={2}>
           <Text color={THEME.error}>Error: {pasteError}</Text>

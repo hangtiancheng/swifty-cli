@@ -83,7 +83,14 @@ export class ExitWorktreeTool implements Tool {
       };
     }
 
-    const hasChanges = headCommit ? hasWorktreeChanges(path, headCommit) : false;
+    if (!headCommit) {
+      return {
+        output: `Original head_commit was not provided; worktree kept at: ${path}\nBranch: ${branch}`,
+        isError: false,
+      };
+    }
+
+    const hasChanges = await hasWorktreeChanges(path, headCommit);
 
     if (!hasChanges) {
       try {

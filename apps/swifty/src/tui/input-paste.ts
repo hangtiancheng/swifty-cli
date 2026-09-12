@@ -47,7 +47,19 @@ export function collapseImage(
 
 export function expandPastes(text: string, store?: PasteStore): string {
   // One pass: marker-like text inside pasted content is literal, never expanded again.
-  return store ? text.replace(MARKER, (marker) => store.entries[marker] ?? marker) : text;
+  return store
+    ? text.replace(MARKER, (marker: string, offset: number, source: string) => {
+        const content = store.entries[marker];
+        if (content === undefined || !marker.startsWith("[Image #")) {
+          return content ?? marker;
+        }
+        // Editing adjacent text must not turn a real attachment into an unrecognized @mention.
+        const before = offset > 0 && !/\s/.test(source[offset - 1]) ? " " : "";
+        const end = offset + marker.length;
+        const after = end < source.length && !/\s/.test(source[end]) ? " " : "";
+        return before + content + after;
+      })
+    : text;
 }
 
 export function inputBoundary(

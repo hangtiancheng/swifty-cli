@@ -72,7 +72,7 @@ describe("@image mention expansion (expandAtRefsWithImages)", () => {
       const collapsed = collapseImage(reference);
       expect(collapsed.text).toBe("[Image #1]");
       const out = await expandAtRefsWithImages(
-        expandPastes(`See ${collapsed.text}`, collapsed.store),
+        expandPastes(`See${collapsed.text}please`, collapsed.store),
         workDir,
       );
       if (typeof out === "string") {

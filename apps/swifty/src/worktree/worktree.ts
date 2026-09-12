@@ -20,8 +20,8 @@
  * SOFTWARE.
  */
 
-import { exec } from "child_process";
-import { access, cp, mkdir, readFile, stat, symlink } from "fs/promises";
+import { execFile } from "child_process";
+import { access, cp, mkdir, readFile, realpath, stat, symlink } from "fs/promises";
 import { dirname, isAbsolute, join } from "path";
 import { promisify } from "util";
 
@@ -29,7 +29,7 @@ import { createChildLogger } from "../logger/logger.js";
 
 const log = createChildLogger({ module: "worktree" });
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 export interface WorktreeResult {
   path: string;
@@ -279,19 +279,30 @@ export async function getCurrentBranch(repoRoot: string): Promise<string> {
 // ── Worktree Management ──────────────────────────────────────────────
 
 export async function createAgentWorktree(slug: string, gitRoot?: string): Promise<WorktreeResult> {
-  const root = gitRoot ?? (await execAsync("git rev-parse --show-toplevel")).stdout.trim();
+  if (!/^[a-zA-Z0-9_-]+$/.test(slug)) {
+    throw new Error("Invalid worktree slug: use only alphanumeric, hyphen, underscore");
+  }
+  const root =
+    gitRoot ?? (await execFileAsync("git", ["rev-parse", "--show-toplevel"])).stdout.trim();
 
   const worktreeDir = join(root, ".swifty", "worktrees", slug);
   const branch = `worktree-${slug}`;
 
-  // Fast path for restoration: if worktree already exists, read HEAD via pure filesystem
+  // Validate the existing root before restoration: git otherwise searches parent
+  // directories and could report the main repository's HEAD as an isolated worktree.
   if (await pathExists(worktreeDir)) {
+    const { stdout: topLevel } = await execFileAsync("git", ["rev-parse", "--show-toplevel"], {
+      cwd: worktreeDir,
+    });
+    if ((await realpath(topLevel.trim())) !== (await realpath(worktreeDir))) {
+      throw new Error(`Existing directory is not a worktree root: ${worktreeDir}`);
+    }
     const head = await readWorktreeHeadSha(worktreeDir);
     if (head) {
       return { path: worktreeDir, branch, headCommit: head, gitRoot: root };
     }
     // Fallback to git subprocess if filesystem read fails
-    const { stdout: headFallback } = await execAsync("git rev-parse HEAD", {
+    const { stdout: headFallback } = await execFileAsync("git", ["rev-parse", "HEAD"], {
       cwd: worktreeDir,
     });
     return {
@@ -302,9 +313,17 @@ export async function createAgentWorktree(slug: string, gitRoot?: string): Promi
     };
   }
 
-  // `-B` (uppercase): successfully creates even if the residual branch already exists;
-  // lowercase `-b` would fail if the branch already exists.
-  await execAsync(`git worktree add -B "${branch}" "${worktreeDir}"`, {
+  // Reattach residual branches at their existing tip. Creating with -b also
+  // refuses a branch created concurrently instead of resetting its commits.
+  const { stdout: existingBranch } = await execFileAsync(
+    "git",
+    ["branch", "--list", "--format=%(refname)", "--", branch],
+    { cwd: root },
+  );
+  const addArgs = existingBranch.trim()
+    ? ["worktree", "add", "--", worktreeDir, branch]
+    : ["worktree", "add", "-b", branch, "--", worktreeDir];
+  await execFileAsync("git", addArgs, {
     cwd: root,
   });
 
@@ -316,7 +335,7 @@ export async function createAgentWorktree(slug: string, gitRoot?: string): Promi
     return { path: worktreeDir, branch, headCommit: head, gitRoot: root };
   }
   // Fallback to subprocess
-  const { stdout: headFallback } = await execAsync("git rev-parse HEAD", {
+  const { stdout: headFallback } = await execFileAsync("git", ["rev-parse", "HEAD"], {
     cwd: worktreeDir,
   });
 
@@ -333,28 +352,15 @@ export async function removeAgentWorktree(
   branch: string,
   gitRoot: string,
 ): Promise<void> {
-  try {
-    await execAsync(`git worktree remove "${path}" --force`, {
-      cwd: gitRoot,
-    });
-  } catch (err) {
-    log.error({ err }, "worktree operation failed");
-    // Worktree may have already been removed
-  }
-
-  try {
-    await execAsync(`git branch -D "${branch}"`, {
-      cwd: gitRoot,
-    });
-  } catch (err) {
-    log.error({ err }, "worktree operation failed");
-    // Branch may have already been deleted
-  }
+  // Git rechecks for dirty/locked worktrees at removal time. If removal fails,
+  // stop here; if the branch has unmerged commits, -d leaves its tip intact.
+  await execFileAsync("git", ["worktree", "remove", "--", path], { cwd: gitRoot });
+  await execFileAsync("git", ["branch", "-d", "--", branch], { cwd: gitRoot });
 }
 
 export async function hasWorktreeChanges(path: string, headCommit: string): Promise<boolean> {
   try {
-    const { stdout: status } = await execAsync("git status --porcelain", {
+    const { stdout: status } = await execFileAsync("git", ["status", "--porcelain"], {
       cwd: path,
     });
 
@@ -365,7 +371,7 @@ export async function hasWorktreeChanges(path: string, headCommit: string): Prom
     // Compare HEAD SHA: prefer pure filesystem read
     const currentHead =
       (await readWorktreeHeadSha(path)) ||
-      (await execAsync("git rev-parse HEAD", { cwd: path })).stdout.trim();
+      (await execFileAsync("git", ["rev-parse", "HEAD"], { cwd: path })).stdout.trim();
 
     return currentHead !== headCommit;
   } catch (err) {
@@ -461,7 +467,7 @@ async function configureHooksPath(repoRoot: string, worktreePath: string): Promi
       return;
     }
 
-    await execAsync(`git config core.hooksPath "${hooksPath}"`, {
+    await execFileAsync("git", ["config", "core.hooksPath", hooksPath], {
       cwd: worktreePath,
     });
   } catch (err) {

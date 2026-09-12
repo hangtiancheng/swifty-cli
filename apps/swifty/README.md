@@ -150,8 +150,9 @@ The -p flag sends a single prompt, runs the agent loop, and prints the result to
 ### Remote Mode (Browser UI)
 
 ```bash
-swifty --remote            # listens on :18888
-swifty --remote :9000      # custom address
+swifty --remote                  # listens on 127.0.0.1:18888
+swifty --remote :9000            # custom loopback port
+swifty --remote 0.0.0.0:9000      # explicitly expose on all interfaces (no built-in authentication)
 ```
 
 Starts a Koa HTTP server and WebSocket bridge. The bundled React frontend is served at the configured address for browser-based interaction.
