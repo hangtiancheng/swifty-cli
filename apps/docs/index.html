@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en" class="scroll-smooth scroll-pt-24">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="%BASE_URL%favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#849a72" />
+    <title>Swifty — The AI coding agent that lives in your terminal</title>
+    <meta
+      name="description"
+      content="Swifty is a terminal-based AI coding agent. Chat with any LLM, edit files, run commands, and orchestrate multi-agent workflows — all from one CLI."
+    />
+    <meta property="og:title" content="Swifty — The AI coding agent that lives in your terminal" />
+    <meta
+      property="og:description"
+      content="Multi-provider LLMs, a rich streaming TUI, sandboxed tools, long-term memory and multi-agent teams — in a single CLI."
+    />
+    <meta property="og:type" content="website" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400;14..32,500;14..32,600;14..32,700;14..32,800&family=JetBrains+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <script>
+      ;(() => {
+        try {
+          const stored = localStorage.getItem('swifty-theme')
+          const dark = stored ? stored === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches
+          if (dark) document.documentElement.classList.add('dark')
+          document.documentElement.style.colorScheme = dark ? 'dark' : 'light'
+        } catch {
+          /* ignore */
+        }
+      })()
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

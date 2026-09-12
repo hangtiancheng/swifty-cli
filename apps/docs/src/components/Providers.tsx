@@ -1,0 +1,167 @@
+import { Blocks, KeyRound, SlidersHorizontal, Terminal } from 'lucide-react'
+import { cn } from '../lib/cn'
+import { container, heading, line, muted } from '../lib/styles'
+import { Reveal } from './ui/Reveal'
+import { Section, SectionHeader } from './ui/Section'
+
+const PROTOCOLS = [
+  {
+    icon: Blocks,
+    name: 'anthropic',
+    base: 'api.anthropic.com',
+    env: 'ANTHROPIC_API_KEY',
+    note: 'Native tool use, thinking blocks and deferred tool loading.',
+  },
+  {
+    icon: Terminal,
+    name: 'openai',
+    base: 'api.openai.com',
+    env: 'OPENAI_API_KEY',
+    note: 'Function calling with streaming across the Responses API.',
+  },
+  {
+    icon: SlidersHorizontal,
+    name: 'openai-compat',
+    base: 'your-gateway',
+    env: 'OPENAI_API_KEY',
+    note: 'Any OpenAI-compatible gateway, proxy or self-hosted endpoint.',
+  },
+]
+
+const YAML: Array<Array<{ text: string; tone?: 'key' | 'str' | 'comment' | 'num' }>> = [
+  [{ text: 'providers:' }],
+  [
+    { text: '  - name: ' },
+    { text: 'anthropic', tone: 'str' },
+  ],
+  [
+    { text: '    protocol: ' },
+    { text: 'anthropic', tone: 'str' },
+  ],
+  [
+    { text: '    base_url: ' },
+    { text: 'https://api.anthropic.com', tone: 'str' },
+  ],
+  [
+    { text: '    model: ' },
+    { text: 'claude-sonnet-4-20250514', tone: 'str' },
+  ],
+  [{ text: '    # api_key falls back to $ANTHROPIC_API_KEY', tone: 'comment' }],
+  [],
+  [
+    { text: 'permission_mode: ' },
+    { text: 'default', tone: 'str' },
+  ],
+  [],
+  [{ text: 'sandbox:' }],
+  [
+    { text: '  enabled: ' },
+    { text: 'true', tone: 'num' },
+  ],
+  [
+    { text: '  auto_allow: ' },
+    { text: 'false', tone: 'num' },
+  ],
+]
+
+export function Providers() {
+  return (
+    <Section id="providers" className="bg-zinc-50/60 dark:bg-white/[0.015]">
+      <SectionHeader
+        eyebrow="Providers"
+        title={
+          <>
+            Bring your own <span className="text-brand-500">model</span>
+          </>
+        }
+        description="One YAML file decides everything. Configure several providers and switch per project — keys resolve from the environment, so nothing secret lands in git."
+      />
+
+      <div className={cn(container, 'mt-14 grid grid-cols-1 gap-6 lg:grid-cols-2')}>
+        <Reveal>
+          <div className="flex flex-col gap-4">
+            {PROTOCOLS.map((protocol) => (
+              <div
+                key={protocol.name}
+                className={cn(
+                  'flex items-start gap-4 rounded-2xl border bg-white p-5 dark:bg-white/[0.02]',
+                  line,
+                )}
+              >
+                <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-brand-500/12 text-brand-600 dark:bg-brand-400/12 dark:text-brand-300">
+                  <protocol.icon className="h-5 w-5" />
+                </span>
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className={cn('font-mono text-sm font-semibold', heading)}>
+                      {protocol.name}
+                    </span>
+                    <span className="rounded-md bg-zinc-100 px-2 py-0.5 font-mono text-[10px] text-zinc-500 dark:bg-white/[0.06] dark:text-zinc-400">
+                      {protocol.base}
+                    </span>
+                  </div>
+                  <p className={cn('mt-1.5 text-sm leading-relaxed', muted)}>{protocol.note}</p>
+                  <p className="mt-2 inline-flex items-center gap-1.5 font-mono text-[11px] text-zinc-400 dark:text-zinc-500">
+                    <KeyRound className="h-3 w-3" />
+                    {protocol.env}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Reveal>
+
+        <Reveal delay={0.1}>
+          <div
+            className={cn(
+              'overflow-hidden rounded-2xl border bg-zinc-50 shadow-card',
+              'border-zinc-200 dark:border-white/10 dark:bg-[#0b0b11] dark:shadow-none',
+            )}
+          >
+            <div className="flex items-center justify-between border-b border-zinc-200 px-5 py-3 dark:border-white/[0.08]">
+              <span className="inline-flex items-center gap-2 font-mono text-[11px] text-zinc-500 dark:text-zinc-400">
+                <span className="h-2 w-2 rounded-full bg-brand-500" />
+                .swifty/config.yaml
+              </span>
+              <span className="font-mono text-[10px] text-zinc-400 dark:text-zinc-600">
+                yaml
+              </span>
+            </div>
+            <pre className="overflow-x-auto px-5 py-5 font-mono text-[12.5px] leading-[1.75]">
+              <code>
+                {YAML.map((lineItems, lineIndex) => (
+                  <div key={String(lineIndex)} className="flex min-h-[1.4em]">
+                    <span className="mr-4 w-6 shrink-0 select-none text-right text-zinc-300 dark:text-zinc-700">
+                      {lineIndex + 1}
+                    </span>
+                    <span>
+                      {lineItems.length === 0 ? (
+                        <span>&nbsp;</span>
+                      ) : (
+                        lineItems.map((token, tokenIndex) => (
+                          <span
+                            key={String(tokenIndex)}
+                            className={cn(
+                              'text-zinc-800 dark:text-zinc-200',
+                              token.tone === 'comment' &&
+                                'italic text-zinc-400 dark:text-zinc-500',
+                              token.tone === 'str' && 'text-accent-700 dark:text-accent-300',
+                              token.tone === 'num' && 'text-amber-600 dark:text-amber-300',
+                              token.tone === 'key' && 'text-brand-700 dark:text-brand-300',
+                            )}
+                          >
+                            {token.text}
+                          </span>
+                        ))
+                      )}
+                    </span>
+                  </div>
+                ))}
+              </code>
+            </pre>
+          </div>
+        </Reveal>
+      </div>
+    </Section>
+  )
+}
