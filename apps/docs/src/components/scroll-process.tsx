@@ -24,7 +24,7 @@ export function ScrollProgress() {
     <>
       <motion.div
         style={{ scaleX }}
-        className="from-brand-500 via-brand-600 to-accent-500 fixed inset-x-0 top-0 z-[60] h-0.5 origin-left bg-linear-to-r"
+        className="from-brand-500 via-brand-600 to-accent-500 fixed inset-x-0 top-0 z-60 h-0.5 origin-left bg-linear-to-r"
         aria-hidden="true"
       />
       <AnimatePresence>
@@ -38,7 +38,7 @@ export function ScrollProgress() {
             onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
             aria-label="Back to top"
             className={cn(
-              "shadow-soft hover:text-brand-600 dark:hover:text-brand-300 fixed right-6 bottom-6 z-50 grid h-11 w-11 place-items-center rounded-full border border-zinc-200/80 bg-white/85 text-zinc-700 backdrop-blur transition-colors dark:border-white/10 dark:bg-white/[0.06] dark:text-zinc-200",
+              "shadow-soft hover:text-brand-600 dark:hover:text-brand-300 fixed right-6 bottom-6 z-50 grid h-11 w-11 place-items-center rounded-full border border-zinc-200/80 bg-white/85 text-zinc-700 backdrop-blur transition-colors dark:border-white/10 dark:bg-white/6 dark:text-zinc-200",
               focusRing,
             )}
           >

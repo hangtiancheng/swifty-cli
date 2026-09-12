@@ -80,9 +80,9 @@ export function Agents() {
               <div
                 key={agent.name}
                 className={cn(
-                  "group flex items-start gap-4 rounded-2xl border p-5 transition-colors dark:bg-white/[0.02]",
+                  "group flex items-start gap-4 rounded-2xl border p-5 transition-colors dark:bg-white/2",
                   line,
-                  "hover:border-brand-500/40 hover:bg-brand-500/[0.04]",
+                  "hover:border-brand-500/40 hover:bg-brand-500/4",
                 )}
               >
                 <span className="bg-brand-500/12 text-brand-600 dark:bg-brand-400/12 dark:text-brand-300 grid h-11 w-11 shrink-0 place-items-center rounded-xl">
@@ -95,7 +95,7 @@ export function Agents() {
                     >
                       {agent.name}
                     </span>
-                    <span className="rounded-full border border-zinc-200/80 px-2 py-0.5 text-[10px] font-medium tracking-wide text-zinc-500 uppercase dark:border-white/[0.08] dark:text-zinc-400">
+                    <span className="rounded-full border border-zinc-200/80 px-2 py-0.5 text-[10px] font-medium tracking-wide text-zinc-500 uppercase dark:border-white/8 dark:text-zinc-400">
                       {agent.role}
                     </span>
                   </div>
@@ -106,7 +106,7 @@ export function Agents() {
                     {agent.tools.map((tool) => (
                       <span
                         key={tool}
-                        className="rounded-md bg-zinc-100 px-2 py-0.5 font-mono text-[10px] text-zinc-500 dark:bg-white/[0.06] dark:text-zinc-400"
+                        className="rounded-md bg-zinc-100 px-2 py-0.5 font-mono text-[10px] text-zinc-500 dark:bg-white/6 dark:text-zinc-400"
                       >
                         {tool}
                       </span>
@@ -119,12 +119,7 @@ export function Agents() {
               </div>
             ))}
 
-            <div
-              className={cn(
-                "rounded-2xl border p-5 dark:bg-white/[0.02]",
-                line,
-              )}
-            >
+            <div className={cn("rounded-2xl border p-5 dark:bg-white/2", line)}>
               <div className="flex items-center gap-3">
                 <Workflow className="text-brand-500 h-5 w-5" />
                 <h3 className={cn("text-sm font-semibold", heading)}>
@@ -178,7 +173,7 @@ export function Agents() {
                   whileInView={{ opacity: 1, x: 0 }}
                   viewport={{ once: true }}
                   transition={{ duration: 0.4, delay: index * 0.08 }}
-                  className="flex items-center gap-3 rounded-xl px-2.5 py-2.5 transition-colors hover:bg-zinc-50 dark:hover:bg-white/[0.03]"
+                  className="flex items-center gap-3 rounded-xl px-2.5 py-2.5 transition-colors hover:bg-zinc-50 dark:hover:bg-white/3"
                 >
                   <span
                     className={cn(
@@ -225,10 +220,10 @@ export function Agents() {
                       className={cn(
                         "flex items-start gap-2 rounded-lg border px-3 py-2 font-mono text-[11.5px]",
                         message.tone === "to"
-                          ? "border-brand-500/20 bg-brand-500/[0.06] text-brand-700 dark:text-brand-300"
+                          ? "border-brand-500/20 bg-brand-500/6 text-brand-700 dark:text-brand-300"
                           : cn(
                               line,
-                              "bg-zinc-50/70 text-zinc-600 dark:bg-white/[0.02] dark:text-zinc-400",
+                              "bg-zinc-50/70 text-zinc-600 dark:bg-white/2 dark:text-zinc-400",
                             ),
                       )}
                     >
@@ -250,7 +245,7 @@ export function Agents() {
 
             <div
               className={cn(
-                "flex items-center justify-between gap-3 border-t bg-zinc-50/70 px-5 py-3 text-[11px] text-zinc-400 dark:bg-white/[0.02] dark:text-zinc-500",
+                "flex items-center justify-between gap-3 border-t bg-zinc-50/70 px-5 py-3 text-[11px] text-zinc-400 dark:bg-white/2 dark:text-zinc-500",
                 line,
               )}
             >

@@ -27,7 +27,7 @@ export function Faq() {
       >
         <div className="lg:sticky lg:top-28 lg:self-start">
           <Reveal>
-            <span className="inline-flex items-center gap-2 rounded-full border border-zinc-200/80 bg-white/70 px-3 py-1 text-xs font-medium tracking-wide text-zinc-600 dark:border-white/[0.08] dark:bg-white/[0.03] dark:text-zinc-400">
+            <span className="inline-flex items-center gap-2 rounded-full border border-zinc-200/80 bg-white/70 px-3 py-1 text-xs font-medium tracking-wide text-zinc-600 dark:border-white/8 dark:bg-white/3 dark:text-zinc-400">
               FAQ
             </span>
             <h2
@@ -62,8 +62,8 @@ export function Faq() {
                   className={cn(
                     "overflow-hidden rounded-2xl border transition-colors",
                     isOpen
-                      ? "border-brand-500/30 bg-brand-500/[0.04]"
-                      : cn("bg-white dark:bg-white/[0.02]", line),
+                      ? "border-brand-500/30 bg-brand-500/4"
+                      : cn("bg-white dark:bg-white/2", line),
                   )}
                 >
                   <button
@@ -83,7 +83,7 @@ export function Faq() {
                         "grid h-7 w-7 shrink-0 place-items-center rounded-full transition-colors",
                         isOpen
                           ? "bg-brand-500 text-white"
-                          : "bg-zinc-100 text-zinc-500 dark:bg-white/[0.06] dark:text-zinc-400",
+                          : "bg-zinc-100 text-zinc-500 dark:bg-white/6 dark:text-zinc-400",
                       )}
                     >
                       {isOpen ? (

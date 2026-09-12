@@ -17,7 +17,7 @@ const GROUPS: Array<ToolItem["group"]> = [
 function Marquee({ items, reverse }: { items: string[]; reverse?: boolean }) {
   const doubled = [...items, ...items];
   return (
-    <div className="flex overflow-hidden [mask-image:linear-gradient(to_right,transparent,black_10%,black_90%,transparent)] [-webkit-mask-image:linear-gradient(to_right,transparent,black_10%,black_90%,transparent)]">
+    <div className="flex overflow-hidden mask-[linear-gradient(to_right,transparent,black_10%,black_90%,transparent)] [-webkit-mask-image:linear-gradient(to_right,transparent,black_10%,black_90%,transparent)]">
       <div
         className={cn(
           "flex w-max shrink-0 items-center gap-3 pr-3",
@@ -29,7 +29,7 @@ function Marquee({ items, reverse }: { items: string[]; reverse?: boolean }) {
         {doubled.map((name, index) => (
           <span
             key={`${name}-${String(index)}`}
-            className="inline-flex items-center gap-2 rounded-xl border border-zinc-200/80 bg-white px-3.5 py-2 font-mono text-xs text-zinc-600 dark:border-white/[0.08] dark:bg-white/[0.03] dark:text-zinc-400"
+            className="inline-flex items-center gap-2 rounded-xl border border-zinc-200/80 bg-white px-3.5 py-2 font-mono text-xs text-zinc-600 dark:border-white/8 dark:bg-white/3 dark:text-zinc-400"
           >
             <span className="bg-brand-500/70 h-1.5 w-1.5 rounded-full" />
             {name}
@@ -45,7 +45,7 @@ export function ToolsShowcase() {
   const half = Math.ceil(names.length / 2);
 
   return (
-    <Section id="tools" className="bg-zinc-50/60 dark:bg-white/[0.015]">
+    <Section id="tools" className="bg-zinc-50/60 dark:bg-white/1.5">
       <SectionHeader
         eyebrow="Toolbelt"
         title={
@@ -72,7 +72,7 @@ export function ToolsShowcase() {
           <Reveal key={group} delay={index * 0.05}>
             <div
               className={cn(
-                "h-full rounded-2xl border bg-white p-5 dark:bg-white/[0.02]",
+                "h-full rounded-2xl border bg-white p-5 dark:bg-white/2",
                 line,
               )}
             >
@@ -97,7 +97,7 @@ export function ToolsShowcase() {
       <Reveal delay={0.1} className={cn(container, "mt-14")}>
         <div
           className={cn(
-            "rounded-2xl border bg-white p-6 sm:p-8 dark:bg-white/[0.02]",
+            "rounded-2xl border bg-white p-6 sm:p-8 dark:bg-white/2",
             line,
           )}
         >

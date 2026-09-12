@@ -263,7 +263,7 @@ function TerminalPanel() {
         {/* window chrome */}
         <div
           className={cn(
-            "flex items-center gap-3 border-b bg-zinc-50/80 px-4 py-3 dark:bg-white/[0.02]",
+            "flex items-center gap-3 border-b bg-zinc-50/80 px-4 py-3 dark:bg-white/2",
             line,
           )}
         >
@@ -297,10 +297,10 @@ function TerminalPanel() {
         {/* body */}
         <div
           ref={scrollRef}
-          className="h-[21rem] overflow-hidden px-4 py-5 font-mono text-[12.5px] leading-relaxed sm:h-[23rem] sm:px-5 sm:text-[13px]"
+          className="h-84 overflow-hidden px-4 py-5 font-mono text-[12.5px] leading-relaxed sm:h-92 sm:px-5 sm:text-[13px]"
         >
           <div className="mb-4 flex items-center gap-2 text-[11px] text-zinc-400 dark:text-zinc-600">
-            <span className="inline-flex h-4 items-center rounded bg-zinc-100 px-1.5 text-zinc-500 dark:bg-white/[0.06] dark:text-zinc-400">
+            <span className="inline-flex h-4 items-center rounded bg-zinc-100 px-1.5 text-zinc-500 dark:bg-white/6 dark:text-zinc-400">
               swifty
             </span>
             <span>v0.0.28</span>
@@ -317,7 +317,7 @@ function TerminalPanel() {
             <span className="text-zinc-900 dark:text-zinc-100">
               {typing !== null ? typing : scene.prompt}
               {typing !== null ? (
-                <span className="animate-blink bg-brand-500 dark:bg-brand-400 ml-0.5 inline-block h-[1.05em] w-[7px] translate-y-[2px]" />
+                <span className="animate-blink bg-brand-500 dark:bg-brand-400 ml-0.5 inline-block h-[1.05em] w-1.75 translate-y-0.5" />
               ) : null}
             </span>
           </div>
@@ -366,7 +366,7 @@ function TerminalPanel() {
         {/* status bar */}
         <div
           className={cn(
-            "flex items-center justify-between gap-3 border-t bg-zinc-50/80 px-4 py-2.5 font-mono text-[11px] text-zinc-400 dark:bg-white/[0.02] dark:text-zinc-500",
+            "flex items-center justify-between gap-3 border-t bg-zinc-50/80 px-4 py-2.5 font-mono text-[11px] text-zinc-400 dark:bg-white/2 dark:text-zinc-500",
             line,
           )}
         >
@@ -405,7 +405,7 @@ function BrowserPanel() {
     >
       <div
         className={cn(
-          "flex items-center gap-3 border-b bg-zinc-50/80 px-4 py-3 dark:bg-white/[0.02]",
+          "flex items-center gap-3 border-b bg-zinc-50/80 px-4 py-3 dark:bg-white/2",
           line,
         )}
       >
@@ -414,12 +414,12 @@ function BrowserPanel() {
           <span className="h-3 w-3 rounded-full bg-[#febc2e]" />
           <span className="h-3 w-3 rounded-full bg-[#28c840]" />
         </div>
-        <div className="flex flex-1 items-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 font-mono text-[11px] text-zinc-400 dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-500">
+        <div className="flex flex-1 items-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 font-mono text-[11px] text-zinc-400 dark:border-white/10 dark:bg-white/3 dark:text-zinc-500">
           <span className="text-emerald-500">●</span>
           http://127.0.0.1:18888
         </div>
       </div>
-      <div className="h-[21rem] space-y-4 overflow-hidden px-6 py-6 sm:h-[23rem]">
+      <div className="h-84 space-y-4 overflow-hidden px-6 py-6 sm:h-92">
         <motion.div
           initial={{ opacity: 0, y: 12 }}
           whileInView={{ opacity: 1, y: 0 }}
@@ -499,8 +499,8 @@ function PrintPanel() {
     >
       <div
         className={cn(
-          "flex items-center gap-3 border-b bg-white/60 px-4 py-3 dark:bg-white/[0.02]",
-          "border-zinc-200 dark:border-white/[0.08]",
+          "flex items-center gap-3 border-b bg-white/60 px-4 py-3 dark:bg-white/2",
+          "border-zinc-200 dark:border-white/8",
         )}
       >
         <div className="flex items-center gap-1.5">
@@ -512,7 +512,7 @@ function PrintPanel() {
           ci — stream-json
         </div>
       </div>
-      <div className="h-[21rem] space-y-2 overflow-hidden px-5 py-5 font-mono text-[11.5px] leading-relaxed sm:h-[23rem] sm:text-[12.5px]">
+      <div className="h-84 space-y-2 overflow-hidden px-5 py-5 font-mono text-[11.5px] leading-relaxed sm:h-92 sm:text-[12.5px]">
         {PRINT_LINES.map((item, index) => (
           <motion.div
             key={item.text}
@@ -558,7 +558,7 @@ export function TerminalShowcase() {
           className={cn(
             "absolute inset-0",
             gridPattern,
-            "[mask-image:radial-gradient(ellipse_60%_50%_at_50%_50%,black,transparent)] [-webkit-mask-image:radial-gradient(ellipse_60%_50%_at_50%_50%,black,transparent)]",
+            "mask-[radial-gradient(ellipse_60%_50%_at_50%_50%,black,transparent)] [-webkit-mask-image:radial-gradient(ellipse_60%_50%_at_50%_50%,black,transparent)]",
           )}
         />
       </div>
@@ -577,7 +577,7 @@ export function TerminalShowcase() {
         <div className="mb-6 flex justify-center">
           <div
             className={cn(
-              "inline-flex items-center gap-1 rounded-full border bg-white/70 p-1 backdrop-blur dark:bg-white/[0.03]",
+              "inline-flex items-center gap-1 rounded-full border bg-white/70 p-1 backdrop-blur dark:bg-white/3",
               line,
             )}
             role="tablist"
@@ -604,7 +604,7 @@ export function TerminalShowcase() {
                   {selected ? (
                     <motion.span
                       layoutId="showcase-tab"
-                      className="absolute inset-0 rounded-full bg-zinc-100 shadow-sm dark:bg-white/[0.08]"
+                      className="absolute inset-0 rounded-full bg-zinc-100 shadow-sm dark:bg-white/8"
                       transition={{
                         type: "spring",
                         stiffness: 400,

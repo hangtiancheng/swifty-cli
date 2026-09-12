@@ -34,7 +34,7 @@ export function Install() {
     <Section id="install" className="overflow-hidden">
       <div className="pointer-events-none absolute inset-0" aria-hidden="true">
         <div className={cn("absolute inset-0", gridPattern, "opacity-60")} />
-        <div className="bg-brand-500/15 dark:bg-brand-600/20 absolute top-10 left-1/2 h-[26rem] w-[52rem] -translate-x-1/2 rounded-full blur-[130px]" />
+        <div className="bg-brand-500/15 dark:bg-brand-600/20 absolute top-10 left-1/2 h-104 w-208 -translate-x-1/2 rounded-full blur-[130px]" />
       </div>
 
       <SectionHeader
@@ -51,7 +51,7 @@ export function Install() {
         <div
           className={cn(
             "mx-auto max-w-3xl rounded-3xl p-6 sm:p-8",
-            "shadow-card border bg-white/80 backdrop-blur-xl dark:bg-white/[0.03] dark:shadow-none",
+            "shadow-card border bg-white/80 backdrop-blur-xl dark:bg-white/3 dark:shadow-none",
             line,
           )}
         >
@@ -68,7 +68,7 @@ export function Install() {
                     focusRing,
                     selected
                       ? "bg-zinc-950 text-white dark:bg-white dark:text-zinc-950"
-                      : "text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-white/[0.06] dark:hover:text-white",
+                      : "text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-white/6 dark:hover:text-white",
                   )}
                 >
                   {item.label}
@@ -109,7 +109,7 @@ export function Install() {
               <div
                 key={item.command}
                 className={cn(
-                  "rounded-xl border bg-white/70 px-4 py-3 dark:bg-white/[0.02]",
+                  "rounded-xl border bg-white/70 px-4 py-3 dark:bg-white/2",
                   line,
                 )}
               >
@@ -182,12 +182,12 @@ export function Install() {
       </Reveal>
 
       <Reveal delay={0.12} className={cn(container, "relative mt-16")}>
-        <div className="border-brand-500/15 bg-brand-50 relative overflow-hidden rounded-3xl border px-6 py-12 text-center sm:px-12 sm:py-16 dark:border-transparent dark:bg-white/[0.04]">
+        <div className="border-brand-500/15 bg-brand-50 relative overflow-hidden rounded-3xl border px-6 py-12 text-center sm:px-12 sm:py-16 dark:border-transparent dark:bg-white/4">
           <div
             className="pointer-events-none absolute inset-0"
             aria-hidden="true"
           >
-            <div className="bg-brand-500/20 dark:bg-brand-500/25 absolute -top-24 left-1/2 h-72 w-[40rem] -translate-x-1/2 rounded-full blur-[110px]" />
+            <div className="bg-brand-500/20 dark:bg-brand-500/25 absolute -top-24 left-1/2 h-72 w-160 -translate-x-1/2 rounded-full blur-[110px]" />
             <div className="bg-accent-500/15 dark:bg-accent-500/20 absolute right-0 -bottom-24 h-64 w-64 rounded-full blur-[110px]" />
           </div>
           <div className="relative">

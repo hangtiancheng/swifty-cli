@@ -45,7 +45,7 @@ export function CommandBar({
   return (
     <div
       className={cn(
-        "shadow-soft flex items-center gap-2 rounded-2xl border border-zinc-200/90 bg-white/80 p-1.5 pl-2 backdrop-blur dark:border-white/10 dark:bg-white/[0.04] dark:shadow-none",
+        "shadow-soft flex items-center gap-2 rounded-2xl border border-zinc-200/90 bg-white/80 p-1.5 pl-2 backdrop-blur dark:border-white/10 dark:bg-white/4 dark:shadow-none",
         className,
       )}
     >

@@ -33,7 +33,7 @@ export function Footer({
             </p>
             <div
               className={cn(
-                "mt-6 flex max-w-sm items-center gap-2 rounded-xl border bg-white/70 px-3 py-2 dark:bg-white/[0.02]",
+                "mt-6 flex max-w-sm items-center gap-2 rounded-xl border bg-white/70 px-3 py-2 dark:bg-white/2",
                 line,
               )}
             >
@@ -53,7 +53,7 @@ export function Footer({
                 aria-label="GitHub"
                 className={cn(ghostButton, "h-9 w-9 px-0", focusRing)}
               >
-                <GithubIcon className="h-[18px] w-[18px]" />
+                <GithubIcon className="h-4.5 w-4.5" />
               </a>
               <a
                 href={npmUrl}

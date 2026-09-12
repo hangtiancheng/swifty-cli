@@ -45,12 +45,12 @@ export function Hero({ docsUrl }: { docsUrl: string }) {
           className={cn(
             "absolute inset-0",
             gridPattern,
-            "[mask-image:radial-gradient(ellipse_65%_55%_at_50%_0%,black,transparent)] [-webkit-mask-image:radial-gradient(ellipse_65%_55%_at_50%_0%,black,transparent)]",
+            "mask-[radial-gradient(ellipse_65%_55%_at_50%_0%,black,transparent)] [-webkit-mask-image:radial-gradient(ellipse_65%_55%_at_50%_0%,black,transparent)]",
           )}
         />
-        <div className="animate-drift bg-brand-500/20 dark:bg-brand-600/25 absolute -top-52 left-1/2 h-[34rem] w-[64rem] -translate-x-1/2 rounded-full blur-[130px]" />
-        <div className="animate-floaty bg-accent-400/20 dark:bg-accent-500/15 absolute top-32 -right-40 h-[26rem] w-[26rem] rounded-full blur-[120px]" />
-        <div className="animate-floaty bg-brand-400/15 absolute top-64 -left-32 h-[22rem] w-[22rem] rounded-full blur-[120px] [animation-delay:1.5s]" />
+        <div className="animate-drift bg-brand-500/20 dark:bg-brand-600/25 absolute -top-52 left-1/2 h-136 w-5xl -translate-x-1/2 rounded-full blur-[130px]" />
+        <div className="animate-floaty bg-accent-400/20 dark:bg-accent-500/15 absolute top-32 -right-40 h-104 w-104 rounded-full blur-[120px]" />
+        <div className="animate-floaty bg-brand-400/15 absolute top-64 -left-32 h-88 w-88 rounded-full blur-[120px] [animation-delay:1.5s]" />
       </div>
 
       <motion.div
@@ -65,7 +65,7 @@ export function Hero({ docsUrl }: { docsUrl: string }) {
             target="_blank"
             rel="noreferrer"
             className={cn(
-              "group border-brand-500/20 bg-brand-500/[0.07] text-brand-700 hover:border-brand-500/40 hover:bg-brand-500/[0.12] dark:border-brand-300/20 dark:bg-brand-400/[0.09] dark:text-brand-200 inline-flex flex-wrap items-center justify-center gap-2 rounded-full border px-3.5 py-1.5 text-xs font-medium backdrop-blur transition-colors sm:text-[13px]",
+              "group border-brand-500/20 bg-brand-500/[0.07] text-brand-700 hover:border-brand-500/40 hover:bg-brand-500/12 dark:border-brand-300/20 dark:bg-brand-400/9 dark:text-brand-200 inline-flex flex-wrap items-center justify-center gap-2 rounded-full border px-3.5 py-1.5 text-xs font-medium backdrop-blur transition-colors sm:text-[13px]",
               focusRing,
             )}
           >
@@ -138,7 +138,7 @@ export function Hero({ docsUrl }: { docsUrl: string }) {
           {QUICK_COMMANDS.map((item) => (
             <li
               key={item.command}
-              className="flex items-center gap-2 rounded-full border border-zinc-200/80 bg-white/60 px-3 py-1.5 font-mono text-[11px] text-zinc-600 backdrop-blur sm:text-xs dark:border-white/[0.08] dark:bg-white/[0.03] dark:text-zinc-400"
+              className="flex items-center gap-2 rounded-full border border-zinc-200/80 bg-white/60 px-3 py-1.5 font-mono text-[11px] text-zinc-600 backdrop-blur sm:text-xs dark:border-white/8 dark:bg-white/3 dark:text-zinc-400"
             >
               <span
                 className={cn(

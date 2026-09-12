@@ -27,7 +27,7 @@ export function Workflow() {
             <Reveal key={step.step} delay={index * 0.08} className="relative">
               <div className="flex flex-col">
                 <div className="flex items-center gap-3">
-                  <span className="shadow-soft relative grid h-12 w-12 place-items-center rounded-2xl border border-zinc-200/80 bg-white dark:border-white/[0.08] dark:bg-[#0d0d13] dark:shadow-none">
+                  <span className="shadow-soft relative grid h-12 w-12 place-items-center rounded-2xl border border-zinc-200/80 bg-white dark:border-white/8 dark:bg-[#0d0d13] dark:shadow-none">
                     <step.icon className="text-brand-500 dark:text-brand-400 h-5 w-5" />
                     <span className="absolute -top-2 -right-2 grid h-6 w-6 place-items-center rounded-full bg-zinc-950 font-mono text-[10px] font-semibold text-white dark:bg-white dark:text-zinc-950">
                       {step.step}
@@ -53,7 +53,7 @@ export function Workflow() {
         <Reveal delay={0.12} className="mt-14">
           <div
             className={cn(
-              "grid grid-cols-1 gap-6 rounded-2xl border bg-zinc-50/70 p-6 sm:grid-cols-3 sm:p-8 dark:bg-white/[0.02]",
+              "grid grid-cols-1 gap-6 rounded-2xl border bg-zinc-50/70 p-6 sm:grid-cols-3 sm:p-8 dark:bg-white/2",
               line,
             )}
           >
@@ -75,7 +75,7 @@ export function Workflow() {
                 <div
                   key={item.term}
                   className={cn(
-                    "rounded-xl border bg-white px-4 py-3 dark:bg-white/[0.02]",
+                    "rounded-xl border bg-white px-4 py-3 dark:bg-white/2",
                     line,
                   )}
                 >

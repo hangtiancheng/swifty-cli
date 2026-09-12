@@ -67,7 +67,7 @@ export function Navbar({ repoUrl }: { repoUrl: string }) {
               className={cn(
                 "rounded-full px-3.5 py-2 text-sm font-medium transition-colors",
                 muted,
-                "hover:bg-zinc-100 hover:text-zinc-950 dark:hover:bg-white/[0.06] dark:hover:text-white",
+                "hover:bg-zinc-100 hover:text-zinc-950 dark:hover:bg-white/6 dark:hover:text-white",
                 focusRing,
               )}
             >
@@ -108,7 +108,7 @@ export function Navbar({ repoUrl }: { repoUrl: string }) {
             aria-label="Swifty on GitHub"
             className={cn(ghostButton, "h-9 w-9 px-0", focusRing)}
           >
-            <GithubIcon className="h-[18px] w-[18px]" />
+            <GithubIcon className="h-4.5 w-4.5" />
           </a>
 
           <a
@@ -153,7 +153,7 @@ export function Navbar({ repoUrl }: { repoUrl: string }) {
                   className={cn(
                     "rounded-xl px-3 py-2.5 text-base font-medium",
                     heading,
-                    "hover:bg-zinc-100 dark:hover:bg-white/[0.06]",
+                    "hover:bg-zinc-100 dark:hover:bg-white/6",
                   )}
                 >
                   {link.label}

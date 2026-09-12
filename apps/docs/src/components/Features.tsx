@@ -72,7 +72,7 @@ function Decor({ kind }: { kind: NonNullable<Feature["decor"]> }) {
           <span
             key={provider.protocol}
             className={cn(
-              "inline-flex items-center gap-1.5 rounded-lg border border-zinc-200/80 bg-zinc-50/60 px-2.5 py-1.5 font-mono text-[11px] text-zinc-600 dark:border-white/[0.08] dark:bg-white/[0.03] dark:text-zinc-400",
+              "inline-flex items-center gap-1.5 rounded-lg border border-zinc-200/80 bg-zinc-50/60 px-2.5 py-1.5 font-mono text-[11px] text-zinc-600 dark:border-white/8 dark:bg-white/3 dark:text-zinc-400",
             )}
           >
             <span className="bg-brand-500 h-1.5 w-1.5 rounded-full" />
@@ -101,13 +101,13 @@ function Decor({ kind }: { kind: NonNullable<Feature["decor"]> }) {
       {agentCards.map((agent) => (
         <span
           key={agent.name}
-          className="inline-flex items-center gap-1.5 rounded-full border border-zinc-200/80 bg-white px-2.5 py-1 text-[11px] font-medium text-zinc-700 dark:border-white/[0.08] dark:bg-white/[0.03] dark:text-zinc-300"
+          className="inline-flex items-center gap-1.5 rounded-full border border-zinc-200/80 bg-white px-2.5 py-1 text-[11px] font-medium text-zinc-700 dark:border-white/8 dark:bg-white/3 dark:text-zinc-300"
         >
           <agent.icon className="text-brand-500 h-3 w-3" />
           {agent.name}
         </span>
       ))}
-      <span className="inline-flex items-center gap-1.5 rounded-full border border-zinc-200/80 bg-white px-2.5 py-1 text-[11px] font-medium text-zinc-700 dark:border-white/[0.08] dark:bg-white/[0.03] dark:text-zinc-300">
+      <span className="inline-flex items-center gap-1.5 rounded-full border border-zinc-200/80 bg-white px-2.5 py-1 text-[11px] font-medium text-zinc-700 dark:border-white/8 dark:bg-white/3 dark:text-zinc-300">
         <Bot className="text-accent-500 h-3 w-3" />
         teammates
       </span>
@@ -173,7 +173,7 @@ export function Features() {
       <Reveal delay={0.1} className={cn(container, "mt-4")}>
         <div
           className={cn(
-            "flex flex-col items-start justify-between gap-4 rounded-2xl border bg-zinc-50/70 px-6 py-5 sm:flex-row sm:items-center dark:bg-white/[0.02]",
+            "flex flex-col items-start justify-between gap-4 rounded-2xl border bg-zinc-50/70 px-6 py-5 sm:flex-row sm:items-center dark:bg-white/2",
             line,
           )}
         >

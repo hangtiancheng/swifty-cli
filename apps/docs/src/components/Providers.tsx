@@ -50,7 +50,7 @@ const YAML: Array<
 
 export function Providers() {
   return (
-    <Section id="providers" className="bg-zinc-50/60 dark:bg-white/[0.015]">
+    <Section id="providers" className="bg-zinc-50/60 dark:bg-white/1.5">
       <SectionHeader
         eyebrow="Providers"
         title={
@@ -70,7 +70,7 @@ export function Providers() {
               <div
                 key={protocol.name}
                 className={cn(
-                  "flex items-start gap-4 rounded-2xl border bg-white p-5 dark:bg-white/[0.02]",
+                  "flex items-start gap-4 rounded-2xl border bg-white p-5 dark:bg-white/2",
                   line,
                 )}
               >
@@ -84,7 +84,7 @@ export function Providers() {
                     >
                       {protocol.name}
                     </span>
-                    <span className="rounded-md bg-zinc-100 px-2 py-0.5 font-mono text-[10px] text-zinc-500 dark:bg-white/[0.06] dark:text-zinc-400">
+                    <span className="rounded-md bg-zinc-100 px-2 py-0.5 font-mono text-[10px] text-zinc-500 dark:bg-white/6 dark:text-zinc-400">
                       {protocol.base}
                     </span>
                   </div>
@@ -108,7 +108,7 @@ export function Providers() {
               "border-zinc-200 dark:border-white/10 dark:bg-[#0b0b11] dark:shadow-none",
             )}
           >
-            <div className="flex items-center justify-between border-b border-zinc-200 px-5 py-3 dark:border-white/[0.08]">
+            <div className="flex items-center justify-between border-b border-zinc-200 px-5 py-3 dark:border-white/8">
               <span className="inline-flex items-center gap-2 font-mono text-[11px] text-zinc-500 dark:text-zinc-400">
                 <span className="bg-brand-500 h-2 w-2 rounded-full" />
                 .swifty/config.yaml

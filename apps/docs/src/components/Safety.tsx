@@ -152,10 +152,10 @@ export function Safety() {
                     "group relative overflow-hidden rounded-2xl border p-5 text-left transition-all duration-300",
                     focusRing,
                     selected
-                      ? "border-brand-500/40 bg-brand-500/[0.06] shadow-glow"
+                      ? "border-brand-500/40 bg-brand-500/6 shadow-glow"
                       : cn(
                           line,
-                          "bg-white hover:border-zinc-300 dark:bg-white/[0.02] dark:hover:border-white/20",
+                          "bg-white hover:border-zinc-300 dark:bg-white/2 dark:hover:border-white/20",
                         ),
                   )}
                 >
@@ -165,7 +165,7 @@ export function Safety() {
                         "grid h-10 w-10 shrink-0 place-items-center rounded-xl transition-colors",
                         selected
                           ? "bg-brand-500 text-white"
-                          : "bg-zinc-100 text-zinc-500 dark:bg-white/[0.06] dark:text-zinc-400",
+                          : "bg-zinc-100 text-zinc-500 dark:bg-white/6 dark:text-zinc-400",
                       )}
                     >
                       <Icon className="h-5 w-5" />
@@ -222,7 +222,7 @@ export function Safety() {
                   className="rounded-xl bg-white p-5 dark:bg-[#0d0d14]"
                 >
                   <div className="flex items-center justify-between gap-3">
-                    <span className="inline-flex items-center gap-2 rounded-full border border-zinc-200 bg-zinc-50 px-2.5 py-1 text-[11px] font-medium text-zinc-600 dark:border-white/10 dark:bg-white/[0.04] dark:text-zinc-300">
+                    <span className="inline-flex items-center gap-2 rounded-full border border-zinc-200 bg-zinc-50 px-2.5 py-1 text-[11px] font-medium text-zinc-600 dark:border-white/10 dark:bg-white/4 dark:text-zinc-300">
                       <span className="bg-brand-500 dark:bg-brand-400 h-1.5 w-1.5 rounded-full" />
                       {view.chip}
                     </span>
@@ -245,7 +245,7 @@ export function Safety() {
                         initial={{ opacity: 0, x: -6 }}
                         animate={{ opacity: 1, x: 0 }}
                         transition={{ duration: 0.3, delay: index * 0.06 }}
-                        className="flex items-center justify-between gap-3 rounded-lg border border-zinc-200 bg-zinc-50/60 px-3 py-2 dark:border-white/[0.06] dark:bg-white/[0.02]"
+                        className="flex items-center justify-between gap-3 rounded-lg border border-zinc-200 bg-zinc-50/60 px-3 py-2 dark:border-white/6 dark:bg-white/2"
                       >
                         <span className="text-[13px] text-zinc-600 dark:text-zinc-300">
                           {row.label}
@@ -278,7 +278,7 @@ export function Safety() {
           <Reveal key={feature.title} delay={index * 0.06}>
             <div
               className={cn(
-                "h-full rounded-2xl border p-5 dark:bg-white/[0.02]",
+                "h-full rounded-2xl border p-5 dark:bg-white/2",
                 line,
               )}
             >
@@ -297,7 +297,7 @@ export function Safety() {
       <Reveal delay={0.1} className={cn(container, "mt-4")}>
         <div
           className={cn(
-            "flex flex-wrap items-center justify-center gap-x-8 gap-y-3 rounded-2xl border bg-zinc-50/70 px-6 py-5 text-sm dark:bg-white/[0.02]",
+            "flex flex-wrap items-center justify-center gap-x-8 gap-y-3 rounded-2xl border bg-zinc-50/70 px-6 py-5 text-sm dark:bg-white/2",
             line,
           )}
         >
