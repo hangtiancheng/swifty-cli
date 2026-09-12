@@ -1,26 +1,27 @@
-import { Blocks, KeyRound, SlidersHorizontal, Terminal } from "lucide-react";
+import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { cn } from "@/lib/cn";
+import { icon } from "@/lib/icon";
+import { icons } from "@/lib/icons";
 import { container, heading, line, muted } from "@/lib/styles";
-import { Reveal } from "./ui/reveal";
 import { Section, SectionHeader } from "./ui/section";
 
 const PROTOCOLS = [
   {
-    icon: Blocks,
+    icon: icons.blocks,
     name: "anthropic",
     base: "api.anthropic.com",
     env: "ANTHROPIC_API_KEY",
     note: "Native tool use, thinking blocks and deferred tool loading.",
   },
   {
-    icon: Terminal,
+    icon: icons.terminal,
     name: "openai",
     base: "api.openai.com",
     env: "OPENAI_API_KEY",
     note: "Function calling with streaming across the Responses API.",
   },
   {
-    icon: SlidersHorizontal,
+    icon: icons.slidersHorizontal,
     name: "openai-compat",
     base: "your-gateway",
     env: "OPENAI_API_KEY",
@@ -50,7 +51,7 @@ const YAML: Array<
 
 export function Providers() {
   return (
-    <Section id="providers" className="bg-zinc-50/60 dark:bg-white/1.5">
+    <Section id="providers" className="bg-brand-50/50 dark:bg-white/1.5">
       <SectionHeader
         eyebrow="Providers"
         title={
@@ -64,18 +65,17 @@ export function Providers() {
       <div
         className={cn(container, "mt-14 grid grid-cols-1 gap-6 lg:grid-cols-2")}
       >
-        <Reveal>
+        <docs-reveal>
           <div className="flex flex-col gap-4">
             {PROTOCOLS.map((protocol) => (
               <div
-                key={protocol.name}
                 className={cn(
                   "flex items-start gap-4 rounded-2xl border bg-white p-5 dark:bg-white/2",
                   line,
                 )}
               >
                 <span className="bg-brand-500/12 text-brand-600 dark:bg-brand-400/12 dark:text-brand-300 grid h-11 w-11 shrink-0 place-items-center rounded-xl">
-                  <protocol.icon className="h-5 w-5" />
+                  {unsafeHTML(icon(protocol.icon, "h-5 w-5"))}
                 </span>
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
@@ -84,7 +84,7 @@ export function Providers() {
                     >
                       {protocol.name}
                     </span>
-                    <span className="rounded-md bg-zinc-100 px-2 py-0.5 font-mono text-[10px] text-zinc-500 dark:bg-white/6 dark:text-zinc-400">
+                    <span className="rounded-md bg-brand-500/10 px-2 py-0.5 font-mono text-[10px] text-zinc-500 dark:bg-white/6 dark:text-zinc-400">
                       {protocol.base}
                     </span>
                   </div>
@@ -92,23 +92,23 @@ export function Providers() {
                     {protocol.note}
                   </p>
                   <p className="mt-2 inline-flex items-center gap-1.5 font-mono text-[11px] text-zinc-400 dark:text-zinc-500">
-                    <KeyRound className="h-3 w-3" />
+                    {unsafeHTML(icon(icons.keyRound, "h-3 w-3"))}
                     {protocol.env}
                   </p>
                 </div>
               </div>
             ))}
           </div>
-        </Reveal>
+        </docs-reveal>
 
-        <Reveal delay={0.1}>
+        <docs-reveal delay={0.1}>
           <div
             className={cn(
-              "shadow-card overflow-hidden rounded-2xl border bg-zinc-50",
-              "border-zinc-200 dark:border-white/10 dark:bg-[#0b0b11] dark:shadow-none",
+              "shadow-card overflow-hidden rounded-2xl border bg-brand-50/70",
+              "border-brand-950/10 dark:border-white/10 dark:bg-[#0c0f0a] dark:shadow-none",
             )}
           >
-            <div className="flex items-center justify-between border-b border-zinc-200 px-5 py-3 dark:border-white/8">
+            <div className="flex items-center justify-between border-b border-brand-950/10 px-5 py-3 dark:border-white/8">
               <span className="inline-flex items-center gap-2 font-mono text-[11px] text-zinc-500 dark:text-zinc-400">
                 <span className="bg-brand-500 h-2 w-2 rounded-full" />
                 .swifty/config.yaml
@@ -120,7 +120,7 @@ export function Providers() {
             <pre className="overflow-x-auto px-5 py-5 font-mono text-[12.5px] leading-[1.75]">
               <code>
                 {YAML.map((lineItems, lineIndex) => (
-                  <div key={String(lineIndex)} className="flex min-h-[1.4em]">
+                  <div className="flex min-h-[1.4em]">
                     <span className="mr-4 w-6 shrink-0 text-right text-zinc-300 select-none dark:text-zinc-700">
                       {lineIndex + 1}
                     </span>
@@ -128,9 +128,8 @@ export function Providers() {
                       {lineItems.length === 0 ? (
                         <span>&nbsp;</span>
                       ) : (
-                        lineItems.map((token, tokenIndex) => (
+                        lineItems.map((token) => (
                           <span
-                            key={String(tokenIndex)}
                             className={cn(
                               "text-zinc-800 dark:text-zinc-200",
                               token.tone === "comment" &&
@@ -153,7 +152,7 @@ export function Providers() {
               </code>
             </pre>
           </div>
-        </Reveal>
+        </docs-reveal>
       </div>
     </Section>
   );

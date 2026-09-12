@@ -1,30 +1,46 @@
-import { motion } from "motion/react";
-import type { ReactNode } from "react";
+import { LitElement, customElement, html, property } from "@swifty.js/lit-jsx";
+import { animate } from "motion";
+import { EASE, onceInView } from "@/lib/motion";
 
-const EASE = [0.22, 1, 0.36, 1] as const;
+@customElement("docs-reveal")
+export class RevealElement extends LitElement {
+  @property({ type: Number }) delay = 0;
+  @property({ type: Number }) distance = 22;
 
-export function Reveal({
-  children,
-  delay = 0,
-  y = 22,
-  className,
-}: {
-  children: ReactNode;
-  delay?: number;
-  y?: number;
-  className?: string;
-}) {
-  return (
-    <motion.div
-      className={className}
-      initial={{ opacity: 0, y }}
-      whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: true, margin: "-70px" }}
-      transition={{ duration: 0.65, delay, ease: EASE }}
-    >
-      {children}
-    </motion.div>
-  );
+  private stopReveal?: () => void;
+
+  override connectedCallback() {
+    super.connectedCallback();
+    this.style.opacity = "0";
+    this.style.transform = `translateY(${this.distance}px)`;
+  }
+
+  override firstUpdated() {
+    this.stopReveal = onceInView(
+      this,
+      () => {
+        animate(
+          this,
+          { opacity: [0, 1], y: [this.distance, 0] },
+          { duration: 0.65, delay: this.delay, ease: EASE },
+        );
+      },
+      "-70px",
+    );
+  }
+
+  override disconnectedCallback() {
+    super.disconnectedCallback();
+    this.stopReveal?.();
+  }
+
+  override render() {
+    return html`<slot></slot>`;
+  }
 }
 
-export { EASE };
+declare global {
+  interface HTMLElementTagNameMap {
+    "docs-reveal": RevealElement;
+  }
+}

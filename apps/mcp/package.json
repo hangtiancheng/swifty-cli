@@ -28,14 +28,14 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "@ai-sdk/openai-compatible": "^3.0.47",
+    "@ai-sdk/openai-compatible": "^3.0.48",
     "@koa/bodyparser": "^6.1.0",
     "@koa/router": "^15.7.0",
-    "@langchain/core": "^1.2.10",
+    "@langchain/core": "^1.2.11",
     "@langchain/textsplitters": "^1.0.1",
     "@modelcontextprotocol/ext-apps": "^1.7.5",
     "@modelcontextprotocol/sdk": "^1.30.0",
-    "ai": "^7.0.97",
+    "ai": "^7.0.99",
     "koa": "^3.2.1",
     "pino": "^10.3.1",
     "redis": "^6.2.1",

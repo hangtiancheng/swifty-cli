@@ -1,36 +1,80 @@
-import { Check, Copy } from "lucide-react";
+import { LitElement, customElement, property, state } from "@swifty.js/lit-jsx";
+import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { cn } from "@/lib/cn";
-import { useCopy } from "@/hooks/use-copy";
+import { icon } from "@/lib/icon";
+import { icons } from "@/lib/icons";
 import { focusRing } from "@/lib/styles";
 
-export function CopyButton({
-  value,
-  className,
-  label = "Copy",
-}: {
-  value: string;
-  className?: string;
-  label?: string;
-}) {
-  const { copied, copy } = useCopy();
-  return (
-    <button
-      type="button"
-      onClick={() => void copy(value)}
-      aria-label={copied ? "Copied" : label}
-      className={cn(
-        "group inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-white/10 dark:hover:text-white",
-        focusRing,
-        className,
-      )}
-    >
-      {copied ? (
-        <Check className="h-4 w-4 text-emerald-500" />
-      ) : (
-        <Copy className="h-4 w-4 transition-transform group-hover:scale-105" />
-      )}
-    </button>
-  );
+@customElement("docs-copy-button")
+export class CopyButtonElement extends LitElement {
+  @property() value = "";
+  @property() label = "Copy";
+  @property() buttonClass?: string;
+  @state() private copied = false;
+
+  private timer: number | null = null;
+
+  override createRenderRoot() {
+    return this;
+  }
+
+  override disconnectedCallback() {
+    super.disconnectedCallback();
+    if (this.timer !== null) window.clearTimeout(this.timer);
+  }
+
+  private async copy() {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(this.value);
+      } else {
+        const el = document.createElement("textarea");
+        el.value = this.value;
+        el.style.position = "fixed";
+        el.style.opacity = "0";
+        document.body.appendChild(el);
+        el.select();
+        // TODO: Avoid using this feature in new projects. The execCommand() method is "not implemented consistently or fully by user agents, and it is not expected that this will change in the foreseeable future." This feature may be a candidate for removal from web standards or browsers.
+        // Consider using the following features instead: Async clipboard或contenteditable.
+        document.execCommand("copy");
+        document.body.removeChild(el);
+      }
+      this.copied = true;
+      if (this.timer !== null) window.clearTimeout(this.timer);
+      this.timer = window.setTimeout(() => {
+        this.copied = false;
+      }, 1900);
+    } catch {
+      /* clipboard unavailable */
+    }
+  }
+
+  override render() {
+    return (
+      <button
+        type="button"
+        onClick={() => void this.copy()}
+        aria-label={this.copied ? "Copied" : this.label}
+        className={cn(
+          "group inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-brand-500/10 hover:text-brand-950 dark:text-zinc-400 dark:hover:bg-white/10 dark:hover:text-white",
+          focusRing,
+          this.buttonClass,
+        )}
+      >
+        {this.copied
+          ? unsafeHTML(icon(icons.check, "h-4 w-4 text-emerald-500"))
+          : unsafeHTML(
+              icon(icons.copy, "h-4 w-4 transition-transform group-hover:scale-105"),
+            )}
+      </button>
+    );
+  }
+}
+
+declare global {
+  interface HTMLElementTagNameMap {
+    "docs-copy-button": CopyButtonElement;
+  }
 }
 
 export function CommandBar({
@@ -45,19 +89,19 @@ export function CommandBar({
   return (
     <div
       className={cn(
-        "shadow-soft flex items-center gap-2 rounded-2xl border border-zinc-200/90 bg-white/80 p-1.5 pl-2 backdrop-blur dark:border-white/10 dark:bg-white/4 dark:shadow-none",
+        "shadow-soft flex items-center gap-2 rounded-2xl border border-brand-950/10 bg-white/85 p-1.5 pl-2 backdrop-blur dark:border-white/10 dark:bg-white/4 dark:shadow-none",
         className,
       )}
     >
       {leading ? (
-        <span className="hidden shrink-0 items-center rounded-xl bg-zinc-950 px-3.5 py-2 text-xs font-semibold text-white sm:inline-flex dark:bg-white dark:text-zinc-950">
+        <span className="hidden shrink-0 items-center rounded-xl bg-brand-700 px-3.5 py-2 text-xs font-semibold text-white sm:inline-flex dark:bg-brand-300 dark:text-brand-950">
           {leading}
         </span>
       ) : null}
       <code className="flex-1 truncate px-1 font-mono text-[13px] text-zinc-700 dark:text-zinc-300">
         {command}
       </code>
-      <CopyButton value={command} />
+      <docs-copy-button value={command} />
     </div>
   );
 }

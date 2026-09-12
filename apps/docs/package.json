@@ -7,26 +7,21 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "format": "prettier -w ./ --experimental-cli",
-    "lint": "oxlint",
     "preview": "vite preview"
   },
   "dependencies": {
-    "lucide-react": "^1.45.0",
-    "motion": "^13.2.0",
-    "react": "^19.2.8",
-    "react-dom": "^19.2.8"
+    "@swifty.js/lit-jsx": "^0.0.4",
+    "lit": "^3.3.3",
+    "lucide-static": "^1.45.0",
+    "motion": "^13.2.0"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",
-    "@types/node": "^24.13.3",
-    "@types/react": "^19.2.18",
-    "@types/react-dom": "^19.2.7",
-    "@vitejs/plugin-react": "^6.1.1",
-    "oxlint": "^1.81.0",
+    "@types/node": "^24.13.4",
     "prettier": "^3.9.6",
     "prettier-plugin-tailwindcss": "^0.8.1",
     "tailwindcss": "^4.3.3",
-    "typescript": "~6.0.2",
+    "typescript": "~6.0.3",
     "vite": "^8.3.0"
   }
 }

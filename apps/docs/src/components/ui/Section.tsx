@@ -1,4 +1,3 @@
-import type { ReactNode } from "react";
 import { cn } from "@/lib/cn";
 import {
   container,
@@ -6,7 +5,7 @@ import {
   heading,
   muted,
 } from "@/lib/styles";
-import { Reveal } from "./reveal";
+import "./reveal";
 
 export function Section({
   id,
@@ -14,11 +13,11 @@ export function Section({
   className,
 }: {
   id?: string;
-  children: ReactNode;
+  children?: unknown;
   className?: string;
 }) {
   return (
-    <section id={id} className={cn("relative py-20 sm:py-28", className)}>
+    <section id={id} className={cn("relative py-16 sm:py-24", className)}>
       {children}
     </section>
   );
@@ -31,8 +30,8 @@ export function SectionHeader({
   align = "center",
 }: {
   eyebrow?: string;
-  title: ReactNode;
-  description?: ReactNode;
+  title?: unknown;
+  description?: unknown;
   align?: "center" | "left";
 }) {
   return (
@@ -44,11 +43,11 @@ export function SectionHeader({
     >
       <div className={cn("max-w-3xl", align === "center" && "mx-auto")}>
         {eyebrow ? (
-          <Reveal>
+          <docs-reveal>
             <span className={eyebrowClass}>{eyebrow}</span>
-          </Reveal>
+          </docs-reveal>
         ) : null}
-        <Reveal delay={0.05}>
+        <docs-reveal delay={0.05}>
           <h2
             className={cn(
               "mt-5 text-3xl font-semibold tracking-[-0.03em] text-balance sm:text-4xl md:text-[2.6rem] md:leading-[1.1]",
@@ -57,9 +56,9 @@ export function SectionHeader({
           >
             {title}
           </h2>
-        </Reveal>
+        </docs-reveal>
         {description ? (
-          <Reveal delay={0.1}>
+          <docs-reveal delay={0.1}>
             <p
               className={cn(
                 "mt-5 text-base leading-relaxed text-pretty sm:text-lg",
@@ -68,7 +67,7 @@ export function SectionHeader({
             >
               {description}
             </p>
-          </Reveal>
+          </docs-reveal>
         ) : null}
       </div>
     </div>

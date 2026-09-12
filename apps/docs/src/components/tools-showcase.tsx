@@ -1,9 +1,10 @@
-import { Command } from "lucide-react";
+import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { cn } from "@/lib/cn";
 import { slashCommands, tools } from "@/lib/content";
 import type { ToolItem } from "@/lib/content";
+import { icon } from "@/lib/icon";
+import { icons } from "@/lib/icons";
 import { chip, container, heading, line, muted } from "@/lib/styles";
-import { Reveal } from "./ui/reveal";
 import { Section, SectionHeader } from "./ui/section";
 
 const GROUPS: Array<ToolItem["group"]> = [
@@ -26,11 +27,8 @@ function Marquee({ items, reverse }: { items: string[]; reverse?: boolean }) {
             : "animate-marquee",
         )}
       >
-        {doubled.map((name, index) => (
-          <span
-            key={`${name}-${String(index)}`}
-            className="inline-flex items-center gap-2 rounded-xl border border-zinc-200/80 bg-white px-3.5 py-2 font-mono text-xs text-zinc-600 dark:border-white/8 dark:bg-white/3 dark:text-zinc-400"
-          >
+        {doubled.map((name) => (
+          <span className="inline-flex items-center gap-2 rounded-xl border border-brand-950/8 bg-white px-3.5 py-2 font-mono text-xs text-zinc-600 dark:border-white/8 dark:bg-white/3 dark:text-zinc-400">
             <span className="bg-brand-500/70 h-1.5 w-1.5 rounded-full" />
             {name}
           </span>
@@ -45,7 +43,7 @@ export function ToolsShowcase() {
   const half = Math.ceil(names.length / 2);
 
   return (
-    <Section id="tools" className="bg-zinc-50/60 dark:bg-white/1.5">
+    <Section id="tools" className="bg-brand-50/50 dark:bg-white/1.5">
       <SectionHeader
         eyebrow="Toolbelt"
         title={
@@ -57,10 +55,10 @@ export function ToolsShowcase() {
         description="Read and write files, run shells, search the tree, spawn teammates and call MCP servers — each one permission-checked before it runs."
       />
 
-      <Reveal delay={0.08} className="mt-12 space-y-3">
+      <docs-reveal delay={0.08} className="mt-12 space-y-3">
         <Marquee items={names.slice(0, half)} />
         <Marquee items={names.slice(half)} reverse />
-      </Reveal>
+      </docs-reveal>
 
       <div
         className={cn(
@@ -69,7 +67,7 @@ export function ToolsShowcase() {
         )}
       >
         {GROUPS.map((group, index) => (
-          <Reveal key={group} delay={index * 0.05}>
+          <docs-reveal delay={index * 0.05}>
             <div
               className={cn(
                 "h-full rounded-2xl border bg-white p-5 dark:bg-white/2",
@@ -81,8 +79,13 @@ export function ToolsShowcase() {
                 {tools
                   .filter((tool) => tool.group === group)
                   .map((tool) => (
-                    <li key={tool.name} className="flex items-center gap-2">
-                      <tool.icon className="text-brand-500 dark:text-brand-400 h-3.5 w-3.5 shrink-0" />
+                    <li className="flex items-center gap-2">
+                      {unsafeHTML(
+                        icon(
+                          tool.icon,
+                          "text-brand-500 dark:text-brand-400 h-3.5 w-3.5 shrink-0",
+                        ),
+                      )}
                       <span className="font-mono text-xs text-zinc-600 dark:text-zinc-400">
                         {tool.name}
                       </span>
@@ -90,11 +93,11 @@ export function ToolsShowcase() {
                   ))}
               </ul>
             </div>
-          </Reveal>
+          </docs-reveal>
         ))}
       </div>
 
-      <Reveal delay={0.1} className={cn(container, "mt-14")}>
+      <docs-reveal delay={0.1} className={cn(container, "mt-14")}>
         <div
           className={cn(
             "rounded-2xl border bg-white p-6 sm:p-8 dark:bg-white/2",
@@ -103,7 +106,7 @@ export function ToolsShowcase() {
         >
           <div className="flex items-center gap-3">
             <span className="bg-brand-500/12 text-brand-600 dark:bg-brand-400/12 dark:text-brand-300 grid h-10 w-10 place-items-center rounded-xl">
-              <Command className="h-5 w-5" />
+              {unsafeHTML(icon(icons.command, "h-5 w-5"))}
             </span>
             <div>
               <h3 className={cn("text-base font-semibold", heading)}>
@@ -116,13 +119,11 @@ export function ToolsShowcase() {
           </div>
           <div className="mt-5 flex flex-wrap gap-2">
             {slashCommands.map((command) => (
-              <span key={command} className={cn(chip, "text-[11px]")}>
-                {command}
-              </span>
+              <span className={cn(chip, "text-[11px]")}>{command}</span>
             ))}
           </div>
         </div>
-      </Reveal>
+      </docs-reveal>
     </Section>
   );
 }

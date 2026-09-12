@@ -15,11 +15,15 @@
     "moduleDetection": "force",
     "noEmit": true,
     "jsx": "react-jsx",
+    "jsxImportSource": "@swifty.js/lit-jsx",
+
+    /* Lit requires legacy class-field semantics */
+    "experimentalDecorators": true,
+    "useDefineForClassFields": false,
 
     /* Linting */
     "noUnusedLocals": true,
     "noUnusedParameters": true,
-    "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true,
 
     "paths": {

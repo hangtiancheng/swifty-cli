@@ -1,10 +1,18 @@
-import { ArrowUpRight } from "lucide-react";
+import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { cn } from "@/lib/cn";
 import { INSTALL_METHODS, footerColumns } from "@/lib/content";
-import { container, ghostButton, heading, line, focusRing } from "@/lib/styles";
-import { CopyButton } from "./ui/command-box";
+import { icon } from "@/lib/icon";
+import { icons } from "@/lib/icons";
+import {
+  container,
+  focusRing,
+  ghostButton,
+  heading,
+  line,
+} from "@/lib/styles";
 import { GithubIcon } from "./ui/github-icon";
 import { Logo } from "./ui/logo";
+import "./ui/command-box";
 
 export function Footer({
   repoUrl,
@@ -43,7 +51,7 @@ export function Footer({
               <code className="min-w-0 flex-1 truncate font-mono text-[11px] text-zinc-500 dark:text-zinc-400">
                 {install}
               </code>
-              <CopyButton value={install} className="h-7 w-7" />
+              <docs-copy-button value={install} buttonClass="h-7 w-7" />
             </div>
             <div className="mt-5 flex items-center gap-2">
               <a
@@ -72,7 +80,7 @@ export function Footer({
           </div>
 
           {footerColumns.map((column) => (
-            <div key={column.title}>
+            <div>
               <h3
                 className={cn(
                   "text-xs font-semibold tracking-[0.14em] uppercase",
@@ -83,7 +91,7 @@ export function Footer({
               </h3>
               <ul className="mt-4 space-y-2.5">
                 {column.links.map((link) => (
-                  <li key={link.label}>
+                  <li>
                     <a
                       href={link.href}
                       target={
@@ -92,11 +100,15 @@ export function Footer({
                       rel={
                         link.href.startsWith("http") ? "noreferrer" : undefined
                       }
-                      className="group inline-flex items-center gap-1 text-sm text-zinc-500 transition-colors hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-white"
+                      className="group inline-flex items-center gap-1 text-sm text-zinc-500 transition-colors hover:text-brand-800 dark:text-zinc-400 dark:hover:text-white"
                     >
                       {link.label}
                       {link.href.startsWith("http") ? (
-                        <ArrowUpRight className="h-3 w-3 opacity-0 transition-opacity group-hover:opacity-100" />
+                        <span className="opacity-0 transition-opacity group-hover:opacity-100">
+                          {unsafeHTML(
+                            icon(icons.arrowUpRight, "h-3 w-3"),
+                          )}
+                        </span>
                       ) : null}
                     </a>
                   </li>

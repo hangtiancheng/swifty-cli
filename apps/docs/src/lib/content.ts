@@ -1,25 +1,4 @@
-import {
-  Blocks,
-  BrainCircuit,
-  Cable,
-  Command,
-  FileCode,
-  FolderTree,
-  HardDrive,
-  ListTree,
-  Lock,
-  Network,
-  Plug,
-  ScrollText,
-  Search,
-  Server,
-  ShieldCheck,
-  Sparkles,
-  Terminal,
-  Wrench,
-  Zap,
-} from "lucide-react";
-import type { LucideIcon } from "lucide-react";
+import { icons } from "./icons";
 
 export const REPO_URL = "https://github.com/hangtiancheng/swifty-code";
 export const NPM_URL = "https://www.npmjs.com/package/@swifty.js/swifty";
@@ -79,7 +58,7 @@ export const stats: Stat[] = [
 ];
 
 export interface Feature {
-  icon: LucideIcon;
+  icon: string;
   title: string;
   description: string;
   span?: "wide" | "tall" | "normal";
@@ -89,7 +68,7 @@ export interface Feature {
 
 export const features: Feature[] = [
   {
-    icon: Blocks,
+    icon: icons.blocks,
     title: "Multi-provider by design",
     description:
       "Anthropic, OpenAI, or any OpenAI-compatible endpoint. Switch providers per project with a YAML config — API keys resolve from the environment automatically.",
@@ -98,21 +77,21 @@ export const features: Feature[] = [
     decor: "providers",
   },
   {
-    icon: Terminal,
+    icon: icons.terminal,
     title: "A terminal UI that keeps up",
     description:
       "Streaming text, thinking indicators and live tool output rendered with React + Ink. Paste images, collapse long pastes, and cycle modes with a keystroke.",
     accent: "accent",
   },
   {
-    icon: Wrench,
+    icon: icons.wrench,
     title: "A real toolbelt",
     description:
       "Read, write and edit files, run Bash or PowerShell, glob and grep the tree, search deferred tools and call MCP servers.",
     accent: "neutral",
   },
   {
-    icon: ShieldCheck,
+    icon: icons.shieldCheck,
     title: "Safety you can tune",
     description:
       "Four permission modes, glob-based allow/deny rules, and OS-level sandboxing via seatbelt on macOS and bwrap on Linux.",
@@ -121,28 +100,28 @@ export const features: Feature[] = [
     decor: "safety",
   },
   {
-    icon: BrainCircuit,
+    icon: icons.brainCircuit,
     title: "Memory that compounds",
     description:
       "Long-term memory is extracted in the background and recalled across sessions, so Swifty remembers how your codebase works.",
     accent: "accent",
   },
   {
-    icon: HardDrive,
+    icon: icons.hardDrive,
     title: "Sessions & compaction",
     description:
       "JSONL session logs resume exactly where you left off, while automatic compaction keeps long conversations inside the window.",
     accent: "neutral",
   },
   {
-    icon: Command,
+    icon: icons.command,
     title: "Skills & slash commands",
     description:
       "A skill catalog with hot-reload, inline and fork execution, plus user-defined slash commands from .swifty/commands.",
     accent: "brand",
   },
   {
-    icon: Network,
+    icon: icons.network,
     title: "Multi-agent workflows",
     description:
       "Spawn subagents, coordinate teams over file mailboxes, and isolate parallel work in git worktrees.",
@@ -151,7 +130,7 @@ export const features: Feature[] = [
     decor: "agents",
   },
   {
-    icon: Cable,
+    icon: icons.cable,
     title: "MCP, three ways",
     description:
       "Eager, native deferred loading, or dispatch — chosen automatically so a fleet of MCP tools never blows up your context cache.",
@@ -161,29 +140,29 @@ export const features: Feature[] = [
 
 export interface ToolItem {
   name: string;
-  icon: LucideIcon;
+  icon: string;
   group: "Files" | "Shell" | "Search" | "Orchestrate" | "Integrate";
 }
 
 export const tools: ToolItem[] = [
-  { name: "ReadFile", icon: FileCode, group: "Files" },
-  { name: "WriteFile", icon: FileCode, group: "Files" },
-  { name: "EditFile", icon: FileCode, group: "Files" },
-  { name: "Bash", icon: Terminal, group: "Shell" },
-  { name: "PowerShell", icon: Terminal, group: "Shell" },
-  { name: "Glob", icon: FolderTree, group: "Search" },
-  { name: "Grep", icon: Search, group: "Search" },
-  { name: "ToolSearch", icon: Search, group: "Search" },
-  { name: "McpCall", icon: Plug, group: "Integrate" },
-  { name: "AskUserQuestion", icon: Sparkles, group: "Integrate" },
-  { name: "EnterWorktree", icon: Network, group: "Orchestrate" },
-  { name: "ExitWorktree", icon: Network, group: "Orchestrate" },
-  { name: "ExitPlanMode", icon: ListTree, group: "Orchestrate" },
-  { name: "TaskCreate", icon: ScrollText, group: "Orchestrate" },
-  { name: "TaskUpdate", icon: ScrollText, group: "Orchestrate" },
-  { name: "SpawnTeammate", icon: Network, group: "Orchestrate" },
-  { name: "SendMessage", icon: Server, group: "Orchestrate" },
-  { name: "InstallSkill", icon: Sparkles, group: "Integrate" },
+  { name: "ReadFile", icon: icons.fileCode, group: "Files" },
+  { name: "WriteFile", icon: icons.fileCode, group: "Files" },
+  { name: "EditFile", icon: icons.fileCode, group: "Files" },
+  { name: "Bash", icon: icons.terminal, group: "Shell" },
+  { name: "PowerShell", icon: icons.terminal, group: "Shell" },
+  { name: "Glob", icon: icons.folderTree, group: "Search" },
+  { name: "Grep", icon: icons.search, group: "Search" },
+  { name: "ToolSearch", icon: icons.search, group: "Search" },
+  { name: "McpCall", icon: icons.plug, group: "Integrate" },
+  { name: "AskUserQuestion", icon: icons.sparkles, group: "Integrate" },
+  { name: "EnterWorktree", icon: icons.network, group: "Orchestrate" },
+  { name: "ExitWorktree", icon: icons.network, group: "Orchestrate" },
+  { name: "ExitPlanMode", icon: icons.listTree, group: "Orchestrate" },
+  { name: "TaskCreate", icon: icons.scrollText, group: "Orchestrate" },
+  { name: "TaskUpdate", icon: icons.scrollText, group: "Orchestrate" },
+  { name: "SpawnTeammate", icon: icons.network, group: "Orchestrate" },
+  { name: "SendMessage", icon: icons.server, group: "Orchestrate" },
+  { name: "InstallSkill", icon: icons.sparkles, group: "Integrate" },
 ];
 
 export interface PermissionMode {
@@ -191,7 +170,7 @@ export interface PermissionMode {
   mode: string;
   description: string;
   detail: string;
-  icon: LucideIcon;
+  icon: string;
 }
 
 export const permissionModes: PermissionMode[] = [
@@ -200,28 +179,28 @@ export const permissionModes: PermissionMode[] = [
     mode: "default",
     description: "Reads run freely. Writes and commands ask first.",
     detail: "The safe baseline for everyday work.",
-    icon: Lock,
+    icon: icons.lock,
   },
   {
     name: "acceptEdits",
     mode: "acceptEdits",
     description: "File edits are accepted, commands still ask.",
     detail: "Move fast on refactors you already trust.",
-    icon: Wrench,
+    icon: icons.wrench,
   },
   {
     name: "plan",
     mode: "plan",
     description: "Read-only investigation. No writes at all.",
     detail: "Explore, then approve the plan before anything changes.",
-    icon: ListTree,
+    icon: icons.listTree,
   },
   {
     name: "bypassPermissions",
     mode: "bypassPermissions",
     description: "No prompts. Full autonomy.",
     detail: "For sandboxes, CI and disposable worktrees.",
-    icon: Zap,
+    icon: icons.zap,
   },
 ];
 
@@ -248,7 +227,7 @@ export interface WorkflowStep {
   step: string;
   title: string;
   description: string;
-  icon: LucideIcon;
+  icon: string;
 }
 
 export const workflowSteps: WorkflowStep[] = [
@@ -257,28 +236,28 @@ export const workflowSteps: WorkflowStep[] = [
     title: "Connect a provider",
     description:
       "Run /login or drop a config.yaml. Anthropic, OpenAI and OpenAI-compatible endpoints all work out of the box.",
-    icon: Plug,
+    icon: icons.plug,
   },
   {
     step: "02",
     title: "Describe the task",
     description:
       "Ask in plain language. Swifty plans, streams its reasoning and reaches for the right tools on its own.",
-    icon: Sparkles,
+    icon: icons.sparkles,
   },
   {
     step: "03",
     title: "Approve the risky bits",
     description:
       "Every write and command surfaces as a reviewable prompt — with allow-always rules when you want them out of the way.",
-    icon: ShieldCheck,
+    icon: icons.shieldCheck,
   },
   {
     step: "04",
     title: "Ship and rewind",
     description:
       "Snapshots and checkpoints let you undo a turn, fork the conversation, or hand the work to a teammate agent.",
-    icon: Zap,
+    icon: icons.zap,
   },
 ];
 
@@ -286,7 +265,7 @@ export interface AgentCard {
   name: string;
   role: string;
   description: string;
-  icon: LucideIcon;
+  icon: string;
   tools: string[];
 }
 
@@ -296,7 +275,7 @@ export const agentCards: AgentCard[] = [
     role: "Executor",
     description:
       "Researches complex questions, explores the codebase and runs multi-step tasks.",
-    icon: Zap,
+    icon: icons.zap,
     tools: ["all tools", "full context"],
   },
   {
@@ -304,7 +283,7 @@ export const agentCards: AgentCard[] = [
     role: "Architect",
     description:
       "Read-only planning. Understands requirements and designs the solution before code.",
-    icon: ListTree,
+    icon: icons.listTree,
     tools: ["read-only", "no writes"],
   },
   {
@@ -312,7 +291,7 @@ export const agentCards: AgentCard[] = [
     role: "Scout",
     description:
       "Fast code exploration with parallel Glob, Grep and ReadFile calls.",
-    icon: Search,
+    icon: icons.search,
     tools: ["read-only", "parallel"],
   },
 ];

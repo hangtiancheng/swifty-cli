@@ -1,51 +1,103 @@
-import { useEffect, useState } from "react";
-import { AnimatePresence, motion, useScroll, useSpring } from "motion/react";
-import { ArrowUp } from "lucide-react";
+import { LitElement, customElement, state } from "@swifty.js/lit-jsx";
+import { unsafeHTML } from "lit/directives/unsafe-html.js";
+import { scrollInfo, springValue } from "motion";
 import { cn } from "@/lib/cn";
+import { icon } from "@/lib/icon";
+import { icons } from "@/lib/icons";
+import { animateIn, animateOut } from "@/lib/motion";
 import { focusRing } from "@/lib/styles";
 
-export function ScrollProgress() {
-  const { scrollYProgress } = useScroll();
-  const scaleX = useSpring(scrollYProgress, {
-    stiffness: 140,
-    damping: 24,
-    mass: 0.3,
-  });
-  const [visible, setVisible] = useState(false);
+@customElement("docs-scroll-progress")
+export class ScrollProgressElement extends LitElement {
+  @state() private button: "hidden" | "entering" | "shown" | "leaving" =
+    "hidden";
 
-  useEffect(() => {
-    const onScroll = () => setVisible(window.scrollY > 800);
-    onScroll();
-    window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
-  }, []);
+  private stopScroll?: () => void;
 
-  return (
-    <>
-      <motion.div
-        style={{ scaleX }}
-        className="from-brand-500 via-brand-600 to-accent-500 fixed inset-x-0 top-0 z-60 h-0.5 origin-left bg-linear-to-r"
-        aria-hidden="true"
-      />
-      <AnimatePresence>
-        {visible ? (
-          <motion.button
+  override createRenderRoot() {
+    return this;
+  }
+
+  override connectedCallback() {
+    super.connectedCallback();
+    const progress = springValue<number>(0, {
+      stiffness: 140,
+      damping: 24,
+      mass: 0.3,
+    });
+    progress.on("change", (value) => {
+      const bar = this.querySelector<HTMLElement>("[data-progress-bar]");
+      if (bar) bar.style.transform = `scaleX(${value})`;
+    });
+    this.stopScroll = scrollInfo(({ y }) => {
+      progress.set(y.progress);
+      const shouldShow = window.scrollY > 800;
+      if (shouldShow && this.button === "hidden") void this.showButton();
+      if (!shouldShow && this.button === "shown") void this.hideButton();
+    });
+  }
+
+  override disconnectedCallback() {
+    super.disconnectedCallback();
+    this.stopScroll?.();
+  }
+
+  private async showButton() {
+    this.button = "entering";
+    await this.updateComplete;
+    const el = this.querySelector<HTMLElement>("[data-back-top]");
+    if (el) {
+      animateIn(
+        el,
+        { opacity: [0, 1], y: [12, 0], scale: [0.9, 1] },
+        { duration: 0.22 },
+      );
+    }
+    this.button = "shown";
+  }
+
+  private async hideButton() {
+    this.button = "leaving";
+    const el = this.querySelector<HTMLElement>("[data-back-top]");
+    if (el) {
+      await animateOut(
+        el,
+        { opacity: 0, y: 12, scale: 0.9 },
+        { duration: 0.22 },
+      );
+    }
+    if (this.button === "leaving") this.button = "hidden";
+  }
+
+  override render() {
+    return (
+      <>
+        <div
+          data-progress-bar
+          className="from-brand-500 via-brand-600 to-accent-500 fixed inset-x-0 top-0 z-60 h-0.5 origin-left scale-x-0 bg-linear-to-r"
+          aria-hidden="true"
+        />
+        {this.button !== "hidden" ? (
+          <button
+            data-back-top
             type="button"
-            initial={{ opacity: 0, y: 12, scale: 0.9 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 12, scale: 0.9 }}
-            transition={{ duration: 0.22 }}
             onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
             aria-label="Back to top"
             className={cn(
-              "shadow-soft hover:text-brand-600 dark:hover:text-brand-300 fixed right-6 bottom-6 z-50 grid h-11 w-11 place-items-center rounded-full border border-zinc-200/80 bg-white/85 text-zinc-700 backdrop-blur transition-colors dark:border-white/10 dark:bg-white/6 dark:text-zinc-200",
+              "shadow-soft hover:text-brand-600 dark:hover:text-brand-300 fixed right-4 bottom-4 z-50 grid h-11 w-11 place-items-center rounded-full border border-brand-950/8 bg-white/85 text-zinc-700 opacity-0 backdrop-blur transition-colors sm:right-6 sm:bottom-6 dark:border-white/10 dark:bg-white/6 dark:text-zinc-200",
               focusRing,
             )}
           >
-            <ArrowUp className="h-4 w-4" />
-          </motion.button>
+            {unsafeHTML(icon(icons.arrowUp, "h-4 w-4"))}
+          </button>
         ) : null}
-      </AnimatePresence>
-    </>
-  );
+      </>
+    );
+  }
+}
+
+declare global {
+  interface HTMLElementTagNameMap {
+    "docs-scroll-progress": ScrollProgressElement;
+  }
 }
