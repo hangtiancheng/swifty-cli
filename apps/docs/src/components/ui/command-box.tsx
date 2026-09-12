@@ -56,7 +56,7 @@ export class CopyButtonElement extends LitElement {
         onClick={() => void this.copy()}
         aria-label={this.copied ? "Copied" : this.label}
         className={cn(
-          "group inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-brand-500/10 hover:text-brand-950 dark:text-zinc-400 dark:hover:bg-white/10 dark:hover:text-white",
+          "group hover:bg-brand-500/10 hover:text-brand-950 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-zinc-500 transition-colors dark:text-zinc-400 dark:hover:bg-white/10 dark:hover:text-white",
           focusRing,
           this.buttonClass,
         )}
@@ -64,7 +64,10 @@ export class CopyButtonElement extends LitElement {
         {this.copied
           ? unsafeHTML(icon(icons.check, "h-4 w-4 text-emerald-500"))
           : unsafeHTML(
-              icon(icons.copy, "h-4 w-4 transition-transform group-hover:scale-105"),
+              icon(
+                icons.copy,
+                "h-4 w-4 transition-transform group-hover:scale-105",
+              ),
             )}
       </button>
     );
@@ -89,12 +92,12 @@ export function CommandBar({
   return (
     <div
       className={cn(
-        "shadow-soft flex items-center gap-2 rounded-2xl border border-brand-950/10 bg-white/85 p-1.5 pl-2 backdrop-blur dark:border-white/10 dark:bg-white/4 dark:shadow-none",
+        "shadow-soft border-brand-950/10 flex items-center gap-2 rounded-2xl border bg-white/85 p-1.5 pl-2 backdrop-blur dark:border-white/10 dark:bg-white/4 dark:shadow-none",
         className,
       )}
     >
       {leading ? (
-        <span className="hidden shrink-0 items-center rounded-xl bg-brand-700 px-3.5 py-2 text-xs font-semibold text-white sm:inline-flex dark:bg-brand-300 dark:text-brand-950">
+        <span className="bg-brand-700 dark:bg-brand-300 dark:text-brand-950 hidden shrink-0 items-center rounded-xl px-3.5 py-2 text-xs font-semibold text-white sm:inline-flex">
           {leading}
         </span>
       ) : null}

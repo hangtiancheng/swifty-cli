@@ -3,13 +3,7 @@ import { cn } from "@/lib/cn";
 import { INSTALL_METHODS, footerColumns } from "@/lib/content";
 import { icon } from "@/lib/icon";
 import { icons } from "@/lib/icons";
-import {
-  container,
-  focusRing,
-  ghostButton,
-  heading,
-  line,
-} from "@/lib/styles";
+import { container, focusRing, ghostButton, heading, line } from "@/lib/styles";
 import { GithubIcon } from "./ui/github-icon";
 import { Logo } from "./ui/logo";
 import "./ui/command-box";
@@ -100,14 +94,12 @@ export function Footer({
                       rel={
                         link.href.startsWith("http") ? "noreferrer" : undefined
                       }
-                      className="group inline-flex items-center gap-1 text-sm text-zinc-500 transition-colors hover:text-brand-800 dark:text-zinc-400 dark:hover:text-white"
+                      className="group hover:text-brand-800 inline-flex items-center gap-1 text-sm text-zinc-500 transition-colors dark:text-zinc-400 dark:hover:text-white"
                     >
                       {link.label}
                       {link.href.startsWith("http") ? (
                         <span className="opacity-0 transition-opacity group-hover:opacity-100">
-                          {unsafeHTML(
-                            icon(icons.arrowUpRight, "h-3 w-3"),
-                          )}
+                          {unsafeHTML(icon(icons.arrowUpRight, "h-3 w-3"))}
                         </span>
                       ) : null}
                     </a>

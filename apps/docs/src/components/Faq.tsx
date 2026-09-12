@@ -95,7 +95,7 @@ export class FaqElement extends LitElement {
         >
           <div className="lg:sticky lg:top-28 lg:self-start">
             <docs-reveal>
-              <span className="inline-flex items-center gap-2 rounded-full border border-brand-500/25 bg-brand-50/80 px-3 py-1 text-xs font-medium tracking-wide text-brand-700 dark:border-brand-300/15 dark:bg-white/3 dark:text-brand-200">
+              <span className="border-brand-500/25 bg-brand-50/80 text-brand-700 dark:border-brand-300/15 dark:text-brand-200 inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium tracking-wide dark:bg-white/3">
                 FAQ
               </span>
               <h2
@@ -109,7 +109,10 @@ export class FaqElement extends LitElement {
                 <span className={gradientText}>answered</span>
               </h2>
               <p
-                className={cn("mt-5 text-sm leading-relaxed sm:text-base", muted)}
+                className={cn(
+                  "mt-5 text-sm leading-relaxed sm:text-base",
+                  muted,
+                )}
               >
                 Still curious? The full documentation lives in the repository
                 and the CLI answers{" "}

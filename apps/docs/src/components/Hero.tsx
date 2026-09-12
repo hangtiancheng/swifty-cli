@@ -151,14 +151,13 @@ export class HeroElement extends LitElement {
             className="mt-10 flex flex-wrap items-center justify-center gap-2 opacity-0"
           >
             {QUICK_COMMANDS.map((item) => (
-              <li className="flex items-center gap-2 rounded-full border border-brand-950/8 bg-white/60 px-3 py-1.5 font-mono text-[11px] text-zinc-600 backdrop-blur sm:text-xs dark:border-white/8 dark:bg-white/3 dark:text-zinc-400">
+              <li className="border-brand-950/8 flex items-center gap-2 rounded-full border bg-white/60 px-3 py-1.5 font-mono text-[11px] text-zinc-600 backdrop-blur sm:text-xs dark:border-white/8 dark:bg-white/3 dark:text-zinc-400">
                 <span
                   className={cn(
                     "h-1.5 w-1.5 rounded-full",
                     item.tone === "brand" && "bg-brand-500",
                     item.tone === "accent" && "bg-accent-400",
-                    item.tone === "neutral" &&
-                      "bg-zinc-400 dark:bg-zinc-600",
+                    item.tone === "neutral" && "bg-zinc-400 dark:bg-zinc-600",
                   )}
                 />
                 <span className="text-zinc-400 dark:text-zinc-500">

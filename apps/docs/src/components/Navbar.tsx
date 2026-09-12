@@ -1,9 +1,4 @@
-import {
-  LitElement,
-  customElement,
-  property,
-  state,
-} from "@swifty.js/lit-jsx";
+import { LitElement, customElement, property, state } from "@swifty.js/lit-jsx";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { cn } from "@/lib/cn";
 import { navLinks } from "@/lib/content";

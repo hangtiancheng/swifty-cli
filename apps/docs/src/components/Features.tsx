@@ -64,7 +64,11 @@ function Decor({ kind }: { kind: NonNullable<Feature["decor"]> }) {
     return (
       <div className="mt-6 flex flex-wrap gap-2">
         {providerList.map((provider) => (
-          <span className={cn("inline-flex items-center gap-1.5 rounded-lg border border-brand-950/8 bg-brand-50/60 px-2.5 py-1.5 font-mono text-[11px] text-zinc-600 dark:border-white/8 dark:bg-white/3 dark:text-zinc-400")}>
+          <span
+            className={cn(
+              "border-brand-950/8 bg-brand-50/60 inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 font-mono text-[11px] text-zinc-600 dark:border-white/8 dark:bg-white/3 dark:text-zinc-400",
+            )}
+          >
             <span className="bg-brand-500 h-1.5 w-1.5 rounded-full" />
             {provider.protocol}
           </span>
@@ -89,12 +93,12 @@ function Decor({ kind }: { kind: NonNullable<Feature["decor"]> }) {
   return (
     <div className="mt-6 flex flex-wrap gap-2">
       {agentCards.map((agent) => (
-        <span className="inline-flex items-center gap-1.5 rounded-full border border-brand-950/8 bg-white px-2.5 py-1 text-[11px] font-medium text-zinc-700 dark:border-white/8 dark:bg-white/3 dark:text-zinc-300">
+        <span className="border-brand-950/8 inline-flex items-center gap-1.5 rounded-full border bg-white px-2.5 py-1 text-[11px] font-medium text-zinc-700 dark:border-white/8 dark:bg-white/3 dark:text-zinc-300">
           {unsafeHTML(icon(agent.icon, "text-brand-500 h-3 w-3"))}
           {agent.name}
         </span>
       ))}
-      <span className="inline-flex items-center gap-1.5 rounded-full border border-brand-950/8 bg-white px-2.5 py-1 text-[11px] font-medium text-zinc-700 dark:border-white/8 dark:bg-white/3 dark:text-zinc-300">
+      <span className="border-brand-950/8 inline-flex items-center gap-1.5 rounded-full border bg-white px-2.5 py-1 text-[11px] font-medium text-zinc-700 dark:border-white/8 dark:bg-white/3 dark:text-zinc-300">
         {unsafeHTML(icon(icons.bot, "text-accent-500 h-3 w-3"))}
         teammates
       </span>
@@ -139,7 +143,10 @@ export function Features() {
                 </span>
                 <span className="opacity-0 transition-opacity duration-300 group-hover:opacity-100">
                   {unsafeHTML(
-                    icon(icons.sparkle, "h-4 w-4 text-brand-400/60 dark:text-zinc-600"),
+                    icon(
+                      icons.sparkle,
+                      "h-4 w-4 text-brand-400/60 dark:text-zinc-600",
+                    ),
                   )}
                 </span>
               </div>
@@ -163,12 +170,12 @@ export function Features() {
       <docs-reveal delay={0.1} className={cn(container, "mt-4")}>
         <div
           className={cn(
-            "flex flex-col items-start justify-between gap-4 rounded-2xl border bg-brand-50/60 px-6 py-5 sm:flex-row sm:items-center dark:bg-white/2",
+            "bg-brand-50/60 flex flex-col items-start justify-between gap-4 rounded-2xl border px-6 py-5 sm:flex-row sm:items-center dark:bg-white/2",
             line,
           )}
         >
           <div className="flex items-center gap-3">
-            <span className="grid h-9 w-9 place-items-center rounded-lg bg-brand-700 text-white dark:bg-brand-300 dark:text-brand-950">
+            <span className="bg-brand-700 dark:bg-brand-300 dark:text-brand-950 grid h-9 w-9 place-items-center rounded-lg text-white">
               {unsafeHTML(icon(icons.sparkle, "h-4 w-4"))}
             </span>
             <p className={cn("text-sm", muted)}>

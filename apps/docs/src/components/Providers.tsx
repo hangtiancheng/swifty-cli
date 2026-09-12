@@ -84,7 +84,7 @@ export function Providers() {
                     >
                       {protocol.name}
                     </span>
-                    <span className="rounded-md bg-brand-500/10 px-2 py-0.5 font-mono text-[10px] text-zinc-500 dark:bg-white/6 dark:text-zinc-400">
+                    <span className="bg-brand-500/10 rounded-md px-2 py-0.5 font-mono text-[10px] text-zinc-500 dark:bg-white/6 dark:text-zinc-400">
                       {protocol.base}
                     </span>
                   </div>
@@ -104,11 +104,11 @@ export function Providers() {
         <docs-reveal delay={0.1}>
           <div
             className={cn(
-              "shadow-card overflow-hidden rounded-2xl border bg-brand-50/70",
+              "shadow-card bg-brand-50/70 overflow-hidden rounded-2xl border",
               "border-brand-950/10 dark:border-white/10 dark:bg-[#0c0f0a] dark:shadow-none",
             )}
           >
-            <div className="flex items-center justify-between border-b border-brand-950/10 px-5 py-3 dark:border-white/8">
+            <div className="border-brand-950/10 flex items-center justify-between border-b px-5 py-3 dark:border-white/8">
               <span className="inline-flex items-center gap-2 font-mono text-[11px] text-zinc-500 dark:text-zinc-400">
                 <span className="bg-brand-500 h-2 w-2 rounded-full" />
                 .swifty/config.yaml

@@ -25,17 +25,17 @@ export function Workflow() {
             aria-hidden="true"
           />
           {workflowSteps.map((step, index) => (
-            <docs-reveal
-              delay={index * 0.08}
-              className="relative"
-            >
+            <docs-reveal delay={index * 0.08} className="relative">
               <div className="flex flex-col">
                 <div className="flex items-center gap-3">
-                  <span className="shadow-soft relative grid h-12 w-12 place-items-center rounded-2xl border border-brand-950/8 bg-white dark:border-white/8 dark:bg-[#0e110c] dark:shadow-none">
+                  <span className="shadow-soft border-brand-950/8 relative grid h-12 w-12 place-items-center rounded-2xl border bg-white dark:border-white/8 dark:bg-[#0e110c] dark:shadow-none">
                     {unsafeHTML(
-                      icon(step.icon, "text-brand-500 dark:text-brand-400 h-5 w-5"),
+                      icon(
+                        step.icon,
+                        "text-brand-500 dark:text-brand-400 h-5 w-5",
+                      ),
                     )}
-                    <span className="absolute -top-2 -right-2 grid h-6 w-6 place-items-center rounded-full bg-brand-700 font-mono text-[10px] font-semibold text-white dark:bg-brand-300 dark:text-brand-950">
+                    <span className="bg-brand-700 dark:bg-brand-300 dark:text-brand-950 absolute -top-2 -right-2 grid h-6 w-6 place-items-center rounded-full font-mono text-[10px] font-semibold text-white">
                       {step.step}
                     </span>
                   </span>
@@ -59,7 +59,7 @@ export function Workflow() {
         <docs-reveal delay={0.12} className="mt-14">
           <div
             className={cn(
-              "grid grid-cols-1 gap-6 rounded-2xl border bg-brand-50/60 p-6 sm:grid-cols-3 sm:p-8 dark:bg-white/2",
+              "bg-brand-50/60 grid grid-cols-1 gap-6 rounded-2xl border p-6 sm:grid-cols-3 sm:p-8 dark:bg-white/2",
               line,
             )}
           >

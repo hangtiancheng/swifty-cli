@@ -28,7 +28,7 @@ function Marquee({ items, reverse }: { items: string[]; reverse?: boolean }) {
         )}
       >
         {doubled.map((name) => (
-          <span className="inline-flex items-center gap-2 rounded-xl border border-brand-950/8 bg-white px-3.5 py-2 font-mono text-xs text-zinc-600 dark:border-white/8 dark:bg-white/3 dark:text-zinc-400">
+          <span className="border-brand-950/8 inline-flex items-center gap-2 rounded-xl border bg-white px-3.5 py-2 font-mono text-xs text-zinc-600 dark:border-white/8 dark:bg-white/3 dark:text-zinc-400">
             <span className="bg-brand-500/70 h-1.5 w-1.5 rounded-full" />
             {name}
           </span>

@@ -35,9 +35,7 @@ export class InstallElement extends LitElement {
     return this;
   }
 
-  private async selectMethod(
-    id: (typeof INSTALL_METHODS)[number]["id"],
-  ) {
+  private async selectMethod(id: (typeof INSTALL_METHODS)[number]["id"]) {
     if (id === this.active || this.swapping) return;
     this.swapping = true;
     const panel = this.querySelector<HTMLElement>("[data-command-panel]");
@@ -107,8 +105,8 @@ export class InstallElement extends LitElement {
                       "relative rounded-full px-4 py-2 text-sm font-medium transition-colors",
                       focusRing,
                       selected
-                        ? "bg-brand-600 text-white dark:bg-brand-300 dark:text-brand-950"
-                        : "text-zinc-500 hover:bg-brand-500/10 hover:text-brand-900 dark:text-zinc-400 dark:hover:bg-white/6 dark:hover:text-white",
+                        ? "bg-brand-600 dark:bg-brand-300 dark:text-brand-950 text-white"
+                        : "hover:bg-brand-500/10 hover:text-brand-900 text-zinc-500 dark:text-zinc-400 dark:hover:bg-white/6 dark:hover:text-white",
                     )}
                   >
                     {item.label}
@@ -123,7 +121,7 @@ export class InstallElement extends LitElement {
             <div className="mt-5">
               <div
                 data-command-panel
-                className="flex items-center gap-3 rounded-2xl border border-brand-950/10 bg-brand-50/70 p-4 dark:border-white/10 dark:bg-[#0c0f0a]"
+                className="border-brand-950/10 bg-brand-50/70 flex items-center gap-3 rounded-2xl border p-4 dark:border-white/10 dark:bg-[#0c0f0a]"
               >
                 <span className="text-brand-600 dark:text-brand-400 hidden font-mono text-sm select-none sm:block">
                   $
@@ -200,21 +198,15 @@ export class InstallElement extends LitElement {
 
             <ul className="mt-6 flex flex-wrap items-center gap-x-6 gap-y-2 text-xs text-zinc-400 dark:text-zinc-500">
               <li className="inline-flex items-center gap-1.5">
-                {unsafeHTML(
-                  icon(icons.check, "h-3.5 w-3.5 text-emerald-500"),
-                )}
+                {unsafeHTML(icon(icons.check, "h-3.5 w-3.5 text-emerald-500"))}
                 Node.js 20+
               </li>
               <li className="inline-flex items-center gap-1.5">
-                {unsafeHTML(
-                  icon(icons.check, "h-3.5 w-3.5 text-emerald-500"),
-                )}
+                {unsafeHTML(icon(icons.check, "h-3.5 w-3.5 text-emerald-500"))}
                 macOS, Linux &amp; Windows
               </li>
               <li className="inline-flex items-center gap-1.5">
-                {unsafeHTML(
-                  icon(icons.check, "h-3.5 w-3.5 text-emerald-500"),
-                )}
+                {unsafeHTML(icon(icons.check, "h-3.5 w-3.5 text-emerald-500"))}
                 MIT licensed · {VERSION}
               </li>
             </ul>

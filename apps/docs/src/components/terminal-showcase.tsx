@@ -193,9 +193,7 @@ export class TerminalShowcaseElement extends LitElement {
 
   override updated() {
     setupReveals(this);
-    const scroller = this.querySelector<HTMLElement>(
-      "[data-terminal-scroll]",
-    );
+    const scroller = this.querySelector<HTMLElement>("[data-terminal-scroll]");
     if (scroller) scroller.scrollTop = scroller.scrollHeight;
   }
 
@@ -228,10 +226,7 @@ export class TerminalShowcaseElement extends LitElement {
 
     for (let index = 0; index < scene.steps.length; index++) {
       const step = scene.steps[index];
-      this.visible = [
-        ...this.visible,
-        { ...step, live: step.kind === "tool" },
-      ];
+      this.visible = [...this.visible, { ...step, live: step.kind === "tool" }];
       await this.updateComplete;
       if (generation !== this.generation) return;
       this.animateLastRow();
@@ -313,15 +308,15 @@ export class TerminalShowcaseElement extends LitElement {
           )}
         >
           {step.live
-            ? unsafeHTML(
-                icon(
-                  icons.loaderCircle,
-                  "animate-spin-slow h-3 w-3",
-                ),
-              )
+            ? unsafeHTML(icon(icons.loaderCircle, "animate-spin-slow h-3 w-3"))
             : unsafeHTML(icon(icons.check, "h-3 w-3"))}
         </span>
-        {unsafeHTML(icon(iconName, "h-3.5 w-3.5 shrink-0 text-zinc-400 dark:text-zinc-500"))}
+        {unsafeHTML(
+          icon(
+            iconName,
+            "h-3.5 w-3.5 shrink-0 text-zinc-400 dark:text-zinc-500",
+          ),
+        )}
         <span className="font-semibold text-zinc-800 dark:text-zinc-200">
           {step.name}
         </span>
@@ -345,7 +340,7 @@ export class TerminalShowcaseElement extends LitElement {
           {/* window chrome */}
           <div
             className={cn(
-              "flex items-center gap-3 border-b bg-brand-50/70 px-4 py-3 dark:bg-white/2",
+              "bg-brand-50/70 flex items-center gap-3 border-b px-4 py-3 dark:bg-white/2",
               line,
             )}
           >
@@ -381,7 +376,7 @@ export class TerminalShowcaseElement extends LitElement {
             className="h-84 overflow-hidden px-4 py-5 font-mono text-[12.5px] leading-relaxed sm:h-92 sm:px-5 sm:text-[13px]"
           >
             <div className="mb-4 flex items-center gap-2 text-[11px] text-zinc-400 dark:text-zinc-600">
-              <span className="inline-flex h-4 items-center rounded bg-brand-500/10 px-1.5 text-zinc-500 dark:bg-white/6 dark:text-zinc-400">
+              <span className="bg-brand-500/10 inline-flex h-4 items-center rounded px-1.5 text-zinc-500 dark:bg-white/6 dark:text-zinc-400">
                 swifty
               </span>
               <span>v0.0.28</span>
@@ -439,7 +434,7 @@ export class TerminalShowcaseElement extends LitElement {
           {/* status bar */}
           <div
             className={cn(
-              "flex items-center justify-between gap-3 border-t bg-brand-50/70 px-4 py-2.5 font-mono text-[11px] text-zinc-400 dark:bg-white/2 dark:text-zinc-500",
+              "bg-brand-50/70 flex items-center justify-between gap-3 border-t px-4 py-2.5 font-mono text-[11px] text-zinc-400 dark:bg-white/2 dark:text-zinc-500",
               line,
             )}
           >
@@ -478,7 +473,7 @@ export class TerminalShowcaseElement extends LitElement {
       >
         <div
           className={cn(
-            "flex items-center gap-3 border-b bg-brand-50/70 px-4 py-3 dark:bg-white/2",
+            "bg-brand-50/70 flex items-center gap-3 border-b px-4 py-3 dark:bg-white/2",
             line,
           )}
         >
@@ -487,7 +482,7 @@ export class TerminalShowcaseElement extends LitElement {
             <span className="h-3 w-3 rounded-full bg-[#febc2e]" />
             <span className="h-3 w-3 rounded-full bg-[#28c840]" />
           </div>
-          <div className="flex flex-1 items-center gap-2 rounded-lg border border-brand-950/10 bg-white px-3 py-1.5 font-mono text-[11px] text-zinc-400 dark:border-white/10 dark:bg-white/3 dark:text-zinc-500">
+          <div className="border-brand-950/10 flex flex-1 items-center gap-2 rounded-lg border bg-white px-3 py-1.5 font-mono text-[11px] text-zinc-400 dark:border-white/10 dark:bg-white/3 dark:text-zinc-500">
             <span className="text-emerald-500">●</span>
             http://127.0.0.1:18888
           </div>
@@ -512,7 +507,7 @@ export class TerminalShowcaseElement extends LitElement {
               </span>
               EditFile · src/net/retry.ts
             </div>
-            <div className="overflow-hidden rounded-xl border border-brand-950/10 font-mono text-xs dark:border-white/10">
+            <div className="border-brand-950/10 overflow-hidden rounded-xl border font-mono text-xs dark:border-white/10">
               <div className="bg-red-500/10 px-3 py-1 text-red-600 dark:text-red-400">
                 - await fetch(url, opts)
               </div>
@@ -521,8 +516,8 @@ export class TerminalShowcaseElement extends LitElement {
               </div>
             </div>
             <p className="text-sm text-zinc-600 dark:text-zinc-400">
-              Wrapped the request in a 3-attempt exponential backoff. Approve
-              to write it?
+              Wrapped the request in a 3-attempt exponential backoff. Approve to
+              write it?
             </p>
           </div>
         </div>
@@ -534,7 +529,7 @@ export class TerminalShowcaseElement extends LitElement {
     return (
       <div
         className={cn(
-          "shadow-card overflow-hidden rounded-2xl border bg-brand-50/70 dark:bg-[#0c0f0a] dark:shadow-none",
+          "shadow-card bg-brand-50/70 overflow-hidden rounded-2xl border dark:bg-[#0c0f0a] dark:shadow-none",
           "border-brand-950/10 dark:border-white/10",
         )}
       >
@@ -624,7 +619,7 @@ export class TerminalShowcaseElement extends LitElement {
               >
                 <span
                   data-tab-pill
-                  className="absolute top-1 bottom-1 rounded-full bg-brand-500/12 shadow-sm dark:bg-white/8"
+                  className="bg-brand-500/12 absolute top-1 bottom-1 rounded-full shadow-sm dark:bg-white/8"
                   aria-hidden="true"
                 />
                 {TABS.map((item) => {
@@ -641,7 +636,7 @@ export class TerminalShowcaseElement extends LitElement {
                         focusRing,
                         selected
                           ? cn(heading)
-                          : "text-zinc-500 hover:text-brand-900 dark:text-zinc-500 dark:hover:text-zinc-200",
+                          : "hover:text-brand-900 text-zinc-500 dark:text-zinc-500 dark:hover:text-zinc-200",
                       )}
                     >
                       {unsafeHTML(icon(item.icon, "relative h-3.5 w-3.5"))}

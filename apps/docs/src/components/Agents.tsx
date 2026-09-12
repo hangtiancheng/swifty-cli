@@ -101,7 +101,7 @@ export class AgentsElement extends LitElement {
                       >
                         {agent.name}
                       </span>
-                      <span className="rounded-full border border-brand-950/8 px-2 py-0.5 text-[10px] font-medium tracking-wide text-zinc-500 uppercase dark:border-white/8 dark:text-zinc-400">
+                      <span className="border-brand-950/8 rounded-full border px-2 py-0.5 text-[10px] font-medium tracking-wide text-zinc-500 uppercase dark:border-white/8 dark:text-zinc-400">
                         {agent.role}
                       </span>
                     </div>
@@ -110,7 +110,7 @@ export class AgentsElement extends LitElement {
                     </p>
                     <div className="mt-3 flex flex-wrap gap-2">
                       {agent.tools.map((tool) => (
-                        <span className="rounded-md bg-brand-500/10 px-2 py-0.5 font-mono text-[10px] text-zinc-500 dark:bg-white/6 dark:text-zinc-400">
+                        <span className="bg-brand-500/10 rounded-md px-2 py-0.5 font-mono text-[10px] text-zinc-500 dark:bg-white/6 dark:text-zinc-400">
                           {tool}
                         </span>
                       ))}
@@ -122,7 +122,9 @@ export class AgentsElement extends LitElement {
                 </div>
               ))}
 
-              <div className={cn("rounded-2xl border p-5 dark:bg-white/2", line)}>
+              <div
+                className={cn("rounded-2xl border p-5 dark:bg-white/2", line)}
+              >
                 <div className="flex items-center gap-3">
                   {unsafeHTML(icon(icons.workflow, "text-brand-500 h-5 w-5"))}
                   <h3 className={cn("text-sm font-semibold", heading)}>
@@ -176,7 +178,7 @@ export class AgentsElement extends LitElement {
                     data-reveal
                     data-reveal-x="-8"
                     data-reveal-delay={String(index * 0.08)}
-                    className="flex items-center gap-3 rounded-xl px-2.5 py-2.5 opacity-0 transition-colors hover:bg-brand-50/70 dark:hover:bg-white/3"
+                    className="hover:bg-brand-50/70 flex items-center gap-3 rounded-xl px-2.5 py-2.5 opacity-0 transition-colors dark:hover:bg-white/3"
                   >
                     <span
                       className={cn(
@@ -252,7 +254,7 @@ export class AgentsElement extends LitElement {
 
               <div
                 className={cn(
-                  "flex items-center justify-between gap-3 border-t bg-brand-50/50 px-5 py-3 text-[11px] text-zinc-400 dark:bg-white/2 dark:text-zinc-500",
+                  "bg-brand-50/50 flex items-center justify-between gap-3 border-t px-5 py-3 text-[11px] text-zinc-400 dark:bg-white/2 dark:text-zinc-500",
                   line,
                 )}
               >

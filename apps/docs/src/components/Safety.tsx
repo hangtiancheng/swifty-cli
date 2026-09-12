@@ -6,14 +6,7 @@ import { permissionModes } from "@/lib/content";
 import { icon } from "@/lib/icon";
 import { icons } from "@/lib/icons";
 import { animateIn, animateOut, EASE } from "@/lib/motion";
-import {
-  card,
-  container,
-  focusRing,
-  heading,
-  line,
-  muted,
-} from "@/lib/styles";
+import { card, container, focusRing, heading, line, muted } from "@/lib/styles";
 import { Section, SectionHeader } from "./ui/section";
 
 const MODE_ICON: Record<string, string> = {
@@ -187,7 +180,7 @@ export class SafetyElement extends LitElement {
                         ? "border-brand-500/40 bg-brand-500/6 shadow-glow"
                         : cn(
                             line,
-                            "bg-white hover:border-brand-500/30 dark:bg-white/2 dark:hover:border-white/20",
+                            "hover:border-brand-500/30 bg-white dark:bg-white/2 dark:hover:border-white/20",
                           ),
                     )}
                   >
@@ -221,10 +214,7 @@ export class SafetyElement extends LitElement {
                           ) : null}
                         </div>
                         <p
-                          className={cn(
-                            "mt-1 text-sm leading-relaxed",
-                            muted,
-                          )}
+                          className={cn("mt-1 text-sm leading-relaxed", muted)}
                         >
                           {mode.description}
                         </p>
@@ -241,7 +231,7 @@ export class SafetyElement extends LitElement {
 
           <docs-reveal delay={0.1}>
             <div className={cn("sticky top-24 overflow-hidden p-1", card)}>
-              <div className="rounded-[0.9rem] bg-brand-50 p-1.5 dark:bg-black/40">
+              <div className="bg-brand-50 rounded-[0.9rem] p-1.5 dark:bg-black/40">
                 <div className="flex items-center gap-2 px-3 py-2">
                   <span className="h-2.5 w-2.5 rounded-full bg-[#ff5f57]" />
                   <span className="h-2.5 w-2.5 rounded-full bg-[#febc2e]" />
@@ -256,7 +246,7 @@ export class SafetyElement extends LitElement {
                   className="rounded-xl bg-white p-5 dark:bg-[#0e110c]"
                 >
                   <div className="flex items-center justify-between gap-3">
-                    <span className="inline-flex items-center gap-2 rounded-full border border-brand-950/10 bg-brand-50/70 px-2.5 py-1 text-[11px] font-medium text-zinc-600 dark:border-white/10 dark:bg-white/4 dark:text-zinc-300">
+                    <span className="border-brand-950/10 bg-brand-50/70 inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-[11px] font-medium text-zinc-600 dark:border-white/10 dark:bg-white/4 dark:text-zinc-300">
                       <span className="bg-brand-500 dark:bg-brand-400 h-1.5 w-1.5 rounded-full" />
                       {view.chip}
                     </span>
@@ -265,7 +255,7 @@ export class SafetyElement extends LitElement {
                     </span>
                   </div>
 
-                  <div className="mt-5 rounded-lg border border-brand-950/10 bg-brand-50/70 px-3.5 py-3 font-mono text-[12.5px] text-zinc-700 dark:border-white/10 dark:bg-black/40 dark:text-zinc-200">
+                  <div className="border-brand-950/10 bg-brand-50/70 mt-5 rounded-lg border px-3.5 py-3 font-mono text-[12.5px] text-zinc-700 dark:border-white/10 dark:bg-black/40 dark:text-zinc-200">
                     <span className="text-brand-600 dark:text-brand-400">
                       ${" "}
                     </span>
@@ -276,7 +266,7 @@ export class SafetyElement extends LitElement {
                     {view.rows.map((row) => (
                       <li
                         data-dialog-row
-                        className="flex items-center justify-between gap-3 rounded-lg border border-brand-950/10 bg-brand-50/50 px-3 py-2 dark:border-white/6 dark:bg-white/2"
+                        className="border-brand-950/10 bg-brand-50/50 flex items-center justify-between gap-3 rounded-lg border px-3 py-2 dark:border-white/6 dark:bg-white/2"
                       >
                         <span className="text-[13px] text-zinc-600 dark:text-zinc-300">
                           {row.label}
@@ -302,7 +292,10 @@ export class SafetyElement extends LitElement {
         </div>
 
         <div
-          className={cn(container, "mt-6 grid grid-cols-1 gap-4 sm:grid-cols-3")}
+          className={cn(
+            container,
+            "mt-6 grid grid-cols-1 gap-4 sm:grid-cols-3",
+          )}
         >
           {SAFETY_FEATURES.map((feature, index) => (
             <docs-reveal delay={index * 0.06}>
@@ -332,7 +325,7 @@ export class SafetyElement extends LitElement {
         <docs-reveal delay={0.1} className={cn(container, "mt-4")}>
           <div
             className={cn(
-              "flex flex-wrap items-center justify-center gap-x-8 gap-y-3 rounded-2xl border bg-brand-50/60 px-6 py-5 text-sm dark:bg-white/2",
+              "bg-brand-50/60 flex flex-wrap items-center justify-center gap-x-8 gap-y-3 rounded-2xl border px-6 py-5 text-sm dark:bg-white/2",
               line,
             )}
           >

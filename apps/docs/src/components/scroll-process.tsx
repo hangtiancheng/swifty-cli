@@ -84,7 +84,7 @@ export class ScrollProgressElement extends LitElement {
             onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
             aria-label="Back to top"
             className={cn(
-              "shadow-soft hover:text-brand-600 dark:hover:text-brand-300 fixed right-4 bottom-4 z-50 grid h-11 w-11 place-items-center rounded-full border border-brand-950/8 bg-white/85 text-zinc-700 opacity-0 backdrop-blur transition-colors sm:right-6 sm:bottom-6 dark:border-white/10 dark:bg-white/6 dark:text-zinc-200",
+              "shadow-soft hover:text-brand-600 dark:hover:text-brand-300 border-brand-950/8 fixed right-4 bottom-4 z-50 grid h-11 w-11 place-items-center rounded-full border bg-white/85 text-zinc-700 opacity-0 backdrop-blur transition-colors sm:right-6 sm:bottom-6 dark:border-white/10 dark:bg-white/6 dark:text-zinc-200",
               focusRing,
             )}
           >
