@@ -84,7 +84,7 @@ export function ToolCard({
       marginTop={1}
       paddingX={1}
       paddingY={1}
-      width="100%"
+      width={width}
     >
       <Text bold color={THEME.toolTitle} wrap="truncate-end">
         {truncateToWidth(title, contentWidth)}
