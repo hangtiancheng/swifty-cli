@@ -3,7 +3,7 @@ import { stripVTControlCharacters } from "node:util";
 import { Chalk } from "chalk";
 import { renderToString } from "ink";
 import { createElement } from "react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AgentActivity } from "@/tui/agent-activity.js";
 import { CommittedMessage } from "@/tui/chat.js";
@@ -14,7 +14,25 @@ import { ThinkingBlock } from "@/tui/thinking-block.js";
 import { ToolBlock } from "@/tui/tool-display.js";
 import { formatToolOutputPreview } from "@/tui/tool-preview.js";
 
+// ToolCard and ThinkingBlock size themselves from useStdout().stdout.columns, which
+// renderToString never provides — Ink returns the process.stdout default (columns
+// undefined under vitest, so they fall back to 80). Mock useStdout so the { columns }
+// argument passed to renderToString actually constrains the rendered cards.
+const terminal = vi.hoisted(() => ({ columns: 40 }));
+
+vi.mock("ink", async (importOriginal) => {
+  // eslint-disable-next-line @typescript-eslint/consistent-type-imports
+  const ink = await importOriginal<typeof import("ink")>();
+  return {
+    ...ink,
+    useStdout: () => ({ stdout: { columns: terminal.columns, rows: 24 } }),
+  };
+});
+
 const colors = new Chalk({ level: 3 });
+beforeEach(() => {
+  terminal.columns = 40;
+});
 afterEach(() => {
   setThemeMode("dark");
 });
@@ -172,6 +190,7 @@ describe("shared live and committed tool cards", () => {
   );
 
   it("uses command titles for shell calls and hides unknown durations", () => {
+    terminal.columns = 20;
     const output = renderToString(
       createElement(ToolBlock, {
         tool: { toolId: "bash-a", toolName: "Bash", args: { command: "pwd" }, loading: true },
