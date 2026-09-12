@@ -45,50 +45,59 @@ export const REJECTED_TOOL_RESULT =
  * Returns a copy of the messages with the pairing relationships repaired; the input
  * is not modified.
  *
- * It does two things: appends a tool_result marked as an error (immediately after)
- * for any tool_use that has no result, and drops orphan tool_results whose matching
- * tool_use cannot be found. The patched content is not written back to the
- * conversation history: the history should faithfully record what actually happened,
- * while the patching exists only to make this particular request valid.
+ * Results must immediately follow their assistant turn, before any ordinary user
+ * content. Group consecutive result messages, fill missing results at that turn
+ * boundary, and drop orphan or duplicate results. The patched content is not written
+ * back to the conversation history: the history should faithfully record what actually
+ * happened, while the patching exists only to make this particular request valid.
  */
 export function ensureToolPairing(messages: Message[]): Message[] {
-  const resolved = new Set<string>();
-  const issued = new Set<string>();
-  for (const m of messages) {
-    for (const tr of m.toolResults ?? []) {
-      resolved.add(tr.toolUseId);
-    }
-    for (const tu of m.toolUses ?? []) {
-      issued.add(tu.toolUseId);
-    }
-  }
-
   const out: Message[] = [];
-  for (const m of messages) {
-    let current = m;
+  for (let i = 0; i < messages.length; i++) {
+    const m = messages[i];
+    if (m.role === "assistant" && m.toolUses?.length) {
+      out.push(m);
+      const pending = new Set(m.toolUses.map((tu) => tu.toolUseId));
+      const results: ToolResultBlock[] = [];
+      const resultMessages: Message[] = [];
+      while (i + 1 < messages.length) {
+        const next = messages[i + 1];
+        if (next.role !== "user" || !next.toolResults?.length || next.toolUses?.length) {
+          break;
+        }
+        i++;
+        resultMessages.push(next);
+        for (const tr of next.toolResults) {
+          if (pending.delete(tr.toolUseId)) {
+            results.push(tr);
+          }
+        }
+      }
+      for (const toolUseId of pending) {
+        results.push({ toolUseId, content: INTERRUPTED_TOOL_RESULT, isError: true });
+      }
+
+      // A single result group also keeps Chat Completions' synthetic image user
+      // message from splitting the tool results belonging to one assistant turn.
+      out.push({
+        ...(resultMessages[0] ?? { role: "user", content: "" }),
+        toolResults: results,
+      });
+      for (const remaining of resultMessages.slice(1)) {
+        if (remaining.content.length > 0 || remaining.thinkingBlocks?.length) {
+          out.push({ ...remaining, toolResults: [] });
+        }
+      }
+      continue;
+    }
+
     if ((m.toolResults?.length ?? 0) > 0) {
-      const kept = (m.toolResults ?? []).filter((tr) => issued.has(tr.toolUseId));
-      if (kept.length === 0 && !m.content && !(m.toolUses?.length ?? 0)) {
+      if (m.content.length === 0 && !m.toolUses?.length && !m.thinkingBlocks?.length) {
         continue; // The message is now an empty shell; drop it to preserve role alternation
       }
-      current = { ...m, toolResults: kept };
-    }
-    out.push(current);
-
-    const missing: ToolResultBlock[] = [];
-    for (const tu of m.toolUses ?? []) {
-      if (resolved.has(tu.toolUseId)) {
-        continue;
-      }
-      missing.push({
-        toolUseId: tu.toolUseId,
-        content: INTERRUPTED_TOOL_RESULT,
-        isError: true,
-      });
-      resolved.add(tu.toolUseId);
-    }
-    if (missing.length > 0) {
-      out.push({ role: "user", content: "", toolResults: missing });
+      out.push({ ...m, toolResults: [] });
+    } else {
+      out.push(m);
     }
   }
   return out;

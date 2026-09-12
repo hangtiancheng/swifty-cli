@@ -27,6 +27,12 @@ import { intArg, strArg } from "../utils/index.js";
 
 import { BASH_DESCRIPTION } from "./descriptions.js";
 import {
+  formatShellOutput,
+  MAX_SHELL_OUTPUT_BYTES,
+  takeUtf8Prefix,
+  utf8ByteLength,
+} from "./shell-output.js";
+import {
   type Tool,
   type ToolCategory,
   type ToolContext,
@@ -157,6 +163,12 @@ export class BashTool implements Tool {
     }
 
     let timeout = intArg(args, "timeout", 120);
+    if (!Number.isFinite(timeout) || timeout <= 0) {
+      return Promise.resolve({
+        output: "Error: timeout must be a finite number greater than 0 seconds",
+        isError: true,
+      });
+    }
     if (timeout > MAX_TIMEOUT) {
       timeout = MAX_TIMEOUT;
     }
@@ -196,10 +208,10 @@ export class BashTool implements Tool {
 
       // Same 10MB cap as execFile's maxBuffer: on overflow the child is
       // killed and the truncated output is still returned.
-      const maxBuffer = 10 * 1024 * 1024;
       let stdout = "";
       let stderr = "";
       let total = 0;
+      let outputTruncated = false;
 
       const alreadyExited = () => child.exitCode !== null || child.signalCode !== null;
 
@@ -238,12 +250,16 @@ export class BashTool implements Tool {
       };
 
       const appendChunk = (chunk: string, target: "stdout" | "stderr") => {
-        let piece = chunk;
-        if (total + piece.length > maxBuffer) {
-          piece = piece.slice(0, maxBuffer - total);
+        if (outputTruncated) {
+          return;
+        }
+        const remaining = MAX_SHELL_OUTPUT_BYTES - total;
+        const piece = takeUtf8Prefix(chunk, remaining);
+        total += utf8ByteLength(piece);
+        if (piece.length < chunk.length) {
+          outputTruncated = true;
           terminate();
         }
-        total += piece.length;
         if (target === "stdout") {
           stdout += piece;
         } else {
@@ -278,6 +294,9 @@ export class BashTool implements Tool {
       timeoutTimer.unref();
 
       ctx.abortSignal?.addEventListener("abort", onAbort, { once: true });
+      if (ctx.abortSignal?.aborted) {
+        onAbort();
+      }
 
       const cleanup = () => {
         clearTimeout(timeoutTimer);
@@ -296,30 +315,43 @@ export class BashTool implements Tool {
         });
       });
 
-      child.on("close", (code) => {
+      child.on("close", (code, signal) => {
         cleanup();
 
         if (aborted) {
-          resolve({ output: "Error: command interrupted", isError: true });
+          const captured =
+            stdout || stderr || outputTruncated
+              ? formatShellOutput("$ ", command, stdout, stderr, outputTruncated)
+              : "";
+          resolve({
+            output: captured
+              ? `${captured}\nError: command interrupted`
+              : "Error: command interrupted",
+            isError: true,
+          });
           return;
         }
 
         if (timedOut) {
+          const captured =
+            stdout || stderr || outputTruncated
+              ? formatShellOutput("$ ", command, stdout, stderr, outputTruncated)
+              : "";
           resolve({
-            output: `Error: command timed out after ${String(timeout)}s`,
+            output: captured
+              ? `${captured}\nError: command timed out after ${String(timeout)}s`
+              : `Error: command timed out after ${String(timeout)}s`,
             isError: true,
           });
           return;
         }
 
         const exitCode = code ?? 0;
-        let output = `$ ${command}\n`;
-        // Merge stdout and stderr, no prefix added
-        if (stdout) {
-          output += stdout;
-        }
-        if (stderr) {
-          output += stderr;
+        let output = formatShellOutput("$ ", command, stdout, stderr, outputTruncated);
+
+        if (outputTruncated) {
+          resolve({ output, isError: true });
+          return;
         }
 
         if (exitCode !== 0) {
@@ -329,7 +361,11 @@ export class BashTool implements Tool {
             : `\nExit code ${String(exitCode)}`;
         }
 
-        resolve({ output, isError: false });
+        if (code === null) {
+          output += `\nProcess terminated${signal ? ` by ${signal}` : " unexpectedly"}`;
+        }
+
+        resolve({ output, isError: exitCode !== 0 || code === null });
       });
     });
   }

@@ -29,6 +29,7 @@ import { boolArg, strArg } from "../utils/index.js";
 
 import { EDIT_FILE_DESCRIPTION } from "./descriptions.js";
 import { buildDiff } from "./diff.js";
+import { withFileMutationQueue } from "./file-mutation-queue.js";
 import {
   type Tool,
   type ToolCategory,
@@ -86,7 +87,6 @@ export class EditFileTool implements Tool {
   async execute(ctx: ToolContext, args: Record<string, unknown>): Promise<ToolResult> {
     const requestedPath = strArg(args, "file_path");
     const oldString = strArg(args, "old_string");
-    const newString = strArg(args, "new_string");
     const replaceAll = boolArg(args, "replace_all");
 
     if (!requestedPath) {
@@ -103,6 +103,13 @@ export class EditFileTool implements Tool {
         isError: true,
       };
     }
+    if (typeof args.new_string !== "string") {
+      return {
+        output: "Error: new_string is required",
+        isError: true,
+      };
+    }
+    const newString = args.new_string;
 
     if (oldString === newString) {
       return {
@@ -111,65 +118,67 @@ export class EditFileTool implements Tool {
       };
     }
 
-    // Gate: read-before-edit enforcement
-    if (ctx.fileStateCache) {
-      const gate = ctx.fileStateCache.check(filePath);
-      if (!gate.ok) {
+    return withFileMutationQueue(filePath, async () => {
+      if (ctx.abortSignal?.aborted) {
+        return { output: "Error: operation interrupted", isError: true };
+      }
+      // Gate: read-before-edit enforcement.
+      if (ctx.fileStateCache) {
+        const gate = ctx.fileStateCache.check(filePath);
+        if (!gate.ok) {
+          return { output: gate.error, isError: true };
+        }
+      }
+
+      ctx.fileHistory?.trackEdit(filePath);
+
+      let content: string;
+      try {
+        content = await readFile(filePath, "utf-8");
+      } catch (err) {
+        log.error({ err }, "tool operation failed");
         return {
-          output: gate.error,
+          output: `Error reading file: ${asErrorString(err)}`,
           isError: true,
         };
       }
-    }
 
-    ctx.fileHistory?.trackEdit(filePath);
+      const count = content.split(oldString).length - 1;
+      if (count === 0) {
+        return {
+          output: "Error: old_string not found in file",
+          isError: true,
+        };
+      }
 
-    let content: string;
-    try {
-      content = await readFile(filePath, "utf-8");
-    } catch (err) {
-      log.error({ err }, "tool operation failed");
-      return {
-        output: `Error reading file: ${asErrorString(err)}`,
-        isError: true,
-      };
-    }
+      if (!replaceAll && count > 1) {
+        return {
+          output: `Error: old_string found ${String(count)} times in file. It must be unique. Add more surrounding context, or set replace_all to true`,
+          isError: true,
+        };
+      }
 
-    const count = content.split(oldString).length - 1;
-    if (count === 0) {
-      return {
-        output: "Error: old_string not found in file",
-        isError: true,
-      };
-    }
+      const newContent = replaceAll
+        ? content.replaceAll(oldString, newString)
+        : content.replace(oldString, newString);
 
-    if (!replaceAll && count > 1) {
-      return {
-        output: `Error: old_string found ${String(count)} times in file. It must be unique. Add more surrounding context, or set replace_all to true`,
-        isError: true,
-      };
-    }
-
-    const newContent = replaceAll
-      ? content.replaceAll(oldString, newString)
-      : content.replace(oldString, newString);
-
-    try {
-      await writeFile(filePath, newContent, "utf-8");
-      ctx.fileStateCache?.update(filePath);
-      // Include the concrete diff rather than just saying "updated": both the model and TUI need to know which lines changed
-      const { text: diffText, additions, removals } = buildDiff(content, newContent);
-      const summary =
-        replaceAll && count > 1
-          ? `Updated ${filePath} with ${String(additions)} addition${additions === 1 ? "" : "s"} and ${String(removals)} removal${removals === 1 ? "" : "s"} (${String(count)} replacements)`
-          : `Updated ${filePath} with ${String(additions)} addition${additions === 1 ? "" : "s"} and ${String(removals)} removal${removals === 1 ? "" : "s"}`;
-      return { output: `${summary}\n${diffText}`, isError: false };
-    } catch (err) {
-      log.error({ err }, "tool operation failed");
-      return {
-        output: `Error writing file: ${asErrorString(err)}`,
-        isError: true,
-      };
-    }
+      try {
+        await writeFile(filePath, newContent, "utf-8");
+        ctx.fileStateCache?.update(filePath);
+        // Include the concrete diff rather than just saying "updated": both the model and TUI need to know which lines changed
+        const { text: diffText, additions, removals } = buildDiff(content, newContent);
+        const summary =
+          replaceAll && count > 1
+            ? `Updated ${filePath} with ${String(additions)} addition${additions === 1 ? "" : "s"} and ${String(removals)} removal${removals === 1 ? "" : "s"} (${String(count)} replacements)`
+            : `Updated ${filePath} with ${String(additions)} addition${additions === 1 ? "" : "s"} and ${String(removals)} removal${removals === 1 ? "" : "s"}`;
+        return { output: `${summary}\n${diffText}`, isError: false };
+      } catch (err) {
+        log.error({ err }, "tool operation failed");
+        return {
+          output: `Error writing file: ${asErrorString(err)}`,
+          isError: true,
+        };
+      }
+    });
   }
 }

@@ -34,6 +34,10 @@ export class FileStateCache {
     this.cache.set(filePath, lastModifiedTimeMs);
   }
 
+  has(filePath: string): boolean {
+    return this.cache.has(filePath);
+  }
+
   /**
    * Gate check before EditFile / WriteFile
    */
@@ -51,15 +55,14 @@ export class FileStateCache {
       /** mtimeMs: modification time in milliseconds */
       currentModifiedTime = statSync(filePath).mtimeMs;
     } catch (err) {
-      // File may have been deleted between read and edit
-      // -- let the calling tool surface a more specific error later
       log.error({ err }, "file state cache operation failed");
-      return { ok: true };
+      return {
+        ok: false,
+        error: "Error: file was deleted or is no longer accessible; read it again before editing.",
+      };
     }
 
-    if (currentModifiedTime > mtimeMs) {
-      // Modified!
-
+    if (currentModifiedTime !== mtimeMs) {
       return {
         ok: false,
         error: "Error: file has been modified since last read, read it again before editing.",

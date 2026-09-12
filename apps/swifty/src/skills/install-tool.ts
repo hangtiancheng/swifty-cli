@@ -20,36 +20,37 @@
  * SOFTWARE.
  */
 
-import { mkdirSync, writeFileSync, readFileSync, existsSync } from "node:fs";
-import { join, isAbsolute, basename } from "node:path";
+import { randomUUID } from "node:crypto";
+import {
+  mkdirSync,
+  writeFileSync,
+  readFileSync,
+  lstatSync,
+  realpathSync,
+  openSync,
+  closeSync,
+  renameSync,
+  rmSync,
+} from "node:fs";
+import { join, resolve } from "node:path";
+
+import yaml from "js-yaml";
 
 import { createChildLogger } from "../logger/logger.js";
 import type { Tool, ToolContext, ToolResult, ToolSchema } from "../tools/types.js";
 
-import type { SkillCatalog } from "./catalog.js";
+import { parseSkillFile, type SkillCatalog } from "./catalog.js";
 
 import { asErrorString, strArg } from "@/utils/index.js";
 
 const log = createChildLogger({ module: "skills" });
-
-function nameFromFrontmatter(content: string): string {
-  if (!content.startsWith("---")) {
-    return "";
-  }
-  const end = content.indexOf("---", 3);
-  if (end === -1) {
-    return "";
-  }
-  const m = /(?:^|\n)\s*name:\s*(.+)/.exec(content.slice(3, end));
-  return m ? m[1].trim() : "";
-}
 
 // Installs a skill from a local file path or an https URL into
 // .swifty/skills/<name>/SKILL.md, then reloads the catalog.
 export class InstallSkillTool implements Tool {
   name = "InstallSkill";
   description = "Install a skill from a local file path or an https URL into .swifty/skills.";
-  category = "read" as const;
+  category = "write" as const;
 
   constructor(
     private workDir: string,
@@ -66,11 +67,12 @@ export class InstallSkillTool implements Tool {
         properties: {
           source: {
             type: "string",
-            description: "Local path or https URL to a SKILL.md",
+            description: "Local file path or raw SKILL.md URL (not an HTML or repository page)",
           },
           name: {
             type: "string",
-            description: "Optional skill name (defaults to frontmatter name)",
+            description:
+              "Optional skill name override; letters, digits, dots, underscores and hyphens",
           },
         },
         required: ["source"],
@@ -84,48 +86,99 @@ export class InstallSkillTool implements Tool {
       return { output: "Error: source is required", isError: true };
     }
 
-    let content: string;
-    if (/^https?:\/\//.test(source)) {
-      try {
-        const resp = await fetch(source);
-        if (!resp.ok) {
-          return {
-            output: `Error: fetch failed (${String(resp.status)})`,
-            isError: true,
-          };
+    try {
+      ctx.abortSignal?.throwIfAborted();
+      let content: string;
+      if (/^https?:\/\//i.test(source)) {
+        const timeout = new AbortController();
+        const timer = setTimeout(() => {
+          timeout.abort(
+            new DOMException("Skill download timed out after 30 seconds", "TimeoutError"),
+          );
+        }, 30_000);
+        timer.unref();
+        const signal = ctx.abortSignal
+          ? AbortSignal.any([ctx.abortSignal, timeout.signal])
+          : timeout.signal;
+        try {
+          const resp = await fetch(source, { signal });
+          if (!resp.ok) {
+            return { output: `Error: fetch failed (${String(resp.status)})`, isError: true };
+          }
+          content = await resp.text();
+          signal.throwIfAborted();
+        } finally {
+          // Keep the timeout active until the response body has been consumed.
+          clearTimeout(timer);
         }
-        content = await resp.text();
-      } catch (err) {
-        log.error({ err }, "skills operation failed");
+      } else {
+        content = readFileSync(resolve(this.workDir, source), "utf-8");
+      }
+
+      const parsed = parseSkillFile(content);
+      if (!parsed) {
         return {
-          output: `Error fetching skill: ${asErrorString(err)}`,
+          output: "Error: source must be a valid SKILL.md with a frontmatter name",
           isError: true,
         };
       }
-    } else {
-      const p = isAbsolute(source) ? source : join(this.workDir, source);
-      if (!existsSync(p)) {
-        return { output: `Error: file not found: ${source}`, isError: true };
+      const name = strArg(args, "name") || parsed.meta.name;
+      if (!/^[a-zA-Z0-9_-][a-zA-Z0-9._-]*$/.test(name) || name.endsWith(".")) {
+        return {
+          output: "Error: invalid skill name; use letters, digits, dots, underscores and hyphens",
+          isError: true,
+        };
       }
-      content = readFileSync(p, "utf-8");
+      if (name !== parsed.meta.name) {
+        // The catalog indexes the YAML name, so an override must update it too.
+        content = `---\n${yaml.dump({ ...parsed.frontmatter, name })}---\n\n${parsed.body}\n`;
+      }
+
+      ctx.abortSignal?.throwIfAborted();
+      // Resolve the workspace itself (which may be reached via a symlink), then
+      // reject symlinks in every installation component, including dangling links.
+      let dir = realpathSync(this.workDir);
+      for (const segment of [".swifty", "skills", name]) {
+        dir = join(dir, segment);
+        const stat = lstatSync(dir, { throwIfNoEntry: false });
+        if (stat) {
+          if (stat.isSymbolicLink() || !stat.isDirectory()) {
+            throw new Error(`Installation directory must be a real directory: ${dir}`);
+          }
+        } else {
+          mkdirSync(dir);
+        }
+      }
+      const destination = join(dir, "SKILL.md");
+      const stat = lstatSync(destination, { throwIfNoEntry: false });
+      if (stat && (stat.isSymbolicLink() || !stat.isFile())) {
+        throw new Error(`Installation target must be a regular file: ${destination}`);
+      }
+
+      // Replace only this directory entry. This also avoids truncating a file
+      // outside the workspace when the old SKILL.md has another hard link.
+      const temporary = join(dir, `.SKILL-${randomUUID()}.tmp`);
+      const fd = openSync(temporary, "wx", stat?.mode ?? 0o666);
+      try {
+        try {
+          writeFileSync(fd, content, "utf-8");
+        } finally {
+          closeSync(fd);
+        }
+        renameSync(temporary, destination);
+      } finally {
+        rmSync(temporary, { force: true });
+      }
+
+      this.catalog.load(this.workDir);
+      this.onInstalled?.();
+      return {
+        output: `Skill '${name}' installed to .swifty/skills/${name}/SKILL.md`,
+        isError: false,
+      };
+    } catch (err) {
+      log.error({ err }, "skills operation failed");
+      return { output: `Error installing skill: ${asErrorString(err)}`, isError: true };
     }
-
-    const name =
-      strArg(args, "name") || nameFromFrontmatter(content) || basename(source).replace(/\.md$/, "");
-    if (!name) {
-      return { output: "Error: could not determine skill name", isError: true };
-    }
-
-    const dir = join(this.workDir, ".swifty", "skills", name);
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(join(dir, "SKILL.md"), content, "utf-8");
-
-    this.catalog.load(this.workDir);
-    this.onInstalled?.();
-
-    return {
-      output: `Skill '${name}' installed to .swifty/skills/${name}/SKILL.md`,
-      isError: false,
-    };
   }
 }

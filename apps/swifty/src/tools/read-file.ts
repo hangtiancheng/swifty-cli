@@ -29,6 +29,7 @@ import { asErrorString } from "../utils/index.js";
 import { intArg, strArg } from "../utils/index.js";
 
 import { READ_FILE_DESCRIPTION } from "./descriptions.js";
+import { utf8ByteLength } from "./shell-output.js";
 import {
   type Tool,
   type ToolCategory,
@@ -39,6 +40,9 @@ import {
 } from "./types.js";
 
 const log = createChildLogger({ module: "tools" });
+const DEFAULT_LIMIT = 2000;
+const MAX_READ_BYTES = 50 * 1024;
+
 export class ReadFileTool implements Tool {
   // Use a hardcoded string instead of ReadFileTool.name.replace("Tool", "")
   // because class names are not stable after minification — bundlers like
@@ -66,9 +70,10 @@ export class ReadFileTool implements Tool {
         },
         limit: {
           type: "integer" as const,
-          description: "Maximum number of text lines to return (default 2000). Ignored for images.",
+          description:
+            "Maximum number of text lines to return (default 2000), subject to a 50KB output limit. Ignored for images.",
           minimum: 1,
-          default: 2000,
+          default: DEFAULT_LIMIT,
         },
       },
       required: ["file_path"],
@@ -98,7 +103,15 @@ export class ReadFileTool implements Tool {
       });
     }
 
-    const stat = statSync(filePath);
+    let stat: ReturnType<typeof statSync>;
+    try {
+      stat = statSync(filePath);
+    } catch (err) {
+      return Promise.resolve({
+        output: `Error reading file: ${asErrorString(err)}`,
+        isError: true,
+      });
+    }
     if (stat.isDirectory()) {
       return Promise.resolve({
         output: `Error: ${filePath} is a directory, not a file. Use Glob to list directory contents.`,
@@ -107,11 +120,11 @@ export class ReadFileTool implements Tool {
     }
 
     if (isImagePath(filePath)) {
-      return this.readImage(ctx, filePath, stat.mtimeMs);
+      return this.readImage(ctx, filePath, stat.mtimeMs, stat.size);
     }
 
     const offset = intArg(args, "offset", 0);
-    const limit = intArg(args, "limit", 2000);
+    const limit = intArg(args, "limit", DEFAULT_LIMIT);
     if (offset < 0 || limit < 1) {
       return Promise.resolve({
         output: "Error: offset must be >= 0 and limit must be >= 1",
@@ -122,13 +135,50 @@ export class ReadFileTool implements Tool {
     try {
       const content = readFileSync(filePath, "utf-8");
       const lines = content.split("\n");
+      if (offset >= lines.length) {
+        return Promise.resolve({
+          output: `Error: offset ${String(offset)} is beyond end of file (${String(lines.length)} lines total)`,
+          isError: true,
+        });
+      }
+
       const slice = lines.slice(offset, offset + limit);
+      const numbered: string[] = [];
+      let outputBytes = 0;
+      for (const [index, line] of slice.entries()) {
+        const numberedLine = `${String(offset + index + 1)}\t${line}`;
+        const lineBytes = utf8ByteLength(numberedLine) + (numbered.length > 0 ? 1 : 0);
+        if (outputBytes + lineBytes > MAX_READ_BYTES) {
+          if (numbered.length === 0) {
+            return Promise.resolve({
+              output: `Error: line ${String(offset + index + 1)} exceeds the 50KB read limit; use Bash to inspect it in smaller chunks.`,
+              isError: true,
+            });
+          }
+          break;
+        }
+        numbered.push(numberedLine);
+        outputBytes += lineBytes;
+      }
 
       // Register the file as "read" in the state cache so subsequent
       // EditFile / WriteFile calls are allowed.
+      const afterRead = statSync(filePath);
+      if (afterRead.mtimeMs !== stat.mtimeMs || afterRead.size !== stat.size) {
+        return Promise.resolve({
+          output: `Error: ${filePath} changed while it was being read; read it again before editing.`,
+          isError: true,
+        });
+      }
       ctx.fileStateCache?.record(filePath, stat.mtimeMs);
 
-      const numbered = slice.map((line, i) => `${String(offset + i + 1)}\t${line}`);
+      const nextOffset = offset + numbered.length;
+      const remaining = lines.length - nextOffset;
+      if (remaining > 0) {
+        numbered.push(
+          `[${String(remaining)} more lines in file. Use offset=${String(nextOffset)} to continue.]`,
+        );
+      }
       return Promise.resolve({
         output: numbered.join("\n"),
         isError: false,
@@ -146,9 +196,17 @@ export class ReadFileTool implements Tool {
     ctx: ToolContext,
     filePath: string,
     mtimeMs: number,
+    size: number,
   ): Promise<ToolResult> {
     try {
       const attachment = await loadImageAttachment(filePath);
+      const afterRead = statSync(filePath);
+      if (afterRead.mtimeMs !== mtimeMs || afterRead.size !== size) {
+        return {
+          output: `Error: ${filePath} changed while it was being read; read it again before editing.`,
+          isError: true,
+        };
+      }
       ctx.fileStateCache?.record(filePath, mtimeMs);
       const imageBlock = {
         type: "image",

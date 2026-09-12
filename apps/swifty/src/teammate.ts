@@ -23,7 +23,7 @@
 import { basename, dirname, join } from "node:path";
 
 import { Agent } from "./agent/agent.js";
-import { getContextWindow, loadConfig } from "./config/config.js";
+import { getContextWindow, getMaxOutputTokens, loadConfig } from "./config/config.js";
 import type { MCPServerConfig } from "./config/config.js";
 import { ConversationManager } from "./conversation/conversation.js";
 import { createClient } from "./llm/client.js";
@@ -36,6 +36,7 @@ import {
 import { MCPManager } from "./mcp/manager.js";
 import { decideAndApply } from "./mcp/strategy.js";
 import { MCPToolWrapper } from "./mcp/tool-wrapper.js";
+import { loadInstructions } from "./memory/instructions.js";
 import { PermissionChecker } from "./permissions/checker.js";
 import { buildSystemPrompt, detectEnvironment } from "./prompt/builder.js";
 import { SkillCatalog } from "./skills/catalog.js";
@@ -150,6 +151,8 @@ export async function buildTeammateRegistry(opts: {
   catalog: SkillCatalog;
   skillHost: SkillHost;
   mcpServers?: MCPServerConfig[];
+  /** The running teammate retains this manager and disconnects it on exit. */
+  mcpManager?: MCPManager;
   /** Used to decide the MCP loading mode: total schema volume is weighed against the context window */
   baseUrl?: string;
   contextWindow?: number;
@@ -183,7 +186,7 @@ export async function buildTeammateRegistry(opts: {
   const mcpServers = opts.mcpServers ?? [];
   if (mcpServers.length > 0) {
     try {
-      const mgr = new MCPManager();
+      const mgr = opts.mcpManager ?? new MCPManager();
       const result = await mgr.connectAll(mcpServers);
       for (const { serverName, tool } of result.tools) {
         const client = mgr.getClient(serverName);
@@ -221,102 +224,125 @@ export async function runTeammate(args: TeammateArgs): Promise<void> {
   });
   process.on("exit", closeLogger);
 
-  const cfg = loadConfig();
-  const provider = args.providerName
-    ? (cfg.providers.find((p) => p.name === args.providerName) ?? cfg.providers[0])
-    : cfg.providers[0];
+  let mcpManager: MCPManager | undefined;
+  try {
+    const cfg = loadConfig();
+    const provider = args.providerName
+      ? (cfg.providers.find((p) => p.name === args.providerName) ?? cfg.providers[0])
+      : cfg.providers[0];
 
-  const workDir = process.cwd();
-  const conversation = new ConversationManager();
+    const workDir = process.cwd();
+    const conversation = new ConversationManager();
 
-  // The skill catalog feeds both the system prompt (so the model knows which
-  // skills are available) and the LoadSkill tool (for on-demand activation)
-  const catalog = new SkillCatalog();
-  catalog.load(workDir);
-  const skillHost: SkillHost = {
-    activateSkill: (name, body) => {
-      conversation.addSystemReminder(`<skill-name>${name}</skill-name>\n${body}`);
-    },
-  };
+    // The skill catalog feeds both the system prompt (so the model knows which
+    // skills are available) and the LoadSkill tool (for on-demand activation)
+    const catalog = new SkillCatalog();
+    catalog.load(workDir);
+    const skillHost: SkillHost = {
+      activateSkill: (name, body) => {
+        conversation.addSystemReminder(`<skill-name>${name}</skill-name>\n${body}`);
+      },
+    };
 
-  const env = detectEnvironment(workDir);
-  env.model = provider.model;
-  // The system prompt contains only project-agnostic product definitions; the skill
-  // listing is project-scoped and injected via the first system-reminder message
-  const systemPrompt = buildSystemPrompt(env);
-  const client = await createClient(provider, systemPrompt);
+    const env = detectEnvironment(workDir);
+    env.model = provider.model;
+    // The system prompt contains only project-agnostic product definitions; the skill
+    // listing is project-scoped and injected via the first system-reminder message
+    const systemPrompt = buildSystemPrompt(env);
+    const client = await createClient(provider, systemPrompt);
 
-  const registry = await buildTeammateRegistry({
-    workDir,
-    teamName: args.teamName,
-    memberName: args.memberName,
-    catalog,
-    skillHost,
-    mcpServers: cfg.mcp_servers,
-    baseUrl: provider.base_url,
-    contextWindow: getContextWindow(provider),
-  });
-
-  const checker = new PermissionChecker(workDir, "acceptEdits");
-
-  const agent = new Agent({
-    client,
-    registry,
-    checker,
-    conversation,
-    workDir: process.cwd(),
-    fileStateCache: new FileStateCache(),
-    skillSection: buildSkillSection(catalog, workDir),
-  });
-
-  // Start with initial task
-  conversation.addUserMessage(args.initialTask);
-
-  for await (const event of agent.run()) {
-    switch (event.type) {
-      case "stream_text":
-        process.stdout.write(event.text);
-        break;
-      case "tool_result":
-        // eslint-disable-next-line no-console -- teammate stdout output
-        console.log(
-          `[${event.toolName}] ${event.isError ? "ERROR" : "OK"} (${event.elapsed.toFixed(1)}s)`,
-        );
-        break;
-      case "loop_complete":
-        // eslint-disable-next-line no-console -- teammate stdout output
-        console.log("--- Task complete ---");
-        break;
-      case "error":
-        log.error({ err: event.error }, "agent error");
-        break;
+    if (cfg.mcp_servers?.length) {
+      mcpManager = new MCPManager();
     }
-  }
+    const registry = await buildTeammateRegistry({
+      workDir,
+      teamName: args.teamName,
+      memberName: args.memberName,
+      catalog,
+      skillHost,
+      mcpServers: cfg.mcp_servers,
+      mcpManager,
+      baseUrl: provider.base_url,
+      contextWindow: getContextWindow(provider),
+    });
 
-  // Notify the lead that this teammate finished its initial task.
-  const mailbox = new FileMailbox(args.teamDir, args.memberName);
-  const leadMailbox = new FileMailbox(args.teamDir, LeadName);
-  await leadMailbox.send(args.memberName, createIdleNotification(args.memberName).text);
+    const checker = new PermissionChecker(workDir, "acceptEdits");
 
-  // Poll mailbox for follow-up messages
-  for await (const msg of mailbox.poll(2000)) {
-    // Graceful shutdown: stop polling and exit when the lead requests it.
-    if (isShutdownRequest(msg)) {
-      // eslint-disable-next-line no-console -- teammate stdout output
-      console.log(`Shutdown requested, ${args.memberName} exiting.`);
-      break;
-    }
+    const agent = new Agent({
+      client,
+      registry,
+      checker,
+      conversation,
+      workDir,
+      fileStateCache: new FileStateCache(),
+      skillSection: buildSkillSection(catalog, workDir),
+      instructions: loadInstructions(workDir),
+      contextWindow: getContextWindow(provider),
+      maxOutput: getMaxOutputTokens(provider),
+    });
 
-    // eslint-disable-next-line no-console -- teammate stdout output
-    console.log(`Message from ${msg.from}: ${msg.text}`);
-    conversation.addUserMessage(msg.text);
+    // Start with initial task
+    conversation.addUserMessage(args.initialTask);
+
     for await (const event of agent.run()) {
-      if (event.type === "stream_text") {
-        process.stdout.write(event.text);
+      switch (event.type) {
+        case "stream_text":
+          process.stdout.write(event.text);
+          break;
+        case "tool_result":
+          // eslint-disable-next-line no-console -- teammate stdout output
+          console.log(
+            `[${event.toolName}] ${event.isError ? "ERROR" : "OK"} (${event.elapsed.toFixed(1)}s)`,
+          );
+          break;
+        case "loop_complete":
+          // eslint-disable-next-line no-console -- teammate stdout output
+          console.log("--- Task complete ---");
+          break;
+        case "error":
+          log.error({ err: event.error }, "agent error");
+          throw event.error;
       }
     }
 
-    // Notify the lead after completing each follow-up task.
+    // Notify the lead that this teammate finished its initial task.
+    const mailbox = new FileMailbox(args.teamDir, args.memberName);
+    const leadMailbox = new FileMailbox(args.teamDir, LeadName);
     await leadMailbox.send(args.memberName, createIdleNotification(args.memberName).text);
+
+    // Poll mailbox for follow-up messages
+    for await (const msg of mailbox.poll(2000)) {
+      // Graceful shutdown: stop polling and exit when the lead requests it.
+      if (isShutdownRequest(msg)) {
+        // eslint-disable-next-line no-console -- teammate stdout output
+        console.log(`Shutdown requested, ${args.memberName} exiting.`);
+        break;
+      }
+
+      // eslint-disable-next-line no-console -- teammate stdout output
+      console.log(`Message from ${msg.from}: ${msg.text}`);
+      conversation.addUserMessage(msg.text);
+      for await (const event of agent.run()) {
+        if (event.type === "stream_text") {
+          process.stdout.write(event.text);
+        } else if (event.type === "error") {
+          log.error({ err: event.error }, "agent error");
+          throw event.error;
+        }
+      }
+
+      // Notify the lead after completing each follow-up task.
+      await leadMailbox.send(args.memberName, createIdleNotification(args.memberName).text);
+    }
+  } finally {
+    if (mcpManager) {
+      try {
+        await mcpManager.disconnectAll();
+      } catch (err) {
+        log.error({ err }, "MCP cleanup failed");
+      }
+    }
+    process.off("exit", closeLogger);
+    closeLogger();
   }
 }

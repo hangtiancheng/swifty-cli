@@ -573,16 +573,135 @@ describe("persistent composer drafts and input behavior", () => {
     expect(onSubmit).not.toHaveBeenCalled();
   });
 
-  it("inserts a mocked clipboard image as the existing quoted @file mention", async () => {
+  it("collapses a clipboard image and submits the existing quoted @file mention", async () => {
     vi.mocked(saveClipboardImage).mockResolvedValue({ ok: true, value: "/virtual/image.png" });
     const ref = draftRef(["hello"]);
-    mount({ draftRef: ref, workDir: "/virtual", sessionId: "session" });
+    const onSubmit = vi.fn();
+    mount({ draftRef: ref, onSubmit, workDir: "/virtual", sessionId: "session" });
     await act(async () => {
       terminal.paste.current?.("");
       await Promise.resolve();
     });
-    expect(ref.current?.lines).toEqual(["hello '@image.png' "]);
+    expect(ref.current?.lines).toEqual(["hello [Image #1] "]);
     expect(saveClipboardImage).toHaveBeenLastCalledWith("/virtual", "session");
+    press("\r", { return: true });
+    expect(onSubmit).toHaveBeenCalledWith("hello '@image.png'");
+  });
+
+  it("collapses 124 pasted lines to the PI marker and preserves the payload across remounts", () => {
+    const text = Array.from({ length: 124 }, (_, i) => `line ${String(i + 1)}`).join("\n");
+    const ref = draftRef(["Review: "]);
+    const onSubmit = vi.fn();
+    mount({ draftRef: ref, onSubmit });
+    act(() => {
+      terminal.paste.current?.(text);
+    });
+    expect(ref.current?.lines).toEqual(["Review: [paste #1 +124 lines]"]);
+    unmount();
+    const output = stripVTControlCharacters(composer(80, { draftRef: ref }));
+    expect(output).toContain("[paste #1 +124 lines]");
+    expect(output).not.toContain("line 124");
+    expect(output.split("\n")).toHaveLength(3);
+    mount({ draftRef: ref, onSubmit });
+    press(" please");
+    press("\r", { return: true });
+    expect(onSubmit).toHaveBeenCalledWith(`Review: ${text} please`);
+  });
+
+  it("numbers successive large pastes, and moves or deletes each as a whole", () => {
+    const ref = draftRef();
+    const onSubmit = vi.fn();
+    mount({ draftRef: ref, onSubmit });
+    act(() => {
+      // Both events can arrive before React renders again.
+      terminal.paste.current?.("x".repeat(1001));
+      terminal.paste.current?.("y".repeat(1002));
+    });
+    const first = "[paste #1 1001 chars]";
+    expect(ref.current?.lines).toEqual([`${first}[paste #2 1002 chars]`]);
+    press("", { leftArrow: true });
+    expect(ref.current?.cursorCol).toBe(first.length);
+    press("", { rightArrow: true });
+    expect(ref.current?.cursorCol).toBe(first.length + "[paste #2 1002 chars]".length);
+    press("", { backspace: true });
+    expect(ref.current?.lines).toEqual([first]);
+    press("", { leftArrow: true });
+    press("", { delete: true });
+    expect(ref.current?.lines).toEqual([""]);
+    press("ok");
+    press("\r", { return: true });
+    expect(onSubmit).toHaveBeenCalledWith("ok");
+  });
+
+  it("retains pasted drafts during history browsing without expanding literal history markers", () => {
+    const ref = draftRef();
+    const onSubmit = vi.fn();
+    const history = ["[paste #1 1001 chars]"];
+    mount({ draftRef: ref, onSubmit, history });
+    act(() => {
+      terminal.paste.current?.("x".repeat(1001));
+    });
+    press("", { upArrow: true });
+    expect(ref.current?.pastes).toBeUndefined();
+    press("", { downArrow: true });
+    expect(ref.current?.pastes).toBeDefined();
+    press("\r", { return: true });
+    expect(onSubmit).toHaveBeenLastCalledWith("x".repeat(1001));
+    press("", { upArrow: true });
+    press("\r", { return: true });
+    expect(onSubmit).toHaveBeenLastCalledWith("[paste #1 1001 chars]");
+  });
+
+  it("uses a single expansion pass for literal markers inside a pasted payload", () => {
+    const ref = draftRef();
+    const onSubmit = vi.fn();
+    const first = `${"x".repeat(1001)}[paste #2 1002 chars]`;
+    mount({ draftRef: ref, onSubmit });
+    act(() => {
+      terminal.paste.current?.(first);
+    });
+    press(" ");
+    act(() => {
+      terminal.paste.current?.("y".repeat(1002));
+    });
+    press("\r", { return: true });
+    expect(onSubmit).toHaveBeenCalledWith(`${first} ${"y".repeat(1002)}`);
+  });
+
+  it("numbers images independently, restores them with the draft, and resets after clear", async () => {
+    vi.mocked(saveClipboardImage).mockResolvedValue({ ok: true, value: "/virtual/image.png" });
+    const ref = draftRef();
+    const onSubmit = vi.fn();
+    const clearRef: { current: (() => void) | null } = { current: null };
+    mount({ draftRef: ref, onSubmit, clearRef, workDir: "/virtual" });
+    act(() => {
+      terminal.paste.current?.("x".repeat(1001));
+    });
+    await act(async () => {
+      terminal.paste.current?.("");
+      await Promise.resolve();
+    });
+    await act(async () => {
+      terminal.paste.current?.("");
+      await Promise.resolve();
+    });
+    expect(ref.current?.lines).toEqual(["[paste #1 1001 chars] [Image #1] [Image #2] "]);
+    unmount();
+    mount({ draftRef: ref, onSubmit, clearRef, workDir: "/virtual" });
+    press("", { leftArrow: true });
+    press("", { backspace: true });
+    expect(ref.current?.lines[0]).not.toContain("[Image #2]");
+    press("\r", { return: true });
+    expect(onSubmit).toHaveBeenCalledWith(`${"x".repeat(1001)} '@image.png'`);
+    await act(async () => {
+      terminal.paste.current?.("");
+      await Promise.resolve();
+    });
+    expect(ref.current?.lines).toEqual(["[Image #1] "]);
+    act(() => {
+      clearRef.current?.();
+    });
+    expect(ref.current?.pastes).toBeUndefined();
   });
 
   it("ignores a late image paste from the input replaced by a selector", async () => {

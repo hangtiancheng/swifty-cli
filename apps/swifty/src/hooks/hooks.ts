@@ -31,7 +31,10 @@ const log = createChildLogger({ module: "hooks" });
 
 /** Async command execution for hooks — non-blocking, 30s timeout.
  *  Replaces execSync so the event loop isn't frozen during hook commands. */
-function execHookAsync(command: string, opts: { env: NodeJS.ProcessEnv }): Promise<string> {
+function execHookAsync(
+  command: string,
+  opts: { env: NodeJS.ProcessEnv; cwd?: string; signal?: AbortSignal },
+): Promise<string> {
   return new Promise((resolve, reject) => {
     exec(
       command,
@@ -40,6 +43,8 @@ function execHookAsync(command: string, opts: { env: NodeJS.ProcessEnv }): Promi
         encoding: "utf-8",
         timeout: 30000,
         env: opts.env,
+        cwd: opts.cwd,
+        signal: opts.signal,
         maxBuffer: 10 * 1024 * 1024,
       },
       (err, stdout) => {
@@ -78,6 +83,11 @@ export interface HookResult {
   reject: boolean;
 }
 
+export interface HookRuntimeOptions {
+  workDir?: string;
+  abortSignal?: AbortSignal;
+}
+
 export class HookEngine {
   private hooks: HookConfig[];
   private firedOnce = new Set<string>();
@@ -103,41 +113,47 @@ export class HookEngine {
     return out;
   }
 
-  async fire(event: EventName, context: HookContext): Promise<HookResult[]> {
+  async fire(
+    event: EventName,
+    context: HookContext,
+    options: HookRuntimeOptions = {},
+  ): Promise<HookResult[]> {
     const results: HookResult[] = [];
 
-    for (const hook of this.hooks) {
+    for (const [index, hook] of this.hooks.entries()) {
+      if (options.abortSignal?.aborted) {
+        break;
+      }
       if (hook.event !== event) {
         continue;
-      }
-
-      if (hook.once) {
-        const key = hook.id ?? `${hook.event}-${hook.action.type}`;
-        if (this.firedOnce.has(key)) {
-          continue;
-        }
-        this.firedOnce.add(key);
       }
 
       if (hook.condition && !evaluateCondition(hook.condition, context)) {
         continue;
       }
 
+      if (hook.once) {
+        const key = hook.id === undefined ? `index:${String(index)}` : `id:${hook.id}`;
+        if (this.firedOnce.has(key)) {
+          continue;
+        }
+        this.firedOnce.add(key);
+      }
+
       // Async hook: execute in the background without blocking the main flow
       if (hook.async) {
-        this.executeAction(hook, context)
+        this.executeAction(hook, context, options)
           .then((r) => {
             this.recordNotification(r.output);
           })
           .catch((err: unknown) => {
             this.recordNotification(`Async hook error: ${asErrorString(err)}`);
           });
-        results.push({ output: "(async)", success: true, reject: false });
         continue;
       }
 
       try {
-        const result = await this.executeAction(hook, context);
+        const result = await this.executeAction(hook, context, options);
         results.push(result);
 
         if (result.reject && event === "pre_tool_use") {
@@ -152,6 +168,9 @@ export class HookEngine {
         } else if (onError === "reject") {
           const msg = `Hook error (rejecting): ${asErrorString(err)}`;
           results.push({ output: msg, success: false, reject: true });
+          if (event === "pre_tool_use") {
+            break;
+          }
         }
       }
     }
@@ -162,6 +181,7 @@ export class HookEngine {
   async firePreToolHooks(
     toolName: string,
     args: Record<string, unknown>,
+    options: HookRuntimeOptions = {},
   ): Promise<{ rejected: boolean; reason: string }> {
     const context: HookContext = {
       event: "pre_tool_use",
@@ -170,21 +190,28 @@ export class HookEngine {
       filePath: strArg(args, "file_path", strArg(args, "path", "")),
     };
 
-    const results = await this.fire("pre_tool_use", context);
+    const results = await this.fire("pre_tool_use", context, options);
     for (const r of results) {
       if (r.reject) {
         return { rejected: true, reason: r.output };
       }
+      this.recordNotification(r.output);
     }
     return { rejected: false, reason: "" };
   }
 
-  private async executeAction(hook: HookConfig, context: HookContext): Promise<HookResult> {
+  private async executeAction(
+    hook: HookConfig,
+    context: HookContext,
+    options: HookRuntimeOptions,
+  ): Promise<HookResult> {
     switch (hook.action.type) {
       case "command": {
         const command = hook.action.command ?? "";
         try {
           const output = await execHookAsync(command, {
+            cwd: options.workDir,
+            signal: options.abortSignal,
             env: {
               ...process.env,
               SWIFTY_EVENT: context.event,
@@ -208,21 +235,26 @@ export class HookEngine {
         return {
           output: hook.action.prompt ?? "",
           success: true,
-          // Propagate hook.reject so prompt-type hooks can block tool execution.
-          // reject: hook.reject ?? false,
-          reject: false,
+          reject: hook.reject ?? false,
         };
       }
 
       case "http": {
         const url = hook.action.url ?? "";
-        const method = hook.action.method ?? "POST";
+        const method = (hook.action.method ?? "POST").toUpperCase();
         try {
           const resp = await fetch(url, {
             method,
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(context),
+            ...(method === "GET" || method === "HEAD" ? {} : { body: JSON.stringify(context) }),
+            signal: options.abortSignal
+              ? AbortSignal.any([options.abortSignal, AbortSignal.timeout(30000)])
+              : AbortSignal.timeout(30000),
           });
+          if (!resp.ok) {
+            await resp.body?.cancel();
+            throw new Error(`HTTP hook failed with status ${String(resp.status)}`);
+          }
           const text = await resp.text();
           return {
             output: text,
@@ -238,11 +270,7 @@ export class HookEngine {
       case "agent": {
         // Agent-type hook: execute a subagent via the injected agentRunner
         if (!this.agentRunner) {
-          return {
-            output: "agent-type hook configured but no AgentRunner registered",
-            success: false,
-            reject: hook.reject ?? false,
-          };
+          throw new Error("agent-type hook configured but no AgentRunner registered");
         }
         const prompt = hook.action.prompt ?? hook.action.command ?? "";
         try {
@@ -250,11 +278,7 @@ export class HookEngine {
           return { output, success: true, reject: hook.reject ?? false };
         } catch (err) {
           log.error({ err }, "hooks operation failed");
-          return {
-            output: asErrorString(err),
-            success: false,
-            reject: hook.reject ?? false,
-          };
+          throw err;
         }
       }
 
@@ -265,20 +289,28 @@ export class HookEngine {
 }
 
 function evaluateCondition(condition: string, ctx: HookContext): boolean {
-  const parts = condition.split(/\s*(&&|\|\|)\s*/);
-
-  let result = evaluateSingleCondition(parts[0], ctx);
-  for (let i = 1; i < parts.length; i += 2) {
-    const op = parts[i];
-    const next = evaluateSingleCondition(parts[i + 1], ctx);
-    if (op === "&&") {
-      result = result && next;
-    } else if (op === "||") {
-      result = result || next;
+  // Keep operators inside quoted values intact, and give && precedence over ||.
+  const groups: string[][] = [[]];
+  let start = 0;
+  let quoted = false;
+  for (let i = 0; i < condition.length; i++) {
+    if (condition[i] === '"') {
+      quoted = !quoted;
+    }
+    const operator = condition.slice(i, i + 2);
+    if (!quoted && (operator === "&&" || operator === "||")) {
+      groups[groups.length - 1].push(condition.slice(start, i));
+      if (operator === "||") {
+        groups.push([]);
+      }
+      start = i + 2;
+      i++;
     }
   }
-
-  return result;
+  groups[groups.length - 1].push(condition.slice(start));
+  return (
+    !quoted && groups.some((group) => group.every((part) => evaluateSingleCondition(part, ctx)))
+  );
 }
 
 function evaluateSingleCondition(expr: string, ctx: HookContext): boolean {
@@ -313,7 +345,23 @@ function evaluateSingleCondition(expr: string, ctx: HookContext): boolean {
   const globMatch = /^(\w+)\s*=\*\s*"([^"]*)"$/.exec(trimmed);
   if (globMatch) {
     const value = getContextValue(globMatch[1], ctx);
-    const pattern = globMatch[2].replace(/\*\*/g, ".*").replace(/\*/g, "[^/]*").replace(/\?/g, ".");
+    const pattern = globMatch[2]
+      .split(/(\*\*\/|\*\*|\*|\?)/)
+      .map((part) => {
+        switch (part) {
+          case "**/":
+            return "(?:.*/)?";
+          case "**":
+            return ".*";
+          case "*":
+            return "[^/]*";
+          case "?":
+            return "[^/]";
+          default:
+            return part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        }
+      })
+      .join("");
     try {
       return new RegExp(`^${pattern}$`).test(value);
     } catch (err) {
@@ -322,7 +370,8 @@ function evaluateSingleCondition(expr: string, ctx: HookContext): boolean {
     }
   }
 
-  return false;
+  // A bare tool name is the shorthand used by the example configuration.
+  return /^\w+$/.test(trimmed) && trimmed === ctx.toolName;
 }
 
 function getContextValue(key: string, ctx: HookContext): string {

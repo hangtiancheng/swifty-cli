@@ -191,4 +191,6 @@ Inside the TUI, these commands are available:
 | Ctrl+V    | Paste a clipboard image (Alt+V on Windows)                                          |
 | Shift+Tab | Cycle permission modes                                                              |
 
-Pasting an image saves it as a PNG under `.swifty/file-history/<session-id>/` and inserts a workDir-relative `@` reference into the prompt; on submit it expands into an inline image block like any other `@image` mention. Linux requires `wl-clipboard` (Wayland) or `xclip` (X11).
+Pastes longer than 10 lines or 1,000 characters collapse to `[paste #1 +124 lines]` or `[paste #1 1234 chars]`. Clipboard images appear as `[Image #1]`. Arrow keys move across each placeholder as a unit, and Backspace/Delete remove it as a unit. Placeholders survive dialog switches; submitting restores the full text and image attachments.
+
+Pasting an image saves it as a PNG under `.swifty/file-history/<session-id>/`. Its placeholder expands to a workDir-relative `@` reference on submit and loads as an inline image block. Linux requires `wl-clipboard` (Wayland) or `xclip` (X11).

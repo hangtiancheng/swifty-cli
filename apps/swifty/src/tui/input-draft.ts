@@ -1,10 +1,13 @@
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { SetStateAction } from "react";
 
+import type { PasteStore } from "./input-paste.js";
+
 interface InputPosition {
   lines: string[];
   cursorLine: number;
   cursorCol: number;
+  pastes?: PasteStore;
 }
 
 export interface InputDraft extends InputPosition {
@@ -40,6 +43,9 @@ export function useInputDraft(draftRef?: { current: InputDraft | null }) {
         ...previous,
         [field]: typeof value === "function" ? value(previous[field]) : value,
       };
+      if (field === "pastes" && next.pastes === undefined) {
+        delete next.pastes;
+      }
       latest.current = next;
       // Persist before scheduling React: a selector can unmount the editor in
       // the same event, before a render or effect has a chance to save it.
@@ -53,6 +59,7 @@ export function useInputDraft(draftRef?: { current: InputDraft | null }) {
 
   const setters = useMemo(
     () => ({
+      getDraft: () => latest.current,
       setLines: (value: SetStateAction<string[]>) => {
         update("lines", value);
       },
@@ -67,6 +74,9 @@ export function useInputDraft(draftRef?: { current: InputDraft | null }) {
       },
       setHistoryDraft: (value: InputPosition | null) => {
         update("historyDraft", value);
+      },
+      setPastes: (value: PasteStore | undefined) => {
+        update("pastes", value);
       },
     }),
     [update],

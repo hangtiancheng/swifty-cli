@@ -56,11 +56,19 @@ function sliceLines(content: string, lineStart: number, lineEnd: number): string
   return all.slice(from - 1, to).join("\n");
 }
 
+function collectAtRefs(text: string): string[] {
+  // Clipboard images and paths containing spaces use quoted mentions.
+  const pattern = /(?:^|\s)(?:'@([^']+)'|"@([^"]+)"|@"([^"]+)"|@'([^']+)'|@([^\s]+))/g;
+  return [...text.matchAll(pattern)].map(
+    (match) => match[1] ?? match[2] ?? match[3] ?? match[4] ?? match[5],
+  );
+}
+
 // Expand @path references in a user message by inlining the referenced files'
 // contents (resolved relative to workDir). Tokens that don't resolve to a small
 // readable file are left untouched.
 export function expandAtRefs(text: string, workDir: string): string {
-  const refs = [...text.matchAll(/(?:^|\s)@([^\s]+)/g)].map((m) => m[1]);
+  const refs = collectAtRefs(text);
   if (refs.length === 0) {
     return text;
   }
@@ -107,7 +115,7 @@ export async function expandAtRefsWithImages(
   text: string,
   workDir: string,
 ): Promise<string | Record<string, unknown>[]> {
-  const refs = [...text.matchAll(/(?:^|\s)@([^\s]+)/g)].map((m) => m[1]);
+  const refs = collectAtRefs(text);
   if (refs.length === 0) {
     return text;
   }

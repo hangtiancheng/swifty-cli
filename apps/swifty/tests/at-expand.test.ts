@@ -28,6 +28,7 @@ import { fileURLToPath } from "node:url";
 import { describe, it, expect } from "vitest";
 
 import { expandAtRefs, expandAtRefsWithImages } from "@/conversation/at-expand.js";
+import { collapseImage, expandPastes } from "@/tui/input-paste.js";
 import { isRecord, strArg } from "@/utils/index.js";
 
 const TEST_PNG_PATH = join(dirname(fileURLToPath(import.meta.url)), "test.png");
@@ -63,6 +64,25 @@ describe("@file mention expansion", () => {
 });
 
 describe("@image mention expansion (expandAtRefsWithImages)", () => {
+  it.each(["'@screen shot.png'", '"@screen shot.png"', '@"screen shot.png"', "@'screen shot.png'"])(
+    "restores an image placeholder through quoted mention %s to an image block",
+    async (reference) => {
+      const workDir = mkdtempSync(join(tmpdir(), "swifty-at-img-"));
+      copyFileSync(TEST_PNG_PATH, join(workDir, "screen shot.png"));
+      const collapsed = collapseImage(reference);
+      expect(collapsed.text).toBe("[Image #1]");
+      const out = await expandAtRefsWithImages(
+        expandPastes(`See ${collapsed.text}`, collapsed.store),
+        workDir,
+      );
+      if (typeof out === "string") {
+        throw new Error("expected image content blocks after placeholder expansion");
+      }
+      expect(out.filter((block) => block.type === "image")).toHaveLength(1);
+      expect(strArg(out[0], "text")).toContain('path="screen shot.png"');
+    },
+  );
+
   it("returns a plain string when no image is referenced", async () => {
     const workDir = mkdtempSync(join(tmpdir(), "swifty-at-img-"));
     writeFileSync(join(workDir, "a.txt"), "AAA");

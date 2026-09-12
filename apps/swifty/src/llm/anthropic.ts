@@ -436,7 +436,7 @@ export class AnthropicClient implements LLMClient {
             }
             // end if (delta.type === "thinking_delta")
             else if (delta.type === "signature_delta") {
-              thinkingSignature = delta.signature;
+              thinkingSignature += delta.signature;
             }
             // end if (delta.type === "signature_delta")
             else if (delta.type === "text_delta") {
@@ -578,6 +578,7 @@ export function markLastUserTailForCache(messages: Anthropic.Messages.MessagePar
     Reflect.set(last, "cache_control", {
       type: "ephemeral",
     });
+    return;
   }
 }
 
@@ -595,14 +596,16 @@ function classifyAnthropicError(err: unknown) {
     } // end if (err.status === 401)
 
     if (err.status === AnthropicErrorCode.RateLimitError) {
-      const retryAfter: unknown = asRecord(err.headers)["retry-after"];
+      const headers: unknown = err.headers;
+      const retryAfter = headers instanceof Headers ? headers.get("retry-after") : undefined;
       let message = "Rate Limited";
       if (retryAfter) {
         const s = Number.parseInt(asString(retryAfter));
         if (Number.isNaN(s)) {
           message += ", please wait.";
+        } else {
+          message += `, retry after ${asString(s)}s.`;
         }
-        message += `, retry after ${asString(s)}s.`;
       } else {
         message += ", please wait.";
       }

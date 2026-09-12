@@ -201,7 +201,7 @@ export function loadSession(workDir: string, sessionId: string): SessionMessage[
       // empty-content ordinary messages rather than crashing the load.
       if (success) {
         const isEmpty =
-          !data.content && // empty content
+          data.content.length === 0 && // empty text or content blocks
           !(data.tool_uses?.length ?? 0) && // empty tool uses
           !(data.tool_results?.length ?? 0); // empty tool results
         if (!isEmpty) {
@@ -317,7 +317,7 @@ export function rebuildFromSession(saved: SessionMessage[]): RestoredMessage[] {
       for (const k of payload.keep) {
         if (
           (k.role !== "user" && k.role !== "assistant") ||
-          (!k.content && // empty content
+          (k.content.length === 0 && // empty text or content blocks
             !(k.tool_uses?.length ?? 0) && // empty tool uses
             !(k.tool_results?.length ?? 0)) // empty tool results
         ) {
@@ -366,7 +366,7 @@ function toRestored(m: SessionMessage): RestoredMessage | null {
     return null;
   }
   if (
-    !m.content &&
+    m.content.length === 0 &&
     !(m.tool_uses?.length ?? 0) && // empty tool uses
     !(m.tool_results?.length ?? 0) // empty tool results
   ) {

@@ -31,6 +31,7 @@ import { createClient } from "./llm/client.js";
 import { MCPManager } from "./mcp/manager.js";
 import { decideAndApply } from "./mcp/strategy.js";
 import { MCPToolWrapper } from "./mcp/tool-wrapper.js";
+import { loadInstructions } from "./memory/instructions.js";
 import { PermissionChecker } from "./permissions/checker.js";
 import { buildSystemPrompt, detectEnvironment } from "./prompt/builder.js";
 import { AgentTool } from "./subagent/agent-tool.js";
@@ -115,6 +116,12 @@ export async function runPrintMode(args: PrintArgs): Promise<void> {
   // Create LLM client
   const client = await createClient(provider, systemPrompt);
 
+  const conv = new ConversationManager();
+  conv.addUserMessage(args.prompt);
+
+  // Print mode intentionally bypasses permission prompts.
+  const checker = new PermissionChecker(workDir, "bypassPermissions");
+
   // Create tool registry and register core tools
   const registry = new ToolRegistry();
   registry.register(new ReadFileTool());
@@ -139,7 +146,7 @@ export async function runPrintMode(args: PrintArgs): Promise<void> {
   const agentTool = new AgentTool(
     workDir,
     registry,
-    (def, prompt, _bg, modelOverride, workDirOverride) =>
+    (def, prompt, background, modelOverride, workDirOverride, context) =>
       spawnSubagent(
         def,
         prompt,
@@ -150,24 +157,54 @@ export async function runPrintMode(args: PrintArgs): Promise<void> {
         undefined,
         undefined,
         modelOverride,
+        workDirOverride
+          ? context?.permissionChecker?.forWorkDir(workDirOverride)
+          : context?.permissionChecker,
+        {
+          abortSignal: context?.abortSignal,
+          background,
+          onPermissionRequest: context?.onPermissionRequest,
+          permissionMode: context?.permissionChecker?.mode,
+        },
+      ),
+    conv,
+    (prompt, conversation, forkRegistry, modelOverride, context) =>
+      spawnSubagent(
+        BUILTIN_AGENTS[0],
+        prompt,
+        client,
+        forkRegistry,
+        provider,
+        context?.workDir ?? workDir,
+        undefined,
+        undefined,
+        modelOverride,
+        context?.permissionChecker,
+        {
+          conversation,
+          abortSignal: context?.abortSignal,
+          onPermissionRequest: context?.onPermissionRequest,
+        },
       ),
   );
   agentTool.forkDisabled = !forkEnabled(cfg);
   agentTool.setTeamManager(
     teamManager,
-    (teamRegistry, teamChecker) => (task, onEvent) =>
-      spawnSubagent(
-        BUILTIN_AGENTS[0],
-        task,
-        client,
-        teamRegistry,
-        provider,
-        workDir,
-        undefined,
-        onEvent,
-        undefined,
-        teamChecker,
-      ),
+    (teamRegistry, teamChecker, memberWorkDir = workDir) =>
+      (task, onEvent, abortSignal) =>
+        spawnSubagent(
+          BUILTIN_AGENTS[0],
+          task,
+          client,
+          teamRegistry,
+          provider,
+          memberWorkDir,
+          undefined,
+          onEvent,
+          undefined,
+          teamChecker,
+          { abortSignal },
+        ),
   );
   registry.register(agentTool);
 
@@ -175,121 +212,124 @@ export async function runPrintMode(args: PrintArgs): Promise<void> {
   // load mode compares total schema size against the context window, so it only
   // computes accurately once all tools are in place.
   let mcpManager: MCPManager | undefined;
-  if (cfg.mcp_servers && cfg.mcp_servers.length > 0) {
-    mcpManager = new MCPManager();
-    const result = await mcpManager.connectAll(cfg.mcp_servers);
-    for (const { serverName, tool } of result.tools) {
-      const client = mcpManager.getClient(serverName);
-      if (client) {
-        registry.register(new MCPToolWrapper(client, serverName, tool));
+  try {
+    if (cfg.mcp_servers && cfg.mcp_servers.length > 0) {
+      mcpManager = new MCPManager();
+      const result = await mcpManager.connectAll(cfg.mcp_servers);
+      for (const { serverName, tool } of result.tools) {
+        const client = mcpManager.getClient(serverName);
+        if (client) {
+          registry.register(new MCPToolWrapper(client, serverName, tool));
+        }
       }
-    }
-    for (const e of result.errors) {
-      process.stderr.write(`MCP warning: ${e.serverName}: ${e.error}
+      for (const e of result.errors) {
+        process.stderr.write(`MCP warning: ${e.serverName}: ${e.error}
 `);
+      }
+      decideAndApply(registry, provider.base_url, getContextWindow(provider));
     }
-    decideAndApply(registry, provider.base_url, getContextWindow(provider));
-  }
 
-  // Create conversation manager and add user message
-  const conv = new ConversationManager();
-  conv.addUserMessage(args.prompt);
+    // Create Agent
+    const agent = new Agent({
+      client,
+      registry,
+      checker,
+      conversation: conv,
+      workDir,
+      fileStateCache: new FileStateCache(),
+      contextWindow: getContextWindow(provider),
+      maxOutput: getMaxOutputTokens(provider),
+      instructions: loadInstructions(workDir),
+      // Teammate completion reports land in the Lead's inbox; drained each turn as a system-reminder delivered to the Lead
+      notificationFn: () => teamManager.drainLeads(),
+      toolFilter: coordinatorToolFilter(cfg.enable_coordinator_mode ?? false),
+      coordinatorActiveFn: () => coordinatorActive(cfg.enable_coordinator_mode ?? false),
+    });
 
-  // bypassPermissions mode: auto-approve all permission requests
-  const checker = new PermissionChecker(workDir, "bypassPermissions");
+    // Statistics
+    let resultText = "";
+    let numTurns = 0;
+    const toolCalls: { tool: string; elapsed: number }[] = [];
+    const totalUsage = { inputTokens: 0, outputTokens: 0 };
 
-  // Create Agent
-  const agent = new Agent({
-    client,
-    registry,
-    checker,
-    conversation: conv,
-    workDir,
-    fileStateCache: new FileStateCache(),
-    contextWindow: getContextWindow(provider),
-    maxOutput: getMaxOutputTokens(provider),
-    // Teammate completion reports land in the Lead's inbox; drained each turn as a system-reminder delivered to the Lead
-    notificationFn: () => teamManager.drainLeads(),
-    toolFilter: coordinatorToolFilter(cfg.enable_coordinator_mode ?? false),
-    coordinatorActiveFn: () => coordinatorActive(cfg.enable_coordinator_mode ?? false),
-  });
+    // Consume the Agent event stream
+    for await (const event of agent.run()) {
+      if (args.outputFormat === "stream-json") {
+        emitStreamJson(event);
+      } else {
+        // text mode: emit only streamed text
+        if (event.type === "stream_text") {
+          process.stdout.write(event.text);
+        }
+      }
 
-  // Statistics
-  let resultText = "";
-  let numTurns = 0;
-  const toolCalls: { tool: string; elapsed: number }[] = [];
-  const totalUsage = { inputTokens: 0, outputTokens: 0 };
-
-  // Consume the Agent event stream
-  for await (const event of agent.run()) {
-    if (args.outputFormat === "stream-json") {
-      emitStreamJson(event);
-    } else {
-      // text mode: emit only streamed text
-      if (event.type === "stream_text") {
-        process.stdout.write(event.text);
+      // Collect statistics
+      switch (event.type) {
+        case "stream_text":
+          resultText += event.text;
+          break;
+        case "tool_use":
+          toolCalls.push({ tool: event.toolName, elapsed: 0 });
+          break;
+        case "tool_result":
+          // Update elapsed time for the most recent matching tool call
+          for (let i = toolCalls.length - 1; i >= 0; i--) {
+            if (toolCalls[i].tool === event.toolName && toolCalls[i].elapsed === 0) {
+              toolCalls[i].elapsed = event.elapsed;
+              break;
+            }
+          }
+          break;
+        case "turn_complete":
+          numTurns++;
+          break;
+        case "usage":
+          totalUsage.inputTokens += event.usage.inputTokens;
+          totalUsage.outputTokens += event.usage.outputTokens;
+          break;
+        case "error":
+          process.exitCode = 1;
+          if (args.outputFormat === "text") {
+            console.error(`\nError: ${event.error.message}`);
+          }
+          break;
+        case "loop_complete":
+          if (event.stopReason === "interrupted") {
+            process.exitCode = 1;
+          }
+          break;
       }
     }
 
-    // Collect statistics
-    switch (event.type) {
-      case "stream_text":
-        resultText += event.text;
-        break;
-      case "tool_use":
-        toolCalls.push({ tool: event.toolName, elapsed: 0 });
-        break;
-      case "tool_result":
-        // Update elapsed time for the most recent matching tool call
-        for (let i = toolCalls.length - 1; i >= 0; i--) {
-          if (toolCalls[i].tool === event.toolName && toolCalls[i].elapsed === 0) {
-            toolCalls[i].elapsed = event.elapsed;
-            break;
-          }
-        }
-        break;
-      case "turn_complete":
-        numTurns++;
-        break;
-      case "usage":
-        totalUsage.inputTokens += event.usage.inputTokens;
-        totalUsage.outputTokens += event.usage.outputTokens;
-        break;
-      case "error":
-        if (args.outputFormat === "text") {
-          console.error(`\nError: ${event.error.message}`);
-        }
-        break;
+    const durationMs = Date.now() - startTime;
+
+    // text mode: ensure trailing newline
+    if (args.outputFormat === "text" && resultText && !resultText.endsWith("\n")) {
+      process.stdout.write("\n");
     }
-  }
 
-  const durationMs = Date.now() - startTime;
-
-  // text mode: ensure trailing newline
-  if (args.outputFormat === "text" && resultText && !resultText.endsWith("\n")) {
-    process.stdout.write("\n");
-  }
-
-  // stream-json mode: emit final summary
-  if (args.outputFormat === "stream-json") {
-    const resultLine = {
-      type: "result",
-      result: resultText,
-      duration_ms: durationMs,
-      num_turns: numTurns,
-      tool_calls: toolCalls,
-      usage: totalUsage,
-    };
-    console.log(JSON.stringify(resultLine));
-  }
-
-  // MCP servers are stdio subprocesses; without disconnecting them the event loop keeps references alive and the process never exits.
-  // Results are already printed, so a cleanup failure must not affect this command's output.
-  if (mcpManager) {
-    try {
-      await mcpManager.disconnectAll();
-    } catch {
-      /* Cleanup failure doesn't matter; the process is about to exit */
+    // stream-json mode: emit final summary
+    if (args.outputFormat === "stream-json") {
+      const resultLine = {
+        type: "result",
+        result: resultText,
+        duration_ms: durationMs,
+        num_turns: numTurns,
+        tool_calls: toolCalls,
+        usage: totalUsage,
+      };
+      console.log(JSON.stringify(resultLine));
+    }
+  } finally {
+    // Teammates otherwise keep polling after the single-shot Lead has finished.
+    // Stop them before closing the MCP connections they share with the Lead.
+    await Promise.allSettled(teamManager.list().map((team) => team.stopAll()));
+    if (mcpManager) {
+      try {
+        await mcpManager.disconnectAll();
+      } catch {
+        // Cleanup must not mask an execution error or change the printed result.
+      }
     }
   }
 }

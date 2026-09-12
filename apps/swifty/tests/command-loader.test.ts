@@ -64,6 +64,7 @@ describe("user command loader", () => {
   it("renderBody appends args when there is no placeholder", () => {
     expect(renderBody("Do the thing.", "extra")).toBe("Do the thing.\n\nextra");
     expect(renderBody("Echo $ARGUMENTS!", "hi")).toBe("Echo hi!");
+    expect(renderBody("Echo $ARGUMENTS!", "$& $$ $` $'")).toBe("Echo $& $$ $` $'!");
     expect(renderBody("No args needed.", "")).toBe("No args needed.");
   });
 });

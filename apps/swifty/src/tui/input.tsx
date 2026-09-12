@@ -32,16 +32,11 @@ import { createChildLogger } from "../logger/logger.js";
 
 import { useInputDraft } from "./input-draft.js";
 import type { InputDraft } from "./input-draft.js";
+import { collapseImage, collapsePaste, expandPastes, inputBoundary } from "./input-paste.js";
 import { getListWindowStart } from "./list-window.js";
 import { StatusBorder } from "./status-border.js";
 import { ICONS, THEME } from "./styles.js";
-import {
-  clampToGraphemeBoundary,
-  nextGraphemeBoundary,
-  previousGraphemeBoundary,
-  truncateToWidth,
-  visibleWidth,
-} from "./terminal-text.js";
+import { truncateToWidth, visibleWidth } from "./terminal-text.js";
 
 import type { Command } from "@/commands/commands.js";
 import type { CommandUsageTracker } from "@/commands/usage-tracker.js";
@@ -159,6 +154,9 @@ export function InputBox(props: InputBoxProps) {
     setHistoryIndex,
     historyDraft,
     setHistoryDraft,
+    pastes,
+    setPastes,
+    getDraft,
   } = useInputDraft(draftRef);
   const [dropdownIndex, setDropdownIndex] = useState(0);
   const [dropdownDismissed, setDropdownDismissed] = useState(false);
@@ -224,6 +222,7 @@ export function InputBox(props: InputBoxProps) {
       setCursorCol(0);
       setHistoryIndex(-1);
       setHistoryDraft(null);
+      setPastes(undefined);
       setDropdownIndex(0);
       setDropdownDismissed(false);
       setPasteError("");
@@ -231,7 +230,16 @@ export function InputBox(props: InputBoxProps) {
     return () => {
       clearRef.current = null;
     };
-  }, [clearRef, disabled, setLines, setCursorLine, setCursorCol, setHistoryIndex, setHistoryDraft]);
+  }, [
+    clearRef,
+    disabled,
+    setLines,
+    setCursorLine,
+    setCursorCol,
+    setHistoryIndex,
+    setHistoryDraft,
+    setPastes,
+  ]);
 
   const isMultiline = lines.length > 1;
 
@@ -371,14 +379,23 @@ export function InputBox(props: InputBoxProps) {
     setDropdownIndex(0);
   };
 
-  const insertPastedText = (rawText: string) => {
+  const insertPastedText = (rawText: string, image = false) => {
     const normalized = rawText.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
     if (!normalized) {
       return;
     }
-    const pasteLines = normalized.split("\n");
-    const cl = cursorLine;
-    const col = Math.min(cursorCol, (lines[cl] ?? "").length);
+    const current = getDraft();
+    const collapsed = image
+      ? collapseImage(normalized, current.pastes)
+      : collapsePaste(normalized, current.pastes);
+    if (collapsed.store !== current.pastes) {
+      setPastes(collapsed.store);
+    }
+    const cl = current.cursorLine;
+    const col = inputBoundary(current.lines[cl] ?? "", current.cursorCol, "clamp", current.pastes);
+    const before = (current.lines[cl] ?? "").slice(0, col);
+    const pad = image && before.length > 0 && !/\s$/.test(before) ? " " : "";
+    const pasteLines = (pad + collapsed.text + (image ? " " : "")).split("\n");
     const lastLen = pasteLines[pasteLines.length - 1].length;
     setLines((prev) => {
       const updated = [...prev];
@@ -392,7 +409,7 @@ export function InputBox(props: InputBoxProps) {
     setCursorLine(cl + pasteLines.length - 1);
     setCursorCol(pasteLines.length === 1 ? col + lastLen : lastLen);
     setDropdownIndex(0);
-    setDropdownDismissed(false);
+    setDropdownDismissed(true);
   };
 
   // Save the clipboard image under the session's file-history dir and insert
@@ -410,11 +427,7 @@ export function InputBox(props: InputBoxProps) {
         return;
       }
       if (result.ok) {
-        // The @ ref only expands when preceded by start-of-text or whitespace.
-        const line = lines[cursorLine] ?? "";
-        const before = line.slice(0, Math.min(cursorCol, line.length));
-        const pad = before.length > 0 && !/\s$/.test(before) ? " " : "";
-        insertPastedText(`${pad}'@${relative(workDir, result.value)}' `);
+        insertPastedText(`'@${relative(workDir, result.value)}'`, true);
       } else {
         setPasteError(result.reason);
       }
@@ -472,7 +485,7 @@ export function InputBox(props: InputBoxProps) {
     // press (Enter arrives as a lone "\r", "\n", or "\r\n"). Insert it as multi-line text
     // at the cursor instead of submitting.
     const isLoneEnter = input === "\r" || input === "\n" || input === "\r\n";
-    if (hasLineBreak && !isLoneEnter) {
+    if ((hasLineBreak && !isLoneEnter) || (!key.ctrl && !key.meta && input.length > 1000)) {
       insertPastedText(input);
       return;
     }
@@ -515,7 +528,7 @@ export function InputBox(props: InputBoxProps) {
         : line;
       const updated = [...lines];
       updated[cursorLine] = finalLine;
-      const finalValue = updated.join("\n").trim();
+      const finalValue = expandPastes(updated.join("\n"), pastes).trim();
       if (finalValue) {
         // Sending is locked (agent streaming / compacting): keep the draft
         // instead of submitting, so nothing is silently dropped.
@@ -528,6 +541,7 @@ export function InputBox(props: InputBoxProps) {
         setCursorCol(0);
         setHistoryIndex(-1);
         setHistoryDraft(null);
+        setPastes(undefined);
         setDropdownIndex(0);
         setDropdownDismissed(false);
         setPasteError("");
@@ -570,7 +584,7 @@ export function InputBox(props: InputBoxProps) {
 
     if (key.leftArrow) {
       if (cursorCol > 0) {
-        setCursorCol(previousGraphemeBoundary(lines[cursorLine] ?? "", cursorCol));
+        setCursorCol(inputBoundary(lines[cursorLine] ?? "", cursorCol, "previous", pastes));
       } else if (isMultiline && cursorLine > 0) {
         setCursorLine(cursorLine - 1);
         setCursorCol((lines[cursorLine - 1] ?? "").length);
@@ -581,7 +595,7 @@ export function InputBox(props: InputBoxProps) {
     if (key.rightArrow) {
       const lineLen = (lines[cursorLine] ?? "").length;
       if (cursorCol < lineLen) {
-        setCursorCol(nextGraphemeBoundary(lines[cursorLine] ?? "", cursorCol));
+        setCursorCol(inputBoundary(lines[cursorLine] ?? "", cursorCol, "next", pastes));
       } else if (isMultiline && cursorLine < lines.length - 1) {
         setCursorLine(cursorLine + 1);
         setCursorCol(0);
@@ -592,7 +606,7 @@ export function InputBox(props: InputBoxProps) {
     if (key.backspace || key.delete) {
       const line = lines[cursorLine] ?? "";
       if (key.delete && cursorCol < line.length) {
-        const nextCol = nextGraphemeBoundary(line, cursorCol);
+        const nextCol = inputBoundary(line, cursorCol, "next", pastes);
         setLines((prev) => {
           const updated = [...prev];
           const current = updated[cursorLine] ?? "";
@@ -600,7 +614,7 @@ export function InputBox(props: InputBoxProps) {
           return updated;
         });
       } else if (key.backspace && cursorCol > 0) {
-        const previousCol = previousGraphemeBoundary(line, cursorCol);
+        const previousCol = inputBoundary(line, cursorCol, "previous", pastes);
         setLines((prev) => {
           const updated = [...prev];
           const l = updated[cursorLine] ?? "";
@@ -643,7 +657,9 @@ export function InputBox(props: InputBoxProps) {
       if (isMultiline && cursorLine > 0) {
         const targetLine = lines[cursorLine - 1] ?? "";
         setCursorLine(cursorLine - 1);
-        setCursorCol(clampToGraphemeBoundary(targetLine, Math.min(cursorCol, targetLine.length)));
+        setCursorCol(
+          inputBoundary(targetLine, Math.min(cursorCol, targetLine.length), "clamp", pastes),
+        );
         return;
       }
       if (!isMultiline && history.length > 0) {
@@ -652,6 +668,7 @@ export function InputBox(props: InputBoxProps) {
             lines: [...lines],
             cursorLine,
             cursorCol,
+            ...(pastes ? { pastes } : {}),
           });
         }
         const nextIdx = historyIndex < history.length - 1 ? historyIndex + 1 : historyIndex;
@@ -659,6 +676,9 @@ export function InputBox(props: InputBoxProps) {
         const entry = history[history.length - 1 - nextIdx] ?? "";
         const entryLines = entry.split("\n");
         setLines(entryLines);
+        if (pastes) {
+          setPastes(undefined);
+        }
         setCursorLine(0);
         setCursorCol(entryLines[0].length);
         return;
@@ -678,7 +698,9 @@ export function InputBox(props: InputBoxProps) {
       if (isMultiline && cursorLine < lines.length - 1) {
         const targetLine = lines[cursorLine + 1] ?? "";
         setCursorLine(cursorLine + 1);
-        setCursorCol(clampToGraphemeBoundary(targetLine, Math.min(cursorCol, targetLine.length)));
+        setCursorCol(
+          inputBoundary(targetLine, Math.min(cursorCol, targetLine.length), "clamp", pastes),
+        );
         return;
       }
       if (!isMultiline) {
@@ -688,6 +710,9 @@ export function InputBox(props: InputBoxProps) {
           const entry = history[history.length - 1 - nextIdx] ?? "";
           const entryLines = entry.split("\n");
           setLines(entryLines);
+          if (pastes) {
+            setPastes(undefined);
+          }
           setCursorLine(0);
           setCursorCol(entryLines[0].length);
         } else if (historyIndex === 0) {
@@ -698,6 +723,9 @@ export function InputBox(props: InputBoxProps) {
             setLines(draft.lines);
             setCursorLine(draft.cursorLine);
             setCursorCol(draft.cursorCol);
+            if (draft.pastes || pastes) {
+              setPastes(draft.pastes);
+            }
           } else {
             setLines([""]);
             setCursorLine(0);
@@ -780,7 +808,7 @@ export function InputBox(props: InputBoxProps) {
                 if (lineIndex === cursorLine) {
                   const col = Math.min(cursorCol, line.length);
                   const before = line.slice(0, col);
-                  const nextCol = nextGraphemeBoundary(line, col);
+                  const nextCol = inputBoundary(line, col, "next", pastes);
                   const atChar = col < line.length ? line.slice(col, nextCol) : " ";
                   const after = col < line.length ? line.slice(nextCol) : "";
                   const atEnd = col >= line.length;

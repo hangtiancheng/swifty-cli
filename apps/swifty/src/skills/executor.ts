@@ -29,7 +29,7 @@ export function runInline(skill: Skill, args: string, host: SkillHost): string {
   // Replace the $ARGUMENTS placeholder in the body; if no placeholder exists, append the user request
   let body = skill.body;
   if (body.includes("$ARGUMENTS")) {
-    body = body.replaceAll("$ARGUMENTS", args);
+    body = body.replaceAll("$ARGUMENTS", () => args);
   } else if (args) {
     body += `\n\nUser Request: ${args}`;
   }
@@ -43,7 +43,9 @@ export function runInline(skill: Skill, args: string, host: SkillHost): string {
  */
 export async function runFork(skill: Skill, args: string, host: SkillForkHost): Promise<string> {
   let prompt = skill.body;
-  if (args) {
+  if (prompt.includes("$ARGUMENTS")) {
+    prompt = prompt.replaceAll("$ARGUMENTS", () => args);
+  } else if (args) {
     prompt += `\n\nARGUMENTS: ${args}`;
   }
 

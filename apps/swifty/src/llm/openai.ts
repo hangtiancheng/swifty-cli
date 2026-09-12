@@ -132,6 +132,7 @@ export class OpenAIClient implements LLMClient {
       let jsonAccumulate = "";
       let reasoningId = "";
       let reasoningText = "";
+      let sawTerminalResponse = false;
 
       for await (const event of stream) {
         if (event.type === "response.output_text.delta") {
@@ -198,7 +199,8 @@ export class OpenAIClient implements LLMClient {
             jsonAccumulate = "";
           }
         } // end if (event.type === "response.output_item.done")
-        else if (event.type === "response.completed") {
+        else if (event.type === "response.completed" || event.type === "response.incomplete") {
+          sawTerminalResponse = true;
           const usage = event.response.usage;
           if (usage) {
             outputTokens = usage.output_tokens;
@@ -206,7 +208,7 @@ export class OpenAIClient implements LLMClient {
             // Responses API exposes the cached prefix via
             // input_tokens_details.cached_tokens, absent -> 0.
             // There is no cache_creation concept here, so it stays 0.
-            cacheReadInputTokens = usage.input_tokens_details.cached_tokens;
+            cacheReadInputTokens = usage.input_tokens_details?.cached_tokens ?? 0;
 
             // input_tokens already includes the cached prefix;
             // subtract so the usage anchor (input + cache_read) doesn't double-count it.
@@ -220,11 +222,13 @@ export class OpenAIClient implements LLMClient {
           // Otherwise default to "end_turn".
           let stopReason = "end_turn";
           const resp = event.response;
-          if (resp.status === "incomplete") {
+          if (event.type === "response.incomplete" || resp.status === "incomplete") {
             // 'max_output_tokens' | 'content_filter'
             const details = resp.incomplete_details;
             if (details?.reason === "max_output_tokens") {
               stopReason = "max_tokens";
+            } else {
+              throw new LLMError(`Response incomplete: ${details?.reason ?? "unknown reason"}`);
             }
           }
 
@@ -238,7 +242,21 @@ export class OpenAIClient implements LLMClient {
               cacheCreationInputTokens, // 0
             },
           };
-        } // end if (event.type === "response.completed")
+        } else if (event.type === "response.failed") {
+          const error = event.response.error;
+          const message = `${error?.code ?? "unknown"}: ${error?.message ?? "Response failed"}`;
+          throw containsContextLengthError(message)
+            ? new ContextTooLongError(message)
+            : new LLMError(message);
+        } else if (event.type === "error") {
+          const message = `${event.code ?? "unknown"}: ${event.message}`;
+          throw containsContextLengthError(message)
+            ? new ContextTooLongError(message)
+            : new LLMError(message);
+        }
+      }
+      if (!sawTerminalResponse) {
+        throw new NetworkError("OpenAI Responses stream ended before a terminal response event");
       }
     } catch (err) {
       log.error({ err }, "llm operation failed");
@@ -670,6 +688,10 @@ export class OpenAICompatClient implements LLMClient {
         }
       }
 
+      if (finishReason === null) {
+        throw new NetworkError("Chat Completions stream ended before a finish reason");
+      }
+
       // Map Chat Completions finish_reason to Swifty's internal stop reason.
       // "length" means the model hit max_tokens
       // "tool_calls" means tool use;
@@ -701,6 +723,9 @@ export class OpenAICompatClient implements LLMClient {
   }
 }
 function classifyOpenAIError(err: unknown) {
+  if (err instanceof LLMError) {
+    return err;
+  }
   if (err instanceof OpenAI.APIError) {
     if (
       err.status === OpenAIErrorCode.PromptTooLong ||
@@ -714,7 +739,11 @@ function classifyOpenAIError(err: unknown) {
     }
 
     if (err.status === OpenAIErrorCode.RateLimitError) {
-      return new RateLimitError(`Rate limit error, please wait.`);
+      const headers: unknown = err.headers;
+      return new RateLimitError(
+        "Rate limit error, please wait.",
+        headers instanceof Headers ? (headers.get("retry-after") ?? undefined) : undefined,
+      );
     }
 
     return new LLMError(`OpenAI API error (${asString(err.status)}): ${err.message}`);

@@ -148,7 +148,7 @@ function parseCommandFile(base: string, full: string): Command | null {
 // args were given, append them.
 export function renderBody(body: string, args: string): string {
   if (body.includes("$ARGUMENTS")) {
-    return body.replaceAll("$ARGUMENTS", args);
+    return body.replaceAll("$ARGUMENTS", () => args);
   }
   if (args) {
     return `${body}\n\n${args}`;

@@ -121,6 +121,7 @@ const CONTENT_FIELDS: Record<string, string> = {
   EditFile: "file_path",
   Glob: "pattern",
   Grep: "pattern",
+  InstallSkill: "source",
 };
 
 const DEFAULT_DENY_WRITE = [

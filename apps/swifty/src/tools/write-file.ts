@@ -28,6 +28,7 @@ import { asErrorString } from "../utils/index.js";
 import { strArg } from "../utils/index.js";
 
 import { WRITE_FILE_DESCRIPTION } from "./descriptions.js";
+import { withFileMutationQueue } from "./file-mutation-queue.js";
 import {
   type Tool,
   type ToolCategory,
@@ -75,42 +76,50 @@ export class WriteFileTool implements Tool {
 
   execute(ctx: ToolContext, args: Record<string, unknown>): Promise<ToolResult> {
     const requestedPath = strArg(args, "file_path");
-    const content = strArg(args, "content");
     if (!requestedPath) {
       return Promise.resolve({
         output: "Error: file_path is required",
         isError: true,
       });
     }
-
-    const filePath = resolve(ctx.workDir, requestedPath);
-    // Gate: read-before-write enforcement (skip for new files)
-    if (ctx.fileStateCache && existsSync(filePath)) {
-      const gate = ctx.fileStateCache.check(filePath);
-      if (!gate.ok) {
-        return Promise.resolve({
-          output: gate.error,
-          isError: true,
-        });
-      }
-    }
-
-    try {
-      ctx.fileHistory?.trackEdit(filePath);
-      mkdirSync(dirname(filePath), { recursive: true });
-      writeFileSync(filePath, content, "utf-8");
-      ctx.fileStateCache?.update(filePath);
-      const lineCount = content.split("\n").length;
+    if (typeof args.content !== "string") {
       return Promise.resolve({
-        output: `Successfully wrote to ${filePath} (${String(lineCount)} lines)`,
-        isError: false,
-      });
-    } catch (err) {
-      log.error({ err }, "tool operation failed");
-      return Promise.resolve({
-        output: `Error writing file: ${asErrorString(err)}`,
+        output: "Error: content is required",
         isError: true,
       });
     }
+    const content = args.content;
+
+    const filePath = resolve(ctx.workDir, requestedPath);
+    return withFileMutationQueue<ToolResult>(filePath, () => {
+      if (ctx.abortSignal?.aborted) {
+        return Promise.resolve({ output: "Error: operation interrupted", isError: true });
+      }
+      // Gate: read-before-write enforcement (skip for genuinely new files).
+      if (ctx.fileStateCache && (existsSync(filePath) || ctx.fileStateCache.has(filePath))) {
+        const gate = ctx.fileStateCache.check(filePath);
+        if (!gate.ok) {
+          return Promise.resolve({ output: gate.error, isError: true });
+        }
+      }
+
+      try {
+        ctx.fileHistory?.trackEdit(filePath);
+        mkdirSync(dirname(filePath), { recursive: true });
+        writeFileSync(filePath, content, "utf-8");
+        ctx.fileStateCache?.update(filePath);
+        const lineCount = content.split("\n").length;
+        return Promise.resolve({
+          output: `Successfully wrote to ${filePath} (${String(lineCount)} lines)`,
+          isError: false,
+        });
+      } catch (err) {
+        log.error({ err }, "tool operation failed");
+        return Promise.resolve({
+          output: `Error writing file: ${asErrorString(err)}`,
+          isError: true,
+        });
+      }
+    });
   }
 }

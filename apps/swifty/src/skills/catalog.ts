@@ -25,7 +25,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 
 import yaml from "js-yaml";
-import { parse, z } from "zod";
+import { z } from "zod";
 
 import { createChildLogger } from "../logger/logger.js";
 
@@ -51,23 +51,16 @@ interface CatalogEntry {
 export class SkillCatalog {
   private entries = new Map<string, CatalogEntry>();
   private workDir = "";
-  private dirModTimes = new Map<string, number>();
+  private dirModTimes = new Map<string, number | null>();
 
   load(workDir: string): void {
     this.workDir = workDir;
+    this.entries.clear();
+    this.dirModTimes.clear();
 
     // Tier 2: User-global ~/.swifty/skills/
     // Tier 3: Project-level $workDir/.swifty/skills/ (highest priority)
-    const dirs = [
-      join(homedir(), ".claude", "skills"),
-      join(homedir(), ".github", "skills"),
-      join(homedir(), ".swifty", "skills"),
-      join(workDir, ".claude", "skills"),
-      join(workDir, ".github", "skills"),
-      join(workDir, ".swifty", "skills"),
-    ];
-
-    for (const dir of dirs) {
+    for (const dir of this.skillDirPaths()) {
       if (!existsSync(dir)) {
         continue;
       }
@@ -90,19 +83,8 @@ export class SkillCatalog {
           return true;
         }
       } catch {
-        if (recorded !== 0) {
+        if (recorded !== null) {
           return true;
-        }
-      }
-    }
-    const dirs = this.skillDirPaths();
-    for (const dir of dirs) {
-      if (!this.dirModTimes.has(dir)) {
-        try {
-          statSync(dir);
-          return true;
-        } catch {
-          // Directory still does not exist
         }
       }
     }
@@ -110,26 +92,25 @@ export class SkillCatalog {
   }
 
   reload(): void {
-    this.entries.clear();
     this.load(this.workDir);
   }
 
   private snapshotDirModTimes(): void {
-    this.dirModTimes.clear();
-    for (const dir of this.skillDirPaths()) {
+    // Watch each skill directory too: adding/removing SKILL.md does not change
+    // the parent skills directory's mtime.
+    for (const dir of new Set([...this.skillDirPaths(), ...this.dirModTimes.keys()])) {
       try {
         this.dirModTimes.set(dir, statSync(dir).mtimeMs);
       } catch {
-        this.dirModTimes.set(dir, 0);
+        this.dirModTimes.set(dir, null);
       }
     }
   }
 
   private skillDirPaths(): string[] {
-    return [
-      join(homedir(), ".swifty", "skills"),
-      ...(this.workDir ? [join(this.workDir, ".swifty", "skills")] : []),
-    ];
+    return [homedir(), ...(this.workDir ? [this.workDir] : [])].flatMap((root) =>
+      [".claude", ".github", ".swifty"].map((ecosystem) => join(root, ecosystem, "skills")),
+    );
   }
 
   private scanDirectory(dir: string) {
@@ -143,13 +124,18 @@ export class SkillCatalog {
 
     for (const entry of dirEntries) {
       const fullPath = join(dir, entry);
-      const stat = statSync(fullPath);
-
-      if (stat.isDirectory()) {
-        const skillFile = join(fullPath, "SKILL.md");
-        if (existsSync(skillFile)) {
-          this.loadSkill(skillFile, fullPath, true);
+      try {
+        const stat = statSync(fullPath);
+        if (stat.isDirectory()) {
+          this.dirModTimes.set(fullPath, stat.mtimeMs);
+          const skillFile = join(fullPath, "SKILL.md");
+          if (existsSync(skillFile)) {
+            this.loadSkill(skillFile, fullPath, true);
+          }
         }
+      } catch (err) {
+        // A broken symlink or a concurrently removed entry must not hide other skills.
+        log.error({ err }, "skills operation failed");
       }
       // else if (entry.endsWith(".md") && entry !== "SKILL.md") {
       //   this.loadSkill(fullPath, dir, false);
@@ -210,11 +196,16 @@ export class SkillCatalog {
     if (entry.filePath && entry.loadedMtimeMs > 0) {
       try {
         const currentMtime = statSync(entry.filePath).mtimeMs;
-        if (currentMtime > entry.loadedMtimeMs) {
+        if (currentMtime !== entry.loadedMtimeMs) {
           // File has been modified, re-read it
           const raw = readFileSync(entry.filePath, "utf-8");
           const parsed = parseSkillFile(raw);
           if (parsed) {
+            if (parsed.meta.name !== name) {
+              // Rebuild indexes and precedence when frontmatter renames a skill.
+              this.reload();
+              return this.entries.get(name)?.skill;
+            }
             entry.skill = {
               meta: parsed.meta,
               body: parsed.body,
@@ -257,33 +248,29 @@ function resolveMode(raw: unknown): "inline" | "fork" {
 }
 
 const YamlFrontmatterSchema = z.looseObject({
-  name: z.string(),
+  name: z.string().trim().min(1),
   description: z.string().optional(),
-  allowed_tools: z.array(z.string()).optional(),
   mode: z.enum(["inline", "fork"]).optional(),
   model: z.string().optional(),
   fork_context: z.enum(["full", "none", "recent"]).optional(),
 });
 
-function parseSkillFile(content: string): {
+export function parseSkillFile(content: string): {
   meta: SkillMeta;
   body: string;
+  frontmatter: Record<string, unknown>;
 } | null {
-  if (!content.startsWith("---")) {
+  // Delimiters occupy their own lines; `---` inside YAML strings is content.
+  const normalized = content.replace(/^\uFEFF/, "");
+  const match = /^---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/.exec(normalized);
+  if (!match) {
     return null;
   }
-
-  const endIdx = content.indexOf("---", 3);
-  if (endIdx === -1) {
-    return null;
-  }
-
-  const frontmatter = content.slice(3, endIdx).trim();
-  const body = content.slice(endIdx + 3).trim();
+  const body = normalized.slice(match[0].length).trim();
 
   try {
-    const raw: unknown = yaml.load(frontmatter);
-    const data = parse(YamlFrontmatterSchema, raw);
+    const raw: unknown = yaml.load(match[1]);
+    const data = YamlFrontmatterSchema.parse(raw);
     return {
       meta: {
         name: data.name,
@@ -293,6 +280,7 @@ function parseSkillFile(content: string): {
         forkContext: data.fork_context,
       },
       body,
+      frontmatter: data,
     };
   } catch (err) {
     log.error({ err }, "skills operation failed");
@@ -315,12 +303,12 @@ export function buildSkillSection(catalog: SkillCatalog, workDir: string): strin
     "## Available Skills\n",
     `Skills are installed at: ${skillsDir}`,
     "When creating new skills, always place them under this directory as <skill-name>/SKILL.md.\n",
-    'Only Skill names and one-line descriptions are listed below. To activate a Skill on demand call the LoadSkill tool with {name: "<skill-name>"}. After activation the Skill\'s full SOP gets pinned to the environment context, and any tools the Skill declares get registered. Users can also invoke a Skill directly with /<name>.\n',
-    'If the user pastes a Skill URL (skills.sh, github.com tree URL, or raw SKILL.md URL) and asks to install / add / get it, call the InstallSkill tool with {url: "<url>"} — the new Skill becomes available immediately afterwards.\n',
+    'Only Skill names and one-line descriptions are listed below. To activate a Skill on demand call the LoadSkill tool with {name: "<skill-name>"}. Inline skills pin their full SOP to the environment context; fork skills run in a subagent when available. Users can also invoke a Skill directly with /<name>.\n',
+    'To install a skill, call InstallSkill with {source: "<local path or raw SKILL.md URL>"}. Use a URL that returns the SKILL.md file itself; skills.sh pages and GitHub tree/blob pages are not supported. The skill becomes available immediately after installation.\n',
   ];
   for (const meta of metas) {
-    const desc =
-      meta.description.length > 200 ? meta.description.slice(0, 200) + "…" : meta.description;
+    const oneLine = meta.description.replace(/\s+/g, " ").trim();
+    const desc = oneLine.length > 200 ? oneLine.slice(0, 200) + "…" : oneLine;
     lines.push(`- /${meta.name}: ${desc}`);
   }
   return lines.join("\n");

@@ -47,7 +47,7 @@ import type { FileStateCache } from "../tools/file-state-cache.js";
 import { McpCallTool } from "../tools/mcp-call.js";
 import type { ToolRegistry } from "../tools/registry.js";
 import type { ToolResult, ToolSchema } from "../tools/types.js";
-import { asRecord, strArg } from "../utils/index.js";
+import { asErrorString, asRecord, strArg } from "../utils/index.js";
 
 import type { AgentEvent } from "./events.js";
 import { StreamingExecutor } from "./streaming-executor.js";
@@ -58,6 +58,8 @@ import type { UsageInfo } from "@/llm/events.js";
 // value, then attempt a bounded number of multi-turn recoveries.
 const MAX_TOKENS_CEILING = 64000;
 const MAX_OUTPUT_TOKENS_RECOVERIES = 3;
+const MAX_RATE_LIMIT_RETRIES = 3;
+const MAX_RETRY_DELAY_MS = 60000;
 // Tool output exceeding this threshold is spilled to disk rather than truncated
 // outright, to avoid losing critical information.
 // Per-result spill threshold before entering conversation history: once the
@@ -219,6 +221,7 @@ export class Agent {
 
     let maxTokensEscalated = false;
     let outputRecoveries = 0;
+    let rateLimitRetries = 0;
     let iteration = 0;
 
     await this.fireLifecycle("session_start");
@@ -318,99 +321,173 @@ export class Agent {
         }
 
         await this.fireLifecycle("turn_start");
-        await this.fireLifecycle("pre_send");
-
-        // Layer 1: auto-compact when the window fills up
-        // Tool results are already budget-processed at the time they enter
-        // history, so message sizes in the transcript are final — estimate
-        // tokens directly from them.
-        const mc = await manageContext(
-          this.conversation,
-          this.client,
-          this.contextWindow,
-          this.maxOutput,
-          this.compactTracking,
-          this.recoveryState,
-          toolSchemaNames,
-
-          // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
-          toolSchemas as ToolSchema[],
-          this.sessionFilePath,
-          this.abortSignal,
-        );
-        if (mc.message) {
-          yield { type: "compact", message: mc.message, boundary: mc.boundary };
-        }
-        if (mc.compacted) {
-          this.restoreContext();
-        }
-        if (this.abortSignal?.aborted) {
-          yield { type: "loop_complete", stopReason: "interrupted" };
-          return;
-        }
-
         try {
-          // Initiate API call directly with the conversation — no need to rebuild
-          const stream = this.client.stream(
+          await this.fireLifecycle("pre_send");
+          // Pre-send and turn-start prompts must reach the request they prepare.
+          for (const note of this.hookEngine?.drainNotifications() ?? []) {
+            this.conversation.addSystemReminder(note);
+          }
+
+          // Layer 1: auto-compact when the window fills up
+          // Tool results are already budget-processed at the time they enter
+          // history, so message sizes in the transcript are final — estimate
+          // tokens directly from them.
+          const mc = await manageContext(
             this.conversation,
+            this.client,
+            this.contextWindow,
+            this.maxOutput,
+            this.compactTracking,
+            this.recoveryState,
+            toolSchemaNames,
 
             // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
             toolSchemas as ToolSchema[],
+            this.sessionFilePath,
             this.abortSignal,
           );
-
-          for await (const event of stream) {
-            if (this.abortSignal?.aborted) {
-              looping = false;
-              break;
-            }
-            switch (event.type) {
-              case "text_delta":
-                fullText += event.text;
-                yield { type: "stream_text", text: event.text };
-                break;
-
-              case "thinking_delta":
-                yield { type: "thinking_text", text: event.text };
-                break;
-
-              case "thinking_complete":
-                thinkingBlocks.push({
-                  thinking: event.thinking,
-                  signature: event.signature,
-                });
-                yield {
-                  type: "thinking_complete",
-                  thinking: event.thinking,
-                  signature: event.signature,
-                };
-                break;
-
-              case "tool_call_start":
-                break;
-
-              case "tool_call_complete":
-                toolUses.push({
-                  toolUseId: event.toolId,
-                  toolName: event.toolName,
-                  arguments: event.arguments,
-                });
-                yield {
-                  type: "tool_use",
-                  toolName: event.toolName,
-                  toolId: event.toolId,
-                  args: event.arguments,
-                };
-                break;
-
-              case "stream_end":
-                stopReason = event.stopReason;
-                lastUsage = event.usage;
-                yield { type: "usage", usage: event.usage };
-                break;
-            }
+          if (mc.message) {
+            yield { type: "compact", message: mc.message, boundary: mc.boundary };
           }
-        } catch (err) {
+          if (mc.compacted) {
+            this.restoreContext();
+          }
+          if (this.abortSignal?.aborted) {
+            yield { type: "loop_complete", stopReason: "interrupted" };
+            return;
+          }
+
+          try {
+            // Initiate API call directly with the conversation — no need to rebuild
+            const stream = this.client.stream(
+              this.conversation,
+
+              // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+              toolSchemas as ToolSchema[],
+              this.abortSignal,
+            );
+
+            for await (const event of stream) {
+              if (this.abortSignal?.aborted) {
+                looping = false;
+                break;
+              }
+              switch (event.type) {
+                case "text_delta":
+                  fullText += event.text;
+                  yield { type: "stream_text", text: event.text };
+                  break;
+
+                case "thinking_delta":
+                  yield { type: "thinking_text", text: event.text };
+                  break;
+
+                case "thinking_complete":
+                  thinkingBlocks.push({
+                    thinking: event.thinking,
+                    signature: event.signature,
+                  });
+                  yield {
+                    type: "thinking_complete",
+                    thinking: event.thinking,
+                    signature: event.signature,
+                  };
+                  break;
+
+                case "tool_call_start":
+                  break;
+
+                case "tool_call_complete":
+                  toolUses.push({
+                    toolUseId: event.toolId,
+                    toolName: event.toolName,
+                    arguments: event.arguments,
+                  });
+                  yield {
+                    type: "tool_use",
+                    toolName: event.toolName,
+                    toolId: event.toolId,
+                    args: event.arguments,
+                  };
+                  break;
+
+                case "stream_end":
+                  stopReason = event.stopReason;
+                  lastUsage = event.usage;
+                  yield { type: "usage", usage: event.usage };
+                  break;
+              }
+            }
+          } catch (err) {
+            if (this.abortSignal?.aborted) {
+              if (fullText || thinkingBlocks.length > 0) {
+                this.conversation.addAssistantFull(fullText, thinkingBlocks, []);
+                this.persistLastMessage();
+              }
+              yield { type: "loop_complete", stopReason: "interrupted" };
+              return;
+            }
+
+            // Self-heal: context too long → force-compact, then retry the turn.
+            if (err instanceof ContextTooLongError) {
+              try {
+                const result = await forceCompact(
+                  this.conversation,
+                  this.client,
+                  this.recoveryState,
+                  toolSchemaNames,
+
+                  // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+                  toolSchemas as ToolSchema[],
+                  this.sessionFilePath,
+                  this.abortSignal,
+                );
+                if (!result.compacted) {
+                  yield { type: "error", error: err };
+                  return;
+                }
+                this.conversation.clearUsageAnchor();
+                this.restoreContext();
+                yield {
+                  type: "compact",
+                  message: "Auto-compacted due to context length: " + result.message,
+                  boundary: result.boundary,
+                };
+                continue;
+              } catch {
+                yield { type: "error", error: err };
+                return;
+              }
+            }
+
+            // Self-heal: rate limited → wait (Retry-After header or 5s), then retry.
+            if (err instanceof RateLimitError) {
+              if (rateLimitRetries >= MAX_RATE_LIMIT_RETRIES) {
+                yield { type: "error", error: err };
+                return;
+              }
+              rateLimitRetries++;
+              const waitMs = parseRetryAfter(err.retryAfter);
+              yield { type: "retry", reason: "rate limited", delay: waitMs };
+              if (await this.interruptibleSleep(waitMs)) {
+                yield { type: "loop_complete", stopReason: "interrupted" };
+                return;
+              }
+              continue;
+            }
+
+            if (fullText || thinkingBlocks.length > 0) {
+              this.conversation.addAssistantFull(fullText, thinkingBlocks, []);
+              this.persistLastMessage();
+            }
+            yield {
+              type: "error",
+              error: err instanceof Error ? err : new Error(asErrorString(err)),
+            };
+            return;
+          }
+
+          rateLimitRetries = 0;
           if (this.abortSignal?.aborted) {
             if (fullText || thinkingBlocks.length > 0) {
               this.conversation.addAssistantFull(fullText, thinkingBlocks, []);
@@ -420,80 +497,39 @@ export class Agent {
             return;
           }
 
-          // Self-heal: context too long → force-compact, then retry the turn.
-          if (err instanceof ContextTooLongError) {
-            try {
-              const result = await forceCompact(
-                this.conversation,
-                this.client,
-                this.recoveryState,
-                toolSchemaNames,
+          await this.fireLifecycle("post_receive", fullText);
 
-                // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
-                toolSchemas as ToolSchema[],
-                this.sessionFilePath,
-                this.abortSignal,
-              );
-              if (!result.compacted) {
-                yield { type: "error", error: err };
-                return;
+          // Handle the max_tokens stop reason: escalate the output ceiling once,
+          // then do up to N multi-turn recoveries before giving up. Each recovery
+          // re-prompts the model to resume from where it stopped.
+          if (stopReason === "max_tokens") {
+            if (
+              !maxTokensEscalated &&
+              this.maxOutput < MAX_TOKENS_CEILING &&
+              this.client.setMaxOutputTokens
+            ) {
+              this.client.setMaxOutputTokens?.(MAX_TOKENS_CEILING);
+              this.maxOutput = MAX_TOKENS_CEILING;
+              maxTokensEscalated = true;
+              if (fullText) {
+                this.conversation.addAssistantFull(fullText, thinkingBlocks, []);
+                this.persistLastMessage();
+                if (lastUsage) {
+                  this.conversation.recordUsageAnchor(
+                    lastUsage.inputTokens,
+                    lastUsage.outputTokens,
+                    lastUsage.cacheReadInputTokens,
+                    lastUsage.cacheCreationInputTokens,
+                  );
+                }
+                this.conversation.addUserMessage(
+                  "Output token limit hit. Resume directly from where you stopped. Do not apologize or repeat previous content. Pick up mid-thought if needed.",
+                );
               }
-              this.conversation.clearUsageAnchor();
-              this.restoreContext();
-              yield {
-                type: "compact",
-                message: "Auto-compacted due to context length: " + result.message,
-                boundary: result.boundary,
-              };
+              yield { type: "retry", reason: "max_tokens escalation", delay: 0 };
               continue;
-            } catch {
-              yield { type: "error", error: err };
-              return;
-            }
-          }
-
-          // Self-heal: rate limited → wait (Retry-After header or 5s), then retry.
-          if (err instanceof RateLimitError) {
-            const waitMs = parseRetryAfter(strArg(asRecord(err), "retryAfter"));
-            yield { type: "retry", reason: "rate limited", delay: waitMs };
-            if (await this.interruptibleSleep(waitMs)) {
-              yield { type: "loop_complete", stopReason: "interrupted" };
-              return;
-            }
-            continue;
-          }
-
-          yield {
-            type: "error",
-            error: err instanceof Error ? err : new Error(JSON.stringify(err)),
-          };
-          return;
-        }
-
-        if (this.abortSignal?.aborted) {
-          if (fullText || thinkingBlocks.length > 0) {
-            this.conversation.addAssistantFull(fullText, thinkingBlocks, []);
-            this.persistLastMessage();
-          }
-          yield { type: "loop_complete", stopReason: "interrupted" };
-          return;
-        }
-
-        await this.fireLifecycle("post_receive", fullText);
-
-        // Handle the max_tokens stop reason: escalate the output ceiling once,
-        // then do up to N multi-turn recoveries before giving up. Each recovery
-        // re-prompts the model to resume from where it stopped.
-        if (stopReason === "max_tokens") {
-          if (
-            !maxTokensEscalated &&
-            this.maxOutput < MAX_TOKENS_CEILING &&
-            this.client.setMaxOutputTokens
-          ) {
-            this.client.setMaxOutputTokens?.(MAX_TOKENS_CEILING);
-            this.maxOutput = MAX_TOKENS_CEILING;
-            maxTokensEscalated = true;
-            if (fullText) {
+            } else if (outputRecoveries < MAX_OUTPUT_TOKENS_RECOVERIES) {
+              outputRecoveries++;
               this.conversation.addAssistantFull(fullText, thinkingBlocks, []);
               this.persistLastMessage();
               if (lastUsage) {
@@ -505,159 +541,147 @@ export class Agent {
                 );
               }
               this.conversation.addUserMessage(
-                "Output token limit hit. Resume directly from where you stopped. Do not apologize or repeat previous content. Pick up mid-thought if needed.",
+                "Output token limit hit. Resume directly from where you stopped. Break remaining work into smaller pieces.",
               );
-            }
-            yield { type: "retry", reason: "max_tokens escalation", delay: 0 };
-            continue;
-          } else if (outputRecoveries < MAX_OUTPUT_TOKENS_RECOVERIES) {
-            outputRecoveries++;
-            this.conversation.addAssistantFull(fullText, thinkingBlocks, []);
-            this.persistLastMessage();
-            if (lastUsage) {
-              this.conversation.recordUsageAnchor(
-                lastUsage.inputTokens,
-                lastUsage.outputTokens,
-                lastUsage.cacheReadInputTokens,
-                lastUsage.cacheCreationInputTokens,
-              );
-            }
-            this.conversation.addUserMessage(
-              "Output token limit hit. Resume directly from where you stopped. Break remaining work into smaller pieces.",
-            );
-            yield {
-              type: "retry",
-              reason: `max_tokens recovery ${String(outputRecoveries)}/${String(MAX_OUTPUT_TOKENS_RECOVERIES)}`,
-              delay: 0,
-            };
-            continue;
-          }
-          // Exhausted recoveries: fall through to normal completion.
-        } else {
-          outputRecoveries = 0;
-        }
-
-        this.conversation.addAssistantFull(fullText, thinkingBlocks, toolUses);
-        this.persistLastMessage();
-
-        if (lastUsage) {
-          this.conversation.recordUsageAnchor(
-            lastUsage.inputTokens,
-            lastUsage.outputTokens,
-            lastUsage.cacheReadInputTokens,
-            lastUsage.cacheCreationInputTokens,
-          );
-        }
-
-        if (toolUses.length > 0) {
-          const results = await this.executeTools(toolUses);
-          for (const r of results) {
-            yield r;
-          }
-
-          // Readback results from spill files are exempt from spilling: if we
-          // re-spill content the model just read back into a preview, it will
-          // never see the full text and will loop between "read back" and "spill".
-          const exemptIds = new Set<string>();
-          for (const tu of toolUses) {
-            if (isSpillReadback(tu.toolName, tu.arguments, this.workDir, this.sessionId)) {
-              exemptIds.add(tu.toolUseId);
-            }
-          }
-
-          const toolResults: ToolResultBlock[] = [];
-          for (const r of results) {
-            if (r.type === "tool_result") {
-              const toolResult: ToolResultBlock = {
-                toolUseId: r.toolId,
-                content: r.output,
-                ...(r.contentBlocks?.length ? { contentBlocks: r.contentBlocks } : {}),
-                isError: r.isError,
+              yield {
+                type: "retry",
+                reason: `max_tokens recovery ${String(outputRecoveries)}/${String(MAX_OUTPUT_TOKENS_RECOVERIES)}`,
+                delay: 0,
               };
-              if (toolResult.content.length > MAX_OUTPUT_CHARS && !exemptIds.has(r.toolId)) {
-                // Single result exceeds the limit: write to disk and replace its
-                // text fallback and rich text blocks with the same preview.
-                const replacement = persistLargeResult(
-                  this.workDir,
-                  this.sessionId,
-                  r.toolId,
-                  toolResult.content,
-                );
-                if (replacement !== toolResult.content) {
-                  replaceToolResultContent(toolResult, replacement);
-                }
-                exemptIds.add(r.toolId);
-              }
-              toolResults.push(toolResult);
+              continue;
             }
+            // Exhausted recoveries: fall through to normal completion.
+          } else {
+            outputRecoveries = 0;
           }
-          // Aggregate budget: results from a parallel tool batch land in a single
-          // message, so the per-result threshold alone cannot guard against a
-          // combined overflow. Process the entire batch before it enters history
-          // so the message is in its final form from the start.
-          applyBudget(toolResults, this.workDir, this.sessionId, exemptIds);
-          // Only end the loop when ExitPlanMode actually succeeded: an errored
-          // call (e.g. invoked outside plan mode) must flow back to the model as
-          // a normal tool_result so it can self-correct instead of the turn
-          // ending on a dangling error.
-          const exitPlanSucceeded = toolUses.some((tu) => {
-            if (tu.toolName !== "ExitPlanMode") {
-              return false;
-            }
-            const result = results.find(
-              (r) => r.type === "tool_result" && r.toolId === tu.toolUseId,
-            );
-            return result?.type === "tool_result" && !result.isError;
-          });
-          this.conversation.addToolResultsMessage(toolResults);
+
+          this.conversation.addAssistantFull(fullText, thinkingBlocks, toolUses);
           this.persistLastMessage();
 
-          // The user interrupted while tools were running: results are already
-          // recorded, so end the loop here instead of burning an LLM call that
-          // would immediately abort.
-          if (this.abortSignal?.aborted) {
-            yield { type: "turn_complete" };
-            yield { type: "loop_complete", stopReason: "interrupted" };
-            return;
+          if (lastUsage) {
+            this.conversation.recordUsageAnchor(
+              lastUsage.inputTokens,
+              lastUsage.outputTokens,
+              lastUsage.cacheReadInputTokens,
+              lastUsage.cacheCreationInputTokens,
+            );
           }
 
-          // Non-blocking memory recall: after tool execution, check whether the prefetch has settled.
-          // The settled state is populated by the prefetch itself; here we only read the flag without awaiting.
-          if (this.memoryRecallPromise && !this.memoryRecallConsumed && this.memoryRecallSettled) {
-            const recall = this.memoryRecallValue;
-            if (recall?.reminder) {
-              this.conversation.addSystemReminder(recall.reminder);
-              // Only mark as "surfaced" once the reminder is actually injected. Unconsumed recall
-              // results leave no trace, so those memories remain eligible for the next recall.
-              this.onMemoriesSurfaced?.(recall.paths);
+          if (toolUses.length > 0) {
+            const results = await this.executeTools(toolUses);
+            for (const r of results) {
+              yield r;
             }
-            this.memoryRecallConsumed = true;
-          }
 
-          if (exitPlanSucceeded) {
+            // Readback results from spill files are exempt from spilling: if we
+            // re-spill content the model just read back into a preview, it will
+            // never see the full text and will loop between "read back" and "spill".
+            const exemptIds = new Set<string>();
+            for (const tu of toolUses) {
+              if (isSpillReadback(tu.toolName, tu.arguments, this.workDir, this.sessionId)) {
+                exemptIds.add(tu.toolUseId);
+              }
+            }
+
+            const toolResults: ToolResultBlock[] = [];
+            for (const r of results) {
+              if (r.type === "tool_result") {
+                const toolResult: ToolResultBlock = {
+                  toolUseId: r.toolId,
+                  content: r.output,
+                  ...(r.contentBlocks?.length ? { contentBlocks: r.contentBlocks } : {}),
+                  isError: r.isError,
+                };
+                if (toolResult.content.length > MAX_OUTPUT_CHARS && !exemptIds.has(r.toolId)) {
+                  // Single result exceeds the limit: write to disk and replace its
+                  // text fallback and rich text blocks with the same preview.
+                  const replacement = persistLargeResult(
+                    this.workDir,
+                    this.sessionId,
+                    r.toolId,
+                    toolResult.content,
+                  );
+                  if (replacement !== toolResult.content) {
+                    replaceToolResultContent(toolResult, replacement);
+                  }
+                  exemptIds.add(r.toolId);
+                }
+                toolResults.push(toolResult);
+              }
+            }
+            // Aggregate budget: results from a parallel tool batch land in a single
+            // message, so the per-result threshold alone cannot guard against a
+            // combined overflow. Process the entire batch before it enters history
+            // so the message is in its final form from the start.
+            applyBudget(toolResults, this.workDir, this.sessionId, exemptIds);
+            // Only end the loop when ExitPlanMode actually succeeded: an errored
+            // call (e.g. invoked outside plan mode) must flow back to the model as
+            // a normal tool_result so it can self-correct instead of the turn
+            // ending on a dangling error.
+            const exitPlanSucceeded = toolUses.some((tu) => {
+              if (tu.toolName !== "ExitPlanMode") {
+                return false;
+              }
+              const result = results.find(
+                (r) => r.type === "tool_result" && r.toolId === tu.toolUseId,
+              );
+              return result?.type === "tool_result" && !result.isError;
+            });
+            this.conversation.addToolResultsMessage(toolResults);
+            this.persistLastMessage();
+
+            // The user interrupted while tools were running: results are already
+            // recorded, so end the loop here instead of burning an LLM call that
+            // would immediately abort.
+            if (this.abortSignal?.aborted) {
+              yield { type: "turn_complete" };
+              yield { type: "loop_complete", stopReason: "interrupted" };
+              return;
+            }
+
+            // Non-blocking memory recall: after tool execution, check whether the prefetch has settled.
+            // The settled state is populated by the prefetch itself; here we only read the flag without awaiting.
+            if (
+              this.memoryRecallPromise &&
+              !this.memoryRecallConsumed &&
+              this.memoryRecallSettled
+            ) {
+              const recall = this.memoryRecallValue;
+              if (recall?.reminder) {
+                this.conversation.addSystemReminder(recall.reminder);
+                // Only mark as "surfaced" once the reminder is actually injected. Unconsumed recall
+                // results leave no trace, so those memories remain eligible for the next recall.
+                this.onMemoriesSurfaced?.(recall.paths);
+              }
+              this.memoryRecallConsumed = true;
+            }
+
+            if (exitPlanSucceeded) {
+              yield { type: "turn_complete" };
+              yield { type: "loop_complete", stopReason: "end_turn" };
+              return;
+            }
+
             yield { type: "turn_complete" };
-            yield { type: "loop_complete", stopReason: "end_turn" };
-            return;
+          } else {
+            looping = false;
+            if (this.fileHistory) {
+              const summary = fullText.length > 60 ? fullText.slice(0, 60) + "..." : fullText;
+              this.fileHistory.makeSnapshot(this.conversation.len(), summary);
+            }
+            yield { type: "loop_complete", stopReason };
+            // Fire-and-forget post-completion hook (e.g. background memory
+            // extraction).
+            if (this.onLoopComplete) {
+              try {
+                this.onLoopComplete(this.conversation);
+              } catch {
+                /* non-fatal */
+              }
+            }
           }
-
-          yield { type: "turn_complete" };
+        } finally {
           await this.fireLifecycle("turn_end");
-        } else {
-          looping = false;
-          if (this.fileHistory) {
-            const summary = fullText.length > 60 ? fullText.slice(0, 60) + "..." : fullText;
-            this.fileHistory.makeSnapshot(this.conversation.len(), summary);
-          }
-          yield { type: "loop_complete", stopReason };
-          // Fire-and-forget post-completion hook (e.g. background memory
-          // extraction).
-          if (this.onLoopComplete) {
-            try {
-              this.onLoopComplete(this.conversation);
-            } catch {
-              /* non-fatal */
-            }
-          }
         }
       }
     } finally {
@@ -671,7 +695,11 @@ export class Agent {
     if (!this.hookEngine) {
       return;
     }
-    const results = await this.hookEngine.fire(event, { event, message });
+    const results = await this.hookEngine.fire(
+      event,
+      { event, message },
+      { workDir: this.workDir, abortSignal: this.abortSignal },
+    );
     for (const r of results) {
       if (r.output) {
         this.hookEngine.recordNotification(r.output);
@@ -780,7 +808,10 @@ export class Agent {
 
       // Fire pre-tool hooks
       if (this.hookEngine) {
-        const hookResult = await this.hookEngine.firePreToolHooks(tu.toolName, tu.arguments);
+        const hookResult = await this.hookEngine.firePreToolHooks(tu.toolName, tu.arguments, {
+          workDir: this.workDir,
+          abortSignal: this.abortSignal,
+        });
         if (hookResult.rejected) {
           events.push({
             type: "tool_result",
@@ -848,7 +879,23 @@ export class Agent {
         continue;
       }
       if (decision.effect === "ask" && this.onPermissionRequest) {
-        const response = await this.onPermissionRequest(tu.toolName, tu.arguments, decision);
+        let response: "allow" | "deny" | "allowAlways";
+        try {
+          response = await this.onPermissionRequest(tu.toolName, tu.arguments, decision);
+          if (response === "allowAlways" && !this.abortSignal?.aborted) {
+            this.checker.allowAlways(tu.toolName, tu.arguments);
+          }
+        } catch (err) {
+          events.push({
+            type: "tool_result",
+            toolName: tu.toolName,
+            toolId: tu.toolUseId,
+            output: `Permission request failed: ${asErrorString(err)}. The tool was not executed.`,
+            isError: true,
+            elapsed: 0,
+          });
+          continue;
+        }
         if (response === "deny") {
           events.push({
             type: "tool_result",
@@ -859,9 +906,6 @@ export class Agent {
             elapsed: 0,
           });
           continue;
-        }
-        if (response === "allowAlways") {
-          this.checker.allowAlways(tu.toolName, tu.arguments);
         }
       }
 
@@ -920,11 +964,18 @@ export class Agent {
 
     // Fire post-tool hooks; queue any output as a notification.
     if (this.hookEngine) {
-      const hookResults = await this.hookEngine.fire("post_tool_use", {
-        event: "post_tool_use",
-        toolName: r.toolName,
-        message: r.result.output,
-      });
+      const args = toolUses.find((tu) => tu.toolUseId === r.toolId)?.arguments;
+      const hookResults = await this.hookEngine.fire(
+        "post_tool_use",
+        {
+          event: "post_tool_use",
+          toolName: r.toolName,
+          args,
+          filePath: strArg(args ?? {}, "file_path", strArg(args ?? {}, "path", "")),
+          message: r.result.output,
+        },
+        { workDir: this.workDir, abortSignal: this.abortSignal },
+      );
       for (const hr of hookResults) {
         if (hr.output) {
           this.hookEngine.recordNotification(hr.output);
@@ -960,15 +1011,18 @@ export class Agent {
   }
 }
 
-// parseRetryAfter converts a Retry-After header (seconds) into milliseconds,
-// defaulting to 5s when absent or unparsable.
+// Accept delta-seconds and HTTP dates, bounding timers to avoid overflow.
 function parseRetryAfter(header?: string): number {
-  if (!header) {
+  if (!header?.trim()) {
     return 5000;
   }
-  const secs = parseInt(header, 10);
-  if (!Number.isNaN(secs)) {
-    return secs * 1000;
+  const value = header.trim();
+  if (/^\d+(?:\.\d+)?$/.test(value)) {
+    return Math.min(Number(value) * 1000, MAX_RETRY_DELAY_MS);
+  }
+  const date = /^[A-Za-z]{3},/.test(value) ? Date.parse(value) : NaN;
+  if (Number.isFinite(date)) {
+    return Math.min(Math.max(0, date - Date.now()), MAX_RETRY_DELAY_MS);
   }
   return 5000;
 }
