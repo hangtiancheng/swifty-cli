@@ -37,7 +37,7 @@ import { parsePrintFlags, runPrintMode } from "./print-mode.js";
 import { recover, recordError, recordExit } from "./recover.js";
 import { newSessionId } from "./session/session.js";
 import { parseTeammateFlags, runTeammate } from "./teammate.js";
-import { App as AppV2 } from "./tui/app.js";
+import { App } from "./tui/app.js";
 import { setThemeMode } from "./tui/styles.js";
 import { installSyncOutput } from "./tui/sync-output.js";
 import { asErrorString } from "./utils/index.js";
@@ -127,7 +127,7 @@ async function main() {
     forkDisabled: !forkEnabled(cfg),
   };
   const application = (
-    <AppV2
+    <App
       {...appProps}
       resume={parseResumeArgument(args)}
       onExitSummary={(summary) => {
