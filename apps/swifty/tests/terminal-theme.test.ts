@@ -6,7 +6,7 @@ import {
   themeForRgb,
   themeFromEnvironment,
 } from "@/bootstrap/terminal-theme.js";
-import { DARK_THEME, LIGHT_THEME, setThemeMode, THEME } from "@/tui/styles.js";
+import { activityStatusColor, DARK_THEME, LIGHT_THEME, setThemeMode, THEME } from "@/tui/styles.js";
 
 describe("terminal theme detection", () => {
   it("parses terminal color scheme and OSC 11 responses", () => {
@@ -34,8 +34,23 @@ describe("terminal theme detection", () => {
     setThemeMode("light");
     expect(THEME.userMessageBg).toBe(LIGHT_THEME.userMessageBg);
     expect(THEME.toolPendingBg).toBe(LIGHT_THEME.toolPendingBg);
+    expect(THEME.userMessageText).toBe(LIGHT_THEME.userMessageText);
+    expect(THEME.toolOutput).toBe(LIGHT_THEME.toolOutput);
 
     setThemeMode("dark");
     expect(THEME.userMessageBg).toBe(DARK_THEME.userMessageBg);
+    expect(THEME.userMessageText).toBe(DARK_THEME.userMessageText);
+  });
+
+  it("uses semantic lifecycle colors for the status border", () => {
+    setThemeMode("dark");
+    expect(activityStatusColor("working")).toBe(DARK_THEME.thinkingHigh);
+    expect(activityStatusColor("retry")).toBe(DARK_THEME.warning);
+    expect(activityStatusColor("compacting")).toBe(DARK_THEME.accent);
+    expect(activityStatusColor("error")).toBe(DARK_THEME.error);
+    expect(activityStatusColor("idle")).toBe(DARK_THEME.borderMuted);
+
+    setThemeMode("light");
+    expect(activityStatusColor("retry")).toBe(LIGHT_THEME.warning);
   });
 });

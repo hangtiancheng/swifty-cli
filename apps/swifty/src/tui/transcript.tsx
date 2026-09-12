@@ -37,7 +37,7 @@ export function Transcript({ messages, sessionId, termWidth, expanded, model, wo
               <Text color={THEME.dim}> v{version}</Text>
             </Text>
             <Text color={THEME.muted}>
-              Esc interrupt · Ctrl+C clear/exit · / commands · Ctrl+O more
+              Esc interrupt · Ctrl+C clear/exit · / commands · Ctrl+O details · Ctrl+T teams
             </Text>
             <Text color={THEME.dim} wrap="truncate-end">
               {model} · {workDir}

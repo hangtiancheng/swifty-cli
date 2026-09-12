@@ -54,14 +54,14 @@ export function useAgentOutput(setMessages: Dispatch<SetStateAction<ChatMessage[
     let turnThinkingText = "";
     let turnThinkingStart = 0;
     let turnThinkingDuration = 0;
-    let turnToolCalls: ToolSummaryItem[] = [];
+    const turnToolCalls = new Map<string, ToolSummaryItem | undefined>();
     const pendingToolArgs = new Map<string, string>();
 
     const resetTurn = () => {
       turnThinkingText = "";
       turnThinkingStart = 0;
       turnThinkingDuration = 0;
-      turnToolCalls = [];
+      turnToolCalls.clear();
       setStreamingThinking("");
       pendingToolArgs.clear();
     };
@@ -96,6 +96,7 @@ export function useAgentOutput(setMessages: Dispatch<SetStateAction<ChatMessage[
         }
         case "tool_use": {
           pendingToolArgs.set(`${event.toolName}:${event.toolId}`, formatToolArgs(event.args));
+          turnToolCalls.set(event.toolId, undefined);
           setActiveTools((tools) => [
             ...tools,
             { toolId: event.toolId, toolName: event.toolName, args: event.args, loading: true },
@@ -117,7 +118,7 @@ export function useAgentOutput(setMessages: Dispatch<SetStateAction<ChatMessage[
                 : tool,
             ),
           );
-          turnToolCalls.push({
+          turnToolCalls.set(event.toolId, {
             toolName: event.toolName,
             argsSummary: pendingToolArgs.get(`${event.toolName}:${event.toolId}`) ?? "",
             output,
@@ -151,7 +152,8 @@ export function useAgentOutput(setMessages: Dispatch<SetStateAction<ChatMessage[
           ]);
           break;
         }
-        case "turn_complete": {
+        case "turn_complete":
+        case "loop_complete": {
           cancelFlush();
           setStreamingText("");
           const turnText = fullText;
@@ -169,23 +171,15 @@ export function useAgentOutput(setMessages: Dispatch<SetStateAction<ChatMessage[
           if (turnText) {
             commits.push({ role: "assistant", content: turnText });
           }
-          if (turnToolCalls.length > 0) {
-            commits.push({ role: "turn_summary", content: "", toolSummary: turnToolCalls });
+          const toolSummary = [...turnToolCalls.values()].filter(
+            (tool): tool is ToolSummaryItem => tool !== undefined,
+          );
+          if (toolSummary.length > 0) {
+            commits.push({ role: "turn_summary", content: "", toolSummary });
           }
           if (commits.length > 0) {
             setMessages((messages) => [...messages, ...commits]);
           }
-          resetTurn();
-          break;
-        }
-        case "loop_complete": {
-          cancelFlush();
-          setStreamingText("");
-          if (fullText) {
-            setMessages((messages) => [...messages, { role: "assistant", content: fullText }]);
-          }
-          streamingTextRef.current = "";
-          clearTools();
           resetTurn();
           break;
         }

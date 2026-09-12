@@ -113,7 +113,7 @@ import { PendingQueue } from "./pending-queue.js";
 import type { PlanChoice } from "./plan-approval.js";
 import { ProviderSelect } from "./provider-select.js";
 import type { RewindAction } from "./rewind-dialog.js";
-import { THEME } from "./styles.js";
+import { activityStatusColor, THEME } from "./styles.js";
 import { TeamStatus } from "./team-status.js";
 import { Transcript } from "./transcript.js";
 import { useAgentOutput } from "./use-agent-output.js";
@@ -359,6 +359,16 @@ export function App({
       setTeamsDialogOpen((open) => !open);
     },
   });
+
+  const activityStatus = error
+    ? ("error" as const)
+    : output.retryStatus
+      ? ("retry" as const)
+      : isCompacting || providerSwitching
+        ? ("compacting" as const)
+        : isStreaming
+          ? ("working" as const)
+          : ("idle" as const);
 
   // Connects every configured MCP server that has no live connection yet and
   // registers the tools it reports. Safe to call repeatedly: connectAll skips
@@ -1849,11 +1859,7 @@ export function App({
             : isStreaming || isCompacting || providerSwitching
               ? "agent"
               : "focused",
-          borderColor: error
-            ? THEME.error
-            : isCompacting || providerSwitching
-              ? THEME.accent
-              : THEME.thinkingHigh,
+          borderColor: activityStatusColor(activityStatus),
           statusLabel: error
             ? "Error"
             : providerSwitching

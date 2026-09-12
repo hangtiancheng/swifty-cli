@@ -4,7 +4,7 @@ import type { TeammateUIState } from "../teams/progress.js";
 
 import { THEME } from "./styles.js";
 import { TeammateSpinnerTree } from "./teammate-spinner-tree.js";
-import { ToolBlock, ToolDisplay, type ToolBlockInfo } from "./tool-display.js";
+import { ToolDisplay, type ToolBlockInfo } from "./tool-display.js";
 
 export interface SubagentProgress {
   id: number;
@@ -34,32 +34,16 @@ export function AgentActivity({
 }: Props) {
   return (
     <>
-      {tools.length > 0 && !isAsking && subagents.length === 0 && (
-        <ToolDisplay tools={tools} expanded={expanded} />
-      )}
+      {tools.length > 0 && !isAsking && <ToolDisplay tools={tools} expanded={expanded} />}
       {subagents.length > 0 && !isAsking && (
-        <>
-          <ToolDisplay
-            tools={tools.filter((tool) => !(tool.toolName === "Agent" && tool.loading))}
-            expanded={expanded}
-          />
-          <Box flexDirection="column" paddingLeft={1}>
-            {subagents.map((subagent, index) => {
-              const tool = tools
-                .filter((active) => active.toolName === "Agent" && active.loading)
-                .at(index);
-              return (
-                <Box key={subagent.id} gap={1}>
-                  {tool && <ToolBlock tool={tool} expanded={expanded} />}
-                  <Text color={THEME.customMessageLabel}>
-                    • {subagent.label} subagent · turn {subagent.turn}
-                    {subagent.lastTool ? ` · ${subagent.lastTool}` : ""}
-                  </Text>
-                </Box>
-              );
-            })}
-          </Box>
-        </>
+        <Box flexDirection="column" paddingX={1}>
+          {subagents.map((subagent) => (
+            <Text key={subagent.id} color={THEME.customMessageLabel} wrap="truncate-end">
+              • {subagent.label} subagent · turn {subagent.turn}
+              {subagent.lastTool ? ` · ${subagent.lastTool}` : ""}
+            </Text>
+          ))}
+        </Box>
       )}
       {isStreaming && !isAsking && teammates.length > 0 && (
         <Box paddingLeft={1}>

@@ -137,16 +137,16 @@ describe("agent output hook", () => {
     ]);
     expect(state().messages[2]?.toolSummary).toEqual([
       expect.objectContaining({
-        output: "second",
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-        argsSummary: expect.stringContaining("b.ts"),
-        isError: true,
-      }),
-      expect.objectContaining({
         output: "first",
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         argsSummary: expect.stringContaining("a.ts"),
         isError: false,
+      }),
+      expect.objectContaining({
+        output: "second",
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        argsSummary: expect.stringContaining("b.ts"),
+        isError: true,
       }),
     ]);
     expect(state().output.activeTools).toEqual([]);
@@ -241,5 +241,32 @@ describe("agent output hook", () => {
       instance?.unmount();
     });
     expect(clearTimeout).toHaveBeenCalled();
+  });
+
+  it("commits thinking and completed tools once when a loop ends without turn_complete", () => {
+    const send = startLoop();
+    send(
+      { type: "thinking_text", text: "Investigating" },
+      { type: "stream_text", text: "Partial response" },
+      { type: "tool_use", toolId: "read", toolName: "Read", args: { file_path: "a.ts" } },
+      {
+        type: "tool_result",
+        toolId: "read",
+        toolName: "Read",
+        output: "saved",
+        isError: false,
+        elapsed: 1,
+      },
+      { type: "loop_complete", stopReason: "interrupted" },
+      { type: "loop_complete", stopReason: "interrupted" },
+    );
+    expect(state().messages.map((message) => message.content)).toEqual([
+      "Investigating",
+      "Partial response",
+      "",
+    ]);
+    expect(state().messages.at(-1)?.toolSummary?.[0].output).toBe("saved");
+    expect(state().output.activeTools).toEqual([]);
+    expect(state().output.streamingTextRef.current).toBe("");
   });
 });

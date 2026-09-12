@@ -5,6 +5,7 @@ import { renderToString } from "ink";
 import { createElement } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 
+import { AgentActivity } from "@/tui/agent-activity.js";
 import { CommittedMessage } from "@/tui/chat.js";
 import { renderMarkdown, renderStreamingMarkdown, type MarkdownCache } from "@/tui/markdown.js";
 import { setThemeMode } from "@/tui/styles.js";
@@ -40,6 +41,22 @@ describe("terminal column handling", () => {
 });
 
 describe("pi Markdown presentation", () => {
+  it.each(["```", "~~~~"])("does not flash partial closing %s fences during streaming", (fence) => {
+    const cache: MarkdownCache = { prefix: "", rendered: "", width: 0, theme: "" };
+    const source = `${fence}ts\nconst value = 1;\n`;
+    const expected = renderMarkdown(source + fence, 40);
+    for (let count = 1; count < fence.length; count++) {
+      expect(renderStreamingMarkdown(source + fence.slice(0, count), 40, cache)).toBe(expected);
+    }
+    // Completed content is never silently stripped, even if it ends in fence-like text.
+    expect(renderMarkdown(source + fence[0], 40)).not.toBe(expected);
+    expect(renderStreamingMarkdown(source + fence[0] + "\n", 40, cache)).toBe(
+      renderMarkdown(source + fence[0] + "\n", 40),
+    );
+    expect(renderStreamingMarkdown(`${fence}ts\n${fence[0]}`, 40, cache)).toBe(
+      renderMarkdown(`${fence}ts\n${fence}`, 40),
+    );
+  });
   it.each([20, 40, 80, 120])("fits long text, code and tables in %i columns", (width) => {
     for (const source of [
       "中文测试".repeat(30),
@@ -94,6 +111,29 @@ describe("pi Markdown presentation", () => {
 });
 
 describe("shared live and committed tool cards", () => {
+  it("keeps every Agent call visible while subagent progress changes", () => {
+    const output = stripVTControlCharacters(
+      renderToString(
+        createElement(AgentActivity, {
+          tools: [
+            { toolId: "a", toolName: "Agent", args: { description: "first-task" }, loading: true },
+            { toolId: "b", toolName: "Agent", args: { description: "second-task" }, loading: true },
+          ],
+          subagents: [{ id: 2, label: "explorer", turn: 3 }],
+          teammates: [],
+          isStreaming: true,
+          isAsking: false,
+          expanded: false,
+          leaderTokens: 0,
+        }),
+        { columns: 40 },
+      ),
+    );
+    expect(output).toContain("first-task");
+    expect(output).toContain("second-task");
+    expect(output).toContain("explorer subagent · turn 3");
+    expect(output.split("\n").every((line) => visibleWidth(line) <= 40)).toBe(true);
+  });
   it.each(["dark", "light"] as const)(
     "keeps live and saved tool layout identical in %s mode",
     (mode) => {

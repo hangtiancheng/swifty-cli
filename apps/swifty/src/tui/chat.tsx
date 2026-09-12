@@ -133,7 +133,7 @@ function MessageBlock(props: MessageBlockProps) {
           paddingY={1}
           width={width}
         >
-          <Text color={THEME.text}>
+          <Text color={THEME.userMessageText}>
             {renderMarkdown(message.content, Math.max(1, width - 2), "user")}
           </Text>
         </Box>
@@ -170,7 +170,9 @@ function MessageBlock(props: MessageBlockProps) {
             <Text bold color={THEME.customMessageLabel}>
               [compaction]
             </Text>
-            <Text color={THEME.muted}>{message.content.replace(/^(?:⊙ |Compact:\s*)/u, "")}</Text>
+            <Text color={THEME.customMessageText}>
+              {message.content.replace(/^(?:⊙ |Compact:\s*)/u, "")}
+            </Text>
           </Box>
         );
       }

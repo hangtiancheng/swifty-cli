@@ -17,6 +17,9 @@ export function formatToolArgs(args: Record<string, unknown>): string {
   if (args.pattern) {
     return truncate(strArg(args, "pattern"), 80);
   }
+  if (args.description) {
+    return truncate(strArg(args, "description"), 80);
+  }
   return "";
 }
 

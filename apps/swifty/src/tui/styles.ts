@@ -28,11 +28,13 @@ export interface ThemePalette {
   syntaxKeyword: string;
   syntaxNumber: string;
   syntaxOperator: string;
+  syntaxPunctuation: string;
   syntaxString: string;
   syntaxType: string;
   syntaxVariable: string;
   text: string;
   thinking: string;
+  thinkingText: string;
   thinkingHigh: string;
   thinkingLow: string;
   thinkingMax: string;
@@ -44,8 +46,12 @@ export interface ThemePalette {
   toolDiffContext: string;
   toolDiffRemoved: string;
   toolErrorBg: string;
+  toolOutput: string;
   toolPendingBg: string;
   toolSuccessBg: string;
+  toolTitle: string;
+  customMessageText: string;
+  userMessageText: string;
   userMessageBg: string;
   warning: string;
 }
@@ -80,11 +86,13 @@ export const DARK_THEME: ThemePalette = {
   syntaxKeyword: "#569CD6",
   syntaxNumber: "#B5CEA8",
   syntaxOperator: "#D4D4D4",
+  syntaxPunctuation: "#D4D4D4",
   syntaxString: "#CE9178",
   syntaxType: "#4EC9B0",
   syntaxVariable: "#9CDCFE",
   text: "#d4d4d4",
   thinking: "#808080",
+  thinkingText: "#808080",
   thinkingHigh: "#b294bb",
   thinkingLow: "#5f87af",
   thinkingMax: "#ff5fff",
@@ -96,8 +104,12 @@ export const DARK_THEME: ThemePalette = {
   toolDiffContext: "#808080",
   toolDiffRemoved: "#cc6666",
   toolErrorBg: "#3c2828",
+  toolOutput: "#808080",
   toolPendingBg: "#282832",
   toolSuccessBg: "#283228",
+  toolTitle: "#d4d4d4",
+  customMessageText: "#d4d4d4",
+  userMessageText: "#d4d4d4",
   userMessageBg: "#343541",
   warning: "#ffff00",
 };
@@ -132,11 +144,13 @@ export const LIGHT_THEME: ThemePalette = {
   syntaxKeyword: "#0000FF",
   syntaxNumber: "#098658",
   syntaxOperator: "#000000",
+  syntaxPunctuation: "#000000",
   syntaxString: "#A31515",
   syntaxType: "#267F99",
   syntaxVariable: "#001080",
   text: "#1f2328",
   thinking: "#6c6c6c",
+  thinkingText: "#6c6c6c",
   thinkingHigh: "#875f87",
   thinkingLow: "#547da7",
   thinkingMax: "#af005f",
@@ -148,8 +162,12 @@ export const LIGHT_THEME: ThemePalette = {
   toolDiffContext: "#6c6c6c",
   toolDiffRemoved: "#aa5555",
   toolErrorBg: "#f0e8e8",
+  toolOutput: "#6c6c6c",
   toolPendingBg: "#e8e8f0",
   toolSuccessBg: "#e8f0e8",
+  toolTitle: "#1f2328",
+  customMessageText: "#1f2328",
+  userMessageText: "#1f2328",
   userMessageBg: "#e8e8e8",
   warning: "#9a7326",
 };
@@ -158,6 +176,24 @@ export const THEME: ThemePalette = { ...DARK_THEME };
 
 export function setThemeMode(mode: "dark" | "light"): void {
   Object.assign(THEME, mode === "light" ? LIGHT_THEME : DARK_THEME);
+}
+
+export type ActivityStatus = "idle" | "working" | "retry" | "compacting" | "error";
+
+/** Map an agent lifecycle state to the color used by the composer status border. */
+export function activityStatusColor(status: ActivityStatus): string {
+  switch (status) {
+    case "working":
+      return THEME.thinkingHigh;
+    case "retry":
+      return THEME.warning;
+    case "compacting":
+      return THEME.accent;
+    case "error":
+      return THEME.error;
+    case "idle":
+      return THEME.borderMuted;
+  }
 }
 
 export const ICONS = {

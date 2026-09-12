@@ -35,7 +35,13 @@ import type { InputDraft } from "./input-draft.js";
 import { getListWindowStart } from "./list-window.js";
 import { StatusBorder } from "./status-border.js";
 import { ICONS, THEME } from "./styles.js";
-import { truncateToWidth, visibleWidth } from "./terminal-text.js";
+import {
+  clampToGraphemeBoundary,
+  nextGraphemeBoundary,
+  previousGraphemeBoundary,
+  truncateToWidth,
+  visibleWidth,
+} from "./terminal-text.js";
 
 import type { Command } from "@/commands/commands.js";
 import type { CommandUsageTracker } from "@/commands/usage-tracker.js";
@@ -308,7 +314,7 @@ export function InputBox(props: InputBoxProps) {
   const commandWindowStart = getListWindowStart(filteredCmds.length, dropdownIndex, 8);
   const visibleCommands = filteredCmds.slice(commandWindowStart, commandWindowStart + 8);
 
-  // @-file-mention autocomplete: active when the current line ends with an
+  // @-file-mention autocomplete: active when the text before the caret ends with an
   // @<partial> token (and we're not typing a slash command).
   const fileCacheRef = useRef<string[] | null>(null);
 
@@ -316,10 +322,10 @@ export function InputBox(props: InputBoxProps) {
     if (lines[0].startsWith("/")) {
       return null;
     }
-    const line = lines[cursorLine] ?? "";
+    const line = (lines[cursorLine] ?? "").slice(0, cursorCol);
     const m = /(?:^|\s)@([^\s]*)$/.exec(line);
     return m ? m[1] : null;
-  }, [lines, cursorLine]);
+  }, [lines, cursorLine, cursorCol]);
 
   const filteredFiles = useMemo(() => {
     if (atQuery === null) {
@@ -343,17 +349,25 @@ export function InputBox(props: InputBoxProps) {
     return [...pre, ...sub].slice(0, 8);
   }, [atQuery, workDir]);
 
-  const showAtDropdown = !showDropdown && atQuery !== null && filteredFiles.length > 0;
+  const showAtDropdown =
+    !disabled &&
+    !dropdownDismissed &&
+    !showDropdown &&
+    atQuery !== null &&
+    filteredFiles.length > 0;
 
   const completeAt = (path: string) => {
     const line = lines[cursorLine] ?? "";
-    const newLine = line.replace(/@([^\s]*)$/, `@${path} `);
+    const before = line.slice(0, cursorCol).replace(/@([^\s]*)$/, () => `@${path}`);
+    const after = line.slice(cursorCol).replace(/^\S*/, "");
+    const separator = after.startsWith(" ") ? "" : " ";
+    const newLine = before + separator + after;
     setLines((prev) => {
       const u = [...prev];
-      u[cursorLine] = (u[cursorLine] ?? "").replace(/@([^\s]*)$/, `@${path} `);
+      u[cursorLine] = newLine;
       return u;
     });
-    setCursorCol(newLine.length);
+    setCursorCol(before.length + 1);
     setDropdownIndex(0);
   };
 
@@ -430,18 +444,8 @@ export function InputBox(props: InputBoxProps) {
 
     // Escape: key.escape or raw \x1b byte (tmux compat)
     if (key.escape || input === "\x1b") {
-      if (showDropdown) {
+      if (showDropdown || showAtDropdown) {
         setDropdownDismissed(true);
-        setDropdownIndex(0);
-        return;
-      }
-      if (showAtDropdown) {
-        // Cancel the @ mention currently being typed.
-        setLines((prev) => {
-          const u = [...prev];
-          u[cursorLine] = (u[cursorLine] ?? "").replace(/@([^\s]*)$/, "");
-          return u;
-        });
         setDropdownIndex(0);
         return;
       }
@@ -566,7 +570,7 @@ export function InputBox(props: InputBoxProps) {
 
     if (key.leftArrow) {
       if (cursorCol > 0) {
-        setCursorCol(cursorCol - 1);
+        setCursorCol(previousGraphemeBoundary(lines[cursorLine] ?? "", cursorCol));
       } else if (isMultiline && cursorLine > 0) {
         setCursorLine(cursorLine - 1);
         setCursorCol((lines[cursorLine - 1] ?? "").length);
@@ -577,7 +581,7 @@ export function InputBox(props: InputBoxProps) {
     if (key.rightArrow) {
       const lineLen = (lines[cursorLine] ?? "").length;
       if (cursorCol < lineLen) {
-        setCursorCol(cursorCol + 1);
+        setCursorCol(nextGraphemeBoundary(lines[cursorLine] ?? "", cursorCol));
       } else if (isMultiline && cursorLine < lines.length - 1) {
         setCursorLine(cursorLine + 1);
         setCursorCol(0);
@@ -586,16 +590,25 @@ export function InputBox(props: InputBoxProps) {
     }
 
     if (key.backspace || key.delete) {
-      if (cursorCol > 0) {
-        const col = cursorCol;
+      const line = lines[cursorLine] ?? "";
+      if (key.delete && cursorCol < line.length) {
+        const nextCol = nextGraphemeBoundary(line, cursorCol);
+        setLines((prev) => {
+          const updated = [...prev];
+          const current = updated[cursorLine] ?? "";
+          updated[cursorLine] = current.slice(0, cursorCol) + current.slice(nextCol);
+          return updated;
+        });
+      } else if (key.backspace && cursorCol > 0) {
+        const previousCol = previousGraphemeBoundary(line, cursorCol);
         setLines((prev) => {
           const updated = [...prev];
           const l = updated[cursorLine] ?? "";
-          updated[cursorLine] = l.slice(0, col - 1) + l.slice(col);
+          updated[cursorLine] = l.slice(0, previousCol) + l.slice(cursorCol);
           return updated;
         });
-        setCursorCol(col - 1);
-      } else if (cursorLine > 0) {
+        setCursorCol(previousCol);
+      } else if (key.backspace && cursorLine > 0) {
         const prevLen = (lines[cursorLine - 1] ?? "").length;
         const cl = cursorLine;
         setLines((prev) => {
@@ -606,6 +619,14 @@ export function InputBox(props: InputBoxProps) {
         });
         setCursorLine(cl - 1);
         setCursorCol(prevLen);
+      } else if (key.delete && cursorLine < lines.length - 1) {
+        const cl = cursorLine;
+        setLines((prev) => {
+          const updated = [...prev];
+          updated[cl] = (updated[cl] ?? "") + (updated[cl + 1] ?? "");
+          updated.splice(cl + 1, 1);
+          return updated;
+        });
       }
       return;
     }
@@ -622,7 +643,7 @@ export function InputBox(props: InputBoxProps) {
       if (isMultiline && cursorLine > 0) {
         const targetLine = lines[cursorLine - 1] ?? "";
         setCursorLine(cursorLine - 1);
-        setCursorCol(Math.min(cursorCol, targetLine.length));
+        setCursorCol(clampToGraphemeBoundary(targetLine, Math.min(cursorCol, targetLine.length)));
         return;
       }
       if (!isMultiline && history.length > 0) {
@@ -657,7 +678,7 @@ export function InputBox(props: InputBoxProps) {
       if (isMultiline && cursorLine < lines.length - 1) {
         const targetLine = lines[cursorLine + 1] ?? "";
         setCursorLine(cursorLine + 1);
-        setCursorCol(Math.min(cursorCol, targetLine.length));
+        setCursorCol(clampToGraphemeBoundary(targetLine, Math.min(cursorCol, targetLine.length)));
         return;
       }
       if (!isMultiline) {
@@ -759,8 +780,9 @@ export function InputBox(props: InputBoxProps) {
                 if (lineIndex === cursorLine) {
                   const col = Math.min(cursorCol, line.length);
                   const before = line.slice(0, col);
-                  const atChar = col < line.length ? line[col] : " ";
-                  const after = col < line.length ? line.slice(col + 1) : "";
+                  const nextCol = nextGraphemeBoundary(line, col);
+                  const atChar = col < line.length ? line.slice(col, nextCol) : " ";
+                  const after = col < line.length ? line.slice(nextCol) : "";
                   const atEnd = col >= line.length;
                   return (
                     <Text key={lineIndex}>

@@ -11,8 +11,9 @@ chalk.level = 3;
 
 type MarkdownKind = "assistant" | "user" | "thinking";
 
-function createMarkdown(width: number, kind: MarkdownKind) {
-  const textColor = kind === "thinking" ? THEME.thinking : THEME.text;
+function createMarkdown(width: number, kind: MarkdownKind, streaming = false) {
+  const textColor =
+    kind === "thinking" ? THEME.thinkingText : kind === "user" ? THEME.userMessageText : THEME.text;
   const terminal = markedTerminal(
     {
       blockquote: (value) =>
@@ -73,6 +74,18 @@ function createMarkdown(width: number, kind: MarkdownKind) {
   markdown.use({
     renderer: {
       code(token) {
+        if (streaming) {
+          const opening = /^ {0,3}(`{3,}|~{3,})/u.exec(token.raw)?.[1];
+          const lastLine = token.raw.split("\n").at(-1);
+          if (
+            opening &&
+            lastLine &&
+            lastLine.length < opening.length &&
+            [...lastLine].every((character) => character === opening[0])
+          ) {
+            token = { ...token, text: token.text.slice(0, -lastLine.length).replace(/\n$/u, "") };
+          }
+        }
         const language = token.lang?.trim().split(/\s+/u)[0];
         let body = token.text
           .split("\n")
@@ -148,13 +161,13 @@ export interface MarkdownCache {
 
 export function renderStreamingMarkdown(text: string, width: number, cache: MarkdownCache): string {
   const normalized = text.replace(/\r\n?/gu, "\n");
-  const markdown = createMarkdown(width, "assistant");
+  const markdown = createMarkdown(width, "assistant", true);
   const tokens = markdown.lexer(normalized);
   // Reference definitions can restyle earlier blocks, so they cannot use a prefix cache.
   if (Object.keys(tokens.links).length > 0) {
     cache.prefix = "";
     cache.rendered = "";
-    return renderMarkdown(normalized, width);
+    return wrapToLines(markdown.parse(normalized, { async: false }).trimEnd(), width).join("\n");
   }
   const prefix = tokens
     .slice(0, -1)

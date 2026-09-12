@@ -27,7 +27,15 @@ export function StatusBorder({
       : "";
   const overflowWidth = visibleWidth(overflow);
   const overflowStart = Math.floor((columns - overflowWidth) / 2);
-  let status = statusLabel ? `${spinner} ${statusLabel}` : "";
+  let status = statusLabel
+    ? truncateToWidth(
+        `${spinner} ${statusLabel.replace(/[\r\n\t]+/g, " ")}`,
+        Math.max(0, columns - 5),
+      )
+    : "";
+  if (statusLabel && columns < 6) {
+    status = spinner;
+  }
   const canFitOverflow = () =>
     overflowWidth > 0 &&
     overflowWidth + 2 <= columns &&

@@ -1,3 +1,5 @@
+import type { TerminalInput } from "./terminal-input.js";
+
 export type TerminalTheme = "dark" | "light";
 
 interface RgbColor {
@@ -104,20 +106,21 @@ export function themeFromEnvironment(
   return themeForRgb(ansiColor(Number.parseInt(background, 10)));
 }
 
-export async function detectTerminalTheme(timeoutMs = 100): Promise<TerminalTheme> {
+export async function detectTerminalTheme(
+  input: TerminalInput,
+  timeoutMs = 100,
+): Promise<TerminalTheme> {
   const environmentTheme = themeFromEnvironment();
   if (environmentTheme) {
     return environmentTheme;
   }
-  if (!process.stdin.isTTY || !process.stdout.isTTY || !process.stdin.setRawMode) {
+  const stdin = input.stdin;
+  if (!stdin.isTTY || !process.stdout.isTTY || !stdin.setRawMode) {
     return "dark";
   }
 
   return new Promise((resolve) => {
-    const stdin = process.stdin;
     const wasRaw = stdin.isRaw;
-    const wasPaused = stdin.isPaused();
-    let buffer = "";
     let backgroundTheme: TerminalTheme | undefined;
     let settled = false;
 
@@ -127,25 +130,21 @@ export async function detectTerminalTheme(timeoutMs = 100): Promise<TerminalThem
       }
       settled = true;
       clearTimeout(timer);
-      stdin.off("data", onData);
+      input.off("terminal-response", onData);
       try {
         stdin.setRawMode(wasRaw);
-        if (wasPaused) {
-          stdin.pause();
-        }
       } catch {
         // The terminal may disappear during startup; theme selection can still complete.
       }
       resolve(theme);
     };
-    const onData = (chunk: Buffer | string) => {
-      buffer += chunk.toString();
-      const colorScheme = parseTerminalColorSchemeReport(buffer);
+    const onData = (report: string) => {
+      const colorScheme = parseTerminalColorSchemeReport(report);
       if (colorScheme) {
         finish(colorScheme);
         return;
       }
-      const color = parseOsc11BackgroundColor(buffer);
+      const color = parseOsc11BackgroundColor(report);
       if (color) {
         backgroundTheme = themeForRgb(color);
       }
@@ -156,8 +155,7 @@ export async function detectTerminalTheme(timeoutMs = 100): Promise<TerminalThem
 
     try {
       stdin.setRawMode(true);
-      stdin.resume();
-      stdin.on("data", onData);
+      input.on("terminal-response", onData);
       process.stdout.write("\x1b[?996n\x1b]11;?\x07");
     } catch {
       finish("dark");

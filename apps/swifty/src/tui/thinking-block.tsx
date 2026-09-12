@@ -31,7 +31,7 @@ export function ThinkingBlock({ text, duration, expanded, streaming = false }: P
   }
   return (
     <Box paddingLeft={1} paddingRight={1} marginTop={1}>
-      <Text color={THEME.thinking} italic>
+      <Text color={THEME.thinkingText} italic>
         {content}
       </Text>
     </Box>

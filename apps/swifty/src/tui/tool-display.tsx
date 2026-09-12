@@ -84,9 +84,9 @@ export function ToolCard({
       marginTop={1}
       paddingX={1}
       paddingY={1}
-      width={width}
+      width="100%"
     >
-      <Text bold color={THEME.text}>
+      <Text bold color={THEME.toolTitle} wrap="truncate-end">
         {truncateToWidth(title, contentWidth)}
       </Text>
       {shown ? (
@@ -94,7 +94,7 @@ export function ToolCard({
           {isDiffTool(toolName) ? (
             <DiffLines text={shown} />
           ) : (
-            <Text color={THEME.muted}>{shown}</Text>
+            <Text color={THEME.toolOutput}>{shown}</Text>
           )}
         </Box>
       ) : null}

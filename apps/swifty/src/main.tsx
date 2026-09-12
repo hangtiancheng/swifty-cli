@@ -28,6 +28,7 @@ import {
   formatInteractionSummary,
   type InteractionSummary,
 } from "./bootstrap/interaction-summary.js";
+import { TerminalInput } from "./bootstrap/terminal-input.js";
 import { detectTerminalTheme } from "./bootstrap/terminal-theme.js";
 import { parseResumeArgument } from "./bootstrap/tui-selection.js";
 import { forkEnabled, loadConfig } from "./config/config.js";
@@ -112,7 +113,8 @@ async function main() {
 
   // TUI mode: initialize logger before rendering.
   initLogger({ sessionId: newSessionId(), mode: "tui" });
-  setThemeMode(await detectTerminalTheme());
+  const terminalInput = new TerminalInput(process.stdin);
+  setThemeMode(await detectTerminalTheme(terminalInput));
   installSyncOutput();
   let interactionSummary: InteractionSummary | undefined;
   const appProps = {
@@ -133,8 +135,12 @@ async function main() {
       }}
     />
   );
-  const instance = render(application, { exitOnCtrlC: false });
-  await instance.waitUntilExit();
+  try {
+    const instance = render(application, { exitOnCtrlC: false, stdin: terminalInput.stdin });
+    await instance.waitUntilExit();
+  } finally {
+    terminalInput.dispose();
+  }
   if (interactionSummary) {
     process.stdout.write(`\n${formatInteractionSummary(interactionSummary)}\n`);
   }

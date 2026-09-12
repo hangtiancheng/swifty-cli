@@ -191,6 +191,15 @@ afterEach(() => {
 });
 
 describe("composer status borders", () => {
+  it("keeps a useful truncated status on narrow terminals", () => {
+    const output = renderToString(
+      createElement(StatusBorder, { width: 24, statusLabel: "Retrying: service unavailable" }),
+      { columns: 24 },
+    );
+    expect(output).toContain("Retrying:");
+    expect(output).toContain("…");
+    expect(visibleWidth(output)).toBe(24);
+  });
   it.each([1, 2, 3, 4, 5, 8, 12, 20, 28, 40, 80, 100])(
     "uses exactly %i terminal columns even with wide/ANSI status and overflow",
     (width) => {
@@ -275,6 +284,36 @@ describe("composer status borders", () => {
 });
 
 describe("composer completion rows", () => {
+  it("dismisses @ completion without deleting the draft or moving the caret", () => {
+    const ref = draftRef(["check @one"]);
+    const onEscape = vi.fn();
+    mount({ draftRef: ref, onEscape });
+    press("", { escape: true });
+    expect(ref.current?.lines).toEqual(["check @one"]);
+    expect(ref.current?.cursorCol).toBe(10);
+    expect(onEscape).not.toHaveBeenCalled();
+    press("", { escape: true });
+    expect(onEscape).toHaveBeenCalledOnce();
+    press("!");
+    expect(ref.current?.lines).toEqual(["check @one!"]);
+  });
+
+  it("completes the @ token at the caret and preserves the rest of the line", () => {
+    const ref = draftRef(["check @one please"], 0, 10);
+    mount({ draftRef: ref });
+    press("", { tab: true });
+    expect(ref.current?.lines).toEqual(["check @one.ts please"]);
+    expect(ref.current?.cursorCol).toBe(14);
+  });
+
+  it("submits a dismissed @ mention unchanged", () => {
+    const ref = draftRef(["@one"]);
+    const onSubmit = vi.fn();
+    mount({ draftRef: ref, onSubmit });
+    press("", { escape: true });
+    press("", { return: true });
+    expect(onSubmit).toHaveBeenCalledWith("@one");
+  });
   it("hides descriptions and skill tags on narrow slash lists", () => {
     const narrow = composer(30, { commands, draftRef: draftRef(["/"]) });
     expect(narrow).toContain(`${ICONS.arrow} /help`);
@@ -438,6 +477,23 @@ describe("persistent composer drafts and input behavior", () => {
     expect(ref.current?.lines).toEqual(["first", "se", "Xond"]);
     expect(ref.current?.cursorLine).toBe(2);
     expect(ref.current?.cursorCol).toBe(0);
+  });
+
+  it("moves and deletes complete grapheme clusters", () => {
+    const ref = draftRef(["a👩‍💻éb"]);
+    mount({ draftRef: ref });
+
+    press("", { leftArrow: true });
+    expect(ref.current?.cursorCol).toBe("a👩‍💻é".length);
+    press("", { leftArrow: true });
+    expect(ref.current?.cursorCol).toBe("a👩‍💻".length);
+    press("", { backspace: true });
+    expect(ref.current?.lines).toEqual(["aéb"]);
+    expect(ref.current?.cursorCol).toBe(1);
+
+    press("", { delete: true });
+    expect(ref.current?.lines).toEqual(["ab"]);
+    expect(ref.current?.cursorCol).toBe(1);
   });
 
   it("persists before an event can unmount the input and leaves no hidden input hook", () => {
