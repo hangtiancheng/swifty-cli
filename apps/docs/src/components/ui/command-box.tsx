@@ -1,25 +1,25 @@
-import { Check, Copy } from 'lucide-react'
-import { cn } from '../../lib/cn'
-import { useCopy } from '../../hooks/useCopy'
-import { focusRing } from '../../lib/styles'
+import { Check, Copy } from "lucide-react";
+import { cn } from "@/lib/cn";
+import { useCopy } from "@/hooks/use-copy";
+import { focusRing } from "@/lib/styles";
 
 export function CopyButton({
   value,
   className,
-  label = 'Copy',
+  label = "Copy",
 }: {
-  value: string
-  className?: string
-  label?: string
+  value: string;
+  className?: string;
+  label?: string;
 }) {
-  const { copied, copy } = useCopy()
+  const { copied, copy } = useCopy();
   return (
     <button
       type="button"
       onClick={() => void copy(value)}
-      aria-label={copied ? 'Copied' : label}
+      aria-label={copied ? "Copied" : label}
       className={cn(
-        'group inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-white/10 dark:hover:text-white',
+        "group inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-white/10 dark:hover:text-white",
         focusRing,
         className,
       )}
@@ -30,7 +30,7 @@ export function CopyButton({
         <Copy className="h-4 w-4 transition-transform group-hover:scale-105" />
       )}
     </button>
-  )
+  );
 }
 
 export function CommandBar({
@@ -38,14 +38,14 @@ export function CommandBar({
   leading,
   className,
 }: {
-  command: string
-  leading?: string
-  className?: string
+  command: string;
+  leading?: string;
+  className?: string;
 }) {
   return (
     <div
       className={cn(
-        'flex items-center gap-2 rounded-2xl border border-zinc-200/90 bg-white/80 p-1.5 pl-2 shadow-soft backdrop-blur dark:border-white/10 dark:bg-white/[0.04] dark:shadow-none',
+        "shadow-soft flex items-center gap-2 rounded-2xl border border-zinc-200/90 bg-white/80 p-1.5 pl-2 backdrop-blur dark:border-white/10 dark:bg-white/[0.04] dark:shadow-none",
         className,
       )}
     >
@@ -59,5 +59,5 @@ export function CommandBar({
       </code>
       <CopyButton value={command} />
     </div>
-  )
+  );
 }

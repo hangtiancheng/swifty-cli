@@ -1,19 +1,19 @@
-import { Agents } from './components/Agents'
-import { Faq } from './components/Faq'
-import { Features } from './components/Features'
-import { Footer } from './components/Footer'
-import { Hero } from './components/Hero'
-import { Install } from './components/Install'
-import { Navbar } from './components/Navbar'
-import { Providers } from './components/Providers'
-import { Safety } from './components/Safety'
-import { ScrollProgress } from './components/ScrollProgress'
-import { TerminalShowcase } from './components/TerminalShowcase'
-import { ToolsShowcase } from './components/ToolsShowcase'
-import { Workflow } from './components/Workflow'
-import { cn } from './lib/cn'
-import { DOCS_URL, NPM_URL, REPO_URL } from './lib/content'
-import { page } from './lib/styles'
+import { Agents } from "./components/agents";
+import { Faq } from "./components/faq";
+import { Features } from "./components/features";
+import { Footer } from "./components/footer";
+import { Hero } from "./components/hero";
+import { Install } from "./components/install";
+import { Navbar } from "./components/navbar";
+import { Providers } from "./components/providers";
+import { Safety } from "./components/safety";
+import { ScrollProgress } from "./components/scroll-process";
+import { TerminalShowcase } from "./components/terminal-showcase";
+import { ToolsShowcase } from "./components/tools-showcase";
+import { Workflow } from "./components/workflow";
+import { cn } from "./lib/cn";
+import { DOCS_URL, NPM_URL, REPO_URL } from "./lib/content";
+import { page } from "./lib/styles";
 
 function App() {
   return (
@@ -34,7 +34,7 @@ function App() {
       </main>
       <Footer repoUrl={REPO_URL} npmUrl={NPM_URL} />
     </div>
-  )
+  );
 }
 
-export default App
+export default App;

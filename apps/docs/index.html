@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" class="scroll-smooth scroll-pt-24">
+<html lang="en" class="scroll-pt-24 scroll-smooth">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="%BASE_URL%favicon.svg" />
@@ -10,7 +10,10 @@
       name="description"
       content="Swifty is a terminal-based AI coding agent. Chat with any LLM, edit files, run commands, and orchestrate multi-agent workflows — all from one CLI."
     />
-    <meta property="og:title" content="Swifty — The AI coding agent that lives in your terminal" />
+    <meta
+      property="og:title"
+      content="Swifty — The AI coding agent that lives in your terminal"
+    />
     <meta
       property="og:description"
       content="Multi-provider LLMs, a rich streaming TUI, sandboxed tools, long-term memory and multi-agent teams — in a single CLI."
@@ -23,16 +26,18 @@
       rel="stylesheet"
     />
     <script>
-      ;(() => {
+      (() => {
         try {
-          const stored = localStorage.getItem('swifty-theme')
-          const dark = stored ? stored === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches
-          if (dark) document.documentElement.classList.add('dark')
-          document.documentElement.style.colorScheme = dark ? 'dark' : 'light'
+          const stored = localStorage.getItem("swifty-theme");
+          const dark = stored
+            ? stored === "dark"
+            : window.matchMedia("(prefers-color-scheme: dark)").matches;
+          if (dark) document.documentElement.classList.add("dark");
+          document.documentElement.style.colorScheme = dark ? "dark" : "light";
         } catch {
           /* ignore */
         }
-      })()
+      })();
     </script>
   </head>
   <body>
